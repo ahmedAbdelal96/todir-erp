@@ -1,4 +1,27 @@
+using Shared.Primitives.Identifiers;
+
 namespace Shared.Contracts.Payments;
+
+public sealed record ChequeInTransitReference(Guid PaymentId, Guid LegalEntityId, string PaymentNumber,
+    string Direction, decimal Amount, string CurrencyCode, Guid PaymentAccountId, DateOnly PaymentDate,
+    string State, string? BankReference, string? SourceReference);
+public sealed record ChequeInTransitPage(IReadOnlyList<ChequeInTransitReference> Items, int Page, int PageSize, bool HasMore, int TotalCount);
+public interface IPaymentChequeReadCapability
+{
+    Task<ChequeInTransitPage> ListChequeInTransitAsync(TenantId tenantId, Guid legalEntityId, int page, int pageSize,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record BankOriginatedReceiptRequest(Guid LegalEntityId, Guid PaymentAccountId, decimal Amount,
+    string CurrencyCode, DateOnly PaymentDate, DateOnly PostingDate, string? BankReference, string SourceReference,
+    string IdempotencyKey);
+public sealed record BankOriginatedReceiptResult(Guid PaymentId, string PaymentNumber, string State, decimal Amount,
+    string CurrencyCode);
+public interface IBankOriginatedPaymentCapability
+{
+    Task<BankOriginatedReceiptResult> CreateUnallocatedReceiptAsync(TenantId tenantId, Guid actorId, Guid membershipId,
+        Guid correlationId, BankOriginatedReceiptRequest request, CancellationToken cancellationToken = default);
+}
 
 public sealed record PosCashPaymentRequest(Guid LegalEntityId, Guid? BranchId, Guid? PartyId, decimal Amount, string CurrencyCode,
     Guid PaymentAccountId, DateOnly PaymentDate, DateOnly PostingDate, string SourceReference, string IdempotencyKey);

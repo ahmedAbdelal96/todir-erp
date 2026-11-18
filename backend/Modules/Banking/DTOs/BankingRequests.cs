@@ -35,3 +35,10 @@ public sealed record BankOriginatedDecisionRequest(string Decision, long Version
 public sealed record CreateTransactionCodeMappingRequest(string TransactionCode, string Classification, DateOnly EffectiveFrom, DateOnly? EffectiveTo);
 public sealed record CreateReconciliationRuleSetRequest(string Name, JsonElement Definition);
 public sealed record CreateTransferRequest(Guid LegalEntityId, Guid SourceTreasuryAccountId, Guid DestinationTreasuryAccountId, decimal Amount, string CurrencyCode, DateOnly PaymentDate, DateOnly PostingDate, DateOnly? ValueDate, string? Reference);
+public sealed record ReconcileTransferRequest(Guid? SourceStatementLineId, Guid? DestinationStatementLineId, long Version, string? Explanation);
+public sealed record CreateOpeningReconciliationRequest(Guid LegalEntityId, Guid TreasuryAccountId, Guid LedgerOpeningBatchId,
+    DateOnly OpeningAsOfDate, string CurrencyCode, decimal BookOpeningBalance, decimal ExternalOpeningBalance,
+    decimal OutstandingInTransitAmount, string SourceSystem, string? LegacyAccountId, string BatchId);
+public sealed record FinalizeOpeningReconciliationRequest(long Version);
+public sealed record ConfirmPosCashSettlementRequest(Guid TreasuryAccountId, long Version);
+public sealed record MatchProviderSettlementRequest(Guid StatementLineId, long Version);

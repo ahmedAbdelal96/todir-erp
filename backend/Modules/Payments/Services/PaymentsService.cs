@@ -17,15 +17,28 @@ namespace Modules.Payments.Services;
 
 public sealed class PaymentsService(PaymentsRepository repository, IDirectoryCapabilities directory,
     IFinanceBaseCapabilities financeBase, IPlatformOrganizationCapabilities organization, ISubledgerCapabilities subledger,
-    IDirectoryPartyRoleCapabilities partyRoles, IReferencePaymentProvider referenceProvider, IProviderSecretResolver providerSecrets) : IPosPaymentCapabilities, IInternalTransferCapability
+    IDirectoryPartyRoleCapabilities partyRoles, IReferencePaymentProvider referenceProvider, IProviderSecretResolver providerSecrets) : IPosPaymentCapabilities, IInternalTransferCapability, IPaymentChequeReadCapability, IBankOriginatedPaymentCapability
 {
+    public async Task<BankOriginatedReceiptResult> CreateUnallocatedReceiptAsync(TenantId tenantId, Guid actorId, Guid membershipId,
+        Guid correlationId, BankOriginatedReceiptRequest request, CancellationToken cancellationToken = default)
+    {
+        var draft = await CreateDraftAsync(tenantId, actorId, membershipId, correlationId,
+            new CreatePaymentRequest(request.LegalEntityId, null, PaymentType.CustomerReceipt, null,
+                request.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), request.CurrencyCode,
+                PaymentMethod.BankTransfer, request.PaymentAccountId, request.PaymentDate, request.PostingDate, null,
+                request.BankReference, null, null, "BankingUnknownReceipt", request.SourceReference),
+            request.IdempotencyKey, cancellationToken);
+        var completed = await CompleteManualAsync(tenantId, actorId, membershipId, request.LegalEntityId, draft.Id,
+            $"{request.IdempotencyKey}:complete", correlationId, cancellationToken);
+        return new(completed.Id, completed.Number, completed.State.ToString(), completed.Amount, completed.CurrencyCode);
+    }
     public async Task<InternalTransferCapabilityResult> CreateAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid correlationId, InternalTransferCapabilityRequest request, CancellationToken cancellationToken = default)
     {
         var result = await CreateInternalTransferAsync(tenantId, actorId, membershipId, correlationId,
             new CreateInternalTransferRequest(request.LegalEntityId, request.SourceTreasuryAccountId, request.DestinationTreasuryAccountId,
                 request.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), request.CurrencyCode, request.PaymentDate,
                 request.PostingDate, request.ValueDate, request.Reference), request.IdempotencyKey, cancellationToken);
-        return new(result.Id, "Completed", result.SourceAmount, result.SourceCurrencyCode, result.DestinationAmount, result.DestinationCurrencyCode, result.CompletedAt);
+        return new(result.Id, "Completed", result.SourceAmount, result.SourceCurrencyCode, result.DestinationAmount, result.DestinationCurrencyCode, result.CompletedAt, result.BaseCurrencyCode, result.FxSnapshot);
     }
 
     public async Task<PosPaymentResult> CaptureCashAsync(Guid tenantId, Guid actorId, Guid membershipId,
@@ -402,6 +415,7 @@ public sealed class PaymentsService(PaymentsRepository repository, IDirectoryCap
     }
 
     public Task<PaymentPage> ListAsync(TenantId tenant, PaymentListQuery query, CancellationToken ct) => repository.ListAsync(tenant, query, ct);
+    public Task<Shared.Contracts.Payments.ChequeInTransitPage> ListChequeInTransitAsync(TenantId tenantId, Guid legalEntityId, int page, int pageSize, CancellationToken cancellationToken) => repository.ListChequeInTransitAsync(tenantId, legalEntityId, page, pageSize, cancellationToken);
     public Task<PaymentRecord?> GetAsync(TenantId tenant, Guid legalEntityId, Guid? branchId, Guid id, CancellationToken ct) => repository.GetAsync(tenant, legalEntityId, branchId, id, ct);
     public Task<IReadOnlyList<PaymentFeeResult>> ListFeesAsync(TenantId tenant, Guid legalEntityId, Guid paymentId, CancellationToken ct) =>
         repository.ListFeesAsync(tenant, legalEntityId, paymentId, ct);

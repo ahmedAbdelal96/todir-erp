@@ -199,7 +199,7 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             "payments", "payment_account.status_changed", "payment_account", accountId, null,
             JsonSerializer.Serialize(new { status = status.ToString() }, JsonOptions), null, "api", correlationId, null, now, null), token);
         return true;
-        }, ct);
+    }, ct);
     }
 
     public Task<PaymentRecord> CreateDraftAsync(TenantId tenant, Guid actor, Guid membership, Guid correlationId, CreatePaymentCommand request, CancellationToken ct) =>
@@ -1249,6 +1249,24 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
         return new(result, page, pageSize, more, total);
     }
 
+    public async Task<Shared.Contracts.Payments.ChequeInTransitPage> ListChequeInTransitAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, CancellationToken ct)
+    {
+        page = Math.Clamp(page, 1, 100000);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        await using var connection = await OpenAsync(tenant, ct);
+        const string scope = "p.tenant_id=$1 and p.legal_entity_id=$2 and p.method='Cheque' and p.business_state in ('Draft','Pending')";
+        await using var count = new NpgsqlCommand($"select count(*) from finance_payments.payment p where {scope}", connection);
+        Add(count, tenant.Value, legalEntityId);
+        var total = Convert.ToInt32(await count.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
+        await using var command = new NpgsqlCommand($"select p.id,p.legal_entity_id,p.payment_number,p.direction,p.amount,p.currency_code,p.payment_account_id,p.payment_date,p.business_state,p.bank_reference,p.source_reference from finance_payments.payment p where {scope} order by p.payment_date,p.id offset $3 limit $4", connection);
+        Add(command, tenant.Value, legalEntityId, (page - 1) * pageSize, pageSize);
+        var items = new List<Shared.Contracts.Payments.ChequeInTransitReference>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            items.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetDecimal(4), reader.GetString(5).Trim(), reader.GetGuid(6), DateOnly.FromDateTime(reader.GetDateTime(7)), reader.GetString(8), StringValue(reader, 9), StringValue(reader, 10)));
+        return new(items, page, pageSize, (page - 1) * pageSize + items.Count < total, total);
+    }
+
     public async Task<PaymentRecord?> GetAsync(TenantId tenant, Guid legalEntityId, Guid? branchId, Guid id, CancellationToken ct)
     {
         await using var connection = await OpenAsync(tenant, ct);
@@ -1313,8 +1331,10 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
                 && payment.Direction == PaymentDirection.Incoming && payment.Type == PaymentType.EmployeeRepayment;
             var isAnonymousPosCash = string.Equals(payment.SourceType, "pos", StringComparison.OrdinalIgnoreCase)
                 && payment.Type == PaymentType.CustomerReceipt && payment.Direction == PaymentDirection.Incoming && payment.PartyId is null;
-            if (!isPayrollSettlement && !isExpenseSettlement && !isAdvanceSettlement && !isEmployeeRepayment && !isAnonymousPosCash && payment.PartyId is null) throw new PaymentException("payments.party_required", "A party is required until this payment type has an approved accounting mapping.");
-            if (!isPayrollSettlement && !isExpenseSettlement && !isAdvanceSettlement && !isEmployeeRepayment && !isAnonymousPosCash && payment.Type is not (PaymentType.CustomerReceipt or PaymentType.CustomerAdvance or PaymentType.SupplierPayment or PaymentType.SupplierAdvance or PaymentType.CustomerRefund or PaymentType.SupplierRefund))
+            var isUnallocatedBankReceipt = string.Equals(payment.SourceType, "BankingUnknownReceipt", StringComparison.OrdinalIgnoreCase)
+                && payment.Type == PaymentType.CustomerReceipt && payment.Direction == PaymentDirection.Incoming && payment.PartyId is null;
+            if (!isPayrollSettlement && !isExpenseSettlement && !isAdvanceSettlement && !isEmployeeRepayment && !isAnonymousPosCash && !isUnallocatedBankReceipt && payment.PartyId is null) throw new PaymentException("payments.party_required", "A party is required until this payment type has an approved accounting mapping.");
+            if (!isPayrollSettlement && !isExpenseSettlement && !isAdvanceSettlement && !isEmployeeRepayment && !isAnonymousPosCash && !isUnallocatedBankReceipt && payment.Type is not (PaymentType.CustomerReceipt or PaymentType.CustomerAdvance or PaymentType.SupplierPayment or PaymentType.SupplierAdvance or PaymentType.CustomerRefund or PaymentType.SupplierRefund))
                 throw new PaymentException("payments.manual_completion_type_unsupported", "This payment type requires a configured business workflow before completion.");
             if (!string.Equals(financialContext.TransactionCurrencyCode, payment.CurrencyCode, StringComparison.OrdinalIgnoreCase))
                 throw new PaymentException("payments.currency_context_changed", "The approved currency context no longer matches this payment.");
@@ -1362,7 +1382,7 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
                 payment.PostingDate, payment.CurrencyCode, payment.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), financialContext.BaseCurrencyCode,
                 baseAmount.ToString(System.Globalization.CultureInfo.InvariantCulture), settlementRole, settlementRole, $"configuration:{configurationId:D}", snapshotJson, 1);
             Guid? itemId = null;
-            if (!isPayrollSettlement && !isExpenseSettlement && !isAdvanceSettlement && !isEmployeeRepayment && !isAnonymousPosCash)
+            if (!isPayrollSettlement && !isExpenseSettlement && !isAdvanceSettlement && !isEmployeeRepayment && !isAnonymousPosCash && !isUnallocatedBankReceipt)
             {
                 var partyDirection = settlementRole == "Receivable" ? SubledgerDirectionContract.Receivable : SubledgerDirectionContract.Payable;
                 var partyPolarity = payment.Type switch

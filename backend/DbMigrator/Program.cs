@@ -301,6 +301,13 @@ foreach (var script in scripts)
         "ledger-forward-fix-payment-fee-reversal.sql" => new[] { "finance_ledger.ledger_entity_configuration", "finance_ledger.accounting_configuration_version", "finance_ledger.fact_producer_registration", "finance_ledger.posting_rule", "finance_ledger.posting_rule_version", "finance_ledger.posting_rule_leg" },
         "ledger-forward-fix-fixed-asset-disposal-reversal.sql" => new[] { "finance_ledger.ledger_entity_configuration", "finance_ledger.fact_producer_registration", "finance_ledger.posting_rule", "finance_ledger.posting_rule_version", "finance_ledger.posting_rule_leg" },
         "ledger-forward-fix-pos-anonymous-cash-sale.sql" => new[] { "finance_ledger.ledger_entity_configuration", "finance_ledger.accounting_configuration_version", "finance_ledger.fact_producer_registration", "finance_ledger.posting_rule", "finance_ledger.posting_rule_version" },
+        "banking-forward-fix-ledger-originated-posting.sql" => new[] { "platform.legal_entity", "finance_ledger.account", "finance_ledger.account_role", "finance_ledger.account_mapping", "finance_ledger.account_mapping_version", "finance_ledger.ledger_entity_configuration", "finance_ledger.fact_producer_registration", "finance_ledger.posting_rule", "finance_ledger.posting_rule_version", "finance_ledger.posting_rule_leg" },
+        "banking-forward-fix-ledger-originated-posting-effective-date.sql" => new[] { "finance_ledger.account_mapping_version", "finance_ledger.account_mapping", "finance_ledger.account_role", "finance_ledger.ledger_entity_configuration", "finance_ledger.accounting_configuration_version", "finance_ledger.journal_entry_line" },
+        "banking-forward-fix-ledger-originated-posting-rule-effective-date.sql" => new[] { "finance_ledger.posting_rule", "finance_ledger.posting_rule_version", "finance_ledger.posting_rule_leg", "finance_ledger.ledger_entity_configuration", "finance_ledger.accounting_configuration_version" },
+        "banking-forward-fix-settlement-lifecycle.sql" => new[] { "finance_banking.provider_settlement_projection", "finance_banking.pos_cash_settlement_projection", "finance_banking.external_statement_line" },
+        "banking-forward-fix-internal-transfer-reconciliation.sql" => new[] { "finance_banking.transfer_reconciliation_projection", "finance_banking.external_statement_line" },
+        "banking-forward-fix-internal-transfer-fx-evidence.sql" => new[] { "finance_banking.transfer_reconciliation_projection" },
+        "banking-forward-fix-opening-reconciliation.sql" => new[] { "finance_banking.treasury_account" },
         "sales-forward-fix-return-lifecycle.sql" => new[] { "business_sales.sales_order_reservation" },
         "pos-forward-fix-exchanges-role-permissions.sql" => new[] { "platform.tenant", "platform.role", "platform.role_permission" },
         "expenses-forward-fix-typed-travel-facts.sql" => new[] { "business_expenses.expense", "business_expenses.mileage_expense_detail", "business_expenses.per_diem_expense_detail" },
@@ -609,6 +616,10 @@ static int MigrationPriority(string fileName) => fileName switch
     // Keep its definition ahead of the capability and permission forward-fixes on
     // a fresh bootstrap, while the migration identity remains forward-only.
     _ when fileName.Equals("service-forward-fix-scheduled-worker.sql", StringComparison.Ordinal) => 4,
+    // Banking workflow projections are the base tables extended by the later
+    // transfer, settlement, and FX evidence fixes. Keep the foundation first
+    // during a fresh bootstrap as well as on an upgrade.
+    _ when fileName.Equals("banking-forward-fix-workflow-foundations.sql", StringComparison.Ordinal) => 4,
     _ => 5
 };
 

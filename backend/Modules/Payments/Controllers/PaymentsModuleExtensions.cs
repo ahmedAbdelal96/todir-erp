@@ -23,6 +23,8 @@ public static class PaymentsModuleExtensions
         services.AddSingleton<PaymentsRepository>();
         services.AddSingleton<PaymentsService>();
         services.AddSingleton<IPosPaymentCapabilities>(provider => provider.GetRequiredService<PaymentsService>());
+        services.AddSingleton<IPaymentChequeReadCapability>(provider => provider.GetRequiredService<PaymentsService>());
+        services.AddSingleton<IBankOriginatedPaymentCapability>(provider => provider.GetRequiredService<PaymentsService>());
         services.AddSingleton<IInternalTransferCapability>(provider => provider.GetRequiredService<PaymentsService>());
         services.AddSingleton<IPayrollPaymentCapability, PayrollPaymentCapability>();
         services.AddSingleton<IExpensePaymentCapability, ExpensePaymentCapability>();

@@ -254,4 +254,47 @@ public sealed class ApiCompositionTests : DatabaseIntegrationTestBase
         Assert.NotEmpty(await canonical.Content.ReadAsStringAsync());
         Assert.NotEmpty(await scoped.Content.ReadAsStringAsync());
     }
+
+    [Fact]
+    public async Task BankingHttpSecurityEnforcesRestrictedLegalEntityAndTenantScope()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for the Banking HTTP security gate.");
+        var password = Environment.GetEnvironmentVariable("SEED_DEFAULT_PASSWORD")
+            ?? throw new InvalidOperationException("Set SEED_DEFAULT_PASSWORD for the Banking HTTP security gate.");
+        const string atlasEntity = "aad8a34b-344c-9e5b-8d58-57f182fc6528";
+        const string atlasSecondary = "d8eb39bb-b048-7c5d-bacd-e3a923eee21c";
+        const string deltaEntity = "bbdcc188-1acc-805e-8721-f43308540a4d";
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("TODIR_DATABASE_CONNECTION", connectionString);
+            builder.UseSetting("TODIR_RABBITMQ_HOST", string.Empty);
+        });
+        using var anonymous = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync($"/api/v1/banking/treasury-accounts?legalEntityId={atlasEntity}")).StatusCode);
+
+        static async Task<HttpClient> LoginAsync(WebApplicationFactory<Program> factory, string email, string password)
+        {
+            var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
+            using var csrf = await client.GetAsync("/api/v1/auth/csrf"); csrf.EnsureSuccessStatusCode();
+            using var document = JsonDocument.Parse(await csrf.Content.ReadAsStreamAsync());
+            using var login = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/login") { Content = JsonContent.Create(new { email, password }) };
+            login.Headers.Add("X-CSRF-TOKEN", document.RootElement.GetProperty("token").GetString());
+            using var response = await client.SendAsync(login); response.EnsureSuccessStatusCode();
+            return client;
+        }
+
+        using var atlas = await LoginAsync(factory, "banking-reader@atlas.com", password);
+        var own = await atlas.GetAsync($"/api/v1/banking/treasury-accounts?legalEntityId={atlasEntity}&page=1&pageSize=5");
+        Assert.Equal(HttpStatusCode.OK, own.StatusCode);
+        var ownBody = await own.Content.ReadAsStringAsync();
+        Assert.Contains("maskedIdentifier", ownBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("secretRef", ownBody, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(HttpStatusCode.Forbidden, (await atlas.GetAsync($"/api/v1/banking/treasury-accounts?legalEntityId={atlasSecondary}&page=1&pageSize=5")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await atlas.GetAsync($"/api/v1/banking/treasury-accounts?legalEntityId={deltaEntity}&page=1&pageSize=5")).StatusCode);
+
+        using var delta = await LoginAsync(factory, "banking-reader@delta.com", password);
+        Assert.Equal(HttpStatusCode.OK, (await delta.GetAsync($"/api/v1/banking/treasury-accounts?legalEntityId={deltaEntity}&page=1&pageSize=5")).StatusCode);
+    }
 }

@@ -8,6 +8,7 @@ using System.Globalization;
 using Modules.Payments.DTOs;
 using Modules.Payments.Entities;
 using Modules.Payments.Services;
+using Shared.Contracts.Payments;
 using Modules.Expenses.Repositories;
 using Modules.Expenses.Services;
 using Modules.Hr.DTOs;
@@ -26,6 +27,39 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
     private readonly ITestOutputHelper output;
 
     public PaymentsPostgresIntegrationTests(ITestOutputHelper output) => this.output = output;
+
+    [Fact]
+    public async Task BankOriginatedUnknownReceiptIsRecordedOnceAsUnallocatedPayment()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for payment integration tests.");
+        var runtimeConnectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for payment integration tests.");
+        var fixture = await ReadFixtureAsync(adminConnectionString);
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnectionString);
+            builder.UseSetting("TODIR_RABBITMQ_HOST", string.Empty);
+        });
+        var payments = factory.Services.GetRequiredService<IBankOriginatedPaymentCapability>();
+        var tenant = new TenantId(fixture.TenantId);
+        var sourceReference = "bank-statement:" + Guid.CreateVersion7().ToString("N");
+        var idempotencyKey = "bank-originated:" + Guid.CreateVersion7().ToString("N");
+        var request = new BankOriginatedReceiptRequest(fixture.LegalEntityId, fixture.PaymentAccountId, 37.50m, "EGP",
+            new(2026, 10, 1), new(2026, 10, 1), "BANK-UNKNOWN-1", sourceReference, idempotencyKey);
+
+        var first = await payments.CreateUnallocatedReceiptAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(), request);
+        var retry = await payments.CreateUnallocatedReceiptAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(), request);
+
+        Assert.Equal(first.PaymentId, retry.PaymentId);
+        Assert.Equal("Completed", first.State);
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and id=$3 and source_type='BankingUnknownReceipt' and party_id is null and business_state='Completed'", fixture.TenantId, fixture.LegalEntityId, first.PaymentId));
+        Assert.Equal(0L, await CountAsync(admin, "select count(*) from finance_subledger.party_open_item where tenant_id=$1 and legal_entity_id=$2 and source_type='Payment' and source_reference=$3", fixture.TenantId, fixture.LegalEntityId, first.PaymentId.ToString("D")));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_ledger.accounting_fact where tenant_id=$1 and legal_entity_id=$2 and id=$3 and fact_type='PaymentReceived' and status='Posted'", fixture.TenantId, fixture.LegalEntityId, first.PaymentId));
+    }
 
     [Fact]
     public async Task ConfirmedProviderDeclineCanBeRetriedAsANewIdempotentAttempt()

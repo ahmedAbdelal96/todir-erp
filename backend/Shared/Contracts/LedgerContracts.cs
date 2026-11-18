@@ -41,13 +41,14 @@ public static class AccountingFactTypes
     public const string FixedAssetCostAdded = "FixedAssetCostAdded";
     public const string FixedAssetCostReduced = "FixedAssetCostReduced";
     public const string FixedAssetImpairmentPosted = "FixedAssetImpairmentPosted";
+    public const string BankOriginatedFinancialEventApproved = "BankOriginatedFinancialEventApproved";
 
     public static IReadOnlySet<string> Known { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         CustomerInvoicePosted, CustomerCreditNotePosted, VendorBillPosted, VendorCreditNotePosted, CustomerDebitNotePosted, VendorDebitNotePosted,
         PaymentReceived, PaymentMade, RefundPaid, InternalTransferCompleted, PaymentFeeRecognized, PaymentFeeReversed, PosCashSalePosted, InventoryReceiptValued, InventoryIssueValued, InventoryCostAdjustment, InventoryValuationReversal,
         ExpenseRecognized, PayrollPosted, TaxAdjustment, SettlementFxDifference, SettlementWriteOff, UnrealizedFxRevaluation,
-        OpeningBalancePosted, ManualGeneralJournalPosted, FixedAssetAcquisitionPosted, FixedAssetDepreciationPosted, FixedAssetDepreciationReversed, FixedAssetDisposalPosted, FixedAssetDisposalReversed, FixedAssetCostAdded, FixedAssetCostReduced, FixedAssetImpairmentPosted
+        OpeningBalancePosted, ManualGeneralJournalPosted, FixedAssetAcquisitionPosted, FixedAssetDepreciationPosted, FixedAssetDepreciationReversed, FixedAssetDisposalPosted, FixedAssetDisposalReversed, FixedAssetCostAdded, FixedAssetCostReduced, FixedAssetImpairmentPosted, BankOriginatedFinancialEventApproved
     };
 }
 
@@ -98,6 +99,15 @@ public sealed record PaymentFactPayload(decimal Amount, string CurrencyCode, str
     string Direction = "Incoming", string PaymentAccountReference = "", Guid? PartyId = null,
     decimal? BaseAmount = null, string? BaseCurrencyCode = null, string? ExchangeRateReference = null,
     decimal? FeeAmount = null, decimal? BaseFeeAmount = null) : IAccountingFactPayload;
+public sealed record BankOriginatedFinancialEventPayload(
+    string EventType,
+    string Direction,
+    decimal Amount,
+    string CurrencyCode,
+    string TreasuryAccountReference,
+    decimal? BaseAmount = null,
+    string? BaseCurrencyCode = null,
+    string? ExchangeRateReference = null) : IAccountingFactPayload;
 public sealed record PosCashSaleLineContract(string CategoryCode, decimal NetAmount);
 public sealed record PosCashSalePostingPayload(decimal NetAmount, decimal TaxAmount, decimal GrossAmount, string CurrencyCode,
     IReadOnlyList<PosCashSaleLineContract> Lines, IReadOnlyList<InvoiceTaxComponent> Taxes,

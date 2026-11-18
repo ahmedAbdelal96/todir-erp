@@ -44,6 +44,10 @@ public sealed class LedgerSetupRepository(
         ("520000", "مصروف الرواتب", "Payroll Expense", "Expense", "Payroll", true, "500000"),
         ("530000", "ديون معدومة", "Bad Debt Expense", "Expense", "BadDebt", true, "500000"),
         ("540000", "مصروفات المشتريات", "Purchase Expenses", "Expense", "Purchases", true, "500000"),
+        ("541000", "مصروفات بنكية", "Bank Fees", "Expense", "BankFees", true, "500000"),
+        ("542000", "مصروف فوائد", "Bank Interest Expense", "Expense", "BankInterestExpense", true, "500000"),
+        ("543000", "مصروفات خصم مباشر", "Direct Debit Expense", "Expense", "DirectDebitExpense", true, "500000"),
+        ("425000", "إيرادات فوائد بنكية", "Bank Interest Income", "Revenue", "BankInterestIncome", true, "400000"),
         ("420000", "إيرادات تسوية الديون", "Write-Off Income", "Revenue", "WriteOff", true, "400000"),
         ("999000", "أرباح فروق العملة", "FX Gain", "Revenue", "FXGain", true, null),
         ("999100", "خسائر فروق العملة", "FX Loss", "Expense", "FXLoss", true, null),
@@ -77,6 +81,10 @@ public sealed class LedgerSetupRepository(
         ("FXGain", "أرباح فروق العملة", "FX Gain", "999000"),
         ("FXLoss", "خسائر فروق العملة", "FX Loss", "999100"),
         ("RoundingDifference", "فروق التقريب", "Rounding Difference", "999900")
+        ,("BankFees", "مصروفات بنكية", "Bank Fees", "541000")
+        ,("BankInterestIncome", "إيرادات فوائد بنكية", "Bank Interest Income", "425000")
+        ,("BankInterestExpense", "مصروف فوائد", "Bank Interest Expense", "542000")
+        ,("DirectDebitExpense", "مصروفات خصم مباشر", "Direct Debit Expense", "543000")
     ];
 
     public async Task<ManagedLedgerSetupDto> InitializeAsync(TenantId tenant, LegalEntityId entity, ManagedLedgerSetupRequest request, Guid actor, Guid correlationId, CancellationToken ct)
@@ -151,6 +159,7 @@ public sealed class LedgerSetupRepository(
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.PosCashSalePosted, "POS_CASH_SALE_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.VendorDebitNotePosted, "VENDOR_DEBIT_NOTE_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.ExpenseRecognized, "EXPENSE_RECOGNIZED_V1", token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.BankOriginatedFinancialEventApproved, "BANK_ORIGINATED_FINANCIAL_EVENT_APPROVED_V1", token);
 
             var configWasCreated = existing is null;
             await ExecuteAsync(context, "insert into finance_ledger.ledger_entity_configuration (tenant_id,legal_entity_id,id,mode,setup_template_code,active_configuration_version_id,initialized_at,version) values ($1,$2,$3,$4,$5,$6,$7,1) on conflict (tenant_id,legal_entity_id) do update set mode=excluded.mode,setup_template_code=excluded.setup_template_code,active_configuration_version_id=excluded.active_configuration_version_id,version=finance_ledger.ledger_entity_configuration.version+1", token, tenant.Value, entity.Value, existing?.Id ?? Guid.CreateVersion7(), mode.ToString(), request.TemplateCode.Trim(), configurationId, clock.GetUtcNow());
@@ -275,7 +284,7 @@ public sealed class LedgerSetupRepository(
     private static async Task<Guid?> FindPostableCashAccountAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, CancellationToken ct) =>
         await ScalarGuidAsync(context, "select id from finance_ledger.account where tenant_id=$1 and legal_entity_id=$2 and status='Active' and allow_direct_posting=true and subtype='Cash' order by code limit 1", ct, tenant.Value, entity.Value);
 
-    private static async Task EnsureMappingVersionAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, Guid configurationId, Guid mappingId, Guid accountId, CancellationToken ct) => await ExecuteAsync(context, "insert into finance_ledger.account_mapping_version (tenant_id,legal_entity_id,id,mapping_id,accounting_configuration_version_id,version_number,effective_from,specificity_rank,target_account_id,status) values ($1,$2,$3,$4,$5,1,current_date,0,$6,'Active') on conflict (tenant_id,mapping_id,version_number) do nothing", ct, tenant.Value, entity.Value, Guid.CreateVersion7(), mappingId, configurationId, accountId);
+    private static async Task EnsureMappingVersionAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, Guid configurationId, Guid mappingId, Guid accountId, CancellationToken ct) => await ExecuteAsync(context, "insert into finance_ledger.account_mapping_version (tenant_id,legal_entity_id,id,mapping_id,accounting_configuration_version_id,version_number,effective_from,specificity_rank,target_account_id,status) values ($1,$2,$3,$4,$5,1,(select effective_from from finance_ledger.accounting_configuration_version where tenant_id=$1 and legal_entity_id=$2 and id=$5),0,$6,'Active') on conflict (tenant_id,mapping_id,version_number) do nothing", ct, tenant.Value, entity.Value, Guid.CreateVersion7(), mappingId, configurationId, accountId);
 
     private async Task EnsureSimplePostingRuleAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, string factType, string code, CancellationToken ct)
     {
@@ -316,7 +325,8 @@ public sealed class LedgerSetupRepository(
         ("inventory", AccountingFactTypes.InventoryReceiptValued), ("inventory", AccountingFactTypes.InventoryIssueValued), ("inventory", AccountingFactTypes.InventoryCostAdjustment), ("inventory", AccountingFactTypes.InventoryValuationReversal),
         ("payroll", AccountingFactTypes.PayrollPosted), ("expenses", AccountingFactTypes.ExpenseRecognized), ("tax", AccountingFactTypes.TaxAdjustment),
         ("subledger", AccountingFactTypes.SettlementFxDifference), ("subledger", AccountingFactTypes.SettlementWriteOff), ("expenses", AccountingFactTypes.SettlementWriteOff),
-        ("accounting", AccountingFactTypes.UnrealizedFxRevaluation)
+        ("accounting", AccountingFactTypes.UnrealizedFxRevaluation),
+        ("banking", AccountingFactTypes.BankOriginatedFinancialEventApproved)
     ];
 
     private async Task EnsureProducerRegistrationAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, (string Module, string FactType) producer, CancellationToken ct) => await ExecuteAsync(context, "insert into finance_ledger.fact_producer_registration (tenant_id,legal_entity_id,id,producer_module,fact_type,fact_version,status,registered_at) values ($1,$2,$3,$4,$5,1,'Active',$6) on conflict (tenant_id,legal_entity_id,producer_module,fact_type,fact_version) do nothing", ct, tenant.Value, entity.Value, Guid.CreateVersion7(), producer.Module, producer.FactType, clock.GetUtcNow());

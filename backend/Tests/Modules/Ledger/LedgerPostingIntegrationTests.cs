@@ -40,4 +40,30 @@ public sealed class LedgerPostingIntegrationTests
         await using var outbox = new NpgsqlCommand("select count(*) from platform.outbox_message where tenant_id=$1 and message_type='JournalEntryPostedV1' and payload->>'entryNumber'=$2", connection); outbox.Parameters.AddWithValue(tenant.Value); outbox.Parameters.AddWithValue(first.EntryNumber); Assert.Equal(1L, (long)(await outbox.ExecuteScalarAsync())!);
         await using var mutation = new NpgsqlCommand("update finance_ledger.journal_entry set description='tampered' where tenant_id=$1 and id=$2", connection); mutation.Parameters.AddWithValue(tenant.Value); mutation.Parameters.AddWithValue(first.JournalEntryId); var exception = await Assert.ThrowsAsync<PostgresException>(() => mutation.ExecuteNonQueryAsync()); Assert.Equal("55000", exception.SqlState);
     }
+    [Fact]
+    public async Task BankOriginatedFeeUsesSemanticMappingsAndIsIdempotent()
+    {
+        var connectionString = LedgerTestSupport.RequireConnection();
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var repository = LedgerTestSupport.CreateRepository(dataSource);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var key = Guid.NewGuid().ToString("N");
+        var payload = new BankOriginatedFinancialEventPayload("BankFee", "Debit", 12.50m, "EGP", "treasury-account-acceptance");
+        var fact = new AccountingFactEnvelope<IAccountingFactPayload>(Guid.CreateVersion7(), LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity,
+            AccountingFactTypes.BankOriginatedFinancialEventApproved, 1, "banking", $"bank-originated:{key}", $"bank-originated:{key}",
+            new(2026, 1, 16), new(2026, 1, 16), payload, Guid.CreateVersion7(), Guid.CreateVersion7());
+        var first = await coordinator.ExecuteAsync(LedgerTestSupport.AtlasTenant, (context, ct) => repository.PostBankOriginatedInTransactionAsync(context, fact, payload, ct));
+        var second = await coordinator.ExecuteAsync(LedgerTestSupport.AtlasTenant, (context, ct) => repository.PostBankOriginatedInTransactionAsync(context, fact, payload, ct));
+        Assert.False(first.AlreadyPosted);
+        Assert.True(second.AlreadyPosted);
+
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await LedgerTestSupport.SetTenantAsync(connection, LedgerTestSupport.AtlasTenant);
+        await using var command = new NpgsqlCommand("select count(*),coalesce(sum(debit),0),coalesce(sum(credit),0) from finance_ledger.journal_entry_line where tenant_id=$1 and journal_entry_id=$2", connection);
+        command.Parameters.AddWithValue(LedgerTestSupport.AtlasTenant.Value); command.Parameters.AddWithValue(first.JournalEntryId);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(2L, reader.GetInt64(0));
+        Assert.Equal(reader.GetDecimal(1), reader.GetDecimal(2));
+    }
 }

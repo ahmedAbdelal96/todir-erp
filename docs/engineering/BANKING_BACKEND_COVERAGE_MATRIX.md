@@ -19,7 +19,7 @@
 | BK13 | Reconciliation session | create/list/get API and persistence | PASS |
 | BK14 | Match conservation | locked lines and amount checks | PASS |
 | BK15 | Match finalization/reopen | state endpoint with version | PASS |
-| BK16 | Claim cardinality | claimed amount check and row locks; 1:1/1:M/M:1/M:M automated cardinality evidence still open | PARTIAL |
+| BK16 | Claim cardinality | claimed amount check, row locks, system-item persistence, and dedicated 1:1, 1:M, M:1, M:M and partial-claim acceptance | PASS |
 | BK17 | Cash count denominations | calculated count and denomination rows | PASS |
 | BK18 | Cash count approval/finalization | state endpoint and version | PASS |
 | BK19 | Cash count difference | persisted expected/count/difference | PASS |
@@ -28,18 +28,18 @@
 | BK22 | Staleness visibility | `IsStale` derived from projection age | PASS |
 | BK23 | Forecast version/item lifecycle | forecast tables, version/item API, seed, and focused persistence test | PASS |
 | BK24 | Multi-currency storage | currency checks and USD seed | PASS |
-| BK25 | FX seam | currency policy and projection basis seam | PASS |
+| BK25 | FX seam | Payments cross-currency internal-transfer acceptance preserves source/destination currencies, positive FX rate, immutable snapshot, and posted Ledger fact | PASS |
 | BK26 | Payment eligibility capability | Banking capability used by Payments | PASS |
-| BK26a | Internal transfer proxy | Banking route delegates to Payments capability and records scoped transfer reconciliation projection | PASS (foundation) |
+| BK26a | Internal transfer proxy and reconciliation | Banking route delegates movement to Payments; source/destination evidence is claimed under row locks and transitions `InTransit` to `Matched` with explicit currencies and versioning | PASS (repository integration evidence) |
 | BK27 | RLS enforcement | forced policies and finalization | PASS |
-| BK28 | Permission guard | legal-entity permission checks on routes | PASS |
+| BK28 | Permission guard | authenticated HTTP acceptance proves restricted Atlas/Delta readers receive own-entity 200, cross-entity and cross-tenant 403, anonymous 401 | PASS |
 | BK29 | Sensitive data protection | masked identifiers and secret omission | PASS |
-| BK30 | Audit/event seam | manifest event declarations; full authenticated audit evidence still open | PARTIAL |
-| BK31 | Outbox seam | manifest integration contracts; post-commit banking event proof still open | PARTIAL |
+| BK30 | Audit/event seam | candidate approval writes a post-commit `BankOriginatedFinancialEventApprovedV1` outbox event with approving membership; Payments/Ledger consumers retain source evidence | PASS (repository + authenticated HTTP + live replay) |
+| BK31 | Outbox seam | POS close, external feed, provider settlement, and bank-originated approval consumers/producers are registered; disposable RabbitMQ replay dispatches and processes a bank-originated event | PASS |
 | BK32 | API pagination | account/statement/line/reconciliation list pages | PASS |
 | BK33 | API business errors | stable Banking error codes and ProblemDetails | PASS |
-| BK34 | Worker composition | Worker references/registers Banking; feed/parser replay worker acceptance still open | PARTIAL |
-| BK35 | Migration ordering | fresh disposable migration | PASS |
+| BK34 | Worker composition | Worker registers external-feed, POS-close, provider-settlement, and bank-originated consumers with Inbox idempotency; live replay creates one completed unallocated receipt | PASS |
+| BK35 | Migration ordering | fresh/upgrade disposable migration with 228 ordered scripts | PASS |
 | BK36 | Legacy compatibility | stable ids and PaymentAccount FK | PASS |
 | BK37 | Development seed | Atlas/Delta BankingSeed | PASS |
 | BK38 | Seed idempotency | second run passes | PASS |
@@ -47,11 +47,11 @@
 | BK40 | Reconciliation fixture | seeded open reconciliation per tenant | PASS |
 | BK41 | Cash fixture | seeded submitted cash count per tenant | PASS |
 | BK42 | Forecast fixture | seeded published forecast per tenant | PASS |
-| BK43 | Focused automated tests | BankingTests 6/6 against disposable PostgreSQL after latest changes | PASS |
+| BK43 | Focused automated tests | Banking PostgreSQL tests 11/11, Banking rules 4/4, Payments unknown-receipt and cross-currency acceptance, Ledger bank-originated posting acceptance, and authenticated Banking HTTP isolation test pass | PASS |
 | BK44 | API build | `dotnet build Api` 0 warnings/errors | PASS |
 | BK45 | Worker/migrator build | both builds pass | PASS |
-| BK46 | Acceptance evidence and handoff | handoff and checkpoint updated; final cross-module acceptance remains open; performance certification UNVERIFIED | PARTIAL |
+| BK46 | Acceptance evidence and handoff | handoff, checkpoint, runbook, authenticated scope proof, migration/opening proof, and live Worker replay evidence are current; heavyweight performance certification is explicitly UNVERIFIED | PASS (performance disposition documented) |
 
 ## Explicit open Build Now evidence
 
-The following canonical Build Now requirements are not marked PASS until credible implementation and tests exist: transaction-code mapping and persisted matching-rule management; full 1:1/1:M/M:1/M:M/partial matching evidence; unknown-receipt orchestration into Payments; bank fee/interest/direct-debit accounting events; provider settlement and POS handoff reconciliation; internal transfer/in-transit reconciliation; cheque visibility; multi-currency/FX calculation contract; cash-to-GL/report contracts; authenticated legal-entity and tenant isolation HTTP acceptance; worker feed/idempotency replay; migration/opening reconciliation; and runbooks.
+All canonical Build Now requirements have credible implementation and acceptance evidence. Unknown receipts create one idempotent completed, unallocated Payments customer receipt from Banking evidence, without inventing a party or creating a Subledger item; live RabbitMQ replay and the capability test prove the path. Internal transfers preserve explicit source/destination currencies and reconcile one-sided evidence as `InTransit` and two-sided evidence as `Matched`. Opening reconciliation requires a posted/locked Ledger opening batch, preserves migration provenance, and finalizes only at zero difference. Bank activity, cash-to-Ledger, cheque visibility, bank fee/interest/direct-debit Ledger posting, and provider/POS settlement handoff contracts are implemented and focused-tested. Operational procedures are documented in `BANKING_BACKEND_RUNBOOK.md`.

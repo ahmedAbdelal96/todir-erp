@@ -195,8 +195,8 @@ public static class ServiceModuleExtensions
     private static bool HasDispatchPrivilege(AuthorizationSubject subject, TenantId tenant, Guid? legalEntityId, IPermissionAuthorizer authorizer, Guid? claimLegalEntityId = null)
     {
         var entityId = legalEntityId ?? claimLegalEntityId;
-        var scope = entityId.HasValue 
-            ? PermissionScope.ForLegalEntity(tenant, new LegalEntityId(entityId.Value)) 
+        var scope = entityId.HasValue
+            ? PermissionScope.ForLegalEntity(tenant, new LegalEntityId(entityId.Value))
             : PermissionScope.ForTenant(tenant);
         return authorizer.Authorize(subject, "service.dispatch.manage", scope) ||
                authorizer.Authorize(subject, "service.work.schedule", scope) ||

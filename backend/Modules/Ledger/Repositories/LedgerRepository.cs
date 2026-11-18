@@ -1084,6 +1084,62 @@ public sealed class LedgerRepository(
             new ExplicitLedgerPostingPayload(journal, "Anonymous POS walk-in cash sale", baseCurrency, lines), payload, configuration, ct);
     }
 
+    public async Task<LedgerPostingResult> PostBankOriginatedInTransactionAsync(
+        ITransactionContext context,
+        AccountingFactEnvelope<IAccountingFactPayload> fact,
+        BankOriginatedFinancialEventPayload payload,
+        CancellationToken ct)
+    {
+        if (fact.SourceModule != "banking" || fact.FactType != AccountingFactTypes.BankOriginatedFinancialEventApproved || fact.FactVersion != 1
+            || payload.Amount <= 0m || string.IsNullOrWhiteSpace(payload.TreasuryAccountReference)
+            || payload.CurrencyCode.Trim().Length != 3
+            || payload.EventType is not ("BankFee" or "InterestIncome" or "InterestCharge" or "DirectDebit")
+            || payload.Direction is not ("Credit" or "Debit"))
+            throw new LedgerDomainException("ledger.bank_originated_fact_invalid", "The bank-originated financial event is not valid or is not ready for Ledger posting.");
+        var expectedDirection = payload.EventType == "InterestIncome" ? "Credit" : "Debit";
+        if (payload.Direction != expectedDirection)
+            throw new LedgerDomainException("ledger.bank_originated_direction_invalid", "The bank-originated event direction does not match its financial classification.");
+        if (!await IsRegisteredProducerAsync(context, fact, ct))
+            throw new LedgerDomainException("ledger.fact_producer_unregistered", "Banking is not registered for bank-originated financial events.");
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct)
+            ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+        var currency = payload.CurrencyCode.Trim().ToUpperInvariant();
+        var factBaseCurrency = payload.BaseCurrencyCode?.Trim().ToUpperInvariant() ?? currency;
+        var baseAmount = payload.BaseAmount ?? payload.Amount;
+        if (factBaseCurrency != baseCurrency || baseAmount <= 0m
+            || currency == baseCurrency && baseAmount != payload.Amount
+            || currency != baseCurrency && (payload.BaseAmount is null || string.IsNullOrWhiteSpace(payload.ExchangeRateReference)))
+            throw new LedgerDomainException("ledger.currency_mismatch", "The bank-originated event is missing an immutable base-currency snapshot.");
+        var configuration = await ResolveConfigurationAsync(context, fact.PostingDate, fact.TenantId.Value, fact.LegalEntityId.Value, ct);
+        var cash = await ResolveSemanticAccountIdAsync(context, fact, configuration, "Cash", ct);
+        var counterpartRole = payload.EventType switch
+        {
+            "BankFee" => "BankFees",
+            "InterestIncome" => "BankInterestIncome",
+            "InterestCharge" => "BankInterestExpense",
+            "DirectDebit" => "DirectDebitExpense",
+            _ => throw new LedgerDomainException("ledger.bank_originated_event_unsupported", "This bank-originated event is not postable.")
+        };
+        var counterpart = await ResolveSemanticAccountIdAsync(context, fact, configuration, counterpartRole, ct);
+        var journal = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='GENERAL' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value)
+            ?? throw new LedgerDomainException("ledger.journal_missing", "The General journal is not configured.");
+        var rate = baseAmount / payload.Amount;
+        var description = $"Bank-originated {payload.EventType}";
+        var lines = payload.EventType == "InterestIncome"
+            ? new[]
+            {
+                new LedgerPostingLinePayload(cash, baseAmount, 0m, currency, payload.Amount, 0m, baseAmount, 0m, rate, [], "Treasury account movement", payload.TreasuryAccountReference),
+                new LedgerPostingLinePayload(counterpart, 0m, baseAmount, currency, 0m, payload.Amount, 0m, baseAmount, rate, [], description, null)
+            }
+            : new[]
+            {
+                new LedgerPostingLinePayload(counterpart, baseAmount, 0m, currency, payload.Amount, 0m, baseAmount, 0m, rate, [], description, null),
+                new LedgerPostingLinePayload(cash, 0m, baseAmount, currency, 0m, payload.Amount, 0m, baseAmount, rate, [], "Treasury account movement", payload.TreasuryAccountReference)
+            };
+        return await PostSemanticExplicitInTransactionAsync(context, fact,
+            new ExplicitLedgerPostingPayload(journal, description, baseCurrency, lines), payload, configuration, ct);
+    }
+
     public async Task<LedgerPostingResult> PostPaymentFeeInTransactionAsync(ITransactionContext context,
         AccountingFactEnvelope<IAccountingFactPayload> fact, PaymentFeeFactPayload payload, CancellationToken ct)
     {

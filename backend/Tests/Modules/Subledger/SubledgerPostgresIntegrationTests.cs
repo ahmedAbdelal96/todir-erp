@@ -2246,6 +2246,9 @@ public sealed class SubledgerPostgresIntegrationTests
 
         public Task<LedgerPostingResult> PostPosCashSaleAsync(Core.Transactions.ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
             PosCashSalePostingPayload payload, CancellationToken cancellationToken = default) => Task.FromException<LedgerPostingResult>(new InvalidOperationException("Injected Ledger failure."));
+
+        public Task<LedgerPostingResult> PostBankOriginatedAsync(Core.Transactions.ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact,
+            BankOriginatedFinancialEventPayload payload, CancellationToken cancellationToken = default) => Task.FromException<LedgerPostingResult>(new InvalidOperationException("Injected Ledger failure."));
     }
 
     private static async Task<Guid> CreateAsync(SubledgerRepository repository, Guid partyId, string sourceType, string polarity, string reference, decimal amount,

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Shared.Contracts.Banking;
+using Shared.Contracts.POS;
 
 namespace Modules.Banking.Entities;
 
@@ -46,4 +47,35 @@ public sealed record ReconciliationSuggestionDto(Guid StatementLineId, decimal A
 public sealed record BankOriginatedCandidateDto(Guid Id, Guid StatementLineId, string EventType, string Status, decimal Amount, string CurrencyCode, JsonElement Evidence, DateTimeOffset ProposedAt, Guid? ReviewedBy, DateTimeOffset? ReviewedAt);
 public sealed record TransactionCodeMappingDto(Guid Id, string TransactionCode, string Classification, DateOnly EffectiveFrom, DateOnly? EffectiveTo, int Version);
 public sealed record ReconciliationRuleSetDto(Guid Id, string Name, string Status, long Version, int RuleVersion);
-public sealed record TransferDto(Guid TransferId, string State, decimal SourceAmount, string SourceCurrencyCode, decimal DestinationAmount, string DestinationCurrencyCode, DateTimeOffset CompletedAt);
+public sealed record TransferDto(Guid TransferId, string State, decimal SourceAmount, string SourceCurrencyCode, decimal DestinationAmount, string DestinationCurrencyCode, DateTimeOffset CompletedAt, string BaseCurrencyCode, string? FxSnapshot);
+public sealed record TransferReconciliationDto(Guid Id, string TransferReference, Guid SourceAccountId, Guid DestinationAccountId,
+    string State, decimal SourceAmount, string? SourceCurrencyCode, decimal DestinationAmount, string? DestinationCurrencyCode,
+    string? BaseCurrencyCode, string? FxSnapshot, decimal InTransitAmount, string? SourceEvidence, string? DestinationEvidence, long Version, DateTimeOffset UpdatedAt);
+public sealed record TransferReconciliationPage(IReadOnlyList<TransferReconciliationDto> Items, int Page, int PageSize, bool HasMore, int TotalCount);
+public sealed record OpeningReconciliationDto(Guid Id, Guid TreasuryAccountId, Guid LedgerOpeningBatchId, DateOnly OpeningAsOfDate,
+    string CurrencyCode, decimal BookOpeningBalance, decimal ExternalOpeningBalance, decimal OutstandingInTransitAmount,
+    decimal Difference, string SourceSystem, string? LegacyAccountId, string BatchId, string Status, long Version,
+    DateTimeOffset CreatedAt, DateTimeOffset? FinalizedAt);
+public sealed record OpeningReconciliationPage(IReadOnlyList<OpeningReconciliationDto> Items, int Page, int PageSize, bool HasMore, int TotalCount);
+public sealed record ExternalFeedTransactionDto(Guid Id, Guid TreasuryAccountId, string SourceType, string ExternalTransactionId,
+    string ContentHash, DateOnly BookingDate, string Direction, decimal Amount, string CurrencyCode, string Status,
+    string IdempotencyKey, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record PosCashSettlementDto(Guid Id, Guid PosSessionId, Guid RegisterId, Guid BranchId, DateOnly BusinessDate,
+    string CurrencyCode, decimal ExpectedCash, decimal CountedCash, decimal Variance, string Status, Guid? TreasuryAccountId, long Version,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record PosCashSettlementPage(IReadOnlyList<PosCashSettlementDto> Items, int Page, int PageSize, bool HasMore, int TotalCount);
+public sealed record ProviderSettlementDto(Guid Id, Guid SettlementAccountId, string ProviderCode, string ProviderReference,
+    DateOnly PeriodFrom, DateOnly PeriodTo, string CurrencyCode, decimal GrossAmount, decimal FeesAmount, decimal AdjustmentsAmount,
+    decimal NetPayoutAmount, string ExternalReference, string Status, Guid? StatementLineId, long Version, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record ProviderSettlementPage(IReadOnlyList<ProviderSettlementDto> Items, int Page, int PageSize, bool HasMore, int TotalCount);
+public sealed record BankActivityDto(Guid StatementLineId, Guid StatementId, Guid TreasuryAccountId, DateOnly BookingDate,
+    string Direction, decimal Amount, string CurrencyCode, string? Reference, string? TransactionCode,
+    string Classification, decimal ClaimedAmount, decimal RemainingAmount, long Version);
+public sealed record BankActivityPage(IReadOnlyList<BankActivityDto> Items, int Page, int PageSize, bool HasMore, int TotalCount);
+public sealed record CashToLedgerReportDto(Guid LegalEntityId, string BaseCurrencyCode, decimal BankingBookBalance,
+    decimal LedgerCashBalance, decimal Difference, decimal ExternalReportedBalance, decimal InTransitAmount,
+    DateTimeOffset AsOf, string LedgerBasis, bool IsBalanced);
+public sealed record ChequeInTransitDto(Guid PaymentId, Guid LegalEntityId, string PaymentNumber, string Direction,
+    decimal Amount, string CurrencyCode, Guid PaymentAccountId, DateOnly PaymentDate, string State,
+    string? BankReference, string? SourceReference);
+public sealed record ChequeInTransitPage(IReadOnlyList<ChequeInTransitDto> Items, int Page, int PageSize, bool HasMore, int TotalCount);

@@ -13,6 +13,7 @@ using Shared.Contracts.Payments;
 using Shared.Contracts.Invoicing;
 using Shared.Contracts.Subledger;
 using Shared.Contracts.Ledger;
+using Shared.Contracts.POS;
 using Todir.Sales.Contracts;
 
 namespace Modules.POS;
@@ -239,6 +240,19 @@ public sealed class PosService(ITransactionCoordinator coordinator, NpgsqlDataSo
             await using var reader = await command.ExecuteReaderAsync(token); if (!await reader.ReadAsync(token)) throw new InvalidOperationException("pos.session_not_open");
             var response = new SessionResponse(sessionId, reader.GetGuid(0), reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.GetFieldValue<DateOnly>(2), reader.GetString(4), reader.GetDecimal(3), reader.IsDBNull(5) ? null : reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetDecimal(6));
             await reader.CloseAsync();
+            if (string.Equals(response.Status, "Closed", StringComparison.Ordinal))
+            {
+                await using var register = new NpgsqlCommand("select legal_entity_id,branch_id,currency_code from business_pos.pos_register where tenant_id=$1 and id=$2", ctx.Connection, ctx.Transaction);
+                register.Parameters.AddWithValue(tenant.Value); register.Parameters.AddWithValue(response.RegisterId);
+                await using var registerReader = await register.ExecuteReaderAsync(token);
+                if (!await registerReader.ReadAsync(token)) throw new InvalidOperationException("pos.register_not_found");
+                var legalEntityId = registerReader.GetGuid(0);
+                var branchId = registerReader.IsDBNull(1) ? (Guid?)null : registerReader.GetGuid(1);
+                var currencyCode = registerReader.GetString(2).Trim().ToUpperInvariant();
+                await registerReader.CloseAsync();
+                var now = DateTimeOffset.UtcNow;
+                ctx.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "PosSessionClosedV1", JsonSerializer.Serialize(new PosSessionClosedV1(legalEntityId, response.RegisterId, branchId, response.Id, response.BusinessDate, currencyCode, expectedCash, response.CountedCash ?? 0m, response.Variance ?? 0m)), tenant, now, response.Id, response.Id, "pos", System.Diagnostics.Activity.Current?.Id));
+            }
             return response;
         }, ct);
     }

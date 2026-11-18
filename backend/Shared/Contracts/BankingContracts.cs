@@ -24,9 +24,52 @@ public sealed record TreasuryAccountCreateRequest(Guid LegalEntityId, Guid? Bran
 public sealed record InternalTransferCapabilityRequest(Guid LegalEntityId, Guid SourceTreasuryAccountId, Guid DestinationTreasuryAccountId,
     decimal Amount, string CurrencyCode, DateOnly PaymentDate, DateOnly PostingDate, DateOnly? ValueDate, string? Reference, string IdempotencyKey);
 public sealed record InternalTransferCapabilityResult(Guid TransferId, string State, decimal SourceAmount, string SourceCurrencyCode,
-    decimal DestinationAmount, string DestinationCurrencyCode, DateTimeOffset CompletedAt);
+    decimal DestinationAmount, string DestinationCurrencyCode, DateTimeOffset CompletedAt, string BaseCurrencyCode, string? FxSnapshot);
 public interface IInternalTransferCapability
 {
     Task<InternalTransferCapabilityResult> CreateAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid correlationId,
         InternalTransferCapabilityRequest request, CancellationToken cancellationToken = default);
 }
+
+/// <summary>Canonical event emitted by a bank connector after it has received a provider feed transaction.</summary>
+public sealed record ExternalFeedTransactionReceivedV1(
+    Guid LegalEntityId,
+    Guid TreasuryAccountId,
+    string SourceType,
+    string ExternalTransactionId,
+    string ContentHash,
+    DateOnly BookingDate,
+    string Direction,
+    decimal Amount,
+    string CurrencyCode,
+    string IdempotencyKey,
+    string RawPayload);
+
+/// <summary>Provider settlement evidence; it is not a customer payment.</summary>
+public sealed record ProviderSettlementImportedV1(
+    Guid LegalEntityId,
+    Guid SettlementAccountId,
+    string ProviderCode,
+    string ProviderReference,
+    DateOnly PeriodFrom,
+    DateOnly PeriodTo,
+    string CurrencyCode,
+    decimal GrossAmount,
+    decimal FeesAmount,
+    decimal AdjustmentsAmount,
+    decimal NetPayoutAmount,
+    string ExternalReference);
+
+public sealed record BankOriginatedFinancialEventApprovedV1(
+    Guid LegalEntityId,
+    Guid CandidateId,
+    Guid StatementLineId,
+    Guid TreasuryAccountId,
+    Guid ActorId,
+    string EventType,
+    string Direction,
+    decimal Amount,
+    string CurrencyCode,
+    DateOnly BookingDate,
+    string EvidenceJson,
+    Guid? MembershipId = null);

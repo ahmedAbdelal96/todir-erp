@@ -1,12 +1,16 @@
 using Modules.Banking.DTOs;
 using Modules.Banking.Entities;
 using Modules.Banking.Repositories;
+using Microsoft.Extensions.DependencyInjection;
+using Shared.Contracts.Accounting;
 using Shared.Contracts.Banking;
+using Shared.Contracts.Ledger;
+using Shared.Contracts.Payments;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Banking.Services;
 
-public sealed class BankingService(BankingRepository repository, IInternalTransferCapability transfers) : IBankingTreasuryAccountCapability
+public sealed class BankingService(BankingRepository repository, ILedgerControlBalanceRead ledger, ILedgerAccountingWorkspaceCapabilities ledgerWorkspace, IServiceProvider services) : IBankingTreasuryAccountCapability
 {
     public Task<TreasuryAccountPage> ListAccountsAsync(TenantId tenant, Guid legalEntityId, string? search, TreasuryAccountType? type, TreasuryAccountStatus? status, int page, int pageSize, CancellationToken ct) => repository.ListAccountsAsync(tenant, legalEntityId, search, type, status, page, pageSize, ct);
     public Task<TreasuryAccountDto?> GetAccountAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct) => repository.GetAccountAsync(tenant, legalEntityId, id, ct);
@@ -51,21 +55,58 @@ public sealed class BankingService(BankingRepository repository, IInternalTransf
     public Task<ConnectionDto> CreateConnectionAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid accountId, CreateConnectionRequest request, CancellationToken ct) => repository.CreateConnectionAsync(tenant, actorId, legalEntityId, accountId, request, ct);
     public Task<ConnectionDto> ChangeConnectionStateAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, string target, long version, CancellationToken ct) => repository.ChangeConnectionStateAsync(tenant, actorId, legalEntityId, id, target, version, ct);
     public Task<BankOriginatedCandidateDto> CreatePaymentProposalAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid lineId, CreatePaymentProposalRequest request, CancellationToken ct) => repository.CreatePaymentProposalAsync(tenant, actorId, legalEntityId, lineId, request, ct);
-    public Task<BankOriginatedCandidateDto> DecideBankOriginatedCandidateAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, BankOriginatedDecisionRequest request, CancellationToken ct) => repository.DecideBankOriginatedCandidateAsync(tenant, actorId, legalEntityId, id, request, ct);
+    public Task<BankOriginatedCandidateDto> DecideBankOriginatedCandidateAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid legalEntityId, Guid id, BankOriginatedDecisionRequest request, CancellationToken ct) => repository.DecideBankOriginatedCandidateAsync(tenant, actorId, membershipId, legalEntityId, id, request, ct);
+    public Task<ExternalFeedTransactionDto> RecordExternalFeedTransactionAsync(TenantId tenant, ExternalFeedTransactionReceivedV1 request, CancellationToken ct) => repository.RecordExternalFeedTransactionAsync(tenant, request, ct);
     public Task<TransactionCodeMappingDto> CreateTransactionCodeMappingAsync(TenantId tenant, Guid actorId, Guid legalEntityId, CreateTransactionCodeMappingRequest request, CancellationToken ct) => repository.CreateTransactionCodeMappingAsync(tenant, actorId, legalEntityId, request, ct);
     public Task<IReadOnlyList<TransactionCodeMappingDto>> ListTransactionCodeMappingsAsync(TenantId tenant, Guid legalEntityId, CancellationToken ct) => repository.ListTransactionCodeMappingsAsync(tenant, legalEntityId, ct);
     public Task<ReconciliationRuleSetDto> CreateReconciliationRuleSetAsync(TenantId tenant, Guid actorId, Guid legalEntityId, CreateReconciliationRuleSetRequest request, CancellationToken ct) => repository.CreateReconciliationRuleSetAsync(tenant, actorId, legalEntityId, request, ct);
+    public Task<PosCashSettlementPage> ListPosCashSettlementsAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, string? status, CancellationToken ct) => repository.ListPosCashSettlementsAsync(tenant, legalEntityId, page, pageSize, status, ct);
+    public Task<PosCashSettlementDto> ConfirmPosCashSettlementAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, ConfirmPosCashSettlementRequest request, CancellationToken ct) => repository.ConfirmPosCashSettlementAsync(tenant, actorId, legalEntityId, id, request, ct);
+    public Task<ProviderSettlementPage> ListProviderSettlementsAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, string? status, CancellationToken ct) => repository.ListProviderSettlementsAsync(tenant, legalEntityId, page, pageSize, status, ct);
+    public Task<ProviderSettlementDto> MatchProviderSettlementAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, MatchProviderSettlementRequest request, CancellationToken ct) => repository.MatchProviderSettlementAsync(tenant, actorId, legalEntityId, id, request, ct);
+    public Task<BankActivityPage> ListBankActivityAsync(TenantId tenant, Guid legalEntityId, Guid? treasuryAccountId, string? classification, string? direction, DateOnly? fromDate, DateOnly? toDate, int page, int pageSize, CancellationToken ct) => repository.ListBankActivityAsync(tenant, legalEntityId, treasuryAccountId, classification, direction, fromDate, toDate, page, pageSize, ct);
+    public async Task<CashToLedgerReportDto> GetCashToLedgerReportAsync(TenantId tenant, Guid legalEntityId, DateOnly asOfDate, CancellationToken ct)
+    {
+        var ledgerBalance = await ledger.GetActiveControlBalanceAsync(tenant, new(legalEntityId), "Cash", asOfDate, ct);
+        var banking = await repository.GetCashToLedgerBaseBalanceAsync(tenant, legalEntityId, ledgerBalance.BaseCurrencyCode, ct);
+        var difference = banking.BookBalance - ledgerBalance.SignedBaseBalance;
+        return new(legalEntityId, ledgerBalance.BaseCurrencyCode, banking.BookBalance, ledgerBalance.SignedBaseBalance, difference,
+            banking.ExternalBalance, banking.InTransitAmount, banking.AsOf, $"Ledger control role {ledgerBalance.ControlRole}; projection basis {banking.BalanceBasis}", difference == 0m);
+    }
+    public async Task<Modules.Banking.Entities.ChequeInTransitPage> ListChequeInTransitAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, CancellationToken ct)
+    {
+        var result = await services.GetRequiredService<IPaymentChequeReadCapability>().ListChequeInTransitAsync(tenant, legalEntityId, page, pageSize, ct);
+        return new(result.Items.Select(item => new ChequeInTransitDto(item.PaymentId, item.LegalEntityId, item.PaymentNumber, item.Direction, item.Amount, item.CurrencyCode, item.PaymentAccountId, item.PaymentDate, item.State, item.BankReference, item.SourceReference)).ToArray(), result.Page, result.PageSize, result.HasMore, result.TotalCount);
+    }
     public async Task<TransferDto> CreateTransferAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid correlationId, CreateTransferRequest request, string idempotencyKey, CancellationToken ct)
     {
         if (request.SourceTreasuryAccountId == request.DestinationTreasuryAccountId || request.Amount <= 0 || string.IsNullOrWhiteSpace(idempotencyKey)) throw new BankingException("banking.transfer_invalid", "Transfers require two accounts, a positive amount, and an idempotency key.");
         try
         {
-            var result = await transfers.CreateAsync(tenant, actorId, membershipId, correlationId, new(request.LegalEntityId, request.SourceTreasuryAccountId, request.DestinationTreasuryAccountId, request.Amount, request.CurrencyCode, request.PaymentDate, request.PostingDate, request.ValueDate, request.Reference, idempotencyKey), ct);
-            await repository.RecordTransferProjectionAsync(tenant, request.LegalEntityId, result.TransferId, request.SourceTreasuryAccountId, request.DestinationTreasuryAccountId, result.SourceAmount, result.DestinationAmount, result.SourceCurrencyCode, result.DestinationCurrencyCode, result.State, ct);
-            return new(result.TransferId, result.State, result.SourceAmount, result.SourceCurrencyCode, result.DestinationAmount, result.DestinationCurrencyCode, result.CompletedAt);
+            var result = await services.GetRequiredService<IInternalTransferCapability>().CreateAsync(tenant, actorId, membershipId, correlationId, new(request.LegalEntityId, request.SourceTreasuryAccountId, request.DestinationTreasuryAccountId, request.Amount, request.CurrencyCode, request.PaymentDate, request.PostingDate, request.ValueDate, request.Reference, idempotencyKey), ct);
+            await repository.RecordTransferProjectionAsync(tenant, request.LegalEntityId, result.TransferId, request.SourceTreasuryAccountId, request.DestinationTreasuryAccountId, result.SourceAmount, result.DestinationAmount, result.SourceCurrencyCode, result.DestinationCurrencyCode, result.State, result.BaseCurrencyCode, result.FxSnapshot, ct);
+            return new(result.TransferId, result.State, result.SourceAmount, result.SourceCurrencyCode, result.DestinationAmount, result.DestinationCurrencyCode, result.CompletedAt, result.BaseCurrencyCode, result.FxSnapshot);
         }
-        catch (Exception ex) when (ex is not BankingException) { throw new BankingException("banking.transfer_failed", "The transfer could not be created by Payments.", ex); }
+        catch (Exception ex) when (ex is not BankingException and not OperationCanceledException) { throw new BankingException("banking.transfer_failed", "The transfer could not be created by Payments.", ex); }
     }
+    public Task<TransferReconciliationPage> ListTransferReconciliationsAsync(TenantId tenant, Guid legalEntityId, Guid? accountId, string? state, int page, int pageSize, CancellationToken ct) => repository.ListTransferReconciliationsAsync(tenant, legalEntityId, accountId, state, page, pageSize, ct);
+    public Task<TransferReconciliationDto> ReconcileTransferAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, ReconcileTransferRequest request, CancellationToken ct) => repository.ReconcileTransferAsync(tenant, actorId, legalEntityId, id, request, ct);
+    public async Task<OpeningReconciliationDto> CreateOpeningReconciliationAsync(TenantId tenant, Guid actorId, CreateOpeningReconciliationRequest request, CancellationToken ct)
+    {
+        var opening = await ledgerWorkspace.GetOpeningBatchAsync(tenant, new(request.LegalEntityId), request.LedgerOpeningBatchId, ct);
+        if (opening is null || opening.Status is not ("Posted" or "Locked")) throw new BankingException("banking.opening_ledger_not_ready", "A posted Ledger opening batch is required before opening reconciliation.");
+        return await repository.CreateOpeningReconciliationAsync(tenant, actorId, request, ct);
+    }
+    public async Task<OpeningReconciliationDto> FinalizeOpeningReconciliationAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, FinalizeOpeningReconciliationRequest request, CancellationToken ct)
+    {
+        var result = await repository.GetOpeningReconciliationAsync(tenant, legalEntityId, id, ct) ?? throw new BankingException("banking.opening_not_found", "The opening reconciliation was not found.");
+        if (result.Version != request.Version) throw new BankingException("banking.opening_concurrency", "The opening reconciliation changed. Refresh and try again.");
+        if (result.Difference != 0m) throw new BankingException("banking.opening_unbalanced", "Book, external, and in-transit opening balances must reconcile before finalization.");
+        await ledgerWorkspace.LockOpeningBatchAsync(tenant, new(legalEntityId), result.LedgerOpeningBatchId, actorId, Guid.CreateVersion7(), ct);
+        return await repository.FinalizeOpeningReconciliationAsync(tenant, actorId, legalEntityId, id, request, ct);
+    }
+    public Task<OpeningReconciliationPage> ListOpeningReconciliationsAsync(TenantId tenant, Guid legalEntityId, Guid? treasuryAccountId, int page, int pageSize, CancellationToken ct) => repository.ListOpeningReconciliationsAsync(tenant, legalEntityId, treasuryAccountId, page, pageSize, ct);
+    public Task<OpeningReconciliationDto?> GetOpeningReconciliationAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct) => repository.GetOpeningReconciliationAsync(tenant, legalEntityId, id, ct);
 
     async Task<TreasuryAccountReference> IBankingTreasuryAccountCapability.CreateAsync(TenantId tenantId, Guid actorId, Guid membershipId, TreasuryAccountCreateRequest request, Guid correlationId, CancellationToken cancellationToken)
     {

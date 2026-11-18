@@ -34,6 +34,19 @@ public sealed class PaymentRulesTests
         Assert.Equal("payments.party_required", error.Code);
     }
 
+    [Fact]
+    public void BankOriginatedUnknownReceiptMayRemainUnallocatedWithoutInventingParty()
+    {
+        var payment = Valid(PaymentDirection.Incoming, PaymentType.CustomerReceipt) with
+        {
+            PartyId = null,
+            SourceType = "BankingUnknownReceipt",
+            SourceReference = "bank-statement:line-1"
+        };
+
+        PaymentRules.Validate(payment);
+    }
+
     [Theory]
     [InlineData("0")]
     [InlineData("-0.01")]

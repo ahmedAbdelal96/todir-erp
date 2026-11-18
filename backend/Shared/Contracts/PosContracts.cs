@@ -36,6 +36,10 @@ public enum PosHardwareCommandKind
 public sealed record PosHardwareCommand(PosHardwareCommandKind Kind, string Payload);
 public sealed record PosHardwareResult(string State, string? DeviceReference, string? Detail);
 
+/// <summary>Immutable POS close evidence handed to Banking; POS remains the owner of the session.</summary>
+public sealed record PosSessionClosedV1(Guid LegalEntityId, Guid RegisterId, Guid? BranchId, Guid SessionId,
+    DateOnly BusinessDate, string CurrencyCode, decimal ExpectedCash, decimal CountedCash, decimal Variance);
+
 /// <summary>
 /// Hardware adapters return device observations only; they cannot create or mutate POS domain truth.
 /// </summary>

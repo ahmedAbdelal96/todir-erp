@@ -42,6 +42,10 @@ builder.Services.AddCore(builder.Configuration, bus =>
     bus.AddConsumer<CatalogProjectionConsumer, CatalogProjectionConsumerDefinition>();
     bus.AddConsumer<CatalogImportConsumer, CatalogImportConsumerDefinition>();
     bus.AddConsumer<PaymentProviderOperationConsumer, PaymentProviderOperationConsumerDefinition>();
+    bus.AddConsumer<BankingExternalFeedConsumer, BankingExternalFeedConsumerDefinition>();
+    bus.AddConsumer<BankingPosSettlementConsumer, BankingPosSettlementConsumerDefinition>();
+    bus.AddConsumer<BankingProviderSettlementConsumer, BankingProviderSettlementConsumerDefinition>();
+    bus.AddConsumer<BankingOriginatedEventConsumer, BankingOriginatedEventConsumerDefinition>();
     bus.AddConsumer<HrMembershipDeactivationConsumer, HrMembershipDeactivationConsumerDefinition>();
     bus.AddConsumer<PayrollLedgerPostingConsumer, PayrollLedgerPostingConsumerDefinition>();
     bus.AddConsumer<PayrollPaymentRequestedConsumer, PayrollPaymentRequestedConsumerDefinition>();

@@ -4,6 +4,7 @@ using Modules.Banking.DTOs;
 using Modules.Banking.Entities;
 using Npgsql;
 using Shared.Contracts.Banking;
+using Shared.Contracts.POS;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Banking.Repositories;
@@ -168,7 +169,7 @@ public sealed class BankingRepository(NpgsqlDataSource dataSource, TimeProvider 
 
     public async Task<ReconciliationDto> AddMatchAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid sessionId, CreateMatchRequest request, CancellationToken ct)
     {
-        if (request.StatementLineIds.Count == 0 || request.ExternalAmount <= 0 || request.SystemAmount < 0 || request.Difference != request.ExternalAmount - request.SystemAmount)
+        if (request.StatementLineIds.Count == 0 || request.ExternalAmount <= 0 || request.SystemAmount < 0 || request.Difference != request.ExternalAmount - request.SystemAmount || request.SystemAmount > 0 && request.Payments.Count == 0 || request.Payments.Any(payment => payment.PaymentId == Guid.Empty || payment.Amount <= 0) || request.Payments.Sum(payment => payment.Amount) != request.SystemAmount)
             throw new BankingException("banking.match_conservation_invalid", "A match must contain statement lines and conserve the external amount.");
         await using var connection = await dataSource.OpenConnectionAsync(ct); await using var transaction = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, tenant, transaction, ct);
         await using var session = new NpgsqlCommand("select statement_id from finance_banking.reconciliation_session where tenant_id=$1 and legal_entity_id=$2 and id=$3 and state='Open' for update", connection, transaction); Add(session, tenant.Value, legalEntityId, sessionId); var sessionValue = await session.ExecuteScalarAsync(ct); var sessionStatementId = sessionValue is Guid value ? value : (Guid?)null; if (sessionStatementId is null) throw new BankingException("banking.reconciliation_not_open", "The reconciliation session is not open.");
@@ -178,13 +179,20 @@ public sealed class BankingRepository(NpgsqlDataSource dataSource, TimeProvider 
         if (lineRows.Count != lineIds.Length || lineRows.Sum(x => x.Amount - x.Claimed) < request.ExternalAmount) throw new BankingException("banking.match_exceeds_unclaimed", "The match exceeds the remaining statement amount.");
         var id = Guid.CreateVersion7(); var now = clock.GetUtcNow();
         await using var match = new NpgsqlCommand("insert into finance_banking.reconciliation_match(tenant_id,legal_entity_id,id,session_id,source,state,external_amount,system_amount,difference,explanation,created_by) values($1,$2,$3,$4,$5,'Accepted',$6,$7,$8,$9,$10)", connection, transaction); Add(match, tenant.Value, legalEntityId, id, sessionId, request.Source.Trim(), request.ExternalAmount, request.SystemAmount, request.Difference, Db(request.Explanation), actorId); await match.ExecuteNonQueryAsync(ct);
+        foreach (var payment in request.Payments)
+        {
+            await using var systemItem = new NpgsqlCommand("insert into finance_banking.reconciliation_match_system_item(tenant_id,legal_entity_id,id,match_id,system_reference,system_amount) values($1,$2,$3,$4,$5,$6)", connection, transaction);
+            Add(systemItem, tenant.Value, legalEntityId, Guid.CreateVersion7(), id, payment.PaymentId.ToString("D"), payment.Amount);
+            await systemItem.ExecuteNonQueryAsync(ct);
+        }
+        var remainingExternal = request.ExternalAmount;
         foreach (var line in lineRows)
         {
-            var allocation = Math.Min(line.Amount - line.Claimed, request.ExternalAmount);
+            var allocation = Math.Min(line.Amount - line.Claimed, remainingExternal);
             if (allocation <= 0) continue;
             await using var item = new NpgsqlCommand("insert into finance_banking.reconciliation_match_item(tenant_id,legal_entity_id,id,match_id,statement_line_id,external_amount,system_reference) values($1,$2,$3,$4,$5,$6,$7)", connection, transaction); Add(item, tenant.Value, legalEntityId, Guid.CreateVersion7(), id, line.Id, allocation, Db(request.Payments.Count > 0 ? request.Payments[0].PaymentId.ToString("D") : null)); await item.ExecuteNonQueryAsync(ct);
             await using var claim = new NpgsqlCommand("update finance_banking.external_statement_line set claimed_amount=claimed_amount+$4,classification=case when claimed_amount+$4>=amount then 'Other' else classification end,version=version+1,updated_at=$5 where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection, transaction); Add(claim, tenant.Value, legalEntityId, line.Id, allocation, now); await claim.ExecuteNonQueryAsync(ct);
-            request = request with { ExternalAmount = request.ExternalAmount - allocation }; if (request.ExternalAmount <= 0) break;
+            remainingExternal -= allocation; if (remainingExternal <= 0) break;
         }
         await transaction.CommitAsync(ct); return (await GetReconciliationAsync(tenant, legalEntityId, sessionId, ct))!;
     }
@@ -246,6 +254,22 @@ public sealed class BankingRepository(NpgsqlDataSource dataSource, TimeProvider 
         await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, tenant, ct);
         const string sql = "select a.legal_entity_id,a.id,a.code,a.name,a.account_type,coalesce(p.currency_code,a.currency_code),coalesce(p.book_balance,0),coalesce(p.external_balance,0),coalesce(p.available_balance,p.book_balance,0),coalesce(p.in_transit_amount,0),coalesce(p.balance_basis,'No projection'),coalesce(p.as_of,a.updated_at),p.external_as_of,coalesce(p.as_of,a.updated_at) < now()-interval '24 hours' from finance_banking.treasury_account a left join finance_banking.cash_position_projection p on p.tenant_id=a.tenant_id and p.legal_entity_id=a.legal_entity_id and p.treasury_account_id=a.id where a.tenant_id=$1 and a.legal_entity_id=$2 and a.status='Active' order by a.code";
         await using var command = new NpgsqlCommand(sql, connection); Add(command, tenant.Value, legalEntityId); var items = new List<CashPositionDto>(); await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) items.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), Enum.Parse<TreasuryAccountType>(reader.GetString(4)), reader.IsDBNull(5) ? "" : reader.GetString(5).Trim(), reader.GetDecimal(6), reader.GetDecimal(7), reader.GetDecimal(8), reader.GetDecimal(9), reader.GetString(10), reader.GetFieldValue<DateTimeOffset>(11), reader.IsDBNull(12) ? null : reader.GetFieldValue<DateTimeOffset>(12), reader.GetBoolean(13))); return items;
+    }
+
+    public async Task<BankActivityPage> ListBankActivityAsync(TenantId tenant, Guid legalEntityId, Guid? treasuryAccountId, string? classification, string? direction, DateOnly? fromDate, DateOnly? toDate, int page, int pageSize, CancellationToken ct)
+    {
+        page = Math.Clamp(page, 1, 100000); pageSize = Math.Clamp(pageSize, 1, 100);
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, tenant, ct);
+        const string scope = "l.tenant_id=$1 and l.legal_entity_id=$2 and ($3::uuid is null or l.treasury_account_id=$3) and ($4::text is null or l.classification=$4) and ($5::text is null or l.direction=$5) and ($6::date is null or l.booking_date >= $6) and ($7::date is null or l.booking_date <= $7)";
+        await using var count = new NpgsqlCommand($"select count(*) from finance_banking.external_statement_line l where {scope}", connection); Add(count, tenant.Value, legalEntityId, Db(treasuryAccountId), Db(classification), Db(direction), Db(fromDate), Db(toDate)); var total = Convert.ToInt32(await count.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+        await using var command = new NpgsqlCommand($"select l.id,l.statement_id,l.treasury_account_id,l.booking_date,l.direction,l.amount,l.currency_code,l.reference,l.transaction_code,l.classification,l.claimed_amount,l.amount-l.claimed_amount,l.version from finance_banking.external_statement_line l where {scope} order by l.booking_date desc,l.id desc offset $8 limit $9", connection); Add(command, tenant.Value, legalEntityId, Db(treasuryAccountId), Db(classification), Db(direction), Db(fromDate), Db(toDate), (page - 1) * pageSize, pageSize);
+        var items = new List<BankActivityDto>(); await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) items.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetFieldValue<DateOnly>(3), reader.GetString(4), reader.GetDecimal(5), reader.GetString(6).Trim(), StringValue(reader, 7), StringValue(reader, 8), reader.GetString(9), reader.GetDecimal(10), reader.GetDecimal(11), reader.GetInt64(12))); return new(items, page, pageSize, (page - 1) * pageSize + items.Count < total, total);
+    }
+
+    public async Task<(decimal BookBalance, decimal ExternalBalance, decimal InTransitAmount, DateTimeOffset AsOf, string BalanceBasis)> GetCashToLedgerBaseBalanceAsync(TenantId tenant, Guid legalEntityId, string baseCurrencyCode, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, tenant, ct);
+        await using var command = new NpgsqlCommand("select coalesce(sum(book_balance),0),coalesce(sum(external_balance),0),coalesce(sum(in_transit_amount),0),coalesce(max(as_of),now()),coalesce(max(balance_basis),'No projection') from finance_banking.cash_position_projection where tenant_id=$1 and legal_entity_id=$2 and currency_code=$3", connection); Add(command, tenant.Value, legalEntityId, baseCurrencyCode.Trim().ToUpperInvariant()); await using var reader = await command.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) return (0m, 0m, 0m, clock.GetUtcNow(), "No projection"); return (reader.GetDecimal(0), reader.GetDecimal(1), reader.GetDecimal(2), reader.GetFieldValue<DateTimeOffset>(3), reader.GetString(4));
     }
 
     public async Task<StatementDto> ValidateStatementAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid statementId, ValidateStatementRequest request, CancellationToken ct)
@@ -433,22 +457,221 @@ public sealed class BankingRepository(NpgsqlDataSource dataSource, TimeProvider 
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, tenant, ct); var evidence = request.Evidence is { } value && value.ValueKind != JsonValueKind.Undefined ? JsonSerializer.Serialize(value, JsonOptions) : "{}";
         var id = Guid.CreateVersion7(); var now = clock.GetUtcNow();
-        await using var command = new NpgsqlCommand("insert into finance_banking.bank_originated_event_candidate(tenant_id,legal_entity_id,id,statement_line_id,event_type,status,amount,currency_code,evidence,proposed_at) select tenant_id,legal_entity_id,$4,id,'UnknownReceipt','Proposed',amount,currency_code,$5::jsonb,$6 from finance_banking.external_statement_line where tenant_id=$1 and legal_entity_id=$2 and id=$3 and claimed_amount<amount on conflict (tenant_id,statement_line_id,event_type) do nothing returning id,statement_line_id,event_type,status,amount,currency_code,evidence,proposed_at,reviewed_by,reviewed_at", connection); Add(command, tenant.Value, legalEntityId, lineId, id, evidence, now);
+        await using var command = new NpgsqlCommand("insert into finance_banking.bank_originated_event_candidate(tenant_id,legal_entity_id,id,statement_line_id,event_type,status,amount,currency_code,evidence,proposed_at) select tenant_id,legal_entity_id,$4,id,case when classification='BankFee' then 'BankFee' when classification='Interest' then case when direction='Credit' then 'InterestIncome' else 'InterestCharge' end when classification='DirectDebit' then 'DirectDebit' else 'UnknownReceipt' end,'Proposed',amount,currency_code,$5::jsonb,$6 from finance_banking.external_statement_line where tenant_id=$1 and legal_entity_id=$2 and id=$3 and claimed_amount<amount on conflict (tenant_id,statement_line_id,event_type) do nothing returning id,statement_line_id,event_type,status,amount,currency_code,evidence,proposed_at,reviewed_by,reviewed_at", connection); Add(command, tenant.Value, legalEntityId, lineId, id, evidence, now);
         await using (var reader = await command.ExecuteReaderAsync(ct)) if (await reader.ReadAsync(ct)) return ReadCandidate(reader);
-        await using var existing = new NpgsqlCommand("select id,statement_line_id,event_type,status,amount,currency_code,evidence,proposed_at,reviewed_by,reviewed_at from finance_banking.bank_originated_event_candidate where tenant_id=$1 and legal_entity_id=$2 and statement_line_id=$3 and event_type='UnknownReceipt'", connection); Add(existing, tenant.Value, legalEntityId, lineId); await using var existingReader = await existing.ExecuteReaderAsync(ct); if (!await existingReader.ReadAsync(ct)) throw new BankingException("banking.statement_line_not_found", "The statement line was not found or has already been claimed."); return ReadCandidate(existingReader);
+        await using var existing = new NpgsqlCommand("select id,statement_line_id,event_type,status,amount,currency_code,evidence,proposed_at,reviewed_by,reviewed_at from finance_banking.bank_originated_event_candidate where tenant_id=$1 and legal_entity_id=$2 and statement_line_id=$3 order by proposed_at desc limit 1", connection); Add(existing, tenant.Value, legalEntityId, lineId); await using var existingReader = await existing.ExecuteReaderAsync(ct); if (!await existingReader.ReadAsync(ct)) throw new BankingException("banking.statement_line_not_found", "The statement line was not found or has already been claimed."); return ReadCandidate(existingReader);
     }
 
-    public async Task RecordTransferProjectionAsync(TenantId tenant, Guid legalEntityId, Guid transferId, Guid sourceAccountId, Guid destinationAccountId, decimal sourceAmount, decimal destinationAmount, string sourceCurrency, string destinationCurrency, string state, CancellationToken ct)
+    public async Task<ExternalFeedTransactionDto> RecordExternalFeedTransactionAsync(TenantId tenant, ExternalFeedTransactionReceivedV1 request, CancellationToken ct)
+    {
+        var sourceType = request.SourceType?.Trim();
+        var externalId = request.ExternalTransactionId?.Trim();
+        var contentHash = request.ContentHash?.Trim().ToLowerInvariant();
+        var currency = request.CurrencyCode?.Trim().ToUpperInvariant();
+        var direction = request.Direction?.Trim();
+        var idempotencyKey = request.IdempotencyKey?.Trim();
+        if (request.LegalEntityId == Guid.Empty || request.TreasuryAccountId == Guid.Empty || string.IsNullOrWhiteSpace(sourceType) || string.IsNullOrWhiteSpace(externalId) || string.IsNullOrWhiteSpace(contentHash) || contentHash.Length != 64 || contentHash.Any(ch => !char.IsAsciiHexDigit(ch)) || request.BookingDate == default || direction is not ("Credit" or "Debit") || request.Amount <= 0 || currency is null || currency.Length != 3 || currency.Any(ch => !char.IsAsciiLetter(ch)) || string.IsNullOrWhiteSpace(idempotencyKey))
+            throw new BankingException("banking.feed_invalid", "The external feed transaction is invalid.");
+        if (request.RawPayload is null || request.RawPayload.TrimStart() is not ['{', ..])
+            throw new BankingException("banking.feed_payload_invalid", "The external feed payload must be a JSON object.");
+
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, tenant, transaction, ct);
+        await EnsureAccountAsync(connection, transaction, tenant, request.LegalEntityId, request.TreasuryAccountId, ct);
+        var now = clock.GetUtcNow();
+        await using (var existing = new NpgsqlCommand("select id,treasury_account_id,source_type,external_transaction_id,content_hash,booking_date,direction,amount,currency_code,status,idempotency_key,created_at,updated_at from finance_banking.external_feed_transaction where tenant_id=$1 and legal_entity_id=$2 and treasury_account_id=$3 and source_type=$4 and external_transaction_id=$5", connection, transaction))
+        {
+            Add(existing, tenant.Value, request.LegalEntityId, request.TreasuryAccountId, sourceType, externalId);
+            await using var reader = await existing.ExecuteReaderAsync(ct);
+            if (await reader.ReadAsync(ct))
+            {
+                var existingHash = reader.GetString(4).Trim();
+                if (!string.Equals(existingHash, contentHash, StringComparison.Ordinal)) throw new BankingException("banking.feed_conflict", "The external transaction id was already received with different evidence.");
+                var result = ReadExternalFeedTransaction(reader);
+                await reader.CloseAsync();
+                await transaction.CommitAsync(ct);
+                return result;
+            }
+        }
+
+        var id = Guid.CreateVersion7();
+        try
+        {
+            await using var insert = new NpgsqlCommand("insert into finance_banking.external_feed_transaction(tenant_id,legal_entity_id,id,treasury_account_id,source_type,external_transaction_id,content_hash,booking_date,direction,amount,currency_code,status,idempotency_key,raw_payload,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'Projected',$12,$13::jsonb,$14,$14)", connection, transaction);
+            Add(insert, tenant.Value, request.LegalEntityId, id, request.TreasuryAccountId, sourceType, externalId, contentHash, request.BookingDate, direction, request.Amount, currency, idempotencyKey, request.RawPayload, now);
+            await insert.ExecuteNonQueryAsync(ct);
+            await using var project = new NpgsqlCommand("insert into finance_banking.treasury_activity_projection(tenant_id,legal_entity_id,id,treasury_account_id,activity_type,source_reference,business_date,direction,amount,currency_code,status,source_watermark,created_at) values($1,$2,$3,$4,'ExternalFeed',$5,$6,$7,$8,$9,'Projected',$10,$10) on conflict(tenant_id,treasury_account_id,source_reference) do nothing", connection, transaction);
+            Add(project, tenant.Value, request.LegalEntityId, Guid.CreateVersion7(), request.TreasuryAccountId, $"feed:{sourceType}:{externalId}", request.BookingDate, direction, request.Amount, currency, now);
+            await project.ExecuteNonQueryAsync(ct);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            throw new BankingException("banking.feed_conflict", "The external feed transaction conflicts with an existing transaction.", ex);
+        }
+        await transaction.CommitAsync(ct);
+        return new(id, request.TreasuryAccountId, sourceType, externalId, contentHash, request.BookingDate, direction, request.Amount, currency, "Projected", idempotencyKey, now, now);
+    }
+
+    public async Task ProjectPosSessionClosedAsync(TenantId tenant, PosSessionClosedV1 eventData, Guid sourceMessageId, CancellationToken ct)
+    {
+        if (eventData.LegalEntityId == Guid.Empty || eventData.RegisterId == Guid.Empty || eventData.SessionId == Guid.Empty || eventData.BranchId == Guid.Empty || eventData.ExpectedCash < 0 || eventData.CountedCash < 0 || eventData.CurrencyCode?.Trim().Length != 3)
+            throw new BankingException("banking.pos_settlement_invalid", "The POS session close evidence is invalid.");
+        var currency = eventData.CurrencyCode.Trim().ToUpperInvariant();
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, tenant, transaction, ct);
+        await using (var existing = new NpgsqlCommand("select legal_entity_id,register_id,branch_id,business_date,currency_code,expected_cash,counted_cash,variance,source_message_id from finance_banking.pos_cash_settlement_projection where tenant_id=$1 and pos_session_id=$2", connection, transaction))
+        {
+            Add(existing, tenant.Value, eventData.SessionId);
+            await using var reader = await existing.ExecuteReaderAsync(ct);
+            if (await reader.ReadAsync(ct))
+            {
+                var same = reader.GetGuid(0) == eventData.LegalEntityId && reader.GetGuid(1) == eventData.RegisterId && reader.GetGuid(2) == eventData.BranchId && reader.GetFieldValue<DateOnly>(3) == eventData.BusinessDate && reader.GetString(4).Trim() == currency && reader.GetDecimal(5) == eventData.ExpectedCash && reader.GetDecimal(6) == eventData.CountedCash && reader.GetDecimal(7) == eventData.Variance;
+                await reader.CloseAsync();
+                if (!same) throw new BankingException("banking.pos_settlement_conflict", "The POS session already has different close evidence.");
+                await transaction.CommitAsync(ct);
+                return;
+            }
+        }
+        var now = clock.GetUtcNow();
+        await using var insert = new NpgsqlCommand("insert into finance_banking.pos_cash_settlement_projection(tenant_id,legal_entity_id,id,pos_session_id,register_id,branch_id,business_date,currency_code,expected_cash,counted_cash,variance,settlement_status,source_message_id,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'Pending',$12,$13,$13)", connection, transaction);
+        Add(insert, tenant.Value, eventData.LegalEntityId, Guid.CreateVersion7(), eventData.SessionId, eventData.RegisterId, eventData.BranchId!.Value, eventData.BusinessDate, currency, eventData.ExpectedCash, eventData.CountedCash, eventData.Variance, sourceMessageId, now);
+        try { await insert.ExecuteNonQueryAsync(ct); } catch (PostgresException ex) when (ex.SqlState == "23505") { throw new BankingException("banking.pos_settlement_conflict", "The POS session close evidence conflicts with an existing settlement.", ex); }
+        await transaction.CommitAsync(ct);
+    }
+
+    public async Task RecordProviderSettlementAsync(TenantId tenant, ProviderSettlementImportedV1 settlement, Guid sourceMessageId, CancellationToken ct)
+    {
+        var currency = settlement.CurrencyCode?.Trim().ToUpperInvariant();
+        if (settlement.LegalEntityId == Guid.Empty || settlement.SettlementAccountId == Guid.Empty || string.IsNullOrWhiteSpace(settlement.ProviderCode) || string.IsNullOrWhiteSpace(settlement.ProviderReference) || string.IsNullOrWhiteSpace(settlement.ExternalReference) || settlement.PeriodFrom > settlement.PeriodTo || settlement.GrossAmount < 0 || settlement.FeesAmount < 0 || settlement.NetPayoutAmount < 0 || currency?.Length != 3 || currency.Any(ch => !char.IsAsciiLetter(ch)) || settlement.GrossAmount - settlement.FeesAmount + settlement.AdjustmentsAmount != settlement.NetPayoutAmount)
+            throw new BankingException("banking.provider_settlement_invalid", "The provider settlement evidence is invalid.");
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, tenant, transaction, ct);
+        await EnsureAccountAsync(connection, transaction, tenant, settlement.LegalEntityId, settlement.SettlementAccountId, ct);
+        await using (var accountType = new NpgsqlCommand("select 1 from finance_banking.treasury_account where tenant_id=$1 and legal_entity_id=$2 and id=$3 and account_type='ProviderSettlement'", connection, transaction))
+        {
+            Add(accountType, tenant.Value, settlement.LegalEntityId, settlement.SettlementAccountId);
+            if (await accountType.ExecuteScalarAsync(ct) is null) throw new BankingException("banking.provider_settlement_account_invalid", "A provider settlement account is required.");
+        }
+        var now = clock.GetUtcNow();
+        await using (var existing = new NpgsqlCommand("select legal_entity_id,settlement_account_id,provider_code,period_from,period_to,currency_code,gross_amount,fees_amount,adjustments_amount,net_payout_amount,external_reference,source_message_id from finance_banking.provider_settlement_projection where tenant_id=$1 and provider_reference=$2", connection, transaction))
+        {
+            Add(existing, tenant.Value, settlement.ProviderReference.Trim());
+            await using var reader = await existing.ExecuteReaderAsync(ct);
+            if (await reader.ReadAsync(ct))
+            {
+                var same = reader.GetGuid(0) == settlement.LegalEntityId && reader.GetGuid(1) == settlement.SettlementAccountId && reader.GetString(2) == settlement.ProviderCode.Trim() && reader.GetFieldValue<DateOnly>(3) == settlement.PeriodFrom && reader.GetFieldValue<DateOnly>(4) == settlement.PeriodTo && reader.GetString(5).Trim() == currency && reader.GetDecimal(6) == settlement.GrossAmount && reader.GetDecimal(7) == settlement.FeesAmount && reader.GetDecimal(8) == settlement.AdjustmentsAmount && reader.GetDecimal(9) == settlement.NetPayoutAmount && reader.GetString(10) == settlement.ExternalReference.Trim();
+                await reader.CloseAsync();
+                if (!same) throw new BankingException("banking.provider_settlement_conflict", "The provider settlement reference has different evidence.");
+                await transaction.CommitAsync(ct);
+                return;
+            }
+        }
+        await using var insert = new NpgsqlCommand("insert into finance_banking.provider_settlement_projection(tenant_id,legal_entity_id,id,settlement_account_id,provider_code,provider_reference,period_from,period_to,currency_code,gross_amount,fees_amount,adjustments_amount,net_payout_amount,external_reference,source_message_id,status,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'Imported',$16,$16)", connection, transaction);
+        Add(insert, tenant.Value, settlement.LegalEntityId, Guid.CreateVersion7(), settlement.SettlementAccountId, settlement.ProviderCode.Trim(), settlement.ProviderReference.Trim(), settlement.PeriodFrom, settlement.PeriodTo, currency, settlement.GrossAmount, settlement.FeesAmount, settlement.AdjustmentsAmount, settlement.NetPayoutAmount, settlement.ExternalReference.Trim(), sourceMessageId, now);
+        try { await insert.ExecuteNonQueryAsync(ct); } catch (PostgresException ex) when (ex.SqlState == "23505") { throw new BankingException("banking.provider_settlement_conflict", "The provider settlement evidence conflicts with an existing settlement.", ex); }
+        await using var aggregate = new NpgsqlCommand("insert into finance_banking.settlement_account_projection(tenant_id,legal_entity_id,treasury_account_id,currency_code,gross_pending,fees_pending,net_expected,as_of) values($1,$2,$3,$4,$5,$6,$7,$8) on conflict(tenant_id,treasury_account_id,currency_code) do update set gross_pending=finance_banking.settlement_account_projection.gross_pending+$5,fees_pending=finance_banking.settlement_account_projection.fees_pending+$6,net_expected=finance_banking.settlement_account_projection.net_expected+$7,as_of=$8", connection, transaction);
+        Add(aggregate, tenant.Value, settlement.LegalEntityId, settlement.SettlementAccountId, currency, settlement.GrossAmount, settlement.FeesAmount, settlement.NetPayoutAmount, now);
+        await aggregate.ExecuteNonQueryAsync(ct);
+        await transaction.CommitAsync(ct);
+    }
+
+    public async Task<PosCashSettlementPage> ListPosCashSettlementsAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, string? status, CancellationToken ct)
+    {
+        page = Math.Clamp(page, 1, 100000); pageSize = Math.Clamp(pageSize, 1, 100);
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, tenant, ct);
+        var offset = (page - 1) * pageSize;
+        await using var count = new NpgsqlCommand("select count(*) from finance_banking.pos_cash_settlement_projection where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or settlement_status=$3)", connection); Add(count, tenant.Value, legalEntityId, Db(status)); var total = Convert.ToInt32(await count.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+        await using var command = new NpgsqlCommand("select id,pos_session_id,register_id,branch_id,business_date,currency_code,expected_cash,counted_cash,variance,settlement_status,treasury_account_id,version,created_at,updated_at from finance_banking.pos_cash_settlement_projection where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or settlement_status=$3) order by business_date desc,id offset $4 limit $5", connection); Add(command, tenant.Value, legalEntityId, Db(status), offset, pageSize); var items = new List<PosCashSettlementDto>(); await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) items.Add(ReadPosSettlement(reader)); return new(items, page, pageSize, offset + items.Count < total, total);
+    }
+
+    public async Task<PosCashSettlementDto> ConfirmPosCashSettlementAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, ConfirmPosCashSettlementRequest request, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await using var transaction = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, tenant, transaction, ct);
+        await using var load = new NpgsqlCommand("select id,pos_session_id,register_id,branch_id,business_date,currency_code,expected_cash,counted_cash,variance,settlement_status,treasury_account_id,version,created_at,updated_at from finance_banking.pos_cash_settlement_projection where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", connection, transaction); Add(load, tenant.Value, legalEntityId, id); await using var reader = await load.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new BankingException("banking.pos_settlement_not_found", "The POS cash settlement was not found."); var current = ReadPosSettlement(reader); await reader.CloseAsync();
+        if (current.Status != "Pending" || current.Version != request.Version) throw new BankingException("banking.pos_settlement_concurrency", "The POS settlement is no longer pending or has changed.");
+        await using var account = new NpgsqlCommand("select 1 from finance_banking.treasury_account where tenant_id=$1 and legal_entity_id=$2 and id=$3 and account_type in ('Cash','PettyCash') and status='Active' and (currency_policy='MultiCurrency' or currency_code=$4)", connection, transaction); Add(account, tenant.Value, legalEntityId, request.TreasuryAccountId, current.CurrencyCode); if (await account.ExecuteScalarAsync(ct) is null) throw new BankingException("banking.pos_settlement_account_invalid", "An active cash account in the settlement currency is required.");
+        var now = clock.GetUtcNow(); await using var update = new NpgsqlCommand("update finance_banking.pos_cash_settlement_projection set settlement_status='Confirmed',treasury_account_id=$4,version=version+1,updated_at=$5 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$6 returning id,pos_session_id,register_id,branch_id,business_date,currency_code,expected_cash,counted_cash,variance,settlement_status,treasury_account_id,version,created_at,updated_at", connection, transaction); Add(update, tenant.Value, legalEntityId, id, request.TreasuryAccountId, now, request.Version); await using var updated = await update.ExecuteReaderAsync(ct); if (!await updated.ReadAsync(ct)) throw new BankingException("banking.pos_settlement_concurrency", "The POS settlement changed while it was being confirmed."); var result = ReadPosSettlement(updated); await updated.CloseAsync();
+        await using var projection = new NpgsqlCommand("insert into finance_banking.treasury_activity_projection(tenant_id,legal_entity_id,id,treasury_account_id,activity_type,source_reference,business_date,direction,amount,currency_code,status,source_watermark,created_at) values($1,$2,$3,$4,'PosCashSettlement',$5,$6,'Credit',$7,$8,'Projected',$9,$9) on conflict(tenant_id,treasury_account_id,source_reference) do nothing", connection, transaction); Add(projection, tenant.Value, legalEntityId, Guid.CreateVersion7(), request.TreasuryAccountId, $"pos-session:{current.PosSessionId:D}", current.BusinessDate, current.CountedCash, current.CurrencyCode, now); await projection.ExecuteNonQueryAsync(ct); await transaction.CommitAsync(ct); return result;
+    }
+
+    public async Task<ProviderSettlementPage> ListProviderSettlementsAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, string? status, CancellationToken ct)
+    {
+        page = Math.Clamp(page, 1, 100000); pageSize = Math.Clamp(pageSize, 1, 100); await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, tenant, ct); var offset = (page - 1) * pageSize;
+        await using var count = new NpgsqlCommand("select count(*) from finance_banking.provider_settlement_projection where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or status=$3)", connection); Add(count, tenant.Value, legalEntityId, Db(status)); var total = Convert.ToInt32(await count.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+        await using var command = new NpgsqlCommand("select id,settlement_account_id,provider_code,provider_reference,period_from,period_to,currency_code,gross_amount,fees_amount,adjustments_amount,net_payout_amount,external_reference,status,statement_line_id,version,created_at,updated_at from finance_banking.provider_settlement_projection where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or status=$3) order by period_to desc,id offset $4 limit $5", connection); Add(command, tenant.Value, legalEntityId, Db(status), offset, pageSize); var items = new List<ProviderSettlementDto>(); await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) items.Add(ReadProviderSettlement(reader)); return new(items, page, pageSize, offset + items.Count < total, total);
+    }
+
+    public async Task<ProviderSettlementDto> MatchProviderSettlementAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, MatchProviderSettlementRequest request, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await using var transaction = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, tenant, transaction, ct);
+        await using var load = new NpgsqlCommand("select id,settlement_account_id,provider_code,provider_reference,period_from,period_to,currency_code,gross_amount,fees_amount,adjustments_amount,net_payout_amount,external_reference,status,statement_line_id,version,created_at,updated_at from finance_banking.provider_settlement_projection where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", connection, transaction); Add(load, tenant.Value, legalEntityId, id); await using var reader = await load.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new BankingException("banking.provider_settlement_not_found", "The provider settlement was not found."); var current = ReadProviderSettlement(reader); await reader.CloseAsync(); if (current.Status == "Matched" && current.StatementLineId == request.StatementLineId) return current; if (current.Version != request.Version || current.Status is not ("Imported" or "Exception")) throw new BankingException("banking.provider_settlement_concurrency", "The provider settlement is no longer available for matching.");
+        await using var line = new NpgsqlCommand("select treasury_account_id,direction,amount,currency_code,claimed_amount from finance_banking.external_statement_line where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", connection, transaction); Add(line, tenant.Value, legalEntityId, request.StatementLineId); await using var lineReader = await line.ExecuteReaderAsync(ct); if (!await lineReader.ReadAsync(ct)) throw new BankingException("banking.statement_line_not_found", "The statement line was not found."); var lineAccount = lineReader.GetGuid(0); var direction = lineReader.GetString(1); var lineAmount = lineReader.GetDecimal(2); var lineCurrency = lineReader.GetString(3).Trim(); var claimed = lineReader.GetDecimal(4); await lineReader.CloseAsync(); if (lineCurrency != current.CurrencyCode || lineAmount - claimed < current.NetPayoutAmount) throw new BankingException("banking.provider_settlement_amount_mismatch", "The statement line cannot cover the provider payout in the same currency.");
+        var now = clock.GetUtcNow(); await using var claim = new NpgsqlCommand("update finance_banking.external_statement_line set claimed_amount=claimed_amount+$4,version=version+1,updated_at=$5 where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection, transaction); Add(claim, tenant.Value, legalEntityId, request.StatementLineId, current.NetPayoutAmount, now); await claim.ExecuteNonQueryAsync(ct);
+        await using var update = new NpgsqlCommand("update finance_banking.provider_settlement_projection set status='Matched',statement_line_id=$4,matched_at=$5,version=version+1,updated_at=$5 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$6 returning id,settlement_account_id,provider_code,provider_reference,period_from,period_to,currency_code,gross_amount,fees_amount,adjustments_amount,net_payout_amount,external_reference,status,statement_line_id,version,created_at,updated_at", connection, transaction); Add(update, tenant.Value, legalEntityId, id, request.StatementLineId, now, request.Version); await using var updated = await update.ExecuteReaderAsync(ct); if (!await updated.ReadAsync(ct)) throw new BankingException("banking.provider_settlement_concurrency", "The provider settlement changed while it was being matched."); var result = ReadProviderSettlement(updated); await updated.CloseAsync();
+        await using var projection = new NpgsqlCommand("insert into finance_banking.treasury_activity_projection(tenant_id,legal_entity_id,id,treasury_account_id,activity_type,source_reference,business_date,direction,amount,currency_code,status,source_watermark,created_at) select $1,$2,$3,l.treasury_account_id,'ProviderSettlement',$4,l.booking_date,l.direction,$5,l.currency_code,'Reconciled',$6,$6 from finance_banking.external_statement_line l where l.tenant_id=$1 and l.legal_entity_id=$2 and l.id=$7 on conflict(tenant_id,treasury_account_id,source_reference) do nothing", connection, transaction); Add(projection, tenant.Value, legalEntityId, Guid.CreateVersion7(), $"provider-settlement:{id:D}", current.NetPayoutAmount, now, request.StatementLineId); await projection.ExecuteNonQueryAsync(ct); await transaction.CommitAsync(ct); return result;
+    }
+
+    public async Task RecordTransferProjectionAsync(TenantId tenant, Guid legalEntityId, Guid transferId, Guid sourceAccountId, Guid destinationAccountId, decimal sourceAmount, decimal destinationAmount, string sourceCurrency, string destinationCurrency, string state, string? baseCurrencyCode, string? fxSnapshot, CancellationToken ct)
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, tenant, ct); var now = clock.GetUtcNow();
-        await using var command = new NpgsqlCommand("insert into finance_banking.transfer_reconciliation_projection(tenant_id,legal_entity_id,id,source_account_id,destination_account_id,transfer_reference,state,source_amount,destination_amount,currency_code,in_transit_amount,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,case when $7='InTransit' then $9 else 0 end,$11) on conflict(tenant_id,legal_entity_id,transfer_reference) do update set state=excluded.state,source_amount=excluded.source_amount,destination_amount=excluded.destination_amount,currency_code=excluded.currency_code,in_transit_amount=excluded.in_transit_amount,updated_at=excluded.updated_at", connection); Add(command, tenant.Value, legalEntityId, Guid.CreateVersion7(), sourceAccountId, destinationAccountId, transferId.ToString("D"), state is "Completed" ? "Matched" : "InTransit", sourceAmount, destinationAmount, sourceCurrency == destinationCurrency ? sourceCurrency : null, now); await command.ExecuteNonQueryAsync(ct);
+        await using var command = new NpgsqlCommand("insert into finance_banking.transfer_reconciliation_projection(tenant_id,legal_entity_id,id,source_account_id,destination_account_id,transfer_reference,state,source_amount,destination_amount,currency_code,source_currency_code,destination_currency_code,base_currency_code,fx_snapshot,in_transit_amount,version,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,case when $7='InTransit' then $9 else 0 end,1,$15) on conflict(tenant_id,legal_entity_id,transfer_reference) do update set state=excluded.state,source_amount=excluded.source_amount,destination_amount=excluded.destination_amount,currency_code=excluded.currency_code,source_currency_code=excluded.source_currency_code,destination_currency_code=excluded.destination_currency_code,base_currency_code=excluded.base_currency_code,fx_snapshot=excluded.fx_snapshot,in_transit_amount=excluded.in_transit_amount,version=finance_banking.transfer_reconciliation_projection.version+1,updated_at=excluded.updated_at", connection); Add(command, tenant.Value, legalEntityId, Guid.CreateVersion7(), sourceAccountId, destinationAccountId, transferId.ToString("D"), state is "Completed" ? "Matched" : "InTransit", sourceAmount, destinationAmount, sourceCurrency == destinationCurrency ? sourceCurrency : null, sourceCurrency, destinationCurrency, Db(baseCurrencyCode), Db(fxSnapshot), now); await command.ExecuteNonQueryAsync(ct);
     }
 
-    public async Task<BankOriginatedCandidateDto> DecideBankOriginatedCandidateAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, BankOriginatedDecisionRequest request, CancellationToken ct)
+    public async Task<TransferReconciliationPage> ListTransferReconciliationsAsync(TenantId tenant, Guid legalEntityId, Guid? accountId, string? state, int page, int pageSize, CancellationToken ct)
+    {
+        page = Math.Clamp(page, 1, 100000); pageSize = Math.Clamp(pageSize, 1, 100); var offset = (page - 1) * pageSize;
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, tenant, ct);
+        await using var count = new NpgsqlCommand("select count(*) from finance_banking.transfer_reconciliation_projection where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or source_account_id=$3 or destination_account_id=$3) and ($4::text is null or state=$4)", connection); Add(count, tenant.Value, legalEntityId, Db(accountId), Db(string.IsNullOrWhiteSpace(state) ? null : state.Trim())); var total = Convert.ToInt32(await count.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+        await using var command = new NpgsqlCommand("select id,transfer_reference,source_account_id,destination_account_id,state,source_amount,coalesce(source_currency_code,currency_code),destination_amount,coalesce(destination_currency_code,currency_code),base_currency_code,fx_snapshot,in_transit_amount,source_evidence,destination_evidence,version,updated_at from finance_banking.transfer_reconciliation_projection where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or source_account_id=$3 or destination_account_id=$3) and ($4::text is null or state=$4) order by updated_at desc,id offset $5 limit $6", connection); Add(command, tenant.Value, legalEntityId, Db(accountId), Db(string.IsNullOrWhiteSpace(state) ? null : state.Trim()), offset, pageSize); var items = new List<TransferReconciliationDto>(); await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) items.Add(ReadTransferReconciliation(reader)); return new(items, page, pageSize, offset + items.Count < total, total);
+    }
+
+    public async Task<TransferReconciliationDto> ReconcileTransferAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, ReconcileTransferRequest request, CancellationToken ct)
+    {
+        if (request.SourceStatementLineId is null && request.DestinationStatementLineId is null) throw new BankingException("banking.transfer_evidence_required", "At least one external transfer statement line is required.");
+        if (request.SourceStatementLineId is { } sourceId && request.DestinationStatementLineId == sourceId) throw new BankingException("banking.transfer_evidence_duplicate", "Source and destination evidence must be different statement lines.");
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await using var transaction = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, tenant, transaction, ct);
+        await using var projection = new NpgsqlCommand("select id,transfer_reference,source_account_id,destination_account_id,state,source_amount,coalesce(source_currency_code,currency_code),destination_amount,coalesce(destination_currency_code,currency_code),base_currency_code,fx_snapshot,in_transit_amount,source_evidence,destination_evidence,version,updated_at from finance_banking.transfer_reconciliation_projection where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", connection, transaction); Add(projection, tenant.Value, legalEntityId, id); await using var projectionReader = await projection.ExecuteReaderAsync(ct); if (!await projectionReader.ReadAsync(ct)) throw new BankingException("banking.transfer_not_found", "The internal transfer was not found."); var current = ReadTransferReconciliation(projectionReader); await projectionReader.CloseAsync();
+        if (current.Version != request.Version || current.State == "Matched") throw new BankingException("banking.transfer_concurrency", "The internal transfer has already changed or been reconciled.");
+        var source = request.SourceStatementLineId is { } sourceLineId ? await LoadTransferEvidenceAsync(connection, transaction, tenant, legalEntityId, sourceLineId, "Debit", current.SourceAccountId, current.SourceAmount, current.SourceCurrencyCode, ct) : null;
+        var destination = request.DestinationStatementLineId is { } destinationLineId ? await LoadTransferEvidenceAsync(connection, transaction, tenant, legalEntityId, destinationLineId, "Credit", current.DestinationAccountId, current.DestinationAmount, current.DestinationCurrencyCode, ct) : null;
+        var now = clock.GetUtcNow();
+        if (source is { } sourceEvidence) await ClaimTransferEvidenceAsync(connection, transaction, tenant, legalEntityId, sourceEvidence.Id, current.SourceAmount, now, ct);
+        if (destination is { } destinationEvidence) await ClaimTransferEvidenceAsync(connection, transaction, tenant, legalEntityId, destinationEvidence.Id, current.DestinationAmount, now, ct);
+        var matched = (source is not null || current.SourceEvidence is not null) && (destination is not null || current.DestinationEvidence is not null); var newState = matched ? "Matched" : "InTransit";
+        var sourceText = source is null ? current.SourceEvidence : $"statement-line:{source.Id:D}"; var destinationText = destination is null ? current.DestinationEvidence : $"statement-line:{destination.Id:D}";
+        await using var update = new NpgsqlCommand("update finance_banking.transfer_reconciliation_projection set state=$4,source_evidence=$5,destination_evidence=$6,in_transit_amount=$7,version=version+1,updated_at=$8 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$9", connection, transaction); Add(update, tenant.Value, legalEntityId, id, newState, Db(sourceText), Db(destinationText), matched ? 0m : current.DestinationAmount, now, current.Version); if (await update.ExecuteNonQueryAsync(ct) != 1) throw new BankingException("banking.transfer_concurrency", "The internal transfer changed during reconciliation."); await transaction.CommitAsync(ct);
+        return current with { State = newState, InTransitAmount = matched ? 0m : current.DestinationAmount, SourceEvidence = sourceText, DestinationEvidence = destinationText, Version = current.Version + 1, UpdatedAt = now };
+    }
+
+    public async Task<BankOriginatedCandidateDto> DecideBankOriginatedCandidateAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid legalEntityId, Guid id, BankOriginatedDecisionRequest request, CancellationToken ct)
     {
         if (request.Decision is not ("Approved" or "Rejected")) throw new BankingException("banking.bank_originated_decision_invalid", "The candidate decision is not supported.");
-        await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, tenant, ct); var now = clock.GetUtcNow();
-        await using var command = new NpgsqlCommand("update finance_banking.bank_originated_event_candidate set status=$4,reviewed_by=$5,reviewed_at=$6 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status='Proposed' returning id,statement_line_id,event_type,status,amount,currency_code,evidence,proposed_at,reviewed_by,reviewed_at", connection); Add(command, tenant.Value, legalEntityId, id, request.Decision, actorId, now); await using var reader = await command.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new BankingException("banking.bank_originated_concurrency", "The candidate is no longer pending."); return ReadCandidate(reader);
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, tenant, transaction, ct);
+        var now = clock.GetUtcNow();
+        BankOriginatedCandidateDto result;
+        await using (var command = new NpgsqlCommand("update finance_banking.bank_originated_event_candidate set status=$4,reviewed_by=$5,reviewed_at=$6 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status='Proposed' returning id,statement_line_id,event_type,status,amount,currency_code,evidence,proposed_at,reviewed_by,reviewed_at", connection, transaction))
+        {
+            Add(command, tenant.Value, legalEntityId, id, request.Decision, actorId, now);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct)) throw new BankingException("banking.bank_originated_concurrency", "The candidate is no longer pending.");
+            result = ReadCandidate(reader);
+        }
+        if (request.Decision == "Approved")
+        {
+            await using var line = new NpgsqlCommand("select treasury_account_id,direction,booking_date from finance_banking.external_statement_line where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection, transaction); Add(line, tenant.Value, legalEntityId, result.StatementLineId); await using var lineReader = await line.ExecuteReaderAsync(ct); if (!await lineReader.ReadAsync(ct)) throw new BankingException("banking.statement_line_not_found", "The source statement line is no longer available."); var treasuryAccountId = lineReader.GetGuid(0); var direction = lineReader.GetString(1); var bookingDate = lineReader.GetFieldValue<DateOnly>(2); await lineReader.CloseAsync();
+            var approved = new BankOriginatedFinancialEventApprovedV1(legalEntityId, result.Id, result.StatementLineId, treasuryAccountId, actorId, result.EventType, direction, result.Amount, result.CurrencyCode, bookingDate, result.Evidence.GetRawText(), membershipId);
+            var payload = JsonSerializer.Serialize(approved, JsonOptions);
+            await using var outbox = new NpgsqlCommand("insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,trace_parent,status) values($1,'BankOriginatedFinancialEventApprovedV1',$2::jsonb,$3,$4,$5,$6,'banking',null,'Pending')", connection, transaction);
+            Add(outbox, Guid.CreateVersion7(), payload, tenant.Value, now, id, id);
+            await outbox.ExecuteNonQueryAsync(ct);
+        }
+        await transaction.CommitAsync(ct);
+        return result;
     }
 
     public async Task<TransactionCodeMappingDto> CreateTransactionCodeMappingAsync(TenantId tenant, Guid actorId, Guid legalEntityId, CreateTransactionCodeMappingRequest request, CancellationToken ct)
@@ -471,6 +694,64 @@ public sealed class BankingRepository(NpgsqlDataSource dataSource, TimeProvider 
         await using var version = new NpgsqlCommand("insert into finance_banking.reconciliation_rule_version(tenant_id,legal_entity_id,id,rule_set_id,rule_version,priority,definition,created_at,created_by) values($1,$2,$3,$4,1,1,$5::jsonb,$6,$7)", connection, transaction); Add(version, tenant.Value, legalEntityId, ruleId, id, definition, now, actorId); await version.ExecuteNonQueryAsync(ct); await transaction.CommitAsync(ct); return new(id, request.Name.Trim(), "Draft", 1, 1);
     }
 
+    public async Task<OpeningReconciliationDto> CreateOpeningReconciliationAsync(TenantId tenant, Guid actorId, CreateOpeningReconciliationRequest request, CancellationToken ct)
+    {
+        if (request.LegalEntityId == Guid.Empty || request.TreasuryAccountId == Guid.Empty || request.LedgerOpeningBatchId == Guid.Empty || request.OpeningAsOfDate == default || request.OutstandingInTransitAmount < 0 || string.IsNullOrWhiteSpace(request.SourceSystem) || string.IsNullOrWhiteSpace(request.BatchId))
+            throw new BankingException("banking.opening_invalid", "Opening reconciliation requires an account, posted Ledger batch, balances, source, and batch identity.");
+        var currency = request.CurrencyCode.Trim().ToUpperInvariant();
+        if (currency.Length != 3 || currency.Any(ch => !char.IsAsciiLetter(ch))) throw new BankingException("banking.currency_invalid", "Select a valid opening currency.");
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, tenant, transaction, ct);
+        await EnsureAccountAsync(connection, transaction, tenant, request.LegalEntityId, request.TreasuryAccountId, ct);
+        var id = Guid.CreateVersion7();
+        var now = clock.GetUtcNow();
+        const string sql = """
+            insert into finance_banking.opening_reconciliation
+                (tenant_id,legal_entity_id,id,treasury_account_id,ledger_opening_batch_id,opening_as_of_date,currency_code,book_opening_balance,external_opening_balance,outstanding_in_transit_amount,difference,source_system,legacy_account_id,batch_id,status,created_by,created_at,version)
+            values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$9-$8-$10,$11,$12,$13,'Draft',$14,$15,1)
+            on conflict (tenant_id,legal_entity_id,treasury_account_id,ledger_opening_batch_id) do update set
+                opening_as_of_date=excluded.opening_as_of_date,currency_code=excluded.currency_code,book_opening_balance=excluded.book_opening_balance,
+                external_opening_balance=excluded.external_opening_balance,outstanding_in_transit_amount=excluded.outstanding_in_transit_amount,
+                difference=excluded.difference,source_system=excluded.source_system,legacy_account_id=excluded.legacy_account_id,batch_id=excluded.batch_id,
+                updated_at=excluded.created_at,version=finance_banking.opening_reconciliation.version+1
+            returning id,treasury_account_id,ledger_opening_batch_id,opening_as_of_date,currency_code,book_opening_balance,external_opening_balance,outstanding_in_transit_amount,difference,source_system,legacy_account_id,batch_id,status,version,created_at,finalized_at
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        Add(command, tenant.Value, request.LegalEntityId, id, request.TreasuryAccountId, request.LedgerOpeningBatchId, request.OpeningAsOfDate, currency, request.BookOpeningBalance, request.ExternalOpeningBalance, request.OutstandingInTransitAmount, request.SourceSystem.Trim(), Db(request.LegacyAccountId?.Trim()), request.BatchId.Trim(), actorId, now);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) throw new BankingException("banking.opening_invalid", "The opening reconciliation could not be created.");
+        var result = ReadOpeningReconciliation(reader);
+        await reader.CloseAsync();
+        await transaction.CommitAsync(ct);
+        return result;
+    }
+
+    public async Task<OpeningReconciliationPage> ListOpeningReconciliationsAsync(TenantId tenant, Guid legalEntityId, Guid? treasuryAccountId, int page, int pageSize, CancellationToken ct)
+    {
+        page = Math.Clamp(page, 1, 10_000); pageSize = Math.Clamp(pageSize, 1, 200); var offset = (page - 1) * pageSize;
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, tenant, ct);
+        const string baseSql = " from finance_banking.opening_reconciliation where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or treasury_account_id=$3)";
+        await using var count = new NpgsqlCommand("select count(*)" + baseSql, connection); Add(count, tenant.Value, legalEntityId, Db(treasuryAccountId)); var total = Convert.ToInt32((long)(await count.ExecuteScalarAsync(ct) ?? 0L));
+        await using var command = new NpgsqlCommand("select id,treasury_account_id,ledger_opening_batch_id,opening_as_of_date,currency_code,book_opening_balance,external_opening_balance,outstanding_in_transit_amount,difference,source_system,legacy_account_id,batch_id,status,version,created_at,finalized_at" + baseSql + " order by opening_as_of_date desc,id desc offset $4 limit $5", connection); Add(command, tenant.Value, legalEntityId, Db(treasuryAccountId), offset, pageSize);
+        var items = new List<OpeningReconciliationDto>(); await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) items.Add(ReadOpeningReconciliation(reader));
+        return new(items, page, pageSize, offset + items.Count < total, total);
+    }
+
+    public async Task<OpeningReconciliationDto?> GetOpeningReconciliationAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, tenant, ct);
+        await using var command = new NpgsqlCommand("select id,treasury_account_id,ledger_opening_batch_id,opening_as_of_date,currency_code,book_opening_balance,external_opening_balance,outstanding_in_transit_amount,difference,source_system,legacy_account_id,batch_id,status,version,created_at,finalized_at from finance_banking.opening_reconciliation where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection); Add(command, tenant.Value, legalEntityId, id);
+        await using var reader = await command.ExecuteReaderAsync(ct); return await reader.ReadAsync(ct) ? ReadOpeningReconciliation(reader) : null;
+    }
+
+    public async Task<OpeningReconciliationDto> FinalizeOpeningReconciliationAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, FinalizeOpeningReconciliationRequest request, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await using var transaction = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, tenant, transaction, ct); var now = clock.GetUtcNow();
+        await using var command = new NpgsqlCommand("update finance_banking.opening_reconciliation set status='Finalized',finalized_by=$4,finalized_at=$5,updated_at=$5,version=version+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$6 and status='Draft' returning id,treasury_account_id,ledger_opening_batch_id,opening_as_of_date,currency_code,book_opening_balance,external_opening_balance,outstanding_in_transit_amount,difference,source_system,legacy_account_id,batch_id,status,version,created_at,finalized_at", connection, transaction); Add(command, tenant.Value, legalEntityId, id, actorId, now, request.Version);
+        await using var reader = await command.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new BankingException("banking.opening_concurrency", "The opening reconciliation changed or is already finalized."); var result = ReadOpeningReconciliation(reader); await reader.CloseAsync(); await transaction.CommitAsync(ct); return result;
+    }
+
     private static async Task EnsureCashAccountAsync(NpgsqlConnection c, NpgsqlTransaction t, TenantId tenant, Guid entity, Guid account, CancellationToken ct) { await using var cmd = new NpgsqlCommand("select 1 from finance_banking.treasury_account where tenant_id=$1 and legal_entity_id=$2 and id=$3 and account_type in ('Cash','PettyCash') and status='Active'", c, t); Add(cmd, tenant.Value, entity, account); if (await cmd.ExecuteScalarAsync(ct) is null) throw new BankingException("banking.cash_account_not_found", "An active cash account is required."); }
     private static async Task InsertProfileAsync(NpgsqlConnection c, NpgsqlTransaction t, TenantId tenant, TreasuryAccountCreateRequest request, Guid id, DateTimeOffset now, CancellationToken ct)
     {
@@ -490,8 +771,20 @@ public sealed class BankingRepository(NpgsqlDataSource dataSource, TimeProvider 
     private static ReconciliationDto ReadReconciliation(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), DateOnly.FromDateTime(r.GetDateTime(2)), r.GetString(3), r.GetDecimal(4), r.GetDecimal(5), r.GetDecimal(6), Convert.ToInt32(r.GetInt64(7)), r.GetInt64(8));
     private static ConnectionDto ReadConnection(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetString(4), r.IsDBNull(5) ? null : r.GetFieldValue<DateTimeOffset>(5), r.IsDBNull(6) ? null : r.GetFieldValue<DateTimeOffset>(6), StringValue(r, 7), r.GetInt64(8));
     private static BankOriginatedCandidateDto ReadCandidate(NpgsqlDataReader r) { using var evidence = r.GetFieldValue<JsonDocument>(6); return new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetDecimal(4), r.GetString(5).Trim(), evidence.RootElement.Clone(), r.GetFieldValue<DateTimeOffset>(7), GuidValue(r, 8), r.IsDBNull(9) ? null : r.GetFieldValue<DateTimeOffset>(9)); }
+    private static ExternalFeedTransactionDto ReadExternalFeedTransaction(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetString(4).Trim(), DateOnly.FromDateTime(r.GetDateTime(5)), r.GetString(6), r.GetDecimal(7), r.GetString(8).Trim(), r.GetString(9), r.GetString(10), r.GetFieldValue<DateTimeOffset>(11), r.GetFieldValue<DateTimeOffset>(12));
     private static TransactionCodeMappingDto ReadMapping(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetString(1), r.GetString(2), DateOnly.FromDateTime(r.GetDateTime(3)), r.IsDBNull(4) ? null : DateOnly.FromDateTime(r.GetDateTime(4)), r.GetInt32(5));
     private static CashCountDto ReadCashCount(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), DateOnly.FromDateTime(r.GetDateTime(2)), r.GetString(3), r.GetDecimal(4), DecimalValue(r, 5) ?? 0m, DecimalValue(r, 6) ?? 0m, r.GetGuid(7), r.GetInt64(8));
+    private static PosCashSettlementDto ReadPosSettlement(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetGuid(3), DateOnly.FromDateTime(r.GetDateTime(4)), r.GetString(5).Trim(), r.GetDecimal(6), r.GetDecimal(7), r.GetDecimal(8), r.GetString(9), GuidValue(r, 10), r.GetInt64(11), r.GetFieldValue<DateTimeOffset>(12), r.GetFieldValue<DateTimeOffset>(13));
+    private static ProviderSettlementDto ReadProviderSettlement(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), DateOnly.FromDateTime(r.GetDateTime(4)), DateOnly.FromDateTime(r.GetDateTime(5)), r.GetString(6).Trim(), r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10), r.GetString(11), r.GetString(12), GuidValue(r, 13), r.GetInt64(14), r.GetFieldValue<DateTimeOffset>(15), r.GetFieldValue<DateTimeOffset>(16));
+    private static TransferReconciliationDto ReadTransferReconciliation(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetString(1), r.GetGuid(2), r.GetGuid(3), r.GetString(4), r.GetDecimal(5), StringValue(r, 6), r.GetDecimal(7), StringValue(r, 8), StringValue(r, 9), StringValue(r, 10), r.GetDecimal(11), StringValue(r, 12), StringValue(r, 13), r.GetInt64(14), r.GetFieldValue<DateTimeOffset>(15));
+    private static OpeningReconciliationDto ReadOpeningReconciliation(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), DateOnly.FromDateTime(r.GetDateTime(3)), r.GetString(4).Trim(), r.GetDecimal(5), r.GetDecimal(6), r.GetDecimal(7), r.GetDecimal(8), r.GetString(9), StringValue(r, 10), r.GetString(11), r.GetString(12), r.GetInt64(13), r.GetFieldValue<DateTimeOffset>(14), r.IsDBNull(15) ? null : r.GetFieldValue<DateTimeOffset>(15));
+    private sealed record TransferEvidence(Guid Id);
+    private static async Task<TransferEvidence?> LoadTransferEvidenceAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid legalEntityId, Guid lineId, string direction, Guid accountId, decimal requiredAmount, string? currencyCode, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select id from finance_banking.external_statement_line where tenant_id=$1 and legal_entity_id=$2 and id=$3 and treasury_account_id=$4 and direction=$5 and currency_code=$6 and amount-claimed_amount >= $7 for update", connection, transaction); Add(command, tenant.Value, legalEntityId, lineId, accountId, direction, currencyCode, requiredAmount); return await command.ExecuteScalarAsync(ct) is Guid id ? new TransferEvidence(id) : throw new BankingException("banking.transfer_evidence_invalid", "The external statement line does not match the transfer account, direction, currency, or remaining amount.");
+    }
+    private static async Task ClaimTransferEvidenceAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid legalEntityId, Guid lineId, decimal amount, DateTimeOffset now, CancellationToken ct)
+    { await using var command = new NpgsqlCommand("update finance_banking.external_statement_line set claimed_amount=claimed_amount+$4,version=version+1,updated_at=$5 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and amount-claimed_amount >= $4", connection, transaction); Add(command, tenant.Value, legalEntityId, lineId, amount, now); if (await command.ExecuteNonQueryAsync(ct) != 1) throw new BankingException("banking.transfer_evidence_concurrency", "The external transfer evidence changed before it could be claimed."); }
     private static Guid? GuidValue(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetGuid(i); private static string? StringValue(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i).Trim(); private static DateOnly? DateValue(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : DateOnly.FromDateTime(r.GetDateTime(i)); private static decimal? DecimalValue(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetDecimal(i); private static object Db(object? value) => value ?? DBNull.Value;
     private static void Add(NpgsqlCommand c, params object?[] values) { foreach (var value in values) c.Parameters.AddWithValue(value ?? DBNull.Value); }
 }
