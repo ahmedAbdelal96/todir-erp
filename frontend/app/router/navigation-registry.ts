@@ -21,6 +21,7 @@ import { fixedAssetsRoutes } from "@modules/fixed-assets/public.ts";
 import { projectsRoutes } from "@modules/projects/public.ts";
 import { serviceRoutes } from "@modules/service/public.ts";
 import { bankingRoutes } from "@modules/banking/public.ts";
+import { settingsRoutes } from "@modules/settings/public.ts";
 import type { ModuleNavigationRegistration } from "./route-contract.ts";
 
 const homeNavigation: ModuleNavigationRegistration = {
@@ -32,9 +33,6 @@ const domainSettingsNavigation: ModuleNavigationRegistration = {
 };
 const previewNavigation: ModuleNavigationRegistration = {
   id: "preview", moduleIds: ["preview"], path: "/preview", navigationKey: "preview", icon: "preview"
-};
-const settingsNavigation: ModuleNavigationRegistration = {
-  id: "settings", moduleIds: ["settings"], path: "/settings", navigationKey: "settings", permission: "platform.settings.read", icon: "settings"
 };
 
 export const navigationRegistry: readonly ModuleNavigationRegistration[] = [
@@ -64,7 +62,7 @@ export const navigationRegistry: readonly ModuleNavigationRegistration[] = [
   serviceRoutes.navigation,
   bankingRoutes.navigation,
   previewNavigation,
-  settingsNavigation
+  settingsRoutes.navigation
 ];
 
 export function resolveNavigation(moduleIds: readonly string[]): readonly ModuleNavigationRegistration[] {

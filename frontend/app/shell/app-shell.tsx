@@ -359,7 +359,9 @@ export function AppShell() {
       if (!response.ok) throw new Error("modules.load_failed");
       const registered = await response.json() as Array<{ id?: string }>;
       const registeredIds = registered.flatMap(item => item.id ? [item.id] : []);
-      const candidates = resolveNavigation(registeredIds);
+      // Company settings is a platform destination, so it is not required to
+      // appear in the business-module registry returned by the API.
+      const candidates = resolveNavigation([...registeredIds, "settings"]);
       const permitted = (await Promise.all(candidates.map(async item => {
         if (!item.permission) return item;
         if (permCacheRef.current[item.permission] !== undefined) {
@@ -431,6 +433,7 @@ export function AppShell() {
     .slice(0, 5);
   const quickPopoverItems = openSidebarPanel === "favorites" ? favorites : recentPages;
   const quickPopoverTitle = t(openSidebarPanel === "favorites" ? "common:shell.favorites" : "common:shell.recentPages");
+  const activeLegalEntity = legalEntities.find((item) => item.id === legalEntity);
   const renderNavigationLink = (item: ModuleNavigationRegistration, canToggleFavorite = false) => {
     const label = t(`navigation:${item.navigationKey}`);
     const isFavorite = navigationPreferences.snapshot.favorites.includes(item.id);
@@ -713,7 +716,7 @@ export function AppShell() {
         <main className="content" aria-live="polite">
           {contextError ? <div className="error" role="alert">{contextError}</div> : null}
           <Suspense fallback={<div style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted)" }}>{labels.loading}</div>}>
-            <Outlet context={{ density, legalEntityId: legalEntity, branchId: branch, permissions, tenantId: activeTenantId, userId: activeIdentityId } satisfies WorkspaceOutletContext} />
+            <Outlet context={{ density, legalEntityId: legalEntity, legalEntityCode: activeLegalEntity?.code, legalEntityName: activeLegalEntity?.name, branchId: branch, permissions, tenantId: activeTenantId, userId: activeIdentityId } satisfies WorkspaceOutletContext} />
           </Suspense>
         </main>
       </div>

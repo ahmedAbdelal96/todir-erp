@@ -104,10 +104,11 @@ export function useLocations(legalEntityId: string, warehouseId?: string) {
   });
 }
 
-export function useInventoryPolicy(legalEntityId: string) {
+export function useInventoryPolicy(legalEntityId: string, enabled = true) {
   return useQuery({
     queryKey: ["inventory", legalEntityId, "policy"],
     queryFn: () => inventoryApi.getPolicy(legalEntityId),
+    enabled: enabled && Boolean(legalEntityId),
     staleTime: 60_000
   });
 }

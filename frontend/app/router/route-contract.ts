@@ -19,6 +19,8 @@ export type ModuleRouteRegistration = Readonly<{
 export type WorkspaceOutletContext = Readonly<{
   density: "comfortable" | "compact";
   legalEntityId?: string | undefined;
+  legalEntityCode?: string | undefined;
+  legalEntityName?: string | undefined;
   branchId?: string | undefined;
   permissions?: PermissionSet | undefined;
   tenantId?: string | undefined;

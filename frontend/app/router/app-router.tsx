@@ -25,12 +25,8 @@ import { fixedAssetsRoutes } from "@modules/fixed-assets/public.ts";
 import { projectsRoutes } from "@modules/projects/public.ts";
 import { serviceRoutes } from "@modules/service/public.ts";
 import { bankingRoutes } from "@modules/banking/public.ts";
+import { settingsRoutes } from "@modules/settings/public.ts";
 import { useTranslation } from "react-i18next";
-
-function SettingsRoute(): React.JSX.Element {
-  const { t } = useTranslation("navigation");
-  return <div style={{ padding: "1.5rem" }}><h1>{t("settings")}</h1><p>{t("settingsDescription")}</p></div>;
-}
 
 function NotFoundRoute(): React.JSX.Element {
   const { t } = useTranslation("navigation");
@@ -93,8 +89,8 @@ const workspaceRoutes: RouteObject = {
     ...projectsRoutes.routes,
     ...serviceRoutes.routes,
     ...bankingRoutes.routes,
+    ...settingsRoutes.routes,
     { path: "preview", element: <PreviewPage /> },
-    { path: "settings", element: <SettingsRoute /> },
     { path: "*", element: <NotFoundRoute /> }
   ]
 };
