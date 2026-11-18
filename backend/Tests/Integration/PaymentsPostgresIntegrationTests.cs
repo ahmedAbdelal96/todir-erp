@@ -76,6 +76,136 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
     }
 
     [Fact]
+    public async Task PaymentsCreatedMonetaryAccountsShareCanonicalTreasuryIdentityAndInternalClearingDoesNot()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for payment integration tests.");
+        var runtimeConnectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for payment integration tests.");
+        var fixture = await ReadFixtureAsync(adminConnectionString);
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnectionString);
+            builder.UseSetting("TODIR_RABBITMQ_HOST", string.Empty);
+        });
+        var payments = factory.Services.GetRequiredService<PaymentsService>();
+        var banking = factory.Services.GetRequiredService<BankingService>();
+        var tenant = new TenantId(fixture.TenantId);
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        var branchId = (Guid)(await ScalarAsync(admin, "select id from platform.branch where tenant_id=$1 and legal_entity_id=$2 and code='MAIN'", fixture.TenantId, fixture.LegalEntityId))!;
+        var cases = new[]
+        {
+            (PaymentAccountType.Bank, (Guid?)null, "BankTransfer", "****1288"),
+            (PaymentAccountType.Cashbox, branchId, "Cash", (string?)null),
+            (PaymentAccountType.Wallet, (Guid?)null, "Wallet", (string?)null),
+            (PaymentAccountType.ProviderClearing, (Guid?)null, "PaymentGateway", (string?)null)
+        };
+        var created = new Dictionary<PaymentAccountType, PaymentAccount>();
+        foreach (var (type, branch, method, masked) in cases)
+        {
+            var code = $"PAYMENTS-CANONICAL-{type}-{Guid.CreateVersion7():N}";
+            var account = await payments.CreateAccountAsync(tenant, fixture.ActorId, fixture.MembershipId,
+                new(fixture.LegalEntityId, branch, code, $"Payments canonical {type}", type, "SingleCurrency", "EGP", null, null, masked, null),
+                Guid.CreateVersion7(), CancellationToken.None);
+            created.Add(type, account);
+            var canonical = await banking.GetAccountAsync(tenant, fixture.LegalEntityId, account.Id, CancellationToken.None);
+            Assert.NotNull(canonical);
+            Assert.Equal(account.Id, canonical!.Id);
+            Assert.Equal(fixture.LegalEntityId, canonical.LegalEntityId);
+            Assert.Equal(type switch { PaymentAccountType.Bank => "Bank", PaymentAccountType.Cashbox => "Cashbox", PaymentAccountType.Wallet => "Wallet", _ => "ProviderClearing" }, account.Type.ToString());
+            Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_account p join finance_banking.treasury_account t on t.tenant_id=p.tenant_id and t.legal_entity_id=p.legal_entity_id and t.id=p.treasury_account_id where p.tenant_id=$1 and p.legal_entity_id=$2 and p.id=$3 and p.treasury_account_id=$3", fixture.TenantId, fixture.LegalEntityId, account.Id));
+            Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_method_config where tenant_id=$1 and legal_entity_id=$2 and payment_account_id=$3 and method=$4 and status='Active'", fixture.TenantId, fixture.LegalEntityId, account.Id, method));
+        }
+
+        var bank = created[PaymentAccountType.Bank];
+        var draft = await payments.CreateDraftAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(),
+            new(fixture.LegalEntityId, null, PaymentType.CustomerReceipt, fixture.PartyId, "3.00", "EGP", PaymentMethod.BankTransfer,
+                bank.Id, new(2026, 10, 1), new(2026, 10, 1), null, "PAYMENTS-CANONICAL", null, null, "PaymentsCanonical", bank.Id.ToString("D")),
+            "payments-canonical-create-" + Guid.CreateVersion7().ToString("N"), CancellationToken.None);
+        var completed = await payments.CompleteManualAsync(tenant, fixture.ActorId, fixture.MembershipId, fixture.LegalEntityId,
+            draft.Id, "payments-canonical-complete-" + Guid.CreateVersion7().ToString("N"), Guid.CreateVersion7(), CancellationToken.None);
+        Assert.Equal(PaymentBusinessState.Completed, completed.State);
+
+        var internalCode = "PAYMENTS-INTERNAL-CLEARING-" + Guid.CreateVersion7().ToString("N")[^8..];
+        var internalAccount = await payments.CreateAccountAsync(tenant, fixture.ActorId, fixture.MembershipId,
+            new(fixture.LegalEntityId, null, internalCode, "Payments technical clearing", PaymentAccountType.InternalClearing, "MultiCurrency", null, null, null, null, null),
+            Guid.CreateVersion7(), CancellationToken.None);
+        Assert.Equal(0L, await CountAsync(admin, "select count(*) from finance_banking.treasury_account where tenant_id=$1 and legal_entity_id=$2 and id=$3", fixture.TenantId, fixture.LegalEntityId, internalAccount.Id));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_account where tenant_id=$1 and legal_entity_id=$2 and id=$3 and treasury_account_id is null and account_type='InternalClearing'", fixture.TenantId, fixture.LegalEntityId, internalAccount.Id));
+    }
+
+    [Fact]
+    public async Task PaymentsAccountCreationRollsBackCanonicalAccountWhenCompatibilityInsertFails()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for payment integration tests.");
+        var runtimeConnectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for payment integration tests.");
+        var fixture = await ReadFixtureAsync(adminConnectionString);
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnectionString);
+            builder.UseSetting("TODIR_RABBITMQ_HOST", string.Empty);
+        });
+        var payments = factory.Services.GetRequiredService<PaymentsService>();
+        var tenant = new TenantId(fixture.TenantId);
+        var code = "PAYMENTS-ROLLBACK-" + Guid.CreateVersion7().ToString("N")[^8..];
+        await InstallFailureTriggerAsync(adminConnectionString, "finance_payments.payment_account", "INSERT");
+        try
+        {
+            await Assert.ThrowsAsync<PostgresException>(() => payments.CreateAccountAsync(tenant, fixture.ActorId, fixture.MembershipId,
+                new(fixture.LegalEntityId, null, code, "Payments rollback acceptance", PaymentAccountType.Bank, "SingleCurrency", "EGP", null, null, "****1299", null),
+                Guid.CreateVersion7(), CancellationToken.None));
+        }
+        finally { await RemoveFailureTriggerAsync(adminConnectionString, "finance_payments.payment_account"); }
+
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        Assert.Equal(0L, await CountAsync(admin, "select count(*) from finance_banking.treasury_account where tenant_id=$1 and legal_entity_id=$2 and code=$3", fixture.TenantId, fixture.LegalEntityId, code));
+        Assert.Equal(0L, await CountAsync(admin, "select count(*) from finance_payments.payment_account where tenant_id=$1 and legal_entity_id=$2 and code=$3", fixture.TenantId, fixture.LegalEntityId, code));
+        Assert.Equal(0L, await CountAsync(admin, "select count(*) from finance_payments.payment_method_config m join finance_payments.payment_account p on p.tenant_id=m.tenant_id and p.legal_entity_id=m.legal_entity_id and p.id=m.payment_account_id where p.tenant_id=$1 and p.legal_entity_id=$2 and p.code=$3", fixture.TenantId, fixture.LegalEntityId, code));
+    }
+
+    [Fact]
+    public async Task ConcurrentPaymentsAccountCreationKeepsOneCanonicalIdentity()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for payment integration tests.");
+        var runtimeConnectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for payment integration tests.");
+        var fixture = await ReadFixtureAsync(adminConnectionString);
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnectionString);
+            builder.UseSetting("TODIR_RABBITMQ_HOST", string.Empty);
+        });
+        var payments = factory.Services.GetRequiredService<PaymentsService>();
+        var tenant = new TenantId(fixture.TenantId);
+        var code = "PAYMENTS-CONCURRENT-" + Guid.CreateVersion7().ToString("N")[^8..];
+        var attempts = await Task.WhenAll(Enumerable.Range(0, 2).Select(async _ =>
+        {
+            try
+            {
+                return await payments.CreateAccountAsync(tenant, fixture.ActorId, fixture.MembershipId,
+                    new(fixture.LegalEntityId, null, code, "Payments concurrent acceptance", PaymentAccountType.Bank, "SingleCurrency", "EGP", null, null, "****1300", null),
+                    Guid.CreateVersion7(), CancellationToken.None);
+            }
+            catch (Exception) { return null; }
+        }));
+        Assert.Single(attempts, account => account is not null);
+
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_banking.treasury_account where tenant_id=$1 and legal_entity_id=$2 and code=$3", fixture.TenantId, fixture.LegalEntityId, code));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_account where tenant_id=$1 and legal_entity_id=$2 and code=$3 and treasury_account_id is not null", fixture.TenantId, fixture.LegalEntityId, code));
+        Assert.Equal(1L, await CountAsync(admin, "select count(*) from finance_payments.payment_method_config m join finance_payments.payment_account p on p.tenant_id=m.tenant_id and p.legal_entity_id=m.legal_entity_id and p.id=m.payment_account_id where p.tenant_id=$1 and p.legal_entity_id=$2 and p.code=$3", fixture.TenantId, fixture.LegalEntityId, code));
+    }
+
+    [Fact]
     public async Task BankOriginatedUnknownReceiptIsRecordedOnceAsUnallocatedPayment()
     {
         var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")

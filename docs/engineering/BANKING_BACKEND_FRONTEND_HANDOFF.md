@@ -18,6 +18,8 @@ Base URL: `/api/v1/banking`. All routes require authentication, tenant context, 
 
 Create starts in Draft and Banking validates currency policy, bank masking, branch/cash rules, and profile creation. Status changes are versioned; stale versions return 409. Closed accounts cannot be reactivated.
 
+Canonical identity invariant: for Bank, Cashbox, Wallet, and ProviderClearing, a PaymentAccount created from either Banking or Payments has the same stable id as its Banking TreasuryAccount and a non-null `treasury_account_id` pointing to that canonical row. InternalClearing is a deliberate Payments-only technical account and has no TreasuryAccount. Creation is atomic across the canonical account, compatibility projection, method configuration, and audit entry; a failed projection leaves no orphan canonical account.
+
 ## Statements
 
 | Method | Path | Request/filters | Response | Permission |
@@ -113,4 +115,4 @@ POS close projections are listed through `PosCashSettlementPage` and confirmed w
 
 ## Acceptance and deferred gate
 
-Current focused Banking evidence is 15 PostgreSQL integration tests plus 4 rules tests against `todir_module25_acceptance` after 229 ordered scripts. It includes Ledger-derived reconciliation, forged book-balance rejection, Payments-owned matching, canonical Banking/Payments account identity, unknown receipt and internal-transfer evidence reconciliation, opening reconciliation, authenticated HTTP isolation, and live Worker replay, plus focused Ledger and Payments acceptance. The 100k/1M-row performance certification is not represented as PASS. Normal pagination/index/query-shape work is implemented; large-scale certification requires a separate approved performance run.
+Current focused Banking evidence is 15 PostgreSQL integration tests plus 4 rules tests against `todir_module25_acceptance_final` after 229 ordered scripts. It includes Ledger-derived reconciliation, forged book-balance rejection, Payments-owned matching, both-direction canonical Banking/Payments account identity, all monetary type mappings and the InternalClearing exception, atomic rollback, duplicate-code concurrency, unknown receipt and internal-transfer evidence reconciliation, opening reconciliation, authenticated HTTP isolation, and live Worker replay, plus focused Ledger and Payments acceptance. The 100k/1M-row performance certification is not represented as PASS. Normal pagination/index/query-shape work is implemented; large-scale certification requires a separate approved performance run.

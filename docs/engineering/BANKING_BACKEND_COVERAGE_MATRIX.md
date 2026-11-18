@@ -9,7 +9,7 @@
 | BK04 | Wallet and settlement profile | profile tables and type mapping | PASS |
 | BK05 | Lifecycle and optimistic concurrency | status/update endpoints and version predicates | PASS |
 | BK06 | Currency policy and pockets | checks, pocket insert, seed | PASS |
-| BK07 | PaymentAccount compatibility | atomic Banking canonical account + Payments projection, stable treasury_account_id, method configuration, and cross-module acceptance | PASS |
+| BK07 | PaymentAccount compatibility | atomic Banking canonical account + Payments projection, stable non-null treasury_account_id for Bank/Cashbox/Wallet/ProviderClearing, method configuration, both creation directions, InternalClearing exception, rollback, concurrency, and cross-module acceptance | PASS |
 | BK08 | Tenant/legal-entity scope | composite keys, RLS, API guard | PASS |
 | BK09 | Statement import | idempotent import endpoint | PASS |
 | BK10 | Statement line evidence | line table, hash, paginated API | PASS |
@@ -40,14 +40,14 @@
 | BK33 | API business errors | stable Banking error codes and ProblemDetails | PASS |
 | BK34 | Worker composition | Worker registers external-feed, POS-close, provider-settlement, and bank-originated consumers with Inbox idempotency; live replay creates one completed unallocated receipt | PASS |
 | BK35 | Migration ordering | fresh/upgrade disposable migration with 229 ordered scripts | PASS |
-| BK36 | Legacy compatibility | stable ids and PaymentAccount FK | PASS |
+| BK36 | Legacy compatibility | stable ids, tenant/legal-entity PaymentAccount FK, both-direction identity proof, and InternalClearing technical exception | PASS |
 | BK37 | Development seed | Atlas/Delta BankingSeed with Ledger-required reconciliation and source-labelled cash projections | PASS |
 | BK38 | Seed idempotency | repeated runs pass and a mutated authoritative cash projection is not overwritten | PASS |
 | BK39 | Statement fixture | four seeded statements per tenant | PASS |
 | BK40 | Reconciliation fixture | seeded open reconciliation per tenant | PASS |
 | BK41 | Cash fixture | seeded submitted cash count per tenant | PASS |
 | BK42 | Forecast fixture | seeded published forecast per tenant | PASS |
-| BK43 | Focused automated tests | Banking PostgreSQL 15/15, Banking rules 4/4, cross-module Banking→Payments→Ledger acceptance, Payments/Ledger/HTTP regressions, and seed verification pass | PASS |
+| BK43 | Focused automated tests | Banking PostgreSQL 15/15, Banking rules 4/4, Banking-created cross-module acceptance 1/1, Payments-created monetary/InternalClearing + rollback + concurrency acceptance 3/3, Payments/Ledger/HTTP regressions, and seed verification pass | PASS |
 | BK44 | API build | `dotnet build Api` 0 warnings/errors | PASS |
 | BK45 | Worker/migrator build | both builds pass | PASS |
 | BK46 | Acceptance evidence and handoff | handoff, checkpoint, runbook, authenticated scope proof, Ledger/payment ownership proof, migration/seed evidence, and live Worker replay evidence are current; heavyweight performance certification is explicitly UNVERIFIED | PASS (performance disposition documented) |

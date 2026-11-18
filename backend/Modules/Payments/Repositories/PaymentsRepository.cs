@@ -70,11 +70,11 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             var id = canonical?.Id ?? Guid.CreateVersion7(); var now = clock.GetUtcNow();
             await using var command = new NpgsqlCommand("""
                 insert into finance_payments.payment_account
-                (tenant_id,legal_entity_id,id,branch_id,code,name,account_type,currency_policy,currency_code,status,bank_name,account_holder,masked_identifier,secret_ref,version,created_at,updated_at)
-                values($1,$2,$3,$4,$5,$6,$7,$8,$9,'Active',$10,$11,$12,$13,1,$14,$14)
+                (tenant_id,legal_entity_id,id,branch_id,code,name,account_type,currency_policy,currency_code,status,bank_name,account_holder,masked_identifier,secret_ref,treasury_account_id,version,created_at,updated_at)
+                values($1,$2,$3,$4,$5,$6,$7,$8,$9,'Active',$10,$11,$12,$13,$14,1,$15,$15)
                 returning id
                 """, context.Connection, context.Transaction);
-            Add(command, tenant.Value, request.LegalEntityId, id, Db(request.BranchId), request.Code.Trim(), request.Name.Trim(), request.Type.ToString(), currencyPolicy, Db(currency), Db(Clean(request.BankName)), Db(Clean(request.AccountHolder)), Db(Clean(request.MaskedIdentifier)), Db(Clean(request.SecretRef)), now);
+            Add(command, tenant.Value, request.LegalEntityId, id, Db(request.BranchId), request.Code.Trim(), request.Name.Trim(), request.Type.ToString(), currencyPolicy, Db(currency), Db(Clean(request.BankName)), Db(Clean(request.AccountHolder)), Db(Clean(request.MaskedIdentifier)), Db(Clean(request.SecretRef)), Db(canonical?.Id), now);
             await command.ExecuteScalarAsync(token);
             var defaultMethod = request.Type switch
             {

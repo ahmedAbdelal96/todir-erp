@@ -866,8 +866,23 @@ public sealed class BankingRepository(NpgsqlDataSource dataSource, TimeProvider 
     private static async Task EnsureCashAccountAsync(NpgsqlConnection c, NpgsqlTransaction t, TenantId tenant, Guid entity, Guid account, CancellationToken ct) { await using var cmd = new NpgsqlCommand("select 1 from finance_banking.treasury_account where tenant_id=$1 and legal_entity_id=$2 and id=$3 and account_type in ('Cash','PettyCash') and status='Active'", c, t); Add(cmd, tenant.Value, entity, account); if (await cmd.ExecuteScalarAsync(ct) is null) throw new BankingException("banking.cash_account_not_found", "An active cash account is required."); }
     private static async Task InsertProfileAsync(NpgsqlConnection c, NpgsqlTransaction t, TenantId tenant, TreasuryAccountCreateRequest request, Guid id, DateTimeOffset now, CancellationToken ct)
     {
-        string sql = request.Type switch { TreasuryAccountType.Bank => "insert into finance_banking.bank_account_profile(tenant_id,legal_entity_id,treasury_account_id,bank_name,account_number_masked,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$6)", TreasuryAccountType.Cash or TreasuryAccountType.PettyCash => "insert into finance_banking.cash_account_profile(tenant_id,legal_entity_id,treasury_account_id,location_description,created_at,updated_at) values($1,$2,$3,$4,$5,$5)", TreasuryAccountType.DigitalWallet => "insert into finance_banking.digital_wallet_profile(tenant_id,legal_entity_id,treasury_account_id,provider_name,wallet_reference_masked,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$6)", _ => "insert into finance_banking.settlement_account_profile(tenant_id,legal_entity_id,treasury_account_id,provider_code,merchant_reference_masked,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$6)" };
-        await using var command = new NpgsqlCommand(sql, c, t); Add(command, tenant.Value, request.LegalEntityId, id, request.Name.Trim(), Db(request.MaskedIdentifier), now); await command.ExecuteNonQueryAsync(ct);
+        if (request.Type is TreasuryAccountType.Cash or TreasuryAccountType.PettyCash)
+        {
+            await using var cashCommand = new NpgsqlCommand("insert into finance_banking.cash_account_profile(tenant_id,legal_entity_id,treasury_account_id,location_description,created_at,updated_at) values($1,$2,$3,$4,$5,$5)", c, t);
+            Add(cashCommand, tenant.Value, request.LegalEntityId, id, request.Name.Trim(), now);
+            await cashCommand.ExecuteNonQueryAsync(ct);
+            return;
+        }
+
+        var sql = request.Type switch
+        {
+            TreasuryAccountType.Bank => "insert into finance_banking.bank_account_profile(tenant_id,legal_entity_id,treasury_account_id,bank_name,account_number_masked,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$6)",
+            TreasuryAccountType.DigitalWallet => "insert into finance_banking.digital_wallet_profile(tenant_id,legal_entity_id,treasury_account_id,provider_name,wallet_reference_masked,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$6)",
+            _ => "insert into finance_banking.settlement_account_profile(tenant_id,legal_entity_id,treasury_account_id,provider_code,merchant_reference_masked,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$6)"
+        };
+        await using var command = new NpgsqlCommand(sql, c, t);
+        Add(command, tenant.Value, request.LegalEntityId, id, request.Name.Trim(), Db(request.MaskedIdentifier), now);
+        await command.ExecuteNonQueryAsync(ct);
     }
 
     private static async Task EnsureAccountAsync(NpgsqlConnection c, NpgsqlTransaction t, TenantId tenant, Guid entity, Guid account, CancellationToken ct)

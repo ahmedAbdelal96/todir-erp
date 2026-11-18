@@ -4,7 +4,9 @@
 
 `finance_banking.treasury_account` is the canonical master for every real bank, cash, petty-cash, digital-wallet, and provider-settlement account. `finance_payments.payment_account` remains a compatibility projection for payment workflows and payment-method configuration; it is not a second master.
 
-The migration preserves stable identifiers, adds `payment_account.treasury_account_id`, backfills every real legacy account, and adds a tenant/legal-entity foreign key to the canonical record. New payment-account creation now calls the Banking capability first and writes the Payments row as a compatibility projection. Internal clearing remains a Payments-only technical account because it is not a treasury balance.
+The migration preserves stable identifiers, adds `payment_account.treasury_account_id`, backfills every real legacy account, and adds a tenant/legal-entity foreign key to the canonical record. New payment-account creation now calls the Banking capability first and writes the Payments row as a compatibility projection. For every real monetary type (Bank, Cashbox, Wallet, and ProviderClearing), the compatibility row stores the same non-null `treasury_account_id` as its canonical Banking row; the identifier is stable in both creation directions. Internal clearing remains a Payments-only technical account because it is not a treasury balance.
+
+The canonical creation and compatibility projection share one transaction. A compatibility insert failure rolls back the canonical account, method configuration, and audit entry; concurrent duplicate codes leave one canonical identity and one projection. This is verified against disposable PostgreSQL acceptance data.
 
 ## Ownership matrix
 
