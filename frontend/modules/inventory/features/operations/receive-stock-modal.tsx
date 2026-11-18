@@ -7,7 +7,9 @@ import { LocalDateField } from "../../../../components/fields/local-date-field.t
 import { InventoryProductPicker } from "../../components/inventory-product-picker.tsx";
 import { useInventoryMutations, useLocations } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
+import { useProductUoms } from "../../../catalog/public.ts";
 import type { Warehouse } from "../../types.ts";
+import { InventoryProfileSetupModal } from "./inventory-profile-setup-modal.tsx";
 
 export interface ReceiveStockModalProps {
   readonly isOpen: boolean;
@@ -15,6 +17,7 @@ export interface ReceiveStockModalProps {
   readonly legalEntityId: string;
   readonly warehouses: readonly Warehouse[];
   readonly canReadCost?: boolean;
+  readonly canManageProfile?: boolean;
   readonly initialProductVariantId?: string;
   readonly initialWarehouseId?: string;
 }
@@ -25,6 +28,7 @@ export function ReceiveStockModal({
   legalEntityId,
   warehouses,
   canReadCost = false,
+  canManageProfile = false,
   initialProductVariantId,
   initialWarehouseId
 }: ReceiveStockModalProps): React.JSX.Element | null {
@@ -35,7 +39,6 @@ export function ReceiveStockModal({
   const [warehouseId, setWarehouseId] = useState(initialWarehouseId ?? (warehouses[0]?.id ?? ""));
   const [locationId, setLocationId] = useState<string>("");
   const [quantity, setQuantity] = useState<string>("10");
-  const [uomId, setUomId] = useState<string>("2b12a81b-ea82-a151-af7f-4c60a017f44d");
   const [opDate, setOpDate] = useState<string>(today);
   const [postDate, setPostDate] = useState<string>(today);
   const [unitCost, setUnitCost] = useState<string>("");
@@ -43,10 +46,13 @@ export function ReceiveStockModal({
   const [sourceDoc, setSourceDoc] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<string | null>(null);
+  const [requiresProfileSetup, setRequiresProfileSetup] = useState(false);
+  const [isProfileSetupOpen, setIsProfileSetupOpen] = useState(false);
 
   const selectedWarehouse = warehouses.find(w => w.id === warehouseId);
   const hasLocations = selectedWarehouse && selectedWarehouse.locationMode !== "WarehouseOnly";
   const { data: locations = [] } = useLocations(legalEntityId, hasLocations ? warehouseId : undefined);
+  const { data: productUoms = [] } = useProductUoms(productId, { legalEntityId });
 
   const { receiveStock } = useInventoryMutations(legalEntityId);
 
@@ -54,8 +60,18 @@ export function ReceiveStockModal({
     e.preventDefault();
     setErrorMessage(null);
     setSuccessInfo(null);
+    setRequiresProfileSetup(false);
 
     const numQty = parseFloat(quantity);
+    if (!productId) {
+      setErrorMessage(t("errors.productRequired"));
+      return;
+    }
+    const baseUom = productUoms.find((uom) => uom.isBase && uom.status === "Active");
+    if (!baseUom) {
+      setErrorMessage(t("errors.uomConversionNotAvailable"));
+      return;
+    }
     if (isNaN(numQty) || numQty <= 0) {
       setErrorMessage(t("errors.quantityInvalid"));
       return;
@@ -64,15 +80,16 @@ export function ReceiveStockModal({
     try {
       const idempotencyKey = `rcv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const result = await receiveStock.mutateAsync({
-        productVariantId: productId || "a6315416-cffe-bf52-bcf0-d5e590d3bf94",
+        productVariantId: productId,
         warehouseId,
         locationId: hasLocations && locationId ? locationId : null,
-        enteredUomId: uomId,
+        enteredUomId: baseUom.uomId,
         enteredQuantity: numQty,
         operationalDate: opDate,
         postingDate: postDate,
         idempotencyKey,
         sourceModule: "inventory",
+        sourceDocumentId: sourceDoc.trim() || null,
         unitCost: canReadCost && unitCost ? parseFloat(unitCost) : null,
         currencyCode: canReadCost && unitCost ? currency : null
       });
@@ -84,6 +101,9 @@ export function ReceiveStockModal({
     } catch (err) {
       const mapped = mapInventoryError(err);
       setErrorMessage(t(mapped.messageKey as any, { defaultValue: mapped.fallbackAr }));
+      if (mapped.code === "inventory.profile_not_found" && canManageProfile) {
+        setRequiresProfileSetup(true);
+      }
     }
   };
 
@@ -96,8 +116,13 @@ export function ReceiveStockModal({
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         {errorMessage && (
-          <div role="alert" style={{ padding: "0.75rem", backgroundColor: "#fee2e2", border: "1px solid #ef4444", borderRadius: "var(--radius-sm)", color: "#b91c1c", fontSize: "0.875rem" }}>
-            {errorMessage}
+          <div role="alert" style={{ padding: "0.75rem", backgroundColor: "#fee2e2", border: "1px solid #ef4444", borderRadius: "var(--radius-sm)", color: "#b91c1c", fontSize: "0.875rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <span>{errorMessage}</span>
+            {requiresProfileSetup ? (
+              <Button variant="secondary" type="button" onPress={() => setIsProfileSetupOpen(true)}>
+                {t("operations.configureProductForInventory")}
+              </Button>
+            ) : null}
           </div>
         )}
         {successInfo && (
@@ -195,6 +220,19 @@ export function ReceiveStockModal({
           </Button>
         </div>
       </form>
+      <InventoryProfileSetupModal
+        isOpen={isProfileSetupOpen}
+        onClose={() => setIsProfileSetupOpen(false)}
+        onSaved={() => {
+          setRequiresProfileSetup(false);
+          setErrorMessage(null);
+          setSuccessInfo(t("operations.profileConfiguredNotice"));
+        }}
+        legalEntityId={legalEntityId}
+        productVariantId={productId}
+        warehouses={warehouses}
+        initialWarehouseId={warehouseId}
+      />
     </Dialog>
   );
 }

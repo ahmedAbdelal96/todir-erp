@@ -49,6 +49,14 @@ describe("Inventory Domain Invariants & Frontend Slice Contracts", () => {
     assert.equal(periodLockedErr.code, "inventory.period_locked");
     assert.equal(periodLockedErr.messageKey, "errors.periodLocked");
 
+    const missingProfileErr = mapInventoryError(new ApiError(404, "Inventory profile not found", {
+      code: "inventory.profile_not_found",
+      title: "Inventory profile not found",
+      status: 404
+    }));
+    assert.equal(missingProfileErr.code, "inventory.profile_not_found");
+    assert.equal(missingProfileErr.messageKey, "errors.profileNotFound");
+
     const forbiddenErr = mapInventoryError(new ApiError(403, "Forbidden", {
       code: "inventory.forbidden",
       title: "Forbidden",

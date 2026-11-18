@@ -69,6 +69,21 @@ const INVENTORY_ERROR_DEFINITIONS: Record<string, { messageKey: string; fallback
     fallbackEn: "Cost entries are not allowed for non-valuated products.",
     fallbackAr: "إدخال التكلفة غير مسموح للمنتجات غير المقيمة مالياً."
   },
+  "inventory.profile_not_found": {
+    messageKey: "errors.profileNotFound",
+    fallbackEn: "This product is not configured for inventory operations yet.",
+    fallbackAr: "الصنف غير مهيأ للمخزون بعد. جهّز إعدادات المخزون للصنف ثم أعد تأكيد الاستلام."
+  },
+  "inventory.catalog_variant_not_found": {
+    messageKey: "errors.catalogVariantNotFound",
+    fallbackEn: "The selected product is no longer available in the current legal entity.",
+    fallbackAr: "الصنف المحدد غير متاح حاليًا لهذه المنشأة. اختر الصنف من جديد."
+  },
+  "inventory.uom_conversion_not_available": {
+    messageKey: "errors.uomConversionNotAvailable",
+    fallbackEn: "The selected product has no valid unit-of-measure conversion.",
+    fallbackAr: "لا توجد وحدة قياس أساسية صالحة لهذا الصنف. استكمل إعداد وحدة القياس أولًا."
+  },
   "inventory.quantity_invalid": {
     messageKey: "errors.quantityInvalid",
     fallbackEn: "Movement quantity must be greater than zero.",
@@ -98,6 +113,11 @@ const INVENTORY_ERROR_DEFINITIONS: Record<string, { messageKey: string; fallback
     messageKey: "errors.locationNotFound",
     fallbackEn: "The requested inventory location was not found.",
     fallbackAr: "موقع التخزين المطلوب غير موجود."
+  },
+  "inventory.location_not_usable": {
+    messageKey: "errors.locationNotUsable",
+    fallbackEn: "The selected location is inactive or cannot receive stock.",
+    fallbackAr: "الموقع الداخلي المحدد غير نشط أو لا يقبل الاستلام. اختر موقعًا صالحًا."
   },
   "inventory.warehouse_inactive": {
     messageKey: "errors.warehouseInactive",

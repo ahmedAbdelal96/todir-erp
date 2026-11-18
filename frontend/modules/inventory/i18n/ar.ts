@@ -148,7 +148,23 @@ export const ar = {
     insufficientWarning: "الكمية المطلوبة تتجاوز المتاح حالياً",
     negativeOverrideCheckbox: "أملك صلاحية التجاوز والتسجيل بالسالب",
     operationSuccess: "تم تسجيل الحركة بنجاح برقم عملية:",
-    putawaySuggestionAvailable: "الموقع الموصى به للإيداع:"
+    putawaySuggestionAvailable: "الموقع الموصى به للإيداع:",
+    configureProductForInventory: "تجهيز الصنف للمخزون",
+    profileConfiguredNotice: "تم تجهيز الصنف للمخزون. اضغط تأكيد الاستلام مرة أخرى.",
+  },
+  profileSetup: {
+    title: "تجهيز الصنف للمخزون",
+    description: "حدد إعدادات التخزين قبل تسجيل أول حركة لهذا الصنف.",
+    noticeTitle: "لم يتم تسجيل أي رصيد بعد",
+    noticeDescription: "هذه الخطوة تنشئ إعداد الصنف فقط. لن يتم تسجيل الاستلام إلا بعد تأكيده من نافذة الاستلام.",
+    defaultWarehouse: "المستودع الافتراضي",
+    tracking: "طريقة التتبع",
+    valuation: "طريقة تقييم المخزون",
+    costing: "طريقة احتساب التكلفة",
+    negativeStock: "سياسة الصرف بالسالب",
+    reservations: "سياسة الحجز",
+    save: "حفظ إعدادات المخزون",
+    errorTitle: "تعذر حفظ إعدادات الصنف"
   },
   transfers: {
     title: "التحويلات بين المستودعات والمواقع",
@@ -392,6 +408,15 @@ export const ar = {
     NonValuated: "غير مقيم مالياً في المخزن",
     Perpetual: "جرد مستمر مع قيود تكلفة"
   },
+  costingMethods: {
+    MovingAverage: "متوسط التكلفة المتحرك",
+    FIFO: "الوارد أولاً يصرف أولاً"
+  },
+  reservationModes: {
+    Disabled: "الحجز غير مفعّل",
+    Advisory: "حجز إرشادي",
+    Enforced: "حجز إلزامي"
+  },
   negativeStockPolicies: {
     Disallow: "منع الصرف بالسالب تماماً",
     AllowWithWarningAndPermission: "سماح مع تحذير وإذن خاص",
@@ -411,11 +436,16 @@ export const ar = {
     issueCostIsCalculated: "تكلفة الصرف تُحسب آلياً بواسطة محرك التقييم ولا يجوز إدخالها يدوياً.",
     costNotAllowed: "إدخال التكلفة غير مسموح للمنتجات غير المقيمة مالياً.",
     quantityInvalid: "الكمية يجب أن تكون أكبر من الصفر.",
+    productRequired: "اختر الصنف من قائمة الأصناف قبل تأكيد الاستلام.",
     postingBeforeOperationInvalid: "تاريخ الترحيل لا يمكن أن يسبق تاريخ العملية الفعلي.",
     productNotStockTracked: "هذا المنتج معرف كخدمة أو صنف غير مخزني.",
+    profileNotFound: "الصنف غير مهيأ للمخزون بعد. جهّز إعدادات المخزون للصنف ثم أعد تأكيد الاستلام.",
+    catalogVariantNotFound: "الصنف المحدد غير متاح حاليًا لهذه المنشأة. اختر الصنف من جديد.",
+    uomConversionNotAvailable: "لا توجد وحدة قياس أساسية صالحة لهذا الصنف. استكمل إعداد وحدة القياس أولًا.",
     costingMethodRequired: "طريقة تقييم التكلفة (الوارد أولاً أو المتوسط المرجح) مطلوبة لنظام التقييم المستمر.",
     locationCycle: "لا يمكن نقل الموقع تحت نفسه أو تكوين حلقة دائرية في الهيكل.",
     locationNotFound: "موقع التخزين المطلوب غير موجود.",
+    locationNotUsable: "الموقع الداخلي المحدد غير نشط أو لا يقبل الاستلام. اختر موقعًا صالحًا.",
     warehouseInactive: "المستودع غير نشط ولا يقبل حركات مخزنية.",
     warehouseHasStock: "لا يمكن أرشفة المستودع لوجود أرصدة مخزنية قائمة فيه.",
     transferNotFound: "طلب تحويل المخزون المطلوب غير موجود.",

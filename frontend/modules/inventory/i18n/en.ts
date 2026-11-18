@@ -148,7 +148,23 @@ export const en = {
     insufficientWarning: "Requested quantity exceeds currently available stock",
     negativeOverrideCheckbox: "I have authority to override and issue negative stock",
     operationSuccess: "Operation successfully recorded with reference:",
-    putawaySuggestionAvailable: "Recommended putaway location:"
+    putawaySuggestionAvailable: "Recommended putaway location:",
+    configureProductForInventory: "Configure product for inventory",
+    profileConfiguredNotice: "The product is configured for inventory. Press Confirm Receipt again.",
+  },
+  profileSetup: {
+    title: "Configure product for inventory",
+    description: "Choose the storage settings before recording the first movement for this product.",
+    noticeTitle: "No stock balance will be recorded yet",
+    noticeDescription: "This step only saves the product profile. The receipt is recorded only after you confirm it in the receipt form.",
+    defaultWarehouse: "Default warehouse",
+    tracking: "Tracking method",
+    valuation: "Inventory valuation",
+    costing: "Costing method",
+    negativeStock: "Negative stock policy",
+    reservations: "Reservation policy",
+    save: "Save inventory settings",
+    errorTitle: "Could not save product settings"
   },
   transfers: {
     title: "Warehouse & Location Transfers",
@@ -392,6 +408,15 @@ export const en = {
     NonValuated: "Non-Valuated Physical Inventory",
     Perpetual: "Perpetual Valuation with Cost Entries"
   },
+  costingMethods: {
+    MovingAverage: "Moving average",
+    FIFO: "First in, first out (FIFO)"
+  },
+  reservationModes: {
+    Disabled: "Reservations disabled",
+    Advisory: "Advisory reservations",
+    Enforced: "Enforced reservations"
+  },
   negativeStockPolicies: {
     Disallow: "Disallow Negative Stock",
     AllowWithWarningAndPermission: "Allow with Warning & Special Permission",
@@ -411,11 +436,16 @@ export const en = {
     issueCostIsCalculated: "Issue cost is calculated automatically by the valuation engine.",
     costNotAllowed: "Cost entries are not allowed for non-valuated products.",
     quantityInvalid: "Movement quantity must be greater than zero.",
+    productRequired: "Select a product from the catalog before confirming the receipt.",
     postingBeforeOperationInvalid: "Posting date cannot be earlier than operational date.",
     productNotStockTracked: "This product is marked as non-stocked.",
+    profileNotFound: "This product is not configured for inventory yet. Configure it, then confirm the receipt again.",
+    catalogVariantNotFound: "The selected product is no longer available for this legal entity. Select it again.",
+    uomConversionNotAvailable: "This product has no valid base unit conversion. Complete its unit setup first.",
     costingMethodRequired: "A costing method (FIFO or Moving Average) is required for perpetual valuation.",
     locationCycle: "A location cannot be moved under itself or create a circular hierarchy.",
     locationNotFound: "The requested inventory location was not found.",
+    locationNotUsable: "The selected location is inactive or cannot receive stock. Choose a valid location.",
     warehouseInactive: "Warehouse is not active and cannot accept stock operations.",
     warehouseHasStock: "Cannot archive warehouse because it still contains stock balances.",
     transferNotFound: "The requested transfer was not found.",

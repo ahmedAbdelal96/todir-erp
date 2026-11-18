@@ -231,6 +231,7 @@ export function InventoryPage(): React.JSX.Element {
           legalEntityId={legalEntityId}
           warehouses={warehouses}
           canReadCost={permissions.canReadCost}
+          canManageProfile={permissions.canManageProfiles}
         />
       )}
 

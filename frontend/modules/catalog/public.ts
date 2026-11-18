@@ -20,6 +20,7 @@ export type {
   CatalogImportSummary
 } from "./types.ts";
 export { catalogApi } from "./services/catalog-api.ts";
+export { useProductUoms } from "./hooks/catalog-queries.ts";
 export { catalogRoutes } from "./routes.tsx";
 export { ar } from "./i18n/ar.ts";
 export { en } from "./i18n/en.ts";
