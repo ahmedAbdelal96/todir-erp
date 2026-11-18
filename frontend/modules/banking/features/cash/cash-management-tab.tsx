@@ -189,7 +189,7 @@ export function CashManagementTab({ legalEntityId }: Props): React.JSX.Element {
                 {countsData?.items.map((count) => {
                   const currency = selectedAccount?.currencyCode;
                   return (
-                    <TableRow key={count.id}>
+                    <TableRow key={count.id} data-testid={`cash-count-row-${count.cutoffDate}`}>
                       <TableCell style={{ fontWeight: 600 }}>
                         <BdiText>{formatDate(count.cutoffDate)}</BdiText>
                       </TableCell>

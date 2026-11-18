@@ -49,24 +49,25 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 - **Artifact:** `artifacts/banking-acceptance/real-stack/02-treasury-account-detail-drawer.png`
 
 ### Journey 3: Bank Statement Import & Statement Line Classification
-- Finance users import statements via genuine manual row-by-row entry or structured CSV file parser; all synthetic timestamp generators and hardcoded counterparties were completely removed.
-- **Verification:** Statement lines render with classification badges (`مطابق لقاعدة`, `مطابق تلقائياً`, `يحتاج مراجعة`, `يدوي`).
+- Finance users import statements via RFC 4180 compliant CSV parser supporting quoted strings, escaped quotes `""`, embedded commas, and CRLF linebreaks with row-specific validation error reporting, or genuine manual line entry. Synthetic generators and hardcoded counterparties were completely removed.
+- **Verification:** Statement lines render in widened dialog (`min(96vw, 1100px)`) with classification badges (`مطابق لقاعدة`, `مطابق تلقائياً`, `يحتاج مراجعة`, `يدوي`), explicit column `minWidth`s, horizontal scrolling, and `<BdiText>` formatting.
 - **Artifact:** `artifacts/banking-acceptance/real-stack/03-statement-lines-classification.png`
 
 ### Journey 4: Reconciliation Workbench & Conservation Arithmetic
-- Accountants match bank statement lines against system general ledger records fetched dynamically from `/api/v1/payments`, matching currency and debit/credit polarity.
-- Direct adjustments with required explanations are supported when system counterpart is zero.
-- **Verification:** Two-sided matching grid displays bank transactions vs ledger records. Strict conservation arithmetic bar displays: `Bank Balance - Outstanding Withdrawals + Outstanding Deposits = GL Balance`.
+- Accountants match bank statement lines against system general ledger records fetched dynamically from `/api/v1/payments`, matching currency and debit/credit polarity. Resolves the exact linked statement with zero arbitrary fallback to first statement.
+- Cross-currency selection is strictly forbidden. Live session refetch dynamically updates persisted difference and version, with 409 conflict detection and reload action. Authoritative finalization rule enforced (`difference === 0 && matchCount > 0`).
+- **Verification:** Two-sided matching grid in widened modal (`min(96vw, 1250px)`) displays bank transactions vs ledger records. Strict conservation arithmetic bar displays: `Bank Balance - Outstanding Withdrawals + Outstanding Deposits = GL Balance`.
 - **Artifact:** `artifacts/banking-acceptance/real-stack/04-reconciliation-workbench-matching.png`
 
 ### Journey 5: Cash & Vault Management, Denomination Grid & Variance Settlement
-- Cashiers and treasury supervisors manage physical vaults and conduct count sessions. Expected balance pre-fills dynamically from the active vault book balance, and custodian resolves from authenticated session context.
+- Cashiers and treasury supervisors manage physical vaults and conduct count sessions. Expected balance pre-fills dynamically from the active vault book balance (`useCashPosition`), and custodian is verified via authenticated session context badge (zero editable raw UUIDs).
+- Duplicate cutoff dates are gracefully intercepted and mapped to `banking.cash_count_duplicate`.
 - **Verification:** Interactive denomination breakdown grid calculates total currency breakdown (200, 100, 50, 20, 10, 5). Over/short variance triggers the dedicated `تسوية الفروقات النقدية` modal with required reason and destination account.
 - **Artifact:** `artifacts/banking-acceptance/real-stack/05-cash-count-denomination-grid.png`
 
 ### Journey 6: Internal Transfers, Transit Tracking & Gateway Settlements
 - Operations team monitors funds transferred between bank accounts and cash vaults.
-- Currency selection is strictly constrained to configured legal-entity currencies (`useEntityCurrencies`), with same-account validation and stable idempotency keys.
+- Account selection uses searchable active accounts picker (`status === "Active"`), with destination strictly excluding the source account, real-time validation ensuring `amount > 0`, and stable idempotency keys.
 - **Verification:** Transfers table displays in-transit status and transit accounts. Clicking "تسوية التحويل" opens the settlement dialog requiring settlement date, reference number, and evidence file reference.
 - **Artifact:** `artifacts/banking-acceptance/real-stack/06-internal-transfer-settlement.png`
 

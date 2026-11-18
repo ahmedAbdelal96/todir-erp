@@ -121,7 +121,7 @@ export function TransfersTab({ legalEntityId }: Props): React.JSX.Element {
               </TableHeader>
               <TableBody>
                 {transfersData?.items.map((item) => (
-                  <TableRow key={item.id}>
+                  <TableRow key={item.id} data-testid={`transfer-row-${item.transferReference}`}>
                     <TableCell style={{ fontWeight: 600 }}>
                       <BdiText>{item.transferReference}</BdiText>
                     </TableCell>

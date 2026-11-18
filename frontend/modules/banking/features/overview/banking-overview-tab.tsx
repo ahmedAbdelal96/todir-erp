@@ -46,14 +46,55 @@ export function BankingOverviewTab({ legalEntityId }: Props): React.JSX.Element 
   const items = positions ?? [];
   const hasStale = items.some((p) => p.isStale);
 
-  const currencyTotals = items.reduce<Record<string, { liquid: number; book: number; inTransit: number }>>((acc, curr) => {
+  interface CurrencyAggregation {
+    currency: string;
+    totalAccounts: number;
+    syncedAccounts: number;
+    hasPending: boolean;
+    hasStale: boolean;
+    liquidTotal: number | null;
+    bookTotal: number | null;
+    inTransitTotal: number;
+  }
+
+  const currencyTotals = items.reduce<Record<string, CurrencyAggregation>>((acc, curr) => {
     const c = curr.currencyCode || "EGP";
     if (!acc[c]) {
-      acc[c] = { liquid: 0, book: 0, inTransit: 0 };
+      acc[c] = {
+        currency: c,
+        totalAccounts: 0,
+        syncedAccounts: 0,
+        hasPending: false,
+        hasStale: false,
+        liquidTotal: 0,
+        bookTotal: 0,
+        inTransitTotal: 0
+      };
     }
-    acc[c].liquid += curr.availableBalance ?? 0;
-    acc[c].book += curr.bookBalance ?? 0;
-    acc[c].inTransit += curr.inTransitAmount ?? 0;
+    const agg = acc[c]!;
+    agg.totalAccounts += 1;
+    if (curr.isStale) agg.hasStale = true;
+
+    if (curr.availableBalance === null || curr.availableBalance === undefined) {
+      agg.hasPending = true;
+      agg.liquidTotal = null;
+    } else if (agg.liquidTotal !== null) {
+      agg.liquidTotal += curr.availableBalance;
+    }
+
+    if (curr.bookBalance === null || curr.bookBalance === undefined) {
+      agg.hasPending = true;
+      agg.bookTotal = null;
+    } else if (agg.bookTotal !== null) {
+      agg.bookTotal += curr.bookBalance;
+    }
+
+    if (curr.availableBalance !== null && curr.availableBalance !== undefined &&
+        curr.bookBalance !== null && curr.bookBalance !== undefined) {
+      agg.syncedAccounts += 1;
+    }
+
+    agg.inTransitTotal += curr.inTransitAmount ?? 0;
     return acc;
   }, {});
 
@@ -96,26 +137,63 @@ export function BankingOverviewTab({ legalEntityId }: Props): React.JSX.Element 
       )}
 
       {/* KPI Ribbon */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "1rem" }}>
         {currencies.length > 0 ? (
-          currencies.map((curr) => (
-            <Surface key={curr} style={{ padding: "1.25rem" }}>
-              <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>
-                {t("overview.totalLiquid")} ({curr})
-              </div>
-              <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--color-brand-primary)" }}>
-                <BankingMoney amount={currencyTotals[curr]?.liquid ?? 0} currency={curr} size="large" />
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", color: "var(--color-content-muted)", marginTop: "0.75rem", borderTop: "1px solid var(--color-border-subtle)", paddingTop: "0.5rem" }}>
-                <span>{t("overview.totalBook")}:</span>
-                <BankingMoney amount={currencyTotals[curr]?.book ?? 0} currency={curr} />
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", color: "var(--color-content-muted)", marginTop: "0.25rem" }}>
-                <span>{t("overview.totalInTransit")}:</span>
-                <BankingMoney amount={currencyTotals[curr]?.inTransit ?? 0} currency={curr} />
-              </div>
-            </Surface>
-          ))
+          currencies.map((curr) => {
+            const agg = currencyTotals[curr]!;
+            return (
+              <Surface key={curr} style={{ padding: "1.25rem", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                    <span style={{ fontSize: "0.875rem", color: "var(--color-content-muted)", fontWeight: 500 }}>
+                      {t("overview.totalLiquid")} ({curr})
+                    </span>
+                    <span style={{
+                      fontSize: "0.75rem",
+                      padding: "0.125rem 0.375rem",
+                      borderRadius: "var(--radius-xs)",
+                      backgroundColor: agg.hasStale ? "#fef3c7" : "var(--color-surface-subtle)",
+                      color: agg.hasStale ? "#92400e" : "var(--color-content-muted)",
+                      fontWeight: 600
+                    }}>
+                      {agg.hasStale ? t("overview.sourceStale") : t("overview.sourceFreshness")}
+                    </span>
+                  </div>
+
+                  <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--color-brand-primary)", minHeight: "2.25rem", display: "flex", alignItems: "center" }}>
+                    {agg.liquidTotal !== null ? (
+                      <BankingMoney amount={agg.liquidTotal} currency={curr} size="large" />
+                    ) : (
+                      <span style={{ fontSize: "1rem", color: "var(--color-status-warning)", fontWeight: 600 }}>
+                        {t("overview.balancePending")}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginTop: "0.25rem" }}>
+                    {agg.hasPending
+                      ? t("overview.coverageIndicator", { synced: agg.syncedAccounts, total: agg.totalAccounts })
+                      : t("overview.coverageComplete", { count: agg.totalAccounts })}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: "0.875rem", borderTop: "1px solid var(--color-border-subtle)", paddingTop: "0.625rem", display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+                    <span>{t("overview.totalBook")}:</span>
+                    {agg.bookTotal !== null ? (
+                      <BankingMoney amount={agg.bookTotal} currency={curr} />
+                    ) : (
+                      <span style={{ color: "var(--color-status-warning)" }}>{t("overview.balancePending")}</span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>
+                    <span>{t("overview.totalInTransit")}:</span>
+                    <BankingMoney amount={agg.inTransitTotal} currency={curr} />
+                  </div>
+                </div>
+              </Surface>
+            );
+          })
         ) : (
           <Surface style={{ padding: "1.25rem" }}>
             <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>{t("overview.totalLiquid")}</div>

@@ -140,7 +140,9 @@ export function StatementsTab({ legalEntityId }: Props): React.JSX.Element {
                       <Button
                         size="compact"
                         variant="secondary"
+                        data-testid={`view-lines-${stmt.statementNumber}`}
                         onClick={() => setSelectedStatement(stmt)}
+                        onPress={() => setSelectedStatement(stmt)}
                       >
                         {t("statements.viewLines")}
                       </Button>

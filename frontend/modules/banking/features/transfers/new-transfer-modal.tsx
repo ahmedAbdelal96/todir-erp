@@ -21,8 +21,16 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
   const { t } = useTranslation("banking");
   const createMutation = useCreateTransfer(legalEntityId);
 
-  const { data: accountsData } = useTreasuryAccounts(legalEntityId, { pageSize: 100 });
-  const accounts = accountsData?.items ?? [];
+  const [accountSearch, setAccountSearch] = useState("");
+  const trimmedSearch = accountSearch.trim();
+  const accountQueryFilters = useMemo(() => {
+    return trimmedSearch
+      ? { pageSize: 100, search: trimmedSearch }
+      : { pageSize: 100 };
+  }, [trimmedSearch]);
+  const { data: accountsData } = useTreasuryAccounts(legalEntityId, accountQueryFilters);
+  const allAccounts = accountsData?.items ?? [];
+  const activeAccounts = allAccounts.filter((a) => a.status === "Active");
 
   const { data: entityCurrenciesData } = useEntityCurrencies(legalEntityId);
   const availableCurrencies = useMemo(() => {
@@ -34,14 +42,14 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
         }
       });
     }
-    accounts.forEach((acc) => {
+    allAccounts.forEach((acc) => {
       if (acc.currencyCode && !list.includes(acc.currencyCode)) {
         list.push(acc.currencyCode);
       }
     });
     if (list.length === 0) list.push("EGP", "USD", "EUR", "SAR");
     return list;
-  }, [entityCurrenciesData, accounts]);
+  }, [entityCurrenciesData, allAccounts]);
 
   const [sourceAccountId, setSourceAccountId] = useState("");
   const [destAccountId, setDestAccountId] = useState("");
@@ -55,6 +63,7 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
     if (isOpen) {
       setIdempotencyKey(crypto.randomUUID());
       setErrorMsg(null);
+      setAccountSearch("");
     }
   }, [isOpen]);
 
@@ -72,11 +81,21 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
 
   const handleSourceAccountChange = (key: string) => {
     setSourceAccountId(key);
-    const src = accounts.find((a) => a.id === key);
+    const src = allAccounts.find((a) => a.id === key);
     if (src?.currencyCode) {
       setCurrencyCode(src.currencyCode);
     }
   };
+
+  const destinationOptions = activeAccounts
+    .filter((acc) => acc.id !== sourceAccountId)
+    .map((acc) => {
+      const curr = acc.currencyCode ? ` - ${acc.currencyCode}` : "";
+      return {
+        id: acc.id,
+        label: `${acc.name} (${acc.code})${curr}`
+      };
+    });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,10 +139,40 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t("transfers.newTransferModalTitle")}>
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem", minWidth: "320px", maxWidth: "480px" }}>
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "1rem",
+          minWidth: "320px",
+          maxWidth: "min(96vw, 540px)"
+        }}
+      >
         {errorMsg && (
-          <div role="alert" style={{ padding: "0.75rem", background: "var(--color-surface-danger)", color: "var(--color-status-danger)", borderRadius: "var(--radius-sm)", fontSize: "0.875rem" }}>
+          <div
+            role="alert"
+            style={{
+              padding: "0.75rem",
+              background: "var(--color-surface-danger)",
+              color: "var(--color-status-danger)",
+              borderRadius: "var(--radius-sm)",
+              fontSize: "0.875rem"
+            }}
+          >
             {errorMsg}
+          </div>
+        )}
+
+        {/* Account search helper for large account lists */}
+        {allAccounts.length > 5 && (
+          <div>
+            <TextField
+              label={t("accounts.searchAccounts")}
+              value={accountSearch}
+              onChange={(val) => setAccountSearch(val)}
+              placeholder={t("accounts.searchPlaceholder")}
+            />
           </div>
         )}
 
@@ -132,10 +181,13 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
             label={t("transfers.sourceAccountLabel")}
             selectedKey={sourceAccountId}
             onSelectionChange={(key) => handleSourceAccountChange(key ? String(key) : "")}
-            options={accounts.map((acc) => ({
-              id: acc.id,
-              label: `${acc.name} (${acc.code}) - ${acc.currencyCode || "EGP"}`
-            }))}
+            options={activeAccounts.map((acc) => {
+              const curr = acc.currencyCode ? ` - ${acc.currencyCode}` : "";
+              return {
+                id: acc.id,
+                label: `${acc.name} (${acc.code})${curr}`
+              };
+            })}
             isRequired
           />
         </div>
@@ -145,10 +197,7 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
             label={t("transfers.destinationAccountLabel")}
             selectedKey={destAccountId}
             onSelectionChange={(key) => setDestAccountId(key ? String(key) : "")}
-            options={accounts.map((acc) => ({
-              id: acc.id,
-              label: `${acc.name} (${acc.code}) - ${acc.currencyCode || "EGP"}`
-            }))}
+            options={destinationOptions}
             isRequired
           />
           {isSameAccount && (
@@ -202,14 +251,29 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
           placeholder={t("transfers.referencePlaceholder")}
         />
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "1rem", borderTop: "1px solid var(--color-border-subtle)", paddingTop: "1rem" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: "0.75rem",
+            marginTop: "1rem",
+            borderTop: "1px solid var(--color-border-subtle)",
+            paddingTop: "1rem"
+          }}
+        >
           <Button type="button" variant="secondary" onClick={onClose} isDisabled={createMutation.isPending}>
             {t("accounts.cancel")}
           </Button>
           <Button
             type="submit"
             variant="primary"
-            isDisabled={createMutation.isPending || !sourceAccountId || !destAccountId || isSameAccount || !isAmountValid}
+            isDisabled={
+              createMutation.isPending ||
+              !sourceAccountId ||
+              !destAccountId ||
+              isSameAccount ||
+              !isAmountValid
+            }
           >
             {createMutation.isPending ? t("common.loading") : t("transfers.transferSubmit")}
           </Button>

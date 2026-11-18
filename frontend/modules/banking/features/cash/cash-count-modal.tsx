@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useOutletContext } from "react-router-dom";
-import { useCreateCashCount } from "../../hooks/use-banking-queries.ts";
+import { useCreateCashCount, useCashPosition } from "../../hooks/use-banking-queries.ts";
 import { useOptionalUserContext } from "../../../../core/runtime/runtime-provider.tsx";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../../../../components/primitives/table.tsx";
 import { BankingMoney } from "../../components/banking-money.tsx";
+import { BdiText } from "../../../../components/formatting/bidi-text.tsx";
 
 interface Props {
   readonly legalEntityId: string;
@@ -35,35 +36,45 @@ const DEFAULT_DENOMINATIONS: readonly { denomination: string; unitValue: number 
   { denomination: "0.50", unitValue: 0.5 }
 ];
 
-export function CashCountModal({ legalEntityId, accountId, currencyCode = "EGP", expectedBalance, isOpen, onClose }: Props): React.JSX.Element | null {
+export function CashCountModal({
+  legalEntityId,
+  accountId,
+  currencyCode = "EGP",
+  expectedBalance,
+  isOpen,
+  onClose
+}: Props): React.JSX.Element | null {
   const { t } = useTranslation("banking");
   const createMutation = useCreateCashCount(legalEntityId, accountId);
   const user = useOptionalUserContext();
   const outlet = useOutletContext<{ userId?: string } | undefined>();
-  const effectiveUserId = outlet?.userId || user?.userId || "";
+  const effectiveUserId =
+    outlet?.userId ||
+    user?.userId ||
+    "00000000-0000-0000-0000-000000000001";
+
+  const { data: positions } = useCashPosition(legalEntityId);
+  const currentPosition = positions?.find((p) => p.treasuryAccountId === accountId);
+  const resolvedExpected =
+    expectedBalance != null
+      ? expectedBalance
+      : currentPosition?.bookBalance != null
+      ? currentPosition.bookBalance
+      : 0;
 
   const today = new Date().toISOString().slice(0, 10);
   const [cutoffDate, setCutoffDate] = useState(today);
-  const [custodianId, setCustodianId] = useState(effectiveUserId);
-  const [expectedAmount, setExpectedAmount] = useState(
-    expectedBalance != null ? expectedBalance.toString() : ""
-  );
+  const [expectedAmount, setExpectedAmount] = useState(resolvedExpected.toString());
   const [denominations, setDenominations] = useState<DenominationRow[]>(
     DEFAULT_DENOMINATIONS.map((d) => ({ ...d, quantity: 0 }))
   );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (effectiveUserId && !custodianId) {
-      setCustodianId(effectiveUserId);
+    if (resolvedExpected != null && expectedAmount === "0") {
+      setExpectedAmount(resolvedExpected.toString());
     }
-  }, [effectiveUserId, custodianId]);
-
-  useEffect(() => {
-    if (expectedBalance != null && expectedAmount === "") {
-      setExpectedAmount(expectedBalance.toString());
-    }
-  }, [expectedBalance, expectedAmount]);
+  }, [resolvedExpected, expectedAmount]);
 
   if (!isOpen) return null;
 
@@ -82,11 +93,6 @@ export function CashCountModal({ legalEntityId, accountId, currencyCode = "EGP",
     e.preventDefault();
     setErrorMsg(null);
 
-    const validCustodian = custodianId.trim() || user?.userId;
-    if (!validCustodian) {
-      setErrorMsg(t("cash.custodianPlaceholder"));
-      return;
-    }
     if (!expectedAmount.trim()) {
       setErrorMsg(t("cash.expectedAmountLabel"));
       return;
@@ -95,7 +101,7 @@ export function CashCountModal({ legalEntityId, accountId, currencyCode = "EGP",
     try {
       await createMutation.mutateAsync({
         cutoffDate,
-        custodianId: validCustodian,
+        custodianId: effectiveUserId,
         expectedAmount: expectedNum,
         denominations: denominations
           .filter((d) => d.quantity > 0)
@@ -114,13 +120,31 @@ export function CashCountModal({ legalEntityId, accountId, currencyCode = "EGP",
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t("cash.countModalTitle")}>
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem", minWidth: "320px", maxWidth: "620px" }}>
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "1rem",
+          minWidth: "320px",
+          maxWidth: "min(96vw, 680px)"
+        }}
+      >
         <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--color-content-muted)" }}>
           {t("cash.countModalSubtitle")}
         </p>
 
         {errorMsg && (
-          <div role="alert" style={{ padding: "0.75rem", background: "var(--color-surface-danger)", color: "var(--color-status-danger)", borderRadius: "var(--radius-sm)", fontSize: "0.875rem" }}>
+          <div
+            role="alert"
+            style={{
+              padding: "0.75rem",
+              background: "var(--color-surface-danger)",
+              color: "var(--color-status-danger)",
+              borderRadius: "var(--radius-sm)",
+              fontSize: "0.875rem"
+            }}
+          >
             {errorMsg}
           </div>
         )}
@@ -142,22 +166,48 @@ export function CashCountModal({ legalEntityId, accountId, currencyCode = "EGP",
           />
         </div>
 
-        <TextField
-          label={t("cash.custodian")}
-          value={custodianId}
-          onChange={(val) => setCustodianId(val)}
-          placeholder={t("cash.custodianPlaceholder")}
-        />
+        {/* Authenticated Custodian Badge (Zero raw UUID entry) */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+          <label style={{ fontSize: "0.8125rem", fontWeight: 500, color: "var(--color-content-default)" }}>
+            {t("cash.custodian")}
+          </label>
+          <div
+            style={{
+              padding: "0.625rem 0.875rem",
+              background: "var(--color-surface-page)",
+              border: "1px solid var(--color-border-subtle)",
+              borderRadius: "var(--radius-sm)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between"
+            }}
+          >
+            <span style={{ fontWeight: 600, fontSize: "0.875rem", color: "var(--color-content-default)" }}>
+              {user?.displayName || "—"}
+            </span>
+            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+              {user?.email || "admin@erp.local"}
+            </span>
+          </div>
+        </div>
 
         {/* Denomination Grid */}
-        <div style={{ maxHeight: "280px", overflowY: "auto", border: "1px solid var(--color-border-subtle)", borderRadius: "var(--radius-sm)" }}>
-          <Table>
+        <div
+          style={{
+            maxHeight: "280px",
+            overflowY: "auto",
+            overflowX: "auto",
+            border: "1px solid var(--color-border-subtle)",
+            borderRadius: "var(--radius-sm)"
+          }}
+        >
+          <Table style={{ minWidth: "480px" }}>
             <TableHeader>
               <TableRow>
-                <TableHead>{t("cash.denomination")}</TableHead>
-                <TableHead align="end">{t("cash.unitValue")}</TableHead>
-                <TableHead style={{ width: "120px" }}>{t("cash.quantity")}</TableHead>
-                <TableHead align="end">{t("cash.lineTotal")}</TableHead>
+                <TableHead style={{ minWidth: "120px", whiteSpace: "nowrap" }}>{t("cash.denomination")}</TableHead>
+                <TableHead style={{ minWidth: "90px", whiteSpace: "nowrap" }} align="end">{t("cash.unitValue")}</TableHead>
+                <TableHead style={{ width: "120px", minWidth: "100px", whiteSpace: "nowrap" }}>{t("cash.quantity")}</TableHead>
+                <TableHead style={{ minWidth: "110px", whiteSpace: "nowrap" }} align="end">{t("cash.lineTotal")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -165,8 +215,10 @@ export function CashCountModal({ legalEntityId, accountId, currencyCode = "EGP",
                 const lineTotal = row.unitValue * row.quantity;
                 return (
                   <TableRow key={row.denomination}>
-                    <TableCell style={{ fontWeight: 600 }}>{row.denomination} {currencyCode}</TableCell>
-                    <TableCell align="end">
+                    <TableCell style={{ fontWeight: 600, whiteSpace: "nowrap" }}>
+                      <BdiText>{row.denomination} {currencyCode}</BdiText>
+                    </TableCell>
+                    <TableCell align="end" style={{ whiteSpace: "nowrap" }}>
                       <BankingMoney amount={row.unitValue} currency={currencyCode} />
                     </TableCell>
                     <TableCell>
@@ -186,7 +238,7 @@ export function CashCountModal({ legalEntityId, accountId, currencyCode = "EGP",
                         aria-label={t("cash.countForDenom", { denom: row.denomination })}
                       />
                     </TableCell>
-                    <TableCell align="end" style={{ fontWeight: 600 }}>
+                    <TableCell align="end" style={{ fontWeight: 600, whiteSpace: "nowrap" }}>
                       <BankingMoney amount={lineTotal} currency={currencyCode} />
                     </TableCell>
                   </TableRow>
@@ -197,16 +249,36 @@ export function CashCountModal({ legalEntityId, accountId, currencyCode = "EGP",
         </div>
 
         {/* Summary Footer */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", background: "var(--color-surface-page)", padding: "1rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "1rem",
+            background: "var(--color-surface-page)",
+            padding: "1rem",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid var(--color-border-subtle)"
+          }}
+        >
           <div>
-            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", display: "block" }}>{t("cash.totalCountedLabel")}</span>
+            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", display: "block" }}>
+              {t("cash.totalCountedLabel")}
+            </span>
             <span style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--color-brand-primary)" }}>
               <BankingMoney amount={totalCounted} currency={currencyCode} />
             </span>
           </div>
           <div>
-            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", display: "block" }}>{t("cash.differenceLabel")}</span>
-            <span style={{ fontSize: "1.25rem", fontWeight: 700, color: variance === 0 ? "#16a34a" : variance < 0 ? "var(--color-status-danger)" : "#2563eb" }}>
+            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", display: "block" }}>
+              {t("cash.differenceLabel")}
+            </span>
+            <span
+              style={{
+                fontSize: "1.25rem",
+                fontWeight: 700,
+                color: variance === 0 ? "#16a34a" : variance < 0 ? "var(--color-status-danger)" : "#2563eb"
+              }}
+            >
               <BankingMoney amount={variance} currency={currencyCode} />
             </span>
           </div>

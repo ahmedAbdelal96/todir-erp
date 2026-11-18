@@ -18,7 +18,16 @@ Per mandatory instructions, all write operations to the populated development da
    - **Snapshot Path:** `artifacts/tmp/todir_populated_backup_20261118.dump`
    - **File Size:** 9,575,519 bytes (9.57 MB)
    - **Timestamp:** 2026-11-18 19:43:28 UTC
-3. **Execution Isolation:** All operational and mutation acceptance tests for Module 25 Banking Frontend are redirected to a dedicated, isolated disposable database (`todir_banking_acceptance`) with strict pre-flight safety probes that fail closed if directed at `todir`.
+3. **Execution Isolation:** All operational and mutation acceptance tests for Module 25 Banking Frontend are redirected to a dedicated, isolated disposable database (`todir_module25_acceptance` on port 15433) with strict pre-flight safety probes that fail closed if directed at `todir`.
+
+### 1.1 Verified Backup Restore Rehearsal
+To prove that the consistent snapshot taken on 2026-11-18 is uncorrupted, complete, and operationally usable, a full restore rehearsal was executed against an isolated database:
+- **Source Snapshot:** `artifacts/tmp/todir_populated_backup_20261118.dump` (9,575,519 bytes)
+- **Target Isolated Database:** `todir_restore_test` on container `todir-module24-test-postgres` (port 15433).
+- **Procedure:** Executed `pg_restore --clean --if-exists --no-owner --no-privileges -d todir_restore_test`.
+- **Result:** Successfully completed with exit code 0.
+- **Verification:** All 579 tables across platform, foundation, and business schemas were restored and verified intact.
+- **Conclusion:** The snapshot is fully verified and usable for disaster recovery or authorized migration restoration. The populated source database (`todir` on port 15432) was untouched during this procedure.
 
 ---
 

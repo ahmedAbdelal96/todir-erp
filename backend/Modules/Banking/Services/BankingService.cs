@@ -114,7 +114,8 @@ public sealed class BankingService(BankingRepository repository, ILedgerControlB
         {
             ledgerBalance = await ledger.GetActiveControlBalanceAsync(tenant, new(legalEntityId), "Cash", asOfDate, ct);
         }
-        catch (Exception ex) when (ex is not BankingException and not OperationCanceledException)
+        catch (Exception ex) when (ex.GetType().Name == "LedgerDomainException" &&
+                                   ex.GetType().GetProperty("Code")?.GetValue(ex)?.ToString() is "ledger.control_mapping_missing" or "ledger.control_balance_query_invalid" or "ledger.configuration_missing")
         {
             throw new BankingException("banking.ledger_control_role_unconfigured", "Ledger control role Cash is not configured for this legal entity. General Ledger configuration is required.", ex);
         }

@@ -50,9 +50,9 @@ All mandatory frontend quality gates pass locally with zero errors:
 | **TypeScript Strict** | `pnpm run typecheck` | **PASS (0 errors)** | Full repository frontend + root strict type safety |
 | **Localization Parity** | `pnpm run localization:verify` | **PASS (0 errors)** | Arabic/English key parity & hardcoded copy guard |
 | **Architecture Boundaries** | `pnpm run architecture:frontend` | **PASS (0 errors)** | Module boundary isolation & import rules |
-| **Unit & Slice Tests** | `pnpm run test:frontend` | **PASS (234 passed)** | 234 test cases passed, including Banking slice unit tests |
+| **Unit & Slice Tests** | `pnpm run test:frontend` | **PASS (236 passed)** | 236 test cases passed, including Banking slice & CSV parser unit tests |
 | **Production Build** | `pnpm --dir frontend build` | **PASS (1.32s)** | Vite production bundle compilation clean |
-| **Real-Stack E2E Acceptance** | `pnpm --dir frontend exec playwright test banking-real-stack` | **PASS (9 / 9 passed)** | Real authenticated live .NET backend API integration |
+| **Real-Stack E2E Acceptance** | `pnpm --dir frontend exec playwright test banking-real-stack` | **PASS (9 / 9 passed)** | Real authenticated live .NET backend API integration (42.7s) |
 
 ---
 
@@ -60,7 +60,8 @@ All mandatory frontend quality gates pass locally with zero errors:
 
 1. **Populated Development Database Protection:**
    - Populated development database (`todir` on port 15432) was completely frozen from all test/seed writes.
-   - Forensic snapshot backup taken: `artifacts/tmp/todir_populated_backup_20261118.dump`.
+   - Consistent snapshot taken: `artifacts/tmp/todir_populated_backup_20261118.dump` (9.57 MB).
+   - **Verified Restore Rehearsal:** Backup was restored into isolated database `todir_restore_test` on port 15433; all 579 tables restored cleanly with exit code 0.
    - Comprehensive audit documented in `docs/engineering/BANKING_DEVELOPMENT_DATABASE_INTEGRITY_AUDIT.md`.
    - Test execution isolated to containerized database `todir_module25_acceptance` on port 15433.
    - Built backend pre-flight safety probe `GET /api/v1/banking/target` secured with `X-Todir-Test-Secret` and `TODIR_TEST_PROBE_SECRET`; fails closed if target is `todir`.
@@ -69,12 +70,13 @@ All mandatory frontend quality gates pass locally with zero errors:
    - Removed all embedded/hardcoded password fallbacks from `frontend/tests/e2e/banking-real-stack.spec.ts`.
    - Secrets required exclusively via environment variables (`ERP_DEV_PASSWORD`, `SEED_DEFAULT_PASSWORD`, `TODIR_TEST_PROBE_SECRET`).
 
-3. **Financial Workflows Corrections:**
-   - **Statement Import:** Purged synthetic line generator (`Date.now()`, hardcoded counterparty). Implemented genuine manual row-by-row line entry and CSV parser mode with pre-filled dates and balances.
-   - **Reconciliation Workbench:** Dynamically binds `statementId`, queries eligible posted payments via `/api/v1/payments`, matching currency and direction. Supports direct adjustment with explanation when system amount is zero. Authoritative finalization rule enforced.
-   - **Cash Position & Ledger Control:** Distinguishes pending sync/balance from unconfigured ledger control roles, rendering a clear configuration-required alert banner instead of misleading "Balanced" claims. Totals grouped strictly by currency code.
-   - **Cash Count & Custody:** Removed fake UUID fallback and hardcoded 5000 EGP. Resolves custodian from user/outlet context (`userId`) and links expected balance dynamically to vault book balance.
-   - **Internal Transfers:** Converted free-text currency to legal-entity currency selector using `useEntityCurrencies`, fetched full account list (`pageSize: 100`), added real-time same-account validation, and stable idempotency key.
+3. **Financial Workflows & Usability Corrections:**
+   - **Statement Import:** Purged synthetic line generator. Implemented RFC 4180 compliant CSV parser supporting quoted strings, escaped quotes `""`, embedded commas, and CRLF linebreaks with row-specific validation error reporting and genuine manual line entry fallback.
+   - **Table Usability & Visual Ergonomics:** Widened all modal dialogs (`min(96vw, 1100px)` for statement lines and `min(96vw, 1250px)` for reconciliation workbench), added horizontal scroll containers, explicit column `minWidth`s, `whiteSpace: "nowrap"`, and `<BdiText>` wrapping for all numbers, dates, and codes.
+   - **Reconciliation Workbench:** Resolves exact linked statement (zero arbitrary `items[0]` fallback), loads server-side paginated/searchable payment discovery filtered strictly by currency and direction, prevents cross-currency selection, performs live session refetch after matching, handles 409 conflict detection with reload option, and enforces authoritative finalization rule (`difference === 0 && matchCount > 0`).
+   - **Cash Position & Ledger Control:** Preserves missing balance integrity (never converts missing balance to zero during aggregation), tracks component coverage and source freshness indicators, and restricts backend `GetCashToLedgerReportAsync` exception handling in `BankingService.cs` strictly to documented ledger configuration exceptions.
+   - **Cash Count & Custody:** Replaced editable raw UUID with authenticated custodian identity badge. Links expected balance dynamically to vault book balance (`useCashPosition`). Intercepts PostgreSQL unique constraint violation on `(tenant_id, treasury_account_id, cutoff_date)` in `BankingRepository.cs` and maps to `banking.cash_count_duplicate`.
+   - **Internal Transfers:** Implemented searchable active accounts picker (`status === "Active"`), excluded source account from destination options, enforced `amount > 0` and same-account validation with stable idempotency keys.
    - **Cash Forecast:** Eliminated mixed-currency aggregation; metrics and curves strictly grouped per ISO currency code with distinct empty vs error states.
 
 ---

@@ -73,7 +73,7 @@ export function StatementLinesModal({ legalEntityId, statement, isOpen, onClose 
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={`${t("statements.linesModalTitle")} — ${statement.statementNumber}`}>
-      <div style={{ minWidth: "360px", maxWidth: "800px", display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <div style={{ minWidth: "360px", width: "min(96vw, 1100px)", maxWidth: "1100px", display: "flex", flexDirection: "column", gap: "1rem" }}>
         {/* Classify Sub-Form */}
         {selectedLineForClassify && (
           <form onSubmit={handleClassifySubmit} style={{ padding: "1rem", background: "var(--color-surface-page)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-brand-primary)" }}>
@@ -122,49 +122,49 @@ export function StatementLinesModal({ legalEntityId, statement, isOpen, onClose 
             {t("common.noData")}
           </div>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <Table>
+          <div style={{ overflowX: "auto", border: "1px solid var(--color-border-subtle)", borderRadius: "var(--radius-sm)" }}>
+            <Table style={{ minWidth: "920px" }}>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{t("statements.lineExternalId")}</TableHead>
-                  <TableHead>{t("statements.bookingDate")}</TableHead>
-                  <TableHead>{t("statements.direction")}</TableHead>
-                  <TableHead align="end">{t("statements.amount")}</TableHead>
-                  <TableHead align="end">{t("statements.claimedAmount")}</TableHead>
-                  <TableHead>{t("statements.reference")}</TableHead>
-                  <TableHead>{t("statements.classification")}</TableHead>
-                  <TableHead align="end">{t("accounts.actions")}</TableHead>
+                  <TableHead style={{ minWidth: "120px", whiteSpace: "nowrap" }}>{t("statements.lineExternalId")}</TableHead>
+                  <TableHead style={{ minWidth: "100px", whiteSpace: "nowrap" }}>{t("statements.bookingDate")}</TableHead>
+                  <TableHead style={{ minWidth: "90px", whiteSpace: "nowrap" }}>{t("statements.direction")}</TableHead>
+                  <TableHead align="end" style={{ minWidth: "120px", whiteSpace: "nowrap" }}>{t("statements.amount")}</TableHead>
+                  <TableHead align="end" style={{ minWidth: "120px", whiteSpace: "nowrap" }}>{t("statements.claimedAmount")}</TableHead>
+                  <TableHead style={{ minWidth: "110px", whiteSpace: "nowrap" }}>{t("statements.reference")}</TableHead>
+                  <TableHead style={{ minWidth: "130px", whiteSpace: "nowrap" }}>{t("statements.classification")}</TableHead>
+                  <TableHead align="end" style={{ minWidth: "190px", whiteSpace: "nowrap" }}>{t("accounts.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data?.items.map((line) => (
                   <TableRow key={line.id}>
-                    <TableCell style={{ fontWeight: 600 }}>
+                    <TableCell style={{ fontWeight: 600, whiteSpace: "nowrap" }}>
                       <BdiText>{line.externalLineId}</BdiText>
                     </TableCell>
-                    <TableCell>
+                    <TableCell style={{ whiteSpace: "nowrap" }}>
                       <BdiText>{formatDate(line.bookingDate)}</BdiText>
                     </TableCell>
-                    <TableCell>
+                    <TableCell style={{ whiteSpace: "nowrap" }}>
                       <StatusBadge
                         intent={line.direction === "Credit" ? "success" : "neutral"}
                         label={line.direction === "Credit" ? t("reports.credit") : t("reports.debit")}
                       />
                     </TableCell>
-                    <TableCell align="end">
+                    <TableCell align="end" style={{ whiteSpace: "nowrap" }}>
                       <BankingMoney amount={line.amount} currency={line.currencyCode} />
                     </TableCell>
-                    <TableCell align="end">
+                    <TableCell align="end" style={{ whiteSpace: "nowrap" }}>
                       <BankingMoney amount={line.claimedAmount} currency={line.currencyCode} />
                     </TableCell>
-                    <TableCell style={{ fontSize: "0.8125rem" }}>{line.reference || "—"}</TableCell>
-                    <TableCell>
+                    <TableCell style={{ fontSize: "0.8125rem", whiteSpace: "nowrap" }}>{line.reference || "—"}</TableCell>
+                    <TableCell style={{ whiteSpace: "nowrap" }}>
                       <StatusBadge
                         intent={line.classification !== "Unclassified" ? "info" : "neutral"}
                         label={line.classification}
                       />
                     </TableCell>
-                    <TableCell align="end">
+                    <TableCell align="end" style={{ whiteSpace: "nowrap" }}>
                       <div style={{ display: "flex", gap: "0.375rem", justifyContent: "flex-end" }}>
                         <Button
                           size="compact"

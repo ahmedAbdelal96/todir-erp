@@ -6,6 +6,7 @@ import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { Select } from "../../../../components/primitives/select.tsx";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../../../../components/primitives/table.tsx";
+import { parseAndValidateCsvStatementLines } from "../../utils/csv-statement-parser.ts";
 import type { ImportStatementLineRequest } from "../../types.ts";
 
 interface Props {
@@ -64,9 +65,11 @@ export function ImportStatementModal({
     }
   ]);
 
-  // CSV input
+  // CSV input & validation
   const [csvText, setCsvText] = useState("");
   const [csvParsedLines, setCsvParsedLines] = useState<ImportStatementLineRequest[]>([]);
+  const [csvErrors, setCsvErrors] = useState<readonly string[]>([]);
+  const [csvSummary, setCsvSummary] = useState<{ totalDebit: number; totalCredit: number } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -100,51 +103,31 @@ export function ImportStatementModal({
 
   const handleParseCsv = () => {
     setErrorMsg(null);
+    setCsvErrors([]);
+    setCsvSummary(null);
+
     if (!csvText.trim()) {
       setErrorMsg(t("common.validationError"));
       return;
     }
 
-    const rows = csvText
-      .trim()
-      .split("\n")
-      .map((r) => r.trim())
-      .filter((r) => r.length > 0);
-
-    const parsed: ImportStatementLineRequest[] = [];
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i]!;
-      // Skip header if first row starts with letters
-      if (i === 0 && row.toLowerCase().includes("externallineid")) continue;
-
-      const cols = row.split(",").map((c) => c.trim().replace(/^["']|["']$/g, ""));
-      if (cols.length < 4) continue;
-
-      const [extId, date, dir, amt, counterparty, ref, code] = cols;
-      const parsedAmount = parseFloat(amt || "0");
-      if (!extId || isNaN(parsedAmount) || parsedAmount <= 0) continue;
-
-      const normDir = dir?.toLowerCase() === "debit" || dir?.toLowerCase() === "dr" ? "Debit" : "Credit";
-      parsed.push({
-        externalLineId: extId,
-        bookingDate: date || closingDate || today,
-        valueDate: date || closingDate || today,
-        direction: normDir,
-        amount: parsedAmount,
-        currencyCode: currencyCode.trim(),
-        reference: ref || null,
-        transactionCode: code || (normDir === "Credit" ? "CR-DEP" : "DB-WD"),
-        counterpartyName: counterparty || null,
-        rawPayload: JSON.stringify({ csvRow: row })
-      });
-    }
-
-    if (parsed.length === 0) {
+    const result = parseAndValidateCsvStatementLines(csvText, currencyCode, closingDate || today);
+    if (!result.success) {
+      setCsvErrors(result.errors);
       setErrorMsg(t("statements.csvParseFailed"));
+      setCsvParsedLines([]);
       return;
     }
 
-    setCsvParsedLines(parsed);
+    setCsvParsedLines(result.lines as ImportStatementLineRequest[]);
+    setCsvSummary({ totalDebit: result.totalDebit, totalCredit: result.totalCredit });
+
+    // Suggest closing balance from net line movement if not entered
+    if (openingBalance && !closingBalance) {
+      const open = parseFloat(openingBalance) || 0;
+      const expectedClosing = Math.round((open + result.totalCredit - result.totalDebit) * 100) / 100;
+      setClosingBalance(expectedClosing.toString());
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -212,7 +195,7 @@ export function ImportStatementModal({
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t("statements.importModalTitle")}>
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem", minWidth: "360px", maxWidth: "720px" }}>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem", minWidth: "360px", width: "min(96vw, 920px)", maxWidth: "920px" }}>
         {errorMsg && (
           <div role="alert" style={{ padding: "0.75rem", background: "var(--color-surface-danger)", color: "var(--color-status-danger)", borderRadius: "var(--radius-sm)", fontSize: "0.875rem" }}>
             {errorMsg}
@@ -416,9 +399,42 @@ export function ImportStatementModal({
                 {t("statements.parseCsvButton")}
               </Button>
             </div>
-            {csvParsedLines.length > 0 && (
-              <div style={{ fontSize: "0.875rem", color: "var(--color-status-success)", fontWeight: 500 }}>
-                ✓ {csvParsedLines.length} {t("statements.linesParsedSuccess")}
+            {csvErrors.length > 0 && (
+              <div
+                role="alert"
+                style={{
+                  maxHeight: "150px",
+                  overflowY: "auto",
+                  padding: "0.75rem",
+                  background: "var(--color-surface-danger)",
+                  color: "var(--color-status-danger)",
+                  borderRadius: "var(--radius-sm)",
+                  fontSize: "0.8125rem"
+                }}
+              >
+                <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>
+                  {t("statements.csvParseFailed")} ({csvErrors.length} {t("common.error")}):
+                </div>
+                <ul style={{ margin: 0, paddingInlineStart: "1.25rem" }}>
+                  {csvErrors.map((err, idx) => (
+                    <li key={idx}>{err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {csvSummary && (
+              <div
+                style={{
+                  padding: "0.5rem 0.75rem",
+                  background: "#f0fdf4",
+                  border: "1px solid #bbf7d0",
+                  borderRadius: "var(--radius-sm)",
+                  fontSize: "0.8125rem",
+                  color: "#166534",
+                  fontWeight: 500
+                }}
+              >
+                ✓ {csvParsedLines.length} {t("statements.linesParsedSuccess")} — {t("reports.credit")}: {csvSummary.totalCredit} {currencyCode} | {t("reports.debit")}: {csvSummary.totalDebit} {currencyCode}
               </div>
             )}
           </div>

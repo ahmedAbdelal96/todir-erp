@@ -8,6 +8,9 @@ const sourceRoot = fileURLToPath(new URL(".", import.meta.url));
 export default defineConfig({
   plugins: [react()],
   server: {
+    watch: {
+      ignored: ["**/playwright-report/**", "**/test-results/**", "**/.playwright/**"]
+    },
     proxy: {
       "/api": {
         target: process.env.VITE_API_PROXY_TARGET ?? "http://127.0.0.1:5080",

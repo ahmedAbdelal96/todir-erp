@@ -335,7 +335,12 @@ public sealed class BankingRepository(NpgsqlDataSource dataSource, TimeProvider 
         if (request.Denominations.Count == 0 || request.Denominations.Any(x => x.UnitValue <= 0 || x.Quantity < 0)) throw new BankingException("banking.cash_count_invalid", "Cash denominations must be valid.");
         var counted = request.Denominations.Sum(x => x.UnitValue * x.Quantity);
         await using var connection = await dataSource.OpenConnectionAsync(ct); await using var transaction = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, tenant, transaction, ct); await EnsureCashAccountAsync(connection, transaction, tenant, legalEntityId, accountId, ct);
-        var id = Guid.CreateVersion7(); var now = clock.GetUtcNow(); await using var count = new NpgsqlCommand("insert into finance_banking.cash_count(tenant_id,legal_entity_id,id,treasury_account_id,cutoff_date,custodian_id,state,expected_amount,counted_amount,difference,version,created_at) values($1,$2,$3,$4,$5,$6,'Submitted',$7,$8,$8-$7,1,$9)", connection, transaction); Add(count, tenant.Value, legalEntityId, id, accountId, request.CutoffDate, request.CustodianId, request.ExpectedAmount, counted, now); await count.ExecuteNonQueryAsync(ct);
+        var id = Guid.CreateVersion7(); var now = clock.GetUtcNow(); await using var count = new NpgsqlCommand("insert into finance_banking.cash_count(tenant_id,legal_entity_id,id,treasury_account_id,cutoff_date,custodian_id,state,expected_amount,counted_amount,difference,version,created_at) values($1,$2,$3,$4,$5,$6,'Submitted',$7,$8,$8-$7,1,$9)", connection, transaction); Add(count, tenant.Value, legalEntityId, id, accountId, request.CutoffDate, request.CustodianId, request.ExpectedAmount, counted, now);
+        try { await count.ExecuteNonQueryAsync(ct); }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            throw new BankingException("banking.cash_count_duplicate", "A cash count already exists for this treasury account on the specified cutoff date.", ex);
+        }
         foreach (var denomination in request.Denominations) { await using var line = new NpgsqlCommand("insert into finance_banking.cash_count_denomination(tenant_id,id,cash_count_id,denomination,unit_value,quantity) values($1,$2,$3,$4,$5,$6)", connection, transaction); Add(line, tenant.Value, Guid.CreateVersion7(), id, denomination.Denomination.Trim(), denomination.UnitValue, denomination.Quantity); await line.ExecuteNonQueryAsync(ct); }
         await transaction.CommitAsync(ct); return (await GetCashCountAsync(tenant, legalEntityId, id, ct))!;
     }

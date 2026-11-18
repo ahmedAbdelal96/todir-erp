@@ -133,4 +133,53 @@ describe("TODIR Module 25 (Banking & Cash Management) — Frontend Unit & Slice 
     assert.equal(completedTransfer.state, "Matched");
     assert.equal(completedTransfer.inTransitAmount, 0, "In-transit amount cleared to 0 once fully matched");
   });
+
+  test("CSV bank statement parser: handles quoted fields, embedded commas, and CRLF endings", async () => {
+    const { parseCsvText, parseAndValidateCsvStatementLines } = await import("../utils/csv-statement-parser.ts");
+
+    const sampleCsv = [
+      'ExternalId,BookingDate,Direction,Amount,Counterparty,Reference,Code',
+      'TXN-001,2026-11-01,Credit,"12,500.50","Atlas Telecom, LLC",REF-9988,CR-DEP',
+      'TXN-002,2026-11-02,Debit,450.00,"Bank Charges ""Special""",FEE-01,DB-WD',
+      'TXN-003,2026-11-03,Credit,3000.00,"Delta Corp",INV-4412,CR-DEP'
+    ].join("\r\n");
+
+    const rows = parseCsvText(sampleCsv);
+    assert.equal(rows.length, 4, "Must parse 4 rows including header");
+    assert.equal(rows[1]![4], "Atlas Telecom, LLC", "Must preserve comma inside quoted counterparty string");
+    assert.equal(rows[2]![4], 'Bank Charges "Special"', "Must unescape double quotes correctly");
+
+    const validated = parseAndValidateCsvStatementLines(sampleCsv, "EGP");
+    assert.equal(validated.success, true);
+    if (validated.success) {
+      assert.equal(validated.lines.length, 3, "Parsed exactly 3 statement lines");
+      assert.equal(validated.lines[0]!.amount, 12500.50);
+      assert.equal(validated.lines[0]!.counterpartyName, "Atlas Telecom, LLC");
+      assert.equal(validated.lines[1]!.direction, "Debit");
+      assert.equal(validated.totalCredit, 15500.50);
+      assert.equal(validated.totalDebit, 450.00);
+    }
+  });
+
+  test("CSV bank statement parser: rejects invalid rows and duplicates with row-specific errors", async () => {
+    const { parseAndValidateCsvStatementLines } = await import("../utils/csv-statement-parser.ts");
+
+    const badCsv = [
+      'ExternalId,BookingDate,Direction,Amount',
+      'TXN-101,2026-11-01,Credit,1000',
+      'TXN-102,not-a-date,Credit,2000',      // bad date
+      'TXN-103,2026-11-03,InvalidDir,500',   // bad direction
+      'TXN-104,2026-11-04,Debit,-250',        // negative amount
+      'TXN-101,2026-11-05,Credit,1500'       // duplicate ID
+    ].join("\n");
+
+    const result = parseAndValidateCsvStatementLines(badCsv, "EGP");
+    assert.equal(result.success, false, "Must fail validation when invalid rows exist");
+    if (!result.success) {
+      assert.ok(result.errors.some(e => e.includes("Row 3") && e.includes("date")), "Identifies row 3 date error");
+      assert.ok(result.errors.some(e => e.includes("Row 4") && e.includes("direction")), "Identifies row 4 direction error");
+      assert.ok(result.errors.some(e => e.includes("Row 5") && e.includes("amount")), "Identifies row 5 negative amount error");
+      assert.ok(result.errors.some(e => e.includes("Row 6") && e.includes("Duplicate")), "Identifies row 6 duplicate ID error");
+    }
+  });
 });

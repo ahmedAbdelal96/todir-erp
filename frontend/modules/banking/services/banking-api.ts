@@ -79,7 +79,13 @@ export const bankingApi = {
   // Treasury Accounts
   listAccounts(
     legalEntityId: string,
-    filters?: { search?: string; type?: TreasuryAccountType; status?: TreasuryAccountStatus; page?: number; pageSize?: number }
+    filters?: {
+      search?: string | undefined;
+      type?: TreasuryAccountType | undefined;
+      status?: TreasuryAccountStatus | undefined;
+      page?: number | undefined;
+      pageSize?: number | undefined;
+    }
   ): Promise<TreasuryAccountPage> {
     const qs = buildQuery({ legalEntityId, ...filters });
     return httpClient<TreasuryAccountPage>(`${BASE_URL}/treasury-accounts${qs}`, { legalEntityId });

@@ -213,58 +213,58 @@ test.describe('TODIR Module 25: Banking & Cash Management — Real-Stack End-to-
 
     // Open Import Statement Modal
     const importBtn = page.getByRole('button', { name: /استيراد كشف حساب|Import Statement/i }).first();
-    if (await importBtn.isVisible()) {
-      await importBtn.click();
-      const importDialog = page.getByRole('dialog');
-      await expect(importDialog).toBeVisible();
+    await expect(importBtn).toBeVisible();
+    await importBtn.click();
+    const importDialog = page.getByRole('dialog');
+    await expect(importDialog).toBeVisible();
 
-      const stmtSuffix = Date.now().toString().slice(-6);
-      const stmtNumber = `STMT-${stmtSuffix}`;
+    const stmtSuffix = Date.now().toString().slice(-6);
+    const stmtNumber = `STMT-${stmtSuffix}`;
 
-      // Fill Statement Number
-      const textInputs = importDialog.locator('input[type="text"]');
-      if ((await textInputs.count()) > 0) {
-        await textInputs.nth(0).fill(stmtNumber);
-      }
+    // Fill Statement Number
+    const textInputs = importDialog.locator('input[type="text"]');
+    await textInputs.nth(0).fill(stmtNumber);
 
-      // Fill first line external ref and amount
-      const lineInputs = importDialog.locator('table input[type="text"]');
-      if ((await lineInputs.count()) > 0) {
-        await lineInputs.nth(0).fill(`TXN-${stmtSuffix}`);
-      }
-
-      const numInputs = importDialog.locator('table input[type="number"]');
-      if ((await numInputs.count()) > 0) {
-        await numInputs.nth(0).fill('25000');
-      }
-
-      // Submit Import
-      const submitBtn = importDialog.getByRole('button', { name: /تأكيد واستيراد كشف الحساب|Import Statement/i }).first();
-      if (await submitBtn.isVisible() && !(await submitBtn.isDisabled())) {
-        await submitBtn.click();
-        await expect(importDialog).not.toBeVisible({ timeout: 10000 });
-      } else {
-        const cancelBtn = importDialog.getByRole('button', { name: /إلغاء|Cancel/i }).first();
-        if (await cancelBtn.isVisible()) await cancelBtn.click();
-      }
+    // Fill first line external ref and amount
+    const lineInputs = importDialog.locator('table input[type="text"]');
+    if ((await lineInputs.count()) > 0) {
+      await lineInputs.nth(0).fill(`TXN-${stmtSuffix}`);
     }
 
-    // Inspect lines of an imported statement
-    const viewLinesBtn = page.getByRole('button', { name: /عرض حركات الكشف|View Statement Lines/i }).first();
-    if (await viewLinesBtn.isVisible()) {
-      await viewLinesBtn.click({ force: true });
-      const linesModal = page.getByRole('dialog');
-      await expect(linesModal).toBeVisible();
-      await page.waitForTimeout(500);
-      await saveArtifact(page, '03-statement-lines-classification.png');
-
-      const closeBtn = linesModal.getByRole('button', { name: /إغلاق|Close/i }).first();
-      if (await closeBtn.isVisible()) {
-        await closeBtn.click({ force: true });
-      }
-    } else {
-      await saveArtifact(page, '03-statement-lines-classification.png');
+    const numInputs = importDialog.locator('table input[type="number"]');
+    if ((await numInputs.count()) > 0) {
+      await numInputs.nth(0).fill('25000');
     }
+
+    // Submit Import
+    const submitBtn = importDialog.getByRole('button', { name: /تأكيد واستيراد كشف الحساب|Import Statement/i }).first();
+    await expect(submitBtn).toBeVisible();
+    await expect(submitBtn).toBeEnabled();
+    await submitBtn.click();
+    await expect(importDialog).not.toBeVisible({ timeout: 10000 });
+
+    // Assert newly imported statement row exists and click its View Lines button
+    await page.waitForTimeout(1000);
+    const statementRow = page.locator('tbody tr').filter({ hasText: stmtNumber }).first();
+    await expect(statementRow).toBeVisible({ timeout: 10000 });
+
+    const viewLinesBtn = page.getByTestId(`view-lines-${stmtNumber}`);
+    await expect(viewLinesBtn).toBeVisible({ timeout: 10000 });
+    await viewLinesBtn.dispatchEvent('click');
+
+    const linesModal = page.getByRole('dialog');
+    await expect(linesModal).toBeVisible();
+    await expect(linesModal.getByRole('heading')).toContainText(stmtNumber);
+    // Verify table lines render with BdiText
+    await expect(linesModal.getByText(`TXN-${stmtSuffix}`).first()).toBeVisible({ timeout: 10000 });
+
+    await page.waitForTimeout(500);
+    await saveArtifact(page, '03-statement-lines-classification.png');
+
+    const closeBtn = linesModal.getByRole('button', { name: /إغلاق|Close/i }).first();
+    await expect(closeBtn).toBeVisible();
+    await closeBtn.click({ force: true });
+    await expect(linesModal).not.toBeVisible();
   });
 
   test('04 — Reconciliation Workbench & Conservation Arithmetic', async ({ page }) => {
@@ -279,26 +279,42 @@ test.describe('TODIR Module 25: Banking & Cash Management — Real-Stack End-to-
     await expect(page.getByText(/المطابقة والتسوية البنكية|Bank Reconciliation/i).first()).toBeVisible();
 
     // Verify Workbench Launch button or Start New Session button
-    const openWorkbenchBtn = page.getByRole('button', { name: /فتح طاولة المطابقة|Open Workbench/i }).first();
+    let openWorkbenchBtn = page.getByRole('button', { name: /فتح طاولة المطابقة|Open Workbench/i }).first();
 
-    if (await openWorkbenchBtn.isVisible()) {
-      await openWorkbenchBtn.click();
-      const dialog = page.getByRole('dialog');
-      await expect(dialog).toBeVisible();
-
-      // Verify Interactive Workbench Panels
-      await expect(dialog.getByText(/طاولة المطابقة البنكية التفاعلية|Interactive Reconciliation Workbench/i).first()).toBeVisible();
-      await expect(dialog.getByText(/حركات الكشف البنكي|Bank Statement Lines/i).first()).toBeVisible();
-      await expect(dialog.getByText(/مدفوعات الأستاذ العام|Eligible Ledger Payments/i).first()).toBeVisible();
-
-      await page.waitForTimeout(500);
-      await saveArtifact(page, '04-reconciliation-workbench-matching.png');
-
-      const closeBtn = dialog.getByRole('button', { name: /إغلاق|إلغاء|Close|Cancel/i }).first();
-      if (await closeBtn.isVisible()) await closeBtn.click();
-    } else {
-      await saveArtifact(page, '04-reconciliation-workbench-matching.png');
+    if (!(await openWorkbenchBtn.isVisible())) {
+      // Start a new session if none exists
+      const startSessionBtn = page.getByRole('button', { name: /\+ بدء جلسة مطابقة جديدة|\+ Start Reconciliation/i }).first();
+      if (await startSessionBtn.isVisible()) {
+        await startSessionBtn.dispatchEvent('click');
+        const startDialog = page.getByRole('dialog');
+        await expect(startDialog).toBeVisible();
+        const startSubmit = startDialog.getByRole('button', { name: /بدء الجلسة|Start Session/i }).first();
+        if (await startSubmit.isVisible()) {
+          await startSubmit.dispatchEvent('click');
+          await expect(startDialog).not.toBeVisible({ timeout: 10000 });
+        }
+      }
     }
+
+    openWorkbenchBtn = page.getByRole('button', { name: /فتح طاولة المطابقة|Open Workbench/i }).first();
+    await expect(openWorkbenchBtn).toBeVisible({ timeout: 10000 });
+    await openWorkbenchBtn.dispatchEvent('click');
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+
+    // Verify Interactive Workbench Panels
+    await expect(dialog.getByText(/طاولة المطابقة البنكية التفاعلية|Interactive Reconciliation Workbench/i).first()).toBeVisible();
+    await expect(dialog.getByText(/حركات الكشف البنكي|Bank Statement Lines/i).first()).toBeVisible();
+    await expect(dialog.getByText(/مدفوعات الأستاذ العام|Eligible Ledger Payments/i).first()).toBeVisible();
+
+    await page.waitForTimeout(500);
+    await saveArtifact(page, '04-reconciliation-workbench-matching.png');
+
+    const closeBtn = dialog.getByRole('button', { name: /إغلاق|إلغاء|Close|Cancel/i }).first();
+    await expect(closeBtn).toBeVisible();
+    await closeBtn.click({ force: true });
+    await expect(dialog).not.toBeVisible();
   });
 
   test('05 — Cash & Vault Management, Denomination Grid & Variance Settlement', async ({ page }) => {
@@ -314,47 +330,47 @@ test.describe('TODIR Module 25: Banking & Cash Management — Real-Stack End-to-
 
     // Open Cash Count Modal
     const countBtn = page.getByRole('button', { name: /تسجيل جرد نقدي جديد|New Cash Count/i }).first();
-    if (await countBtn.isVisible() && !(await countBtn.isDisabled())) {
-      await countBtn.click();
+    await expect(countBtn).toBeVisible();
+    await countBtn.click();
 
-      const countDialog = page.getByRole('dialog');
-      await expect(countDialog).toBeVisible();
-      await expect(countDialog.getByText(/تسجيل جرد نقدي فعلي بالفئات النقدية|Physical Cash Count by Denomination/i).first()).toBeVisible();
+    const countDialog = page.getByRole('dialog');
+    await expect(countDialog).toBeVisible();
+    await expect(countDialog.getByText(/تسجيل جرد نقدي فعلي بالفئات النقدية|Physical Cash Count by Denomination/i).first()).toBeVisible();
 
-      // Verify Denomination Grid is rendered
-      await expect(countDialog.getByText(/الفئة النقدية|Denomination/i).first()).toBeVisible();
+    // Set unique cutoff date so repeated test runs never collide on same date
+    const cutoffInput = countDialog.locator('input[type="date"]').first();
+    await expect(cutoffInput).toBeVisible();
+    const randomDays = Math.floor(Math.random() * 5000) + 1000;
+    const testDate = new Date(Date.now() + randomDays * 86400000);
+    const uniqueCutoff = testDate.toISOString().slice(0, 10);
+    await cutoffInput.fill(uniqueCutoff);
 
-      // Input quantity for 200 EGP denomination
-      const denomInputs = countDialog.locator('table input[type="number"]');
-      if ((await denomInputs.count()) >= 1) {
-        await denomInputs.nth(0).fill('25'); // 25 x 200 = 5000 EGP
-      }
+    // Verify Denomination Grid is rendered
+    await expect(countDialog.getByText(/الفئة النقدية|Denomination/i).first()).toBeVisible();
 
-      // Ensure custodian input has valid UUID
-      const custodianInput = countDialog.locator('input[placeholder*="UUID"]').first();
-      if (await custodianInput.isVisible()) {
-        const val = await custodianInput.inputValue();
-        if (!val) {
-          await custodianInput.fill('913f04bf-8239-3954-833c-721a055f8e97');
-        }
-      }
-
-      // Verify Live Sum and Variance calculation
-      await page.waitForTimeout(400);
-      await expect(countDialog.getByText(/إجمالي النقدية المجرودة|Total Counted Cash/i).first()).toBeVisible();
-
-      await page.waitForTimeout(500);
-      await saveArtifact(page, '05-cash-count-denomination-grid.png');
-
-      // Submit cash count
-      const submitBtn = countDialog.getByRole('button', { name: /حفظ وحساب الجرد|Save & Verify Cash Count/i }).first();
-      if (await submitBtn.isVisible()) {
-        await submitBtn.click();
-        await expect(countDialog).not.toBeVisible({ timeout: 10000 });
-      }
-    } else {
-      await saveArtifact(page, '05-cash-count-denomination-grid.png');
+    // Input quantity for 200 EGP denomination
+    const denomInputs = countDialog.locator('table input[type="number"]');
+    if ((await denomInputs.count()) >= 1) {
+      await denomInputs.nth(0).fill('25'); // 25 x 200 = 5000 EGP
     }
+
+    // Verify Live Sum and Variance calculation
+    await page.waitForTimeout(400);
+    await expect(countDialog.getByText(/إجمالي النقدية المجرودة|Total Counted Cash/i).first()).toBeVisible();
+
+    await page.waitForTimeout(500);
+    await saveArtifact(page, '05-cash-count-denomination-grid.png');
+
+    // Submit cash count
+    const submitBtn = countDialog.getByRole('button', { name: /حفظ وحساب الجرد|Save & Verify Cash Count/i }).first();
+    await expect(submitBtn).toBeVisible();
+    await submitBtn.click();
+    await expect(countDialog).not.toBeVisible({ timeout: 10000 });
+
+    // Assert newly created count is persisted in table
+    await page.waitForTimeout(600);
+    const countRow = page.getByTestId(`cash-count-row-${uniqueCutoff}`);
+    await expect(countRow).toBeVisible({ timeout: 10000 });
   });
 
   test('06 — Internal Transfers, Transit Tracking & Gateway Settlements', async ({ page }) => {
@@ -379,39 +395,47 @@ test.describe('TODIR Module 25: Banking & Cash Management — Real-Stack End-to-
 
     // Select source account
     const sourceSelect = transferDialog.getByRole('button', { name: /حساب الخزينة المصدر|Source Treasury Account/i }).first();
-    if (await sourceSelect.isVisible()) {
-      await sourceSelect.click();
-      const listbox = page.getByRole('listbox');
-      if (await listbox.isVisible()) {
-        const options = listbox.getByRole('option');
-        if ((await options.count()) > 0) {
-          await options.first().click();
-        }
-      }
-    }
+    await expect(sourceSelect).toBeVisible();
+    await sourceSelect.click();
+    const sourceListbox = page.getByRole('listbox');
+    await expect(sourceListbox).toBeVisible();
+    const sourceOptions = sourceListbox.getByRole('option');
+    await sourceOptions.first().click();
 
     // Select destination account
     const destSelect = transferDialog.getByRole('button', { name: /حساب الخزينة المستلم|Destination Treasury Account/i }).first();
-    if (await destSelect.isVisible()) {
-      await destSelect.click();
-      const listbox = page.getByRole('listbox');
-      if (await listbox.isVisible()) {
-        const options = listbox.getByRole('option');
-        if ((await options.count()) > 1) {
-          await options.nth(1).click();
-        }
-      }
-    }
+    await expect(destSelect).toBeVisible();
+    await destSelect.click();
+    const destListbox = page.getByRole('listbox');
+    await expect(destListbox).toBeVisible();
+    const destOptions = destListbox.getByRole('option');
+    await destOptions.first().click();
 
     // Fill Transfer Amount
     const amountInput = transferDialog.locator('input[type="number"]').first();
     await amountInput.fill('15000');
 
+    // Fill unique reference
+    const refSuffix = Date.now().toString().slice(-6);
+    const testRef = `TRF-E2E-${refSuffix}`;
+    const refInput = transferDialog.locator('input[placeholder*="TRF"]').first();
+    if (await refInput.isVisible()) {
+      await refInput.fill(testRef);
+    }
+
     await page.waitForTimeout(500);
     await saveArtifact(page, '06-internal-transfer-settlement.png');
 
-    const cancelBtn = transferDialog.getByRole('button', { name: /إلغاء|Cancel/i }).first();
-    if (await cancelBtn.isVisible()) await cancelBtn.click();
+    // Submit transfer
+    const submitTransferBtn = transferDialog.getByRole('button', { name: /تنفيذ التحويل المالي|تأكيد التحويل المالي|Initiate Transfer/i }).first();
+    await expect(submitTransferBtn).toBeVisible();
+    await submitTransferBtn.click();
+    await expect(transferDialog).not.toBeVisible({ timeout: 10000 });
+
+    // Assert newly created transfer appears in table
+    await page.waitForTimeout(1000);
+    const transferRow = page.locator('tbody tr').filter({ hasText: '15,000' }).first();
+    await expect(transferRow).toBeVisible({ timeout: 10000 });
   });
 
   test('07 — Liquidity, Cash Forecasting & Financial Reports', async ({ page }) => {

@@ -61,7 +61,13 @@ export const bankingKeys = {
 
 export function useTreasuryAccounts(
   legalEntityId: string,
-  filters?: { search?: string; type?: TreasuryAccountType; status?: TreasuryAccountStatus; page?: number; pageSize?: number }
+  filters?: {
+    search?: string | undefined;
+    type?: TreasuryAccountType | undefined;
+    status?: TreasuryAccountStatus | undefined;
+    page?: number | undefined;
+    pageSize?: number | undefined;
+  }
 ) {
   return useQuery({
     queryKey: bankingKeys.accountsList(legalEntityId, filters),
