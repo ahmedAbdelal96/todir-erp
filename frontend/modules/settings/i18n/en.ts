@@ -9,15 +9,42 @@ export const en = {
     unavailable: "No legal entity is selected. Choose one from the top bar to view its settings.",
     unknown: "Not selected"
   },
-  categories: {
-    title: "Module settings",
-    description: "Start with inventory settings. Other module settings will be added here as their capabilities become ready.",
-    inventory: {
-      title: "Inventory settings",
-      description: "Inventory adjustment policies, separation of duties, and operational cutoff date.",
-      available: "Available now"
+  workspaces: {
+    ariaLabel: "Company settings workspaces",
+    company: {
+      title: "Company data",
+      description: "Company identity and core operating data"
     },
-    comingSoon: "Coming soon"
+    finance: {
+      title: "Finance & tax",
+      description: "Currency, finance, and tax policies"
+    },
+    commercial: {
+      title: "Sales & purchasing",
+      description: "Commercial policies and trading terms"
+    },
+    operations: {
+      title: "Inventory & operations",
+      description: "Inventory, counting, and traceability policies"
+    }
+  },
+  tabs: {
+    ariaLabel: "Company settings sections",
+    scrollPrev: "Previous sections",
+    scrollNext: "Next sections",
+    companyProfile: "Company data",
+    financialFoundation: "Financial foundation",
+    tax: "Tax",
+    sales: "Sales",
+    purchasing: "Purchasing",
+    inventoryPolicy: "Inventory policies",
+    warehouses: "Warehouses & locations",
+    counting: "Counting & adjustments",
+    traceability: "Traceability & valuation"
+  },
+  sectionUnavailable: {
+    title: "This section is not available yet",
+    description: "Settings for this section will be added here as its capabilities become ready, while keeping the same legal-entity scope."
   },
   inventory: {
     title: "Inventory policies",
