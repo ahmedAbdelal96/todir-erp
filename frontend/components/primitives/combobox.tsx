@@ -374,7 +374,7 @@ export function ComboBox<T extends object = ComboBoxOption>({
           border: "1px solid var(--color-border-default, #cbd5e1)",
           borderRadius: "var(--radius-md, 0.375rem)",
           boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
-          maxHeight: "15rem",
+          maxHeight: "17.5rem",
           minHeight: "4rem",
           display: "flex",
           flexDirection: "column",
@@ -493,7 +493,7 @@ export function ComboBox<T extends object = ComboBoxOption>({
             gap: "0.125rem",
             flex: 1,
             overflowY: "auto",
-            maxHeight: "11rem"
+            maxHeight: "13.5rem"
           }}
         >
           {children ? (
