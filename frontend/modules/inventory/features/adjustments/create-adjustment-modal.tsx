@@ -7,6 +7,7 @@ import { LocalDateField } from "../../../../components/fields/local-date-field.t
 import { InventoryProductPicker } from "../../components/inventory-product-picker.tsx";
 import { useInventoryMutations, useLocations } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
+import { useProductUoms } from "../../../catalog/public.ts";
 import type { AdjustmentDirection, AdjustmentReason, Warehouse } from "../../types.ts";
 import { InventoryProfileSetupModal } from "../operations/inventory-profile-setup-modal.tsx";
 
@@ -48,7 +49,6 @@ export function CreateAdjustmentModal({
   const [direction, setDirection] = useState<AdjustmentDirection>("Increase");
   const [reason, setReason] = useState<AdjustmentReason>("FoundStock");
   const [quantity, setQuantity] = useState("1");
-  const [uomId, setUomId] = useState("2b12a81b-ea82-a151-af7f-4c60a017f44d");
   const [opDate, setOpDate] = useState(today);
   const [postDate, setPostDate] = useState(today);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -59,6 +59,18 @@ export function CreateAdjustmentModal({
   const selectedWarehouse = warehouses.find(w => w.id === warehouseId);
   const hasLocations = selectedWarehouse && selectedWarehouse.locationMode !== "WarehouseOnly";
   const { data: locations = [] } = useLocations(legalEntityId, hasLocations ? warehouseId : undefined);
+  const {
+    data: productUoms = [],
+    isLoading: isUomsLoading,
+    isError: isUomsError,
+    refetch: refetchProductUoms
+  } = useProductUoms(productId, { legalEntityId });
+  const baseUom = productUoms.find((uom) => {
+    if (!uom.isBase || uom.status !== "Active") return false;
+    const effectiveFrom = uom.effectiveFrom.slice(0, 10);
+    const effectiveTo = uom.effectiveTo?.slice(0, 10);
+    return effectiveFrom <= opDate && (!effectiveTo || effectiveTo > opDate);
+  });
 
   const { adjustStock, createAdjustmentRequest } = useInventoryMutations(legalEntityId);
 
@@ -69,6 +81,14 @@ export function CreateAdjustmentModal({
     setRequiresProfileSetup(false);
 
     const numQty = parseFloat(quantity);
+    if (!productId) {
+      setErrorMessage(t("errors.productRequired"));
+      return;
+    }
+    if (!baseUom) {
+      setErrorMessage(t("errors.uomConversionNotAvailable"));
+      return;
+    }
     if (isNaN(numQty) || numQty <= 0) {
       setErrorMessage(t("errors.quantityInvalid"));
       return;
@@ -82,7 +102,7 @@ export function CreateAdjustmentModal({
           productVariantId: productId,
           warehouseId,
           locationId: hasLocations && locationId ? locationId : null,
-          enteredUomId: uomId,
+          enteredUomId: baseUom.uomId,
           quantity: numQty,
           direction,
           reason,
@@ -107,7 +127,7 @@ export function CreateAdjustmentModal({
           productVariantId: productId,
           warehouseId,
           locationId: hasLocations && locationId ? locationId : null,
-          enteredUomId: uomId,
+          enteredUomId: baseUom.uomId,
           quantity: numQty,
           direction,
           reason,
@@ -180,6 +200,47 @@ export function CreateAdjustmentModal({
           onChange={setProductId}
           isRequired
         />
+
+        {productId ? (
+          <div
+            style={{
+              padding: "0.75rem",
+              border: `1px solid ${baseUom ? "var(--color-border-default)" : "#f59e0b"}`,
+              borderRadius: "var(--radius-sm)",
+              backgroundColor: baseUom ? "var(--color-surface-subtle, #f8fafc)" : "#fffbeb",
+              color: "var(--color-content-primary)"
+            }}
+          >
+            <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>
+              {t("adjustments.baseUom")}
+            </div>
+            <div style={{ fontWeight: 700 }}>
+              {isUomsLoading
+                ? t("adjustments.loadingUom")
+                : isUomsError
+                  ? t("errors.generic")
+                  : baseUom
+                    ? <bdi dir="ltr">{baseUom.uomCode}</bdi>
+                    : t("adjustments.uomSetupRequired")}
+            </div>
+            {!isUomsLoading && !isUomsError && !baseUom ? (
+              <div style={{ marginTop: "0.35rem", fontSize: "0.8125rem", color: "#92400e" }}>
+                {t("adjustments.uomSetupHint")}
+              </div>
+            ) : null}
+            {isUomsError ? (
+              <Button
+                variant="secondary"
+                type="button"
+                size="compact"
+                onPress={() => void refetchProductUoms()}
+                style={{ marginTop: "0.5rem" }}
+              >
+                {t("common.retry")}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
 
         <div>
           <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, marginBottom: "0.25rem" }}>
@@ -264,7 +325,11 @@ export function CreateAdjustmentModal({
           <Button variant="secondary" onPress={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button variant="primary" type="submit">
+          <Button
+            variant="primary"
+            type="submit"
+            isDisabled={!productId || isUomsLoading || isUomsError || !baseUom}
+          >
             {t("adjustments.newAdjustment")}
           </Button>
         </div>
