@@ -140,6 +140,9 @@ export function useMovementHistory(
     lotId?: string;
     serialId?: string;
     sourceDocumentId?: string;
+    beforeEffectiveAt?: string;
+    beforeSequence?: number;
+    beforeId?: string;
     limit?: number;
   }
 ) {

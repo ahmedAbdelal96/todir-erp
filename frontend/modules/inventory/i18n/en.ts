@@ -56,7 +56,15 @@ export const en = {
     cardTitle: "Product Stock Card",
     cardSubtitle: "Stock balances breakdown, location allocation, and traceability history",
     warehouseBreakdown: "Warehouse Breakdown",
-    noBalances: "No stock balances match the search criteria."
+    noBalances: "No stock balances match the search criteria.",
+    movementHistory: "Recent Item Movements",
+    movementHistorySubtitle: "Paged movement history; the full ledger is never loaded into the card",
+    movementHistoryError: "The item movement history could not be loaded.",
+    noMovements: "No movements are recorded for this item.",
+    pageSize: "Showing {{count}} movements per page",
+    pageIndicator: "Page {{page}}",
+    previousPage: "Newer movements",
+    nextPage: "Older movements"
   },
   locator: {
     title: "Product Locator (Where is this item?)",

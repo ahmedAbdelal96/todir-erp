@@ -200,6 +200,7 @@ export function StockTab({
         <ProductStockCardModal
           isOpen={Boolean(activeStockCardVariantId)}
           onClose={() => setActiveStockCardVariantId(null)}
+          legalEntityId={legalEntityId}
           productVariantId={activeStockCardVariantId}
           balances={balances}
           warehouses={warehouses}

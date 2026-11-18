@@ -85,8 +85,8 @@ export function resolveInventoryProduct(variantId?: string | null, isAr = true):
 
 export interface InventoryProductDisplayProps {
   readonly productVariantId?: string | null;
-  readonly displayName?: string | null;
-  readonly sku?: string | null;
+  readonly displayName?: string | null | undefined;
+  readonly sku?: string | null | undefined;
   readonly showSkuOnly?: boolean;
   readonly inline?: boolean;
 }

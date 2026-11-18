@@ -56,7 +56,15 @@ export const ar = {
     cardTitle: "بطاقة حركة ورصيد الصنف",
     cardSubtitle: "تفاصيل الأرصدة وتوزيعها المستودعي وتاريخ التتبع",
     warehouseBreakdown: "توزيع الأرصدة على المستودعات",
-    noBalances: "لا توجد أرصدة مخزنية مطابقة لمعايير البحث."
+    noBalances: "لا توجد أرصدة مخزنية مطابقة لمعايير البحث.",
+    movementHistory: "آخر حركات الصنف",
+    movementHistorySubtitle: "عرض متدرج للحركات الأخيرة دون تحميل السجل التاريخي بالكامل",
+    movementHistoryError: "تعذر تحميل حركات الصنف حالياً.",
+    noMovements: "لا توجد حركات مسجلة لهذا الصنف.",
+    pageSize: "يتم عرض {{count}} حركة في كل صفحة",
+    pageIndicator: "الصفحة {{page}}",
+    previousPage: "الحركات الأحدث",
+    nextPage: "الحركات الأقدم"
   },
   locator: {
     title: "محدد مواقع الأصناف (أين الصنف؟)",

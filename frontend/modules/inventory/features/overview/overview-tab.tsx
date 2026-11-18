@@ -258,6 +258,7 @@ export function OverviewTab({
         <ProductStockCardModal
           isOpen={Boolean(selectedVariantId)}
           onClose={() => setSelectedVariantId(null)}
+          legalEntityId={legalEntityId}
           productVariantId={selectedVariantId}
           balances={balances}
           warehouses={warehouses}
