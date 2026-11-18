@@ -205,6 +205,14 @@ export function usePhysicalCountLines(legalEntityId: string, countId?: string, p
   });
 }
 
+export function usePhysicalCounts(legalEntityId: string, params?: { warehouseId?: string; status?: string; page?: number; pageSize?: number }) {
+  return useQuery({
+    queryKey: ["inventory", legalEntityId, "counts", "list", params],
+    queryFn: () => inventoryApi.listPhysicalCounts(legalEntityId, params),
+    staleTime: 10_000
+  });
+}
+
 export function useValuation(legalEntityId: string, productVariantId?: string, asOfDate?: string, canReadCost = true) {
   return useQuery({
     queryKey: ["inventory", legalEntityId, "valuation", productVariantId, asOfDate],

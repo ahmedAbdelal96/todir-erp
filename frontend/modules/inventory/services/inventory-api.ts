@@ -28,6 +28,7 @@ import type {
   MoveLocationRequest,
   NegativeStockCondition,
   PhysicalCount,
+  PhysicalCountsPage,
   PhysicalCountLine,
   PhysicalCountLinesPage,
   ProductLocatorItem,
@@ -334,6 +335,16 @@ export const inventoryApi = {
       method: "POST",
       body: JSON.stringify(request)
     }),
+
+  listPhysicalCounts: (entityId: string, params?: { warehouseId?: string; status?: string; page?: number; pageSize?: number }): Promise<PhysicalCountsPage> => {
+    const q = new URLSearchParams();
+    if (params?.warehouseId) q.set("warehouseId", params.warehouseId);
+    if (params?.status) q.set("status", params.status);
+    if (params?.page) q.set("page", String(params.page));
+    if (params?.pageSize) q.set("pageSize", String(params.pageSize));
+    const suffix = q.toString() ? `?${q.toString()}` : "";
+    return httpClient<PhysicalCountsPage>(entityPath(entityId, `/counts${suffix}`));
+  },
 
   getPhysicalCountLines: async (entityId: string, countId: string, params?: { page?: number; pageSize?: number; search?: string }): Promise<PhysicalCountLinesPage> => {
     const q = new URLSearchParams();

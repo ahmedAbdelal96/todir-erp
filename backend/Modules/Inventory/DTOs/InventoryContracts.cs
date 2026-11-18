@@ -63,6 +63,9 @@ public sealed record PhysicalCountLineView(Guid Id, Guid ProductVariantId, Guid 
     string? ProductDisplayName = null, string? ProductSku = null, string? BaseUomCode = null);
 public sealed record PhysicalCountLinesPage(IReadOnlyList<PhysicalCountLineView> Items, int TotalCount, int Page, int PageSize);
 public sealed record PhysicalCountView(Guid Id, string Number, string Status, int Lines, int CountedLines, decimal VarianceQuantity);
+public sealed record PhysicalCountListView(Guid Id, string Number, Guid WarehouseId, string WarehouseName, string Mode,
+    string Status, int Lines, int CountedLines, decimal VarianceQuantity);
+public sealed record PhysicalCountsPage(IReadOnlyList<PhysicalCountListView> Items, int TotalCount, int Page, int PageSize);
 public sealed record CreateLotRequest(Guid ProductVariantId, string LotNumber, DateOnly? ManufacturedOn, DateOnly? ExpiresOn, string? SupplierReference);
 public sealed record CreateSerialRequest(Guid ProductVariantId, string SerialNumber);
 public sealed record TraceabilityRecord(Guid Id, Guid ProductVariantId, string Reference, string Status);

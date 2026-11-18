@@ -8,19 +8,10 @@ import { EmptyState } from "../../../../components/primitives/empty-state.tsx";
 import { CreateCountModal } from "./create-count-modal.tsx";
 import { CountDetailModal } from "./count-detail-modal.tsx";
 import { toQty } from "../../utils.ts";
-import type { PhysicalCount, Warehouse } from "../../types.ts";
+import { usePhysicalCounts } from "../../hooks/use-inventory-queries.ts";
+import type { PhysicalCountListItem, Warehouse } from "../../types.ts";
 
-export interface PhysicalCountItem {
-  readonly id: string;
-  readonly number: string;
-  readonly warehouseId: string;
-  readonly warehouseName: string;
-  readonly mode: string;
-  readonly status: string;
-  readonly lines: number;
-  readonly countedLines: number;
-  readonly varianceQuantity: number;
-}
+export type PhysicalCountItem = PhysicalCountListItem;
 
 export interface CountsTabProps {
   readonly legalEntityId: string;
@@ -32,38 +23,11 @@ export function CountsTab({ legalEntityId, warehouses }: CountsTabProps): React.
 
   const [isNewCountOpen, setIsNewCountOpen] = useState(false);
   const [selectedCount, setSelectedCount] = useState<PhysicalCountItem | null>(null);
+  const { data, isLoading, isError, refetch } = usePhysicalCounts(legalEntityId, { page: 1, pageSize: 25 });
+  const countsList = data?.items ?? [];
 
-  // Seeded / active counts list
-  const [countsList, setCountsList] = useState<readonly PhysicalCountItem[]>([
-    {
-      id: "cnt-seed-001",
-      number: "COUNT-SEED-001",
-      warehouseId: warehouses[0]?.id ?? "",
-      warehouseName: warehouses[0]?.name ?? "المخزن الرئيسي",
-      mode: "Simple",
-      status: "Posted",
-      lines: 1,
-      countedLines: 1,
-      varianceQuantity: -1
-    }
-  ]);
-
-  const handleCountCreated = (newCount: PhysicalCount & { warehouseId: string; mode: string }) => {
-    const wh = warehouses.find(w => w.id === newCount.warehouseId);
-    setCountsList(prev => [
-      {
-        id: newCount.id,
-        number: newCount.number,
-        warehouseId: newCount.warehouseId,
-        warehouseName: wh?.name ?? "المخزن الرئيسي",
-        mode: newCount.mode,
-        status: newCount.status,
-        lines: newCount.lines,
-        countedLines: newCount.countedLines,
-        varianceQuantity: newCount.varianceQuantity
-      },
-      ...prev
-    ]);
+  const handleCountCreated = () => {
+    void refetch();
   };
 
   return (
@@ -93,7 +57,13 @@ export function CountsTab({ legalEntityId, warehouses }: CountsTabProps): React.
       </div>
 
       {/* Counts Table */}
-      {countsList.length === 0 ? (
+      {isLoading ? (
+        <div style={{ padding: "2rem", textAlign: "center" }}>{t("common.loading")}</div>
+      ) : isError ? (
+        <div role="alert" style={{ padding: "1rem", color: "var(--color-status-danger)", border: "1px solid var(--color-status-danger)", borderRadius: "var(--radius-md)" }}>
+          {t("counts.linesLoadError")} <Button variant="secondary" onPress={() => void refetch()}>{t("common.retry")}</Button>
+        </div>
+      ) : countsList.length === 0 ? (
         <EmptyState title={t("counts.title")} description={t("common.empty")} />
       ) : (
         <InventoryDataTable minWidth="850px" ariaLabel={t("counts.title")}>
@@ -160,9 +130,7 @@ export function CountsTab({ legalEntityId, warehouses }: CountsTabProps): React.
           countStatus={selectedCount.status}
           totalLines={selectedCount.lines}
           countedLines={selectedCount.countedLines}
-          onCountPosted={() => {
-            setCountsList(prev => prev.map(c => c.id === selectedCount.id ? { ...c, status: "Posted" } : c));
-          }}
+          onCountPosted={() => void refetch()}
         />
       )}
     </div>

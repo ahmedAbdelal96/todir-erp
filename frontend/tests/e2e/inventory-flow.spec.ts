@@ -4,6 +4,7 @@ import * as fs from 'fs';
 
 const MAIN_ENTITY_ID = '00000000-0000-0000-0000-000000000001';
 const SAMPLE_PRODUCT_ID = 'a6315416-cffe-bf52-bcf0-d5e590d3bf94';
+const SAMPLE_COUNT_ID = '00000000-0000-0000-0000-000000000101';
 
 async function captureScreenshot(page: Page, filename: string, options?: { fullPage?: boolean }) {
   const primaryPath = path.resolve(process.cwd(), 'artifacts/test-results/visual-acceptance', filename);
@@ -489,7 +490,30 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
       });
     });
 
-    await page.route(new RegExp(`/api/v1/inventory/legal-entities/${MAIN_ENTITY_ID}/counts/cnt-seed-001/lines`), async (route) => {
+    await page.route(new RegExp(`/api/v1/inventory/legal-entities/${MAIN_ENTITY_ID}/counts(?:\\?.*)?$`), async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [{
+            id: SAMPLE_COUNT_ID,
+            number: 'COUNT-SEED-001',
+            warehouseId: 'wh-01',
+            warehouseName: 'المستودع الرئيسي - الرياض',
+            mode: 'Simple',
+            status: 'Posted',
+            lines: 1,
+            countedLines: 1,
+            varianceQuantity: -1
+          }],
+          totalCount: 1,
+          page: 1,
+          pageSize: 25
+        })
+      });
+    });
+
+    await page.route(new RegExp(`/api/v1/inventory/legal-entities/${MAIN_ENTITY_ID}/counts/${SAMPLE_COUNT_ID}/lines`), async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

@@ -184,6 +184,19 @@ export interface PhysicalCount {
   readonly varianceQuantity: number;
 }
 
+export interface PhysicalCountListItem extends PhysicalCount {
+  readonly warehouseId: string;
+  readonly warehouseName: string;
+  readonly mode: string;
+}
+
+export interface PhysicalCountsPage {
+  readonly items: readonly PhysicalCountListItem[];
+  readonly totalCount: number;
+  readonly page: number;
+  readonly pageSize: number;
+}
+
 export interface PhysicalCountLine {
   readonly id: string;
   readonly productVariantId: string;

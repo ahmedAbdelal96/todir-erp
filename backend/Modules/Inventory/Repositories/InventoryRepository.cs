@@ -859,6 +859,42 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
         }, ct);
     }
 
+    public async Task<PhysicalCountsPage> GetPhysicalCountsAsync(TenantId tenant, Guid entity, Guid? warehouseId,
+        string? status, int page, int pageSize, CancellationToken ct)
+    {
+        page = Math.Clamp(page, 1, 100000);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var normalizedStatus = string.IsNullOrWhiteSpace(status) ? null : status.Trim();
+        await using var connection = await OpenTenantAsync(tenant, ct);
+        var filter = " where c.tenant_id=$1 and c.legal_entity_id=$2";
+        if (warehouseId.HasValue) filter += " and c.warehouse_id=$3";
+        if (normalizedStatus is not null) filter += warehouseId.HasValue ? " and c.status=$4" : " and c.status=$3";
+
+        await using var total = new NpgsqlCommand($"select count(*) from business_inventory.physical_count c{filter}", connection);
+        Add(total, tenant.Value, entity);
+        if (warehouseId.HasValue) total.Parameters.AddWithValue(warehouseId.Value);
+        if (normalizedStatus is not null) total.Parameters.AddWithValue(normalizedStatus);
+        var totalCount = Convert.ToInt32(await total.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
+
+        var limitParameter = (warehouseId.HasValue ? 1 : 0) + (normalizedStatus is not null ? 1 : 0) + 3;
+        var offsetParameter = limitParameter + 1;
+        var sql = $"select c.id,c.count_number,c.warehouse_id,w.name,c.count_mode,c.status,count(l.id),count(l.counted_quantity),coalesce(sum(l.difference_quantity),0) from business_inventory.physical_count c join business_inventory.warehouse w on w.tenant_id=c.tenant_id and w.legal_entity_id=c.legal_entity_id and w.id=c.warehouse_id left join business_inventory.count_line l on l.tenant_id=c.tenant_id and l.legal_entity_id=c.legal_entity_id and l.count_id=c.id{filter} group by c.id,c.count_number,c.warehouse_id,w.name,c.count_mode,c.status,c.created_at order by c.created_at desc,c.id desc limit ${limitParameter} offset ${offsetParameter}";
+        await using var command = new NpgsqlCommand(sql, connection);
+        Add(command, tenant.Value, entity);
+        if (warehouseId.HasValue) command.Parameters.AddWithValue(warehouseId.Value);
+        if (normalizedStatus is not null) command.Parameters.AddWithValue(normalizedStatus);
+        command.Parameters.AddWithValue(pageSize);
+        command.Parameters.AddWithValue((page - 1) * pageSize);
+        var items = new List<PhysicalCountListView>(pageSize);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            items.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetGuid(2), reader.GetString(3), reader.GetString(4), reader.GetString(5),
+                checked((int)reader.GetInt64(6)), checked((int)reader.GetInt64(7)), reader.GetDecimal(8)));
+        }
+        return new PhysicalCountsPage(items, totalCount, page, pageSize);
+    }
+
     public async Task<PhysicalCountLinesPage> GetPhysicalCountLinesAsync(TenantId tenant, Guid entity, Guid countId, string? search, int page, int pageSize, CancellationToken ct)
     {
         page = Math.Clamp(page, 1, 100000);
