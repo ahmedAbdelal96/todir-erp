@@ -26,7 +26,8 @@ export function InventoryAvailabilityPanel({
       style={{
         padding: "0.75rem 0.875rem",
         backgroundColor: isInsufficient ? "#fff7ed" : "var(--color-surface-subtle, #f8fafc)",
-        border: `1px solid ${isInsufficient ? "#fdba74" : "var(--color-border-default)"}`,
+        border: "1px solid #93c5fd",
+        boxShadow: "0 0 0 1px rgba(147, 197, 253, 0.18)",
         borderRadius: "var(--radius-sm)",
         display: "flex",
         flexDirection: "column",

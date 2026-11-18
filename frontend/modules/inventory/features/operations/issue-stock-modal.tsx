@@ -6,7 +6,7 @@ import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { LocalDateField } from "../../../../components/fields/local-date-field.tsx";
 import { InventoryProductPicker } from "../../components/inventory-product-picker.tsx";
 import { InventoryAvailabilityPanel } from "../../components/inventory-availability-panel.tsx";
-import { useInventoryMutations, useLocations, useStockBalances, usePickingSuggestions } from "../../hooks/use-inventory-queries.ts";
+import { useInventoryMutations, useLocations, useStockBalances } from "../../hooks/use-inventory-queries.ts";
 import { mapInventoryError } from "../../services/inventory-error-map.ts";
 import { compareQuantities, summarizeStockBalances } from "../../utils.ts";
 import type { Warehouse } from "../../types.ts";
@@ -60,13 +60,6 @@ export function IssueStockModal({
   const availabilitySummary = summarizeStockBalances(availabilityBalances);
   const currentAvailable = availabilitySummary.availableBaseQuantity;
   const isInsufficient = Boolean(productId) && !isBalanceLoading && compareQuantities(quantity, currentAvailable) > 0;
-
-  // Picking suggestions
-  const { data: pickingSuggestions = [] } = usePickingSuggestions(
-    legalEntityId,
-    productId || undefined,
-    warehouseId || undefined
-  );
 
   const { issueStock } = useInventoryMutations(legalEntityId);
 
@@ -181,19 +174,6 @@ export function IssueStockModal({
           isLoading={isBalanceLoading}
           isInsufficient={isInsufficient}
         />
-
-        {/* Picking suggestions banner if available */}
-        {pickingSuggestions.length > 0 && (
-          <div style={{ padding: "0.625rem", backgroundColor: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "var(--radius-sm)", fontSize: "0.8125rem", color: "#1e40af" }}>
-            <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>{t("locator.suggestedPicking")}:</div>
-            {pickingSuggestions.map((sug, idx) => (
-              <div key={idx} style={{ display: "flex", justifyContent: "space-between", margin: "0.125rem 0" }}>
-                <span>{sug.locationCode} ({sug.reason}):</span>
-                <span style={{ fontWeight: 600 }}>{sug.availableQuantity ?? 0}</span>
-              </div>
-            ))}
-          </div>
-        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
           <TextField

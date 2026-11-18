@@ -504,7 +504,7 @@ export function ComboBox<T extends object = ComboBoxOption>({
               return (
                 <ComboBoxItem
                   id={opt.id}
-                  textValue={`${opt.label} ${opt.description ?? ""} ${opt.id}`}
+                  textValue={`${opt.label} ${opt.description ?? ""}`}
                   {...(opt.isDisabled !== undefined ? { isDisabled: opt.isDisabled } : {})}
                 >
                   <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>

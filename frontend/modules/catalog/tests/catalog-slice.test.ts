@@ -10,6 +10,7 @@ import {
 } from "../validation/product-schema.ts";
 import { catalogApi } from "../services/catalog-api.ts";
 import { formatCatalogAuditEvent } from "../audit-format.ts";
+import { getHumanProductCode } from "../product-display.ts";
 
 describe("Catalog / Product Master Vertical Slice", () => {
   const productSchema = createProductSchema((key) => key);
@@ -173,6 +174,15 @@ describe("Catalog / Product Master Vertical Slice", () => {
       const unknown = formatCatalogAuditEvent("future_custom_event", "not-json");
       assert.ok(typeof unknown.title === "string");
       assert.deepEqual(unknown.changes, []);
+    });
+  });
+
+  describe("Product picker display safety", () => {
+    it("keeps business product codes and hides internal identifiers", () => {
+      assert.equal(getHumanProductCode("SKU-CLEAN-005"), "SKU-CLEAN-005");
+      assert.equal(getHumanProductCode("ON 01a1eb0c-5572-725e-a0a7-d5e8c81ac81a"), undefined);
+      assert.equal(getHumanProductCode("01a1eb0c5572725ea0a7d5e8c81ac81a"), undefined);
+      assert.equal(getHumanProductCode(null), undefined);
     });
   });
 });

@@ -10,6 +10,7 @@ import { SearchIcon, CheckIcon } from "../../../components/primitives/icons.tsx"
 import { catalogApi } from "../services/catalog-api.ts";
 import { useProductList } from "../hooks/catalog-queries.ts";
 import { QuickCreateProductDialog } from "../features/quick-create-product-dialog.tsx";
+import { getHumanProductCode } from "../product-display.ts";
 import type { ProductSummary, ProductVariantSnapshot } from "../types.ts";
 
 export interface ProductPickerSelection {
@@ -76,7 +77,7 @@ export function ProductPicker({
   const options: ComboBoxOption[] = products.map((item) => ({
     id: item.defaultVariantId,
     label: item.displayName,
-    description: item.sku ? `${item.sku} · ${item.baseUomCode ?? ""}` : (item.baseUomCode ?? undefined)
+    description: getHumanProductCode(item.sku)
   }));
 
   const handleSelectKey = (key: React.Key | null) => {
@@ -216,7 +217,7 @@ export function ProductPicker({
                     <TableCell style={{ fontWeight: 600 }}>{item.displayName}</TableCell>
                     <TableCell>
                       <bdi dir="ltr" style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.8125rem" }}>
-                        {item.sku || "—"}
+                        {getHumanProductCode(item.sku) || "—"}
                       </bdi>
                     </TableCell>
                     <TableCell>{item.nature === "Service" ? t("common.service") : t("common.goods")}</TableCell>
