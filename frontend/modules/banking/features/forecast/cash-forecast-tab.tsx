@@ -27,20 +27,31 @@ export function CashForecastTab({ legalEntityId }: Props): React.JSX.Element {
   const [isVersionOpen, setIsVersionOpen] = useState(false);
   const [isItemOpen, setIsItemOpen] = useState(false);
 
-  const { data: forecastData, isLoading, refetch } = useCashForecast(
+  const { data: forecastData, isLoading, error, refetch } = useCashForecast(
     legalEntityId,
     asOfDate || undefined,
     parseInt(horizonDays, 10) || 30
   );
 
   const items = forecastData?.items ?? [];
-  const totalInflows = items
-    .filter((i) => i.direction === "Inflow")
-    .reduce((acc, i) => acc + i.amount, 0);
-  const totalOutflows = items
-    .filter((i) => i.direction === "Outflow")
-    .reduce((acc, i) => acc + i.amount, 0);
-  const netFlow = totalInflows - totalOutflows;
+  const currencyTotals = React.useMemo(() => {
+    return items.reduce<Record<string, { inflows: number; outflows: number; net: number }>>((acc, item) => {
+      const c = item.currencyCode || "EGP";
+      if (!acc[c]) {
+        acc[c] = { inflows: 0, outflows: 0, net: 0 };
+      }
+      if (item.direction === "Inflow") {
+        acc[c].inflows += item.amount;
+        acc[c].net += item.amount;
+      } else {
+        acc[c].outflows += item.amount;
+        acc[c].net -= item.amount;
+      }
+      return acc;
+    }, {});
+  }, [items]);
+
+  const currencies = Object.keys(currencyTotals);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -87,45 +98,62 @@ export function CashForecastTab({ legalEntityId }: Props): React.JSX.Element {
       </Surface>
 
       {/* KPI Ribbon */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
-        <Surface style={{ padding: "1.25rem" }}>
-          <div style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>
-            {t("forecast.inflowsTotal")}
-          </div>
-          <div style={{ fontSize: "1.375rem", fontWeight: 700, color: "#16a34a" }}>
-            <BankingMoney amount={totalInflows} currency="EGP" />
-          </div>
-        </Surface>
-        <Surface style={{ padding: "1.25rem" }}>
-          <div style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>
-            {t("forecast.outflowsTotal")}
-          </div>
-          <div style={{ fontSize: "1.375rem", fontWeight: 700, color: "var(--color-status-danger)" }}>
-            <BankingMoney amount={totalOutflows} currency="EGP" />
-          </div>
-        </Surface>
-        <Surface style={{ padding: "1.25rem" }}>
-          <div style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>
-            {t("forecast.netForecast")}
-          </div>
-          <div style={{ fontSize: "1.375rem", fontWeight: 700, color: netFlow >= 0 ? "#16a34a" : "var(--color-status-danger)" }}>
-            <BankingMoney amount={netFlow} currency="EGP" />
-          </div>
-        </Surface>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem" }}>
+        {currencies.length > 0 ? (
+          currencies.map((curr) => {
+            const data = currencyTotals[curr]!;
+            return (
+              <Surface key={curr} style={{ padding: "1.25rem" }}>
+                <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-brand-primary)", marginBottom: "0.5rem" }}>
+                  {t("forecast.title")} ({curr})
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>{t("forecast.inflowsTotal")}</div>
+                    <div style={{ fontSize: "1.125rem", fontWeight: 700, color: "#16a34a" }}>
+                      <BankingMoney amount={data.inflows} currency={curr} />
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>{t("forecast.outflowsTotal")}</div>
+                    <div style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--color-status-danger)" }}>
+                      <BankingMoney amount={data.outflows} currency={curr} />
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--color-border-subtle)", paddingTop: "0.5rem" }}>
+                  <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{t("forecast.netForecast")}:</span>
+                  <span style={{ fontSize: "1.125rem", fontWeight: 700, color: data.net >= 0 ? "#16a34a" : "var(--color-status-danger)" }}>
+                    <BankingMoney amount={data.net} currency={curr} />
+                  </span>
+                </div>
+              </Surface>
+            );
+          })
+        ) : (
+          <Surface style={{ padding: "1.25rem" }}>
+            <div style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{t("forecast.netForecast")}</div>
+            <div style={{ fontSize: "1.375rem", fontWeight: 700, color: "var(--color-brand-primary)", marginTop: "0.25rem" }}>—</div>
+          </Surface>
+        )}
       </div>
 
       {/* Forecast Items Table Surface */}
       <Surface style={{ padding: "1.25rem" }}>
-        {isLoading ? (
+        {error ? (
+          <div style={{ padding: "3rem", textAlign: "center" }}>
+            <p style={{ color: "var(--color-status-danger)", fontWeight: 600 }}>{t("common.error")}</p>
+            <Button variant="secondary" onClick={() => void refetch()} style={{ marginTop: "1rem" }}>
+              {t("common.retry")}
+            </Button>
+          </div>
+        ) : isLoading ? (
           <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted)" }}>
             {t("common.loading")}
           </div>
         ) : items.length === 0 ? (
           <div style={{ padding: "3rem", textAlign: "center" }}>
             <p style={{ color: "var(--color-content-muted)" }}>{t("common.noData")}</p>
-            <Button variant="secondary" onClick={() => void refetch()} style={{ marginTop: "1rem" }}>
-              {t("common.retry")}
-            </Button>
           </div>
         ) : (
           <Table>

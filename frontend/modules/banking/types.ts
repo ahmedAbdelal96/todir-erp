@@ -89,6 +89,7 @@ export interface ReconciliationDto {
   readonly ledgerSourceReference?: string | null;
   readonly ledgerLastPostedAt?: string | null;
   readonly ledgerPostedLineCount?: number;
+  readonly statementId?: string | null;
 }
 
 export interface ReconciliationPage {

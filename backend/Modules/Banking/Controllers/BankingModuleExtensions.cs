@@ -268,6 +268,23 @@ public static class BankingModuleExtensions
             await AccessAsync(http, subjects, authorizer, "banking.reports.read", legalEntityId, ct) is { } access ? access.Allowed ? Results.Ok(await service.GetCashToLedgerReportAsync(access.Tenant, legalEntityId, asOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow), ct)) : Results.Forbid() : Results.Unauthorized());
         group.MapGet("/cheques/in-transit", async (Guid legalEntityId, int? page, int? pageSize, HttpContext http, BankingService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             await AccessAsync(http, subjects, authorizer, "banking.reports.read", legalEntityId, ct) is { } access ? access.Allowed ? Results.Ok(await service.ListChequeInTransitAsync(access.Tenant, legalEntityId, page ?? 1, pageSize ?? 50, ct)) : Results.Forbid() : Results.Unauthorized());
+        group.MapGet("/target", async (HttpContext http, BankingService service, Microsoft.Extensions.Configuration.IConfiguration config, CancellationToken ct) =>
+        {
+            var expectedSecret = config["TODIR_TEST_PROBE_SECRET"];
+            if (string.IsNullOrWhiteSpace(expectedSecret)) return Results.Unauthorized();
+            var headerSecret = http.Request.Headers["X-Todir-Test-Secret"].FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(headerSecret) ||
+                headerSecret.Length != expectedSecret.Length ||
+                !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                    System.Text.Encoding.UTF8.GetBytes(headerSecret),
+                    System.Text.Encoding.UTF8.GetBytes(expectedSecret)))
+            {
+                return Results.Unauthorized();
+            }
+            var tenant = Guid.TryParse(http.User.FindFirstValue("tenant_id"), out var tid) ? new TenantId(tid) : new TenantId(Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b"));
+            var db = await service.GetDatabaseNameAsync(tenant, ct);
+            return Results.Ok(new { database = db });
+        }).AllowAnonymous().ExcludeFromDescription();
         return app;
     }
 

@@ -25,7 +25,7 @@ export function StatementsTab({ legalEntityId }: Props): React.JSX.Element {
   const { t } = useTranslation("banking");
 
   const { data: accountsData } = useTreasuryAccounts(legalEntityId);
-  const accounts = accountsData?.items ?? [];
+  const accounts = (accountsData?.items ?? []).filter((a) => a.status === "Active" || a.status === "Suspended");
 
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const activeAccountId = selectedAccountId || (accounts.length > 0 ? (accounts[0]?.id ?? "") : "");

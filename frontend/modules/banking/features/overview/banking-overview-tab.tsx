@@ -128,41 +128,83 @@ export function BankingOverviewTab({ legalEntityId }: Props): React.JSX.Element 
       <Surface style={{ padding: "1.5rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
           <h3 style={{ margin: 0, fontSize: "1.0625rem", color: "var(--color-brand-primary)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            {ledgerReport?.isBalanced ? <CheckCircleIcon style={{ color: "#16a34a" }} /> : <AlertTriangleIcon style={{ color: "#d97706" }} />}
+            {ledgerError ? (
+              <AlertTriangleIcon style={{ color: "#d97706" }} />
+            ) : ledgerReport?.isBalanced ? (
+              <CheckCircleIcon style={{ color: "#16a34a" }} />
+            ) : (
+              <AlertTriangleIcon style={{ color: "#dc2626" }} />
+            )}
             {t("overview.cashToLedgerTitle")}
           </h3>
-          <StatusBadge
-            intent={ledgerReport?.isBalanced ? "success" : "info"}
-            label={ledgerReport ? (ledgerReport.isBalanced ? t("overview.balanced") : t("overview.unbalanced")) : t("overview.balanced")}
-          />
+          {ledgerError ? (
+            <StatusBadge intent="warning" label={t("overview.configurationRequired")} />
+          ) : isLedgerLoading ? (
+            <StatusBadge intent="neutral" label={t("common.loading")} />
+          ) : (
+            <StatusBadge
+              intent={ledgerReport?.isBalanced ? "success" : "danger"}
+              label={ledgerReport?.isBalanced ? t("overview.balanced") : t("overview.unbalanced")}
+            />
+          )}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
-          <div style={{ padding: "0.875rem", background: "var(--color-surface-page)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)" }}>
-            <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>{t("overview.ledgerCashBalance")}</div>
-            <div style={{ fontSize: "1.125rem", fontWeight: 600 }}>
-              <BankingMoney amount={ledgerReport?.ledgerCashBalance ?? 0} currency={ledgerReport?.baseCurrencyCode ?? "EGP"} />
+        {ledgerError ? (
+          <div
+            role="alert"
+            style={{
+              padding: "1rem",
+              backgroundColor: "var(--color-surface-subtle, #f8fafc)",
+              border: "1px dashed var(--color-border-warning, #f59e0b)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-content-muted)",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "0.75rem"
+            }}
+          >
+            <AlertTriangleIcon style={{ color: "#d97706", marginTop: "0.125rem", flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: 600, color: "var(--color-content-default)", marginBottom: "0.25rem" }}>
+                {t("overview.configurationRequired")}
+              </div>
+              <div style={{ fontSize: "0.875rem", lineHeight: 1.5 }}>
+                {t("overview.ledgerControlNotConfigured")}
+              </div>
             </div>
           </div>
-          <div style={{ padding: "0.875rem", background: "var(--color-surface-page)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)" }}>
-            <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>{t("overview.bankingBookBalance")}</div>
-            <div style={{ fontSize: "1.125rem", fontWeight: 600 }}>
-              <BankingMoney amount={ledgerReport?.bankingBookBalance ?? 0} currency={ledgerReport?.baseCurrencyCode ?? "EGP"} />
+        ) : isLedgerLoading ? (
+          <div style={{ padding: "1rem", textAlign: "center", color: "var(--color-content-muted)" }}>
+            {t("common.loading")}
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
+            <div style={{ padding: "0.875rem", background: "var(--color-surface-page)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)" }}>
+              <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>{t("overview.ledgerCashBalance")}</div>
+              <div style={{ fontSize: "1.125rem", fontWeight: 600 }}>
+                <BankingMoney amount={ledgerReport?.ledgerCashBalance} currency={ledgerReport?.baseCurrencyCode} />
+              </div>
+            </div>
+            <div style={{ padding: "0.875rem", background: "var(--color-surface-page)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)" }}>
+              <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>{t("overview.bankingBookBalance")}</div>
+              <div style={{ fontSize: "1.125rem", fontWeight: 600 }}>
+                <BankingMoney amount={ledgerReport?.bankingBookBalance} currency={ledgerReport?.baseCurrencyCode} />
+              </div>
+            </div>
+            <div style={{ padding: "0.875rem", background: "var(--color-surface-page)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)" }}>
+              <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>{t("overview.difference")}</div>
+              <div style={{ fontSize: "1.125rem", fontWeight: 600, color: (ledgerReport?.difference ?? 0) === 0 ? "inherit" : "var(--color-status-danger)" }}>
+                <BankingMoney amount={ledgerReport?.difference} currency={ledgerReport?.baseCurrencyCode} />
+              </div>
+            </div>
+            <div style={{ padding: "0.875rem", background: "var(--color-surface-page)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)" }}>
+              <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>{t("overview.ledgerBasis")}</div>
+              <div style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--color-content-default)" }}>
+                <BdiText>{ledgerReport?.ledgerBasis ?? t("overview.ledgerBasisDefault")}</BdiText>
+              </div>
             </div>
           </div>
-          <div style={{ padding: "0.875rem", background: "var(--color-surface-page)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)" }}>
-            <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>{t("overview.difference")}</div>
-            <div style={{ fontSize: "1.125rem", fontWeight: 600, color: (ledgerReport?.difference ?? 0) === 0 ? "inherit" : "var(--color-status-danger)" }}>
-              <BankingMoney amount={ledgerReport?.difference ?? 0} currency={ledgerReport?.baseCurrencyCode ?? "EGP"} />
-            </div>
-          </div>
-          <div style={{ padding: "0.875rem", background: "var(--color-surface-page)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)" }}>
-            <div style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", marginBottom: "0.25rem" }}>{t("overview.ledgerBasis")}</div>
-            <div style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--color-content-default)" }}>
-              <BdiText>{ledgerReport?.ledgerBasis ?? t("overview.ledgerBasisDefault")}</BdiText>
-            </div>
-          </div>
-        </div>
+        )}
       </Surface>
 
       {/* Cash Position Details Table */}
@@ -215,7 +257,13 @@ export function BankingOverviewTab({ legalEntityId }: Props): React.JSX.Element 
                   </TableCell>
                   <TableCell align="end">
                     <span style={{ fontWeight: 600 }}>
-                      <BankingMoney amount={pos.availableBalance} currency={pos.currencyCode} />
+                      {pos.availableBalance != null ? (
+                        <BankingMoney amount={pos.availableBalance} currency={pos.currencyCode} />
+                      ) : (
+                        <span style={{ color: "var(--color-content-muted)", fontSize: "0.8125rem" }}>
+                          {t("overview.balancePending")}
+                        </span>
+                      )}
                     </span>
                   </TableCell>
                   <TableCell align="end">

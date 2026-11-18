@@ -1,6 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { useOutletContext } from "react-router-dom";
 import { useCreateCashCount } from "../../hooks/use-banking-queries.ts";
+import { useOptionalUserContext } from "../../../../core/runtime/runtime-provider.tsx";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
@@ -11,6 +13,7 @@ interface Props {
   readonly legalEntityId: string;
   readonly accountId: string;
   readonly currencyCode?: string;
+  readonly expectedBalance?: number | null;
   readonly isOpen: boolean;
   readonly onClose: () => void;
 }
@@ -32,18 +35,35 @@ const DEFAULT_DENOMINATIONS: readonly { denomination: string; unitValue: number 
   { denomination: "0.50", unitValue: 0.5 }
 ];
 
-export function CashCountModal({ legalEntityId, accountId, currencyCode = "EGP", isOpen, onClose }: Props): React.JSX.Element | null {
+export function CashCountModal({ legalEntityId, accountId, currencyCode = "EGP", expectedBalance, isOpen, onClose }: Props): React.JSX.Element | null {
   const { t } = useTranslation("banking");
   const createMutation = useCreateCashCount(legalEntityId, accountId);
+  const user = useOptionalUserContext();
+  const outlet = useOutletContext<{ userId?: string } | undefined>();
+  const effectiveUserId = outlet?.userId || user?.userId || "";
 
   const today = new Date().toISOString().slice(0, 10);
   const [cutoffDate, setCutoffDate] = useState(today);
-  const [custodianId, setCustodianId] = useState("");
-  const [expectedAmount, setExpectedAmount] = useState("5000");
+  const [custodianId, setCustodianId] = useState(effectiveUserId);
+  const [expectedAmount, setExpectedAmount] = useState(
+    expectedBalance != null ? expectedBalance.toString() : ""
+  );
   const [denominations, setDenominations] = useState<DenominationRow[]>(
     DEFAULT_DENOMINATIONS.map((d) => ({ ...d, quantity: 0 }))
   );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (effectiveUserId && !custodianId) {
+      setCustodianId(effectiveUserId);
+    }
+  }, [effectiveUserId, custodianId]);
+
+  useEffect(() => {
+    if (expectedBalance != null && expectedAmount === "") {
+      setExpectedAmount(expectedBalance.toString());
+    }
+  }, [expectedBalance, expectedAmount]);
 
   if (!isOpen) return null;
 
@@ -62,7 +82,15 @@ export function CashCountModal({ legalEntityId, accountId, currencyCode = "EGP",
     e.preventDefault();
     setErrorMsg(null);
 
-    const validCustodian = custodianId.trim() || "00000000-0000-0000-0000-000000000001";
+    const validCustodian = custodianId.trim() || user?.userId;
+    if (!validCustodian) {
+      setErrorMsg(t("cash.custodianPlaceholder"));
+      return;
+    }
+    if (!expectedAmount.trim()) {
+      setErrorMsg(t("cash.expectedAmountLabel"));
+      return;
+    }
 
     try {
       await createMutation.mutateAsync({

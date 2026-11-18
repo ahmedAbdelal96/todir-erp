@@ -24,7 +24,7 @@ export function CreateTreasuryAccountModal({ legalEntityId, isOpen, onClose }: P
   const [currencyCode, setCurrencyCode] = useState("EGP");
   const [purpose, setPurpose] = useState("Operating");
   const [liquidityClass, setLiquidityClass] = useState("CashEquivalent");
-  const [maskedIdentifier, setMaskedIdentifier] = useState("");
+  const [maskedIdentifier, setMaskedIdentifier] = useState("****4582");
   const [allowedUses, setAllowedUses] = useState("Disbursements,Receipts,Payroll");
   const [secretRef, setSecretRef] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);

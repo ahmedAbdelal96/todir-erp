@@ -106,25 +106,26 @@ public sealed class BankingService(BankingRepository repository, ILedgerControlB
     public Task<ProviderSettlementPage> ListProviderSettlementsAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, string? status, CancellationToken ct) => repository.ListProviderSettlementsAsync(tenant, legalEntityId, page, pageSize, status, ct);
     public Task<ProviderSettlementDto> MatchProviderSettlementAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, MatchProviderSettlementRequest request, CancellationToken ct) => repository.MatchProviderSettlementAsync(tenant, actorId, legalEntityId, id, request, ct);
     public Task<BankActivityPage> ListBankActivityAsync(TenantId tenant, Guid legalEntityId, Guid? treasuryAccountId, string? classification, string? direction, DateOnly? fromDate, DateOnly? toDate, int page, int pageSize, CancellationToken ct) => repository.ListBankActivityAsync(tenant, legalEntityId, treasuryAccountId, classification, direction, fromDate, toDate, page, pageSize, ct);
+    public Task<string> GetDatabaseNameAsync(TenantId tenant, CancellationToken ct) => repository.GetDatabaseNameAsync(tenant, ct);
     public async Task<CashToLedgerReportDto> GetCashToLedgerReportAsync(TenantId tenant, Guid legalEntityId, DateOnly asOfDate, CancellationToken ct)
     {
+        Shared.Contracts.Ledger.LedgerControlBalanceSnapshot ledgerBalance;
         try
         {
-            var ledgerBalance = await ledger.GetActiveControlBalanceAsync(tenant, new(legalEntityId), "Cash", asOfDate, ct);
-            var banking = await repository.GetCashToLedgerBaseBalanceAsync(tenant, legalEntityId, ledgerBalance.BaseCurrencyCode, ct);
-            if (banking.BookBalance is null || banking.AsOf is null)
-                return new(legalEntityId, ledgerBalance.BaseCurrencyCode, 0m, ledgerBalance.SignedBaseBalance, -ledgerBalance.SignedBaseBalance,
-                    banking.ExternalBalance ?? 0m, banking.InTransitAmount, asOfDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc), "Awaiting banking projection synchronization", false);
-            var difference = banking.BookBalance.Value - ledgerBalance.SignedBaseBalance;
-            return new(legalEntityId, ledgerBalance.BaseCurrencyCode, banking.BookBalance.Value, ledgerBalance.SignedBaseBalance, difference,
-                banking.ExternalBalance ?? 0m, banking.InTransitAmount, banking.AsOf.Value, $"Ledger control role {ledgerBalance.ControlRole}; projection basis {banking.BalanceBasis}", difference == 0m);
+            ledgerBalance = await ledger.GetActiveControlBalanceAsync(tenant, new(legalEntityId), "Cash", asOfDate, ct);
         }
         catch (Exception ex) when (ex is not BankingException and not OperationCanceledException)
         {
-            var banking = await repository.GetCashToLedgerBaseBalanceAsync(tenant, legalEntityId, "EGP", ct);
-            return new(legalEntityId, "EGP", banking.BookBalance ?? 0m, 0m, banking.BookBalance ?? 0m,
-                banking.ExternalBalance ?? 0m, banking.InTransitAmount, banking.AsOf ?? asOfDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc), "Ledger control role Cash is not yet configured for this entity", false);
+            throw new BankingException("banking.ledger_control_role_unconfigured", "Ledger control role Cash is not configured for this legal entity. General Ledger configuration is required.", ex);
         }
+
+        var banking = await repository.GetCashToLedgerBaseBalanceAsync(tenant, legalEntityId, ledgerBalance.BaseCurrencyCode, ct);
+        if (banking.BookBalance is null || banking.AsOf is null)
+            throw new BankingException("banking.cash_projection_missing", "A cash projection with an authoritative Ledger balance is not available for this currency.");
+
+        var difference = banking.BookBalance.Value - ledgerBalance.SignedBaseBalance;
+        return new(legalEntityId, ledgerBalance.BaseCurrencyCode, banking.BookBalance.Value, ledgerBalance.SignedBaseBalance, difference,
+            banking.ExternalBalance ?? 0m, banking.InTransitAmount, banking.AsOf.Value, $"Ledger control role {ledgerBalance.ControlRole}; projection basis {banking.BalanceBasis}", difference == 0m);
     }
     public async Task<Modules.Banking.Entities.ChequeInTransitPage> ListChequeInTransitAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, CancellationToken ct)
     {

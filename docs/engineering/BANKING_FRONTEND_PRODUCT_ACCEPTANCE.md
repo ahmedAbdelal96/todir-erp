@@ -49,27 +49,29 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 - **Artifact:** `artifacts/banking-acceptance/real-stack/02-treasury-account-detail-drawer.png`
 
 ### Journey 3: Bank Statement Import & Statement Line Classification
-- Finance users review uploaded bank statements and imported transaction lines.
+- Finance users import statements via genuine manual row-by-row entry or structured CSV file parser; all synthetic timestamp generators and hardcoded counterparties were completely removed.
 - **Verification:** Statement lines render with classification badges (`مطابق لقاعدة`, `مطابق تلقائياً`, `يحتاج مراجعة`, `يدوي`).
 - **Artifact:** `artifacts/banking-acceptance/real-stack/03-statement-lines-classification.png`
 
 ### Journey 4: Reconciliation Workbench & Conservation Arithmetic
-- Accountants match bank statement lines against system general ledger records.
+- Accountants match bank statement lines against system general ledger records fetched dynamically from `/api/v1/payments`, matching currency and debit/credit polarity.
+- Direct adjustments with required explanations are supported when system counterpart is zero.
 - **Verification:** Two-sided matching grid displays bank transactions vs ledger records. Strict conservation arithmetic bar displays: `Bank Balance - Outstanding Withdrawals + Outstanding Deposits = GL Balance`.
 - **Artifact:** `artifacts/banking-acceptance/real-stack/04-reconciliation-workbench-matching.png`
 
 ### Journey 5: Cash & Vault Management, Denomination Grid & Variance Settlement
-- Cashiers and treasury supervisors manage physical vaults and conduct count sessions.
+- Cashiers and treasury supervisors manage physical vaults and conduct count sessions. Expected balance pre-fills dynamically from the active vault book balance, and custodian resolves from authenticated session context.
 - **Verification:** Interactive denomination breakdown grid calculates total currency breakdown (200, 100, 50, 20, 10, 5). Over/short variance triggers the dedicated `تسوية الفروقات النقدية` modal with required reason and destination account.
 - **Artifact:** `artifacts/banking-acceptance/real-stack/05-cash-count-denomination-grid.png`
 
 ### Journey 6: Internal Transfers, Transit Tracking & Gateway Settlements
 - Operations team monitors funds transferred between bank accounts and cash vaults.
+- Currency selection is strictly constrained to configured legal-entity currencies (`useEntityCurrencies`), with same-account validation and stable idempotency keys.
 - **Verification:** Transfers table displays in-transit status and transit accounts. Clicking "تسوية التحويل" opens the settlement dialog requiring settlement date, reference number, and evidence file reference.
 - **Artifact:** `artifacts/banking-acceptance/real-stack/06-internal-transfer-settlement.png`
 
 ### Journey 7: Liquidity Forecasting & Financial Code Mappings
-- Financial controllers project future liquidity across multiple horizons.
+- Financial controllers project future liquidity across multiple horizons, with KPI totals strictly partitioned per currency code.
 - **Verification:** Rolling cash forecast selects 30, 60, and 90-day horizons with projected inflows, outflows, and net liquidity curves. Banking transaction code mappings grid displays GL mapping rules.
 - **Artifact:** `artifacts/banking-acceptance/real-stack/07-cash-forecast-horizon.png`
 

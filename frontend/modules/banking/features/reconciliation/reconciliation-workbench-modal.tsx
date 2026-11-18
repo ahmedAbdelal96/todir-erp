@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   useAddMatch,
   useFinalizeReconciliation,
   useReconciliationSuggestions,
-  useStatementLines
+  useStatementLines,
+  useBankStatements
 } from "../../hooks/use-banking-queries.ts";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
@@ -15,6 +16,8 @@ import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
 import { BdiText } from "../../../../components/formatting/bidi-text.tsx";
 import { formatDate } from "../../../../components/formatting/date-formatter.ts";
 import { CheckCircleIcon, AlertTriangleIcon } from "../../components/banking-icons.tsx";
+import { paymentApi } from "../../../payments/public.ts";
+import type { PaymentRecord } from "../../../payments/public.ts";
 import type { ReconciliationDto } from "../../types.ts";
 
 interface Props {
@@ -28,28 +31,73 @@ export function ReconciliationWorkbenchModal({ legalEntityId, reconciliation, is
   const { t } = useTranslation("banking");
 
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
+  const [selectedPaymentIds, setSelectedPaymentIds] = useState<string[]>([]);
+  const [isDirectAdjustment, setIsDirectAdjustment] = useState<boolean>(false);
   const [systemAmountInput, setSystemAmountInput] = useState<string>("");
   const [explanation, setExplanation] = useState("");
+  const [availablePayments, setAvailablePayments] = useState<readonly PaymentRecord[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Fallback statement lookup if reconciliation.statementId is not directly set
+  const { data: statementsData } = useBankStatements(legalEntityId, reconciliation?.treasuryAccountId ?? "");
+  const resolvedStatementId =
+    reconciliation?.statementId ||
+    statementsData?.items?.[0]?.id ||
+    "";
+
   // Queries
-  const { data: linesData, refetch: refetchLines } = useStatementLines(legalEntityId, reconciliation?.id ?? "", 1, 50);
+  const { data: linesData, refetch: refetchLines } = useStatementLines(legalEntityId, resolvedStatementId, 1, 50);
   const { data: suggestions, refetch: refetchSuggestions } = useReconciliationSuggestions(legalEntityId, reconciliation?.id ?? "");
 
   const addMatchMutation = useAddMatch(legalEntityId, reconciliation?.id ?? "");
   const finalizeMutation = useFinalizeReconciliation(legalEntityId, reconciliation?.id ?? "");
 
+  // Load eligible completed payments for this legal entity
+  useEffect(() => {
+    let active = true;
+    if (isOpen && legalEntityId) {
+      paymentApi
+        .listPayments({ legalEntityId, page: 1, pageSize: 50, state: "Completed" })
+        .then((res) => {
+          if (active) {
+            setAvailablePayments(res.items ?? []);
+          }
+        })
+        .catch(() => {
+          if (active) setAvailablePayments([]);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [isOpen, legalEntityId]);
+
   if (!isOpen || !reconciliation) return null;
 
   const lines = linesData?.items ?? [];
   const selectedLines = lines.filter((l) => selectedLineIds.includes(l.id));
+  const activeCurrency = selectedLines[0]?.currencyCode || "EGP";
+
   const externalSum = selectedLines.reduce((acc, l) => acc + (l.amount - l.claimedAmount), 0);
-  const systemAmount = systemAmountInput ? parseFloat(systemAmountInput) : externalSum;
-  const matchDiff = Math.round((externalSum - systemAmount) * 100) / 100;
+
+  const selectedPayments = availablePayments.filter((p) => selectedPaymentIds.includes(p.id));
+  const calculatedSystemSum = isDirectAdjustment
+    ? 0
+    : selectedPayments.length > 0
+    ? selectedPayments.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0)
+    : (systemAmountInput ? parseFloat(systemAmountInput) || 0 : externalSum);
+
+  const matchDiff = Math.round((externalSum - calculatedSystemSum) * 100) / 100;
 
   const handleToggleLine = (lineId: string) => {
     setSelectedLineIds((prev) =>
       prev.includes(lineId) ? prev.filter((id) => id !== lineId) : [...prev, lineId]
+    );
+  };
+
+  const handleTogglePayment = (paymentId: string) => {
+    setSelectedPaymentIds((prev) =>
+      prev.includes(paymentId) ? prev.filter((id) => id !== paymentId) : [...prev, paymentId]
     );
   };
 
@@ -60,19 +108,34 @@ export function ReconciliationWorkbenchModal({ legalEntityId, reconciliation, is
       return;
     }
 
+    if (!isDirectAdjustment && calculatedSystemSum > 0 && selectedPayments.length === 0) {
+      // Must select actual payments if matching a positive system amount
+      setErrorMsg(t("reconciliation.selectPaymentRequired"));
+      return;
+    }
+
+    const paymentReferences = isDirectAdjustment
+      ? []
+      : selectedPayments.map((p) => ({
+          paymentId: p.id,
+          amount: parseFloat(p.amount) || 0
+        }));
+
     try {
       await addMatchMutation.mutateAsync({
         statementLineIds: selectedLineIds,
-        payments: [],
+        payments: paymentReferences,
         externalAmount: externalSum,
-        systemAmount,
+        systemAmount: calculatedSystemSum,
         difference: matchDiff,
-        source: "ManualWorkbench",
-        explanation: explanation.trim() || null
+        source: isDirectAdjustment ? "BankFeeAdjustment" : "ManualWorkbench",
+        explanation: explanation.trim() || (isDirectAdjustment ? t("reconciliation.directAdjustmentNotice") : null)
       });
       setSelectedLineIds([]);
+      setSelectedPaymentIds([]);
       setSystemAmountInput("");
       setExplanation("");
+      setIsDirectAdjustment(false);
       void refetchLines();
       void refetchSuggestions();
     } catch (err: unknown) {
@@ -92,11 +155,14 @@ export function ReconciliationWorkbenchModal({ legalEntityId, reconciliation, is
     }
   };
 
-  const canFinalize = reconciliation.state === "Open" && (reconciliation.difference === 0 || reconciliation.difference == null);
+  const canFinalize =
+    reconciliation.state === "Open" &&
+    (reconciliation.difference === 0 || reconciliation.difference == null) &&
+    reconciliation.matchCount > 0;
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t("reconciliation.workbenchTitle")}>
-      <div style={{ minWidth: "360px", maxWidth: "860px", display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <div style={{ minWidth: "360px", maxWidth: "920px", display: "flex", flexDirection: "column", gap: "1rem" }}>
         {/* Session Status Banner */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--color-surface-page)", padding: "0.875rem 1.25rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-subtle)", flexWrap: "wrap", gap: "0.5rem" }}>
           <div>
@@ -105,16 +171,16 @@ export function ReconciliationWorkbenchModal({ legalEntityId, reconciliation, is
           </div>
           <div>
             <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{t("reconciliation.externalBalance")}:</span>{" "}
-            <span style={{ fontWeight: 600 }}><BankingMoney amount={reconciliation.externalBalance} currency="EGP" /></span>
+            <span style={{ fontWeight: 600 }}><BankingMoney amount={reconciliation.externalBalance} currency={activeCurrency} /></span>
           </div>
           <div>
             <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{t("reconciliation.bookBalance")}:</span>{" "}
-            <span style={{ fontWeight: 600 }}>{reconciliation.bookBalance != null ? <BankingMoney amount={reconciliation.bookBalance} currency="EGP" /> : "—"}</span>
+            <span style={{ fontWeight: 600 }}>{reconciliation.bookBalance != null ? <BankingMoney amount={reconciliation.bookBalance} currency={activeCurrency} /> : "—"}</span>
           </div>
           <div>
             <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)" }}>{t("reconciliation.difference")}:</span>{" "}
             <span style={{ fontWeight: 600, color: reconciliation.difference === 0 ? "#16a34a" : "var(--color-status-danger)" }}>
-              {reconciliation.difference != null ? <BankingMoney amount={reconciliation.difference} currency="EGP" /> : "—"}
+              {reconciliation.difference != null ? <BankingMoney amount={reconciliation.difference} currency={activeCurrency} /> : "—"}
             </span>
           </div>
           <StatusBadge
@@ -156,74 +222,144 @@ export function ReconciliationWorkbenchModal({ legalEntityId, reconciliation, is
           </div>
         )}
 
-        {/* External Statement Lines Available for Matching */}
-        <div>
-          <div style={{ fontSize: "0.9375rem", fontWeight: 600, marginBottom: "0.5rem", color: "var(--color-brand-primary)" }}>
-            {t("reconciliation.externalLinesTitle")}
-          </div>
-          <div style={{ maxHeight: "240px", overflowY: "auto", border: "1px solid var(--color-border-subtle)", borderRadius: "var(--radius-sm)" }}>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead style={{ width: "40px" }}></TableHead>
-                  <TableHead>{t("statements.lineExternalId")}</TableHead>
-                  <TableHead>{t("statements.bookingDate")}</TableHead>
-                  <TableHead>{t("statements.direction")}</TableHead>
-                  <TableHead align="end">{t("statements.amount")}</TableHead>
-                  <TableHead align="end">{t("statements.remainingAmount")}</TableHead>
-                  <TableHead>{t("statements.reference")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {lines.length === 0 ? (
+        {/* Grid: Statement Lines (Left) vs Ledger Payments (Right) */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+          {/* External Statement Lines */}
+          <div>
+            <div style={{ fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.5rem", color: "var(--color-brand-primary)" }}>
+              {t("reconciliation.externalLinesTitle")} ({lines.length})
+            </div>
+            <div style={{ maxHeight: "220px", overflowY: "auto", border: "1px solid var(--color-border-subtle)", borderRadius: "var(--radius-sm)" }}>
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={7} style={{ textAlign: "center", color: "var(--color-content-muted)", padding: "1.5rem" }}>
-                      {t("common.noData")}
-                    </TableCell>
+                    <TableHead style={{ width: "32px" }}></TableHead>
+                    <TableHead>{t("statements.lineExternalId")}</TableHead>
+                    <TableHead>{t("statements.direction")}</TableHead>
+                    <TableHead align="end">{t("statements.amount")}</TableHead>
                   </TableRow>
-                ) : (
-                  lines.map((line) => {
-                    const isSelected = selectedLineIds.includes(line.id);
-                    const remaining = line.amount - line.claimedAmount;
-                    return (
-                      <TableRow
-                        key={line.id}
-                        onClick={() => handleToggleLine(line.id)}
-                        style={{ cursor: "pointer", background: isSelected ? "var(--color-surface-hover)" : "transparent" }}
-                      >
-                        <TableCell>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => handleToggleLine(line.id)}
-                            aria-label={t("reconciliation.selectLineAria", { id: line.externalLineId })}
-                          />
+                </TableHeader>
+                <TableBody>
+                  {lines.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} style={{ textAlign: "center", color: "var(--color-content-muted)", padding: "1rem" }}>
+                        {t("common.noData")}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    lines.map((line) => {
+                      const isSelected = selectedLineIds.includes(line.id);
+                      const remaining = line.amount - line.claimedAmount;
+                      return (
+                        <TableRow
+                          key={line.id}
+                          onClick={() => handleToggleLine(line.id)}
+                          style={{ cursor: "pointer", background: isSelected ? "var(--color-surface-hover)" : "transparent" }}
+                        >
+                          <TableCell>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleLine(line.id)}
+                              aria-label={line.externalLineId}
+                            />
+                          </TableCell>
+                          <TableCell style={{ fontWeight: 600 }}>
+                            <BdiText>{line.externalLineId}</BdiText>
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge
+                              intent={line.direction === "Credit" ? "success" : "neutral"}
+                              label={line.direction === "Credit" ? t("reports.credit") : t("reports.debit")}
+                            />
+                          </TableCell>
+                          <TableCell align="end">
+                            <BankingMoney amount={remaining} currency={line.currencyCode} />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          {/* System Ledger Payments */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+              <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-brand-primary)" }}>
+                {t("reconciliation.ledgerPaymentsTitle")} ({availablePayments.length})
+              </span>
+              <label style={{ fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.25rem", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={isDirectAdjustment}
+                  onChange={(e) => setIsDirectAdjustment(e.target.checked)}
+                />
+                {t("reconciliation.directAdjustmentCheckbox")}
+              </label>
+            </div>
+
+            <div style={{ maxHeight: "220px", overflowY: "auto", border: "1px solid var(--color-border-subtle)", borderRadius: "var(--radius-sm)" }}>
+              {isDirectAdjustment ? (
+                <div style={{ padding: "1.5rem", textAlign: "center", color: "var(--color-content-muted)", fontSize: "0.8125rem" }}>
+                  {t("reconciliation.directAdjustmentNotice")}
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead style={{ width: "32px" }}></TableHead>
+                      <TableHead>{t("reconciliation.paymentNumber")}</TableHead>
+                      <TableHead>{t("statements.direction")}</TableHead>
+                      <TableHead align="end">{t("statements.amount")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {availablePayments.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} style={{ textAlign: "center", color: "var(--color-content-muted)", padding: "1rem" }}>
+                          {t("reconciliation.noPaymentsAvailable")}
                         </TableCell>
-                        <TableCell style={{ fontWeight: 600 }}>
-                          <BdiText>{line.externalLineId}</BdiText>
-                        </TableCell>
-                        <TableCell>
-                          <BdiText>{formatDate(line.bookingDate)}</BdiText>
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge
-                            intent={line.direction === "Credit" ? "success" : "neutral"}
-                            label={line.direction === "Credit" ? t("reports.credit") : t("reports.debit")}
-                          />
-                        </TableCell>
-                        <TableCell align="end">
-                          <BankingMoney amount={line.amount} currency={line.currencyCode} />
-                        </TableCell>
-                        <TableCell align="end">
-                          <BankingMoney amount={remaining} currency={line.currencyCode} />
-                        </TableCell>
-                        <TableCell style={{ fontSize: "0.8125rem" }}>{line.reference || "—"}</TableCell>
                       </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
+                    ) : (
+                      availablePayments.map((p) => {
+                        const isSelected = selectedPaymentIds.includes(p.id);
+                        return (
+                          <TableRow
+                            key={p.id}
+                            onClick={() => handleTogglePayment(p.id)}
+                            style={{ cursor: "pointer", background: isSelected ? "var(--color-surface-hover)" : "transparent" }}
+                          >
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleTogglePayment(p.id)}
+                                aria-label={p.number}
+                              />
+                            </TableCell>
+                            <TableCell style={{ fontWeight: 600 }}>
+                              <BdiText>{p.number}</BdiText>
+                            </TableCell>
+                            <TableCell>
+                              <StatusBadge
+                                intent={p.direction === "Incoming" ? "success" : "neutral"}
+                                label={p.direction === "Incoming" ? t("reports.credit") : t("reports.debit")}
+                              />
+                            </TableCell>
+                            <TableCell align="end">
+                              <BankingMoney amount={parseFloat(p.amount) || 0} currency={p.currencyCode} />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
           </div>
         </div>
 
@@ -232,21 +368,16 @@ export function ReconciliationWorkbenchModal({ legalEntityId, reconciliation, is
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.75rem", alignItems: "center" }}>
             <div>
               <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", display: "block" }}>{t("reconciliation.selectedExternal")}</span>
-              <span style={{ fontSize: "1.125rem", fontWeight: 700 }}><BankingMoney amount={externalSum} currency="EGP" /></span>
+              <span style={{ fontSize: "1.125rem", fontWeight: 700 }}><BankingMoney amount={externalSum} currency={activeCurrency} /></span>
             </div>
             <div>
-              <TextField
-                label={t("reconciliation.selectedSystem")}
-                type="number"
-                value={systemAmountInput}
-                onChange={(val) => setSystemAmountInput(val)}
-                placeholder={String(externalSum)}
-              />
+              <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", display: "block" }}>{t("reconciliation.selectedSystem")}</span>
+              <span style={{ fontSize: "1.125rem", fontWeight: 700 }}><BankingMoney amount={calculatedSystemSum} currency={activeCurrency} /></span>
             </div>
             <div>
               <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)", display: "block" }}>{t("reconciliation.workbenchDiff")}</span>
               <span style={{ fontSize: "1.125rem", fontWeight: 700, color: matchDiff === 0 ? "#16a34a" : "var(--color-status-danger)" }}>
-                <BankingMoney amount={matchDiff} currency="EGP" />
+                <BankingMoney amount={matchDiff} currency={activeCurrency} />
               </span>
             </div>
           </div>
@@ -256,6 +387,7 @@ export function ReconciliationWorkbenchModal({ legalEntityId, reconciliation, is
               label={t("reconciliation.explanationLabel")}
               value={explanation}
               onChange={(val) => setExplanation(val)}
+              placeholder={t("reconciliation.explanationPlaceholder")}
             />
           </div>
 
@@ -274,7 +406,11 @@ export function ReconciliationWorkbenchModal({ legalEntityId, reconciliation, is
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--color-border-subtle)", paddingTop: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
           <div style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <AlertTriangleIcon />
-            <span>{t("reconciliation.finalizeNotice")}</span>
+            <span>
+              {!canFinalize && reconciliation.state === "Open"
+                ? t("reconciliation.cannotFinalizeNotice")
+                : t("reconciliation.finalizeNotice")}
+            </span>
           </div>
           <div style={{ display: "flex", gap: "0.75rem" }}>
             <Button variant="secondary" onClick={onClose}>

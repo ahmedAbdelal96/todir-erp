@@ -23,7 +23,7 @@ public sealed record StatementLineDto(Guid Id, Guid StatementId, string External
 public sealed record StatementLinePage(IReadOnlyList<StatementLineDto> Items, int Page, int PageSize, bool HasMore, int TotalCount);
 public sealed record ReconciliationDto(Guid Id, Guid TreasuryAccountId, DateOnly AsOfDate, string State, decimal ExternalBalance,
     decimal? BookBalance, decimal? Difference, int MatchCount, long Version, string? LedgerSourceReference = null,
-    DateTimeOffset? LedgerLastPostedAt = null, long LedgerPostedLineCount = 0);
+    DateTimeOffset? LedgerLastPostedAt = null, long LedgerPostedLineCount = 0, Guid? StatementId = null);
 public sealed record ReconciliationPage(IReadOnlyList<ReconciliationDto> Items, int Page, int PageSize, bool HasMore, int TotalCount);
 public sealed record CashCountDto(Guid Id, Guid TreasuryAccountId, DateOnly CutoffDate, string State, decimal ExpectedAmount,
     decimal CountedAmount, decimal Difference, Guid CustodianId, long Version);

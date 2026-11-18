@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   useTreasuryAccounts,
+  useCashPosition,
   useCashCounts,
   useSubmitCashCount,
   useApproveCashCount,
@@ -46,6 +47,10 @@ export function CashManagementTab({ legalEntityId }: Props): React.JSX.Element {
   const [selectedCountForResolve, setSelectedCountForResolve] = useState<CashCountDto | null>(null);
 
   // Cash counts query & mutations
+  const { data: positions } = useCashPosition(legalEntityId);
+  const activePosition = positions?.find((p) => p.treasuryAccountId === activeAccountId);
+  const expectedBalance = activePosition?.bookBalance ?? null;
+
   const { data: countsData, isLoading: isCountsLoading, refetch: refetchCounts } = useCashCounts(legalEntityId, activeAccountId);
   const submitMutation = useSubmitCashCount(legalEntityId, activeAccountId);
   const approveMutation = useApproveCashCount(legalEntityId, activeAccountId);
@@ -334,6 +339,7 @@ export function CashManagementTab({ legalEntityId }: Props): React.JSX.Element {
         legalEntityId={legalEntityId}
         accountId={activeAccountId}
         currencyCode={selectedAccount?.currencyCode || "EGP"}
+        expectedBalance={expectedBalance}
         isOpen={isCountOpen}
         onClose={() => setIsCountOpen(false)}
       />

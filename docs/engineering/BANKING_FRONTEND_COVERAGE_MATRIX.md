@@ -33,9 +33,9 @@
 
 | Test Suite | Purpose / Scope | Target Environment | Scenarios Passed | Execution Time |
 | :--- | :--- | :--- | :--- | :--- |
-| **Real-Stack E2E (`banking-real-stack.spec.ts`)** | Authentic live database-backed end-to-end acceptance with zero mocked business APIs | Live .NET API (`:5080`) + PostgreSQL (`finance_banking`) | **9 / 9 PASS** | 40.1s |
+| **Real-Stack E2E (`banking-real-stack.spec.ts`)** | Authentic live database-backed end-to-end acceptance with zero mocked business APIs and target safety probe guard | Live .NET API (`:5080`) + PostgreSQL (`finance_banking`) on isolated acceptance DB | **9 / 9 PASS** | 39.8s |
 | **Unit & Slice Tests (`banking-slice.test.ts`)** | Denomination arithmetic, conservation equation, currency formatting, status badge mappings | Node.js Test Runner | **5 / 5 PASS** | 45ms |
-| **Full Frontend Unit Suite (`test:frontend`)** | Repository-wide frontend unit and regression coverage | Node.js Test Runner | **232 / 232 PASS** | 1.8s |
+| **Full Frontend Unit Suite (`test:frontend`)** | Repository-wide frontend unit and regression coverage | Node.js Test Runner | **234 / 234 PASS** | 2.9s |
 | **Architecture Boundaries (`architecture:frontend`)** | Architectural invariants, import boundaries, package isolation | Static analysis | **PASS** | 1.0s |
 | **Localization Verification (`verify-localization.mjs`)** | Arabic/English key parity, hardcoded string guards | Static analysis script | **PASS** | 0.8s |
 | **TypeScript Strict Checking (`typecheck`)** | Strict compile-time type verification | TypeScript Compiler (`tsc`) | **PASS (0 errors)** | 3.5s |
