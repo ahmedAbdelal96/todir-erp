@@ -104,7 +104,7 @@ export function CountDetailModal({
       onOpenChange={(open) => !open && onClose()}
       title={t("counts.detailTitle")}
       description={t("counts.detailSubtitle")}
-      size="fullscreen"
+      size="wide"
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         {errorMessage && (

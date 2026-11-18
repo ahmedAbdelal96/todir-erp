@@ -17,7 +17,7 @@ export interface DialogProps extends Omit<AriaDialogProps, "className"> {
   readonly isOpen?: boolean;
   readonly onOpenChange?: (isOpen: boolean) => void;
   readonly onClose?: () => void;
-  readonly size?: "small" | "medium" | "large" | "fullscreen";
+  readonly size?: "small" | "medium" | "large" | "wide" | "fullscreen";
   readonly className?: string;
 }
 
@@ -54,6 +54,8 @@ export function Dialog({
         return "36rem";
       case "large":
         return "48rem";
+      case "wide":
+        return "84rem";
       case "fullscreen":
         return "92vw";
       default:
@@ -83,7 +85,7 @@ export function Dialog({
       <AriaModal
         className="ui-modal"
         style={{
-          width: `min(${getMaxWidth()}, calc(100vw - 2.5rem))`,
+          width: size === "wide" ? "min(84rem, 82vw)" : `min(${getMaxWidth()}, calc(100vw - 2.5rem))`,
           maxWidth: getMaxWidth(),
           maxHeight: "calc(100vh - 2.5rem)",
           outline: "none",
