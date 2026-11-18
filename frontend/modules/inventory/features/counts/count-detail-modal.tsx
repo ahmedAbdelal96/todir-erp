@@ -54,7 +54,9 @@ export function CountDetailModal({
     setPage(1);
   }, [countId, totalLines, countedLines, countStatus]);
 
-  const pageSize = 25;
+  // A count session can contain thousands of items. Keep the interaction bounded
+  // while giving the counter a dense, useful working set on every page.
+  const pageSize = 50;
   const { data, isLoading, isFetching, isError, refetch } = usePhysicalCountLines(legalEntityId, countId, { page, pageSize, search });
   const { enterPhysicalCountLine, postPhysicalCount } = useInventoryMutations(legalEntityId);
   const lines = data?.items ?? [];
@@ -102,7 +104,7 @@ export function CountDetailModal({
       onOpenChange={(open) => !open && onClose()}
       title={t("counts.detailTitle")}
       description={t("counts.detailSubtitle")}
-      size="large"
+      size="fullscreen"
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         {errorMessage && (
@@ -172,9 +174,9 @@ export function CountDetailModal({
           <ErrorState message={t("counts.linesLoadError")} onRetry={() => void refetch()} isRetrying={isFetching} />
         ) : lines.length === 0 ? (
           <EmptyState title={t("counts.noMatchingLines")} />
-        ) : <div style={{ overflowX: "auto", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)" }}>
-          <table style={{ width: "100%", minWidth: "680px", borderCollapse: "collapse", fontSize: "0.875rem" }}>
-            <thead>
+        ) : <div style={{ overflow: "auto", maxHeight: "min(58vh, 42rem)", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-md)" }}>
+          <table style={{ width: "100%", minWidth: "900px", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+            <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
               <tr style={{ backgroundColor: "var(--color-surface-subtle, #f8fafc)", borderBottom: "1px solid var(--color-border-default)" }}>
                 <th style={{ padding: "0.625rem 0.75rem", textAlign: "start" }}>{t("operations.product")}</th>
                 <th style={{ padding: "0.625rem 0.75rem", textAlign: "start" }}>{t("stock.status")}</th>
