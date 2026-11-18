@@ -9,6 +9,7 @@ import {
   Popover as AriaPopover,
   ListBox as AriaListBox,
   ListBoxItem as AriaListBoxItem,
+  Group as AriaGroup,
   type ComboBoxProps as AriaComboBoxProps,
   type ListBoxItemProps as AriaListBoxItemProps
 } from "react-aria-components";
@@ -95,36 +96,12 @@ export function ComboBox<T extends object = ComboBoxOption>({
   const { t } = useTranslation("common");
   const [internalInput, setInternalInput] = React.useState(props.inputValue ?? "");
   const [isFocused, setIsFocused] = React.useState(false);
-  const triggerRef = React.useRef<HTMLDivElement>(null);
-  const [triggerWidth, setTriggerWidth] = React.useState<number | undefined>(undefined);
-
   // Sync internalInput with props.inputValue when provided
   React.useEffect(() => {
     if (props.inputValue !== undefined) {
       setInternalInput(props.inputValue);
     }
   }, [props.inputValue]);
-
-  // Measure trigger container to ensure the popover strictly matches trigger width
-  React.useLayoutEffect(() => {
-    const el = triggerRef.current;
-    if (!el) return;
-
-    const measure = () => {
-      const rect = el.getBoundingClientRect();
-      if (rect.width > 0) {
-        setTriggerWidth(Math.round(rect.width));
-      }
-    };
-
-    measure();
-
-    if (typeof ResizeObserver !== "undefined") {
-      const observer = new ResizeObserver(() => measure());
-      observer.observe(el);
-      return () => observer.disconnect();
-    }
-  }, []);
 
   const currentSearchTerm = props.inputValue !== undefined ? props.inputValue : internalInput;
 
@@ -209,9 +186,9 @@ export function ComboBox<T extends object = ComboBoxOption>({
         </div>
       )}
 
-      {/* Trigger & Search Field Container */}
-      <div
-        ref={triggerRef}
+      {/* Trigger & Search Field Container (React Aria Group establishes popover anchor) */}
+      <AriaGroup
+        className="ui-combobox-field"
         style={{
           display: "flex",
           alignItems: "center",
@@ -370,7 +347,7 @@ export function ComboBox<T extends object = ComboBoxOption>({
             <path d="M1 1.5L6 6.5L11 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </AriaButton>
-      </div>
+      </AriaGroup>
 
       {description && !errorMessage && (
         <AriaText slot="description" style={{ fontSize: "0.75rem", color: "var(--color-content-muted, #64748b)" }}>
@@ -389,9 +366,9 @@ export function ComboBox<T extends object = ComboBoxOption>({
         offset={4}
         placement="bottom start"
         style={{
-          width: triggerWidth ? `${triggerWidth}px` : "var(--trigger-width, 100%)",
-          minWidth: triggerWidth ? `${triggerWidth}px` : "var(--trigger-width, 100%)",
-          maxWidth: triggerWidth ? `${triggerWidth}px` : "100vw",
+          width: "var(--trigger-width)",
+          minWidth: "var(--trigger-width)",
+          maxWidth: "100vw",
           boxSizing: "border-box",
           backgroundColor: "var(--color-surface-card, #ffffff)",
           border: "1px solid var(--color-border-default, #cbd5e1)",
