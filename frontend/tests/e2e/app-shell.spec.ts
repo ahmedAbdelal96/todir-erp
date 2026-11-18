@@ -146,7 +146,7 @@ test.describe('App Shell Bootstrap & Localization', () => {
 
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page).not.toHaveURL(/#/);
-    await expect(page.getByRole('heading', { name: 'الإعدادات' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'إعدادات الشركة' })).toBeVisible();
   });
 
   test('captures redesigned executive topbar evidence', async ({ page }) => {
