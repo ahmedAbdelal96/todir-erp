@@ -19,7 +19,7 @@ $env:TODIR_DATABASE_CONNECTION = 'Host=127.0.0.1;Port=15433;Database=todir_modul
 dotnet run --project backend/DbMigrator/DbMigrator.csproj --no-restore
 ```
 
-The migrator is ordered by module manifests and is idempotent. Verify the Development seed after migration: Atlas and Delta each have four statements, one reconciliation, one submitted cash count, and one published forecast.
+The migrator is ordered by module manifests and is idempotent. Verify the Development seed after migration: Atlas and Delta each have four statements, one reconciliation, one submitted cash count, and one published forecast. Banking seed reconciliations intentionally have no fabricated book balance; runtime reconciliation reads the posted Ledger. Seed cash projections expose their basis and timestamps, and repeat runs must not overwrite an existing authoritative projection.
 
 ## API and Worker runtime
 
@@ -33,6 +33,9 @@ Outbox messages are dispatched after commit. Consumers use Inbox idempotency. A 
 
 - Import statement lines with an idempotency key and external-line identity.
 - Reconcile only lines belonging to the selected legal entity and account. Row locks protect claimable amounts; partial claims are allowed only within remaining amount.
+- Reconciliation book balance is authoritative only when read from the Ledger for the same treasury account, legal entity, currency, and cutoff. The persisted Ledger source snapshot is historical evidence; a client-supplied value cannot override it.
+- Match payment ids through the Payments read capability. Verify tenant/entity/account/currency/direction, `Completed` state, amount availability, and transactional system-claim ownership before accepting a match.
+- Banking account creation and the Payments compatibility projection are one transaction and share the same canonical treasury id. Activation synchronizes the compatibility status and creates the usable payment-method configuration.
 - Internal transfers begin `InTransit`. Claiming a source debit and destination credit with matching account, direction, currency, and amount transitions the projection to `Matched`. Reuse of either statement line is rejected.
 - POS and provider settlement confirmation is optimistic-concurrency protected and preserves gross, fee, adjustment, and net evidence.
 - Finalized statements, reconciliations, and cash counts are immutable at the database boundary.
@@ -45,7 +48,8 @@ Outbox messages are dispatched after commit. Consumers use Inbox idempotency. A 
 - Duplicate import or replay: retain the original idempotency key/message id and inspect the Inbox/outbox evidence; do not manually insert a second business record.
 - Unallocated receipt: inspect the bank statement line, approval event, and Payment source reference. A missing membership or a forged source reference must be rejected.
 - Stale cash position: inspect projection timestamps and the latest committed statement/settlement events before treating it as a balance error.
+- `banking.cash_projection_missing`: do not substitute zero. Rebuild or re-ingest the projection from its owning source and preserve the source watermark.
 
 ## Release evidence
 
-The final acceptance record must include the exact migration count, seed counts, focused Banking/Ledger/Payments test results, authenticated HTTP isolation evidence, Worker replay evidence, and a clean working tree. Do not claim heavyweight 100k/1M-row performance certification unless those separate approved benchmarks have actually been executed.
+The final acceptance record must include the exact migration count (229), seed counts, focused Banking/Ledger/Payments test results, Ledger-derived balance evidence, forged-input rejection, canonical account identity evidence, authenticated HTTP isolation evidence, Worker replay evidence, and a clean working tree. Do not claim heavyweight 100k/1M-row performance certification unless those separate approved benchmarks have actually been executed; this gate remains explicitly unverified for Module 25.

@@ -10,6 +10,7 @@ using Modules.Banking.Entities;
 using Modules.Banking.Repositories;
 using Modules.Banking.Services;
 using Shared.Contracts.Banking;
+using Core.Transactions;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Banking;
@@ -22,6 +23,7 @@ public static class BankingModuleExtensions
         services.AddSingleton<BankingRepository>();
         services.AddSingleton<BankingService>();
         services.AddSingleton<IBankingTreasuryAccountCapability>(provider => provider.GetRequiredService<BankingService>());
+        services.AddSingleton<ITransactionalBankingTreasuryAccountCapability>(provider => provider.GetRequiredService<BankingService>());
         return services;
     }
 
@@ -305,7 +307,7 @@ public sealed class BankingModuleManifestProvider : IModuleManifestProvider
 {
     public ModuleManifest Manifest { get; } = new("banking", "1.0.0", 1, "L3", "module", false, "tenant",
         new(["platform-kernel", "directory", "finbase", "ledger", "subledger", "payments", "pos", "payroll", "tax"], ["platform.files"]),
-        new("finance_banking", ["treasury_account", "treasury_account_balance_pocket", "bank_account_profile", "cash_account_profile", "digital_wallet_profile", "settlement_account_profile", "treasury_account_change_request", "treasury_account_connection", "statement_import_batch", "external_statement", "external_statement_line", "external_feed_transaction", "bank_originated_event_candidate", "treasury_activity_projection", "treasury_account_balance_projection", "transfer_reconciliation_projection", "settlement_account_projection", "provider_settlement_projection", "pos_cash_settlement_projection", "statement_transaction_code_mapping", "reconciliation_rule_set", "reconciliation_rule_version", "reconciliation_session", "reconciliation_match", "reconciliation_match_item", "reconciliation_match_system_item", "reconciliation_adjustment", "cash_count", "cash_count_denomination", "cash_difference_resolution", "cash_custodian_history", "cash_position_projection", "cash_forecast_version", "cash_forecast_item", "cash_forecast_projection", "opening_reconciliation"]),
+        new("finance_banking", ["treasury_account", "treasury_account_balance_pocket", "bank_account_profile", "cash_account_profile", "digital_wallet_profile", "settlement_account_profile", "treasury_account_change_request", "treasury_account_connection", "statement_import_batch", "external_statement", "external_statement_line", "external_feed_transaction", "bank_originated_event_candidate", "treasury_activity_projection", "treasury_account_balance_projection", "transfer_reconciliation_projection", "settlement_account_projection", "provider_settlement_projection", "pos_cash_settlement_projection", "statement_transaction_code_mapping", "reconciliation_rule_set", "reconciliation_rule_version", "reconciliation_session", "reconciliation_match", "reconciliation_match_item", "reconciliation_match_system_item", "reconciliation_system_claim", "reconciliation_adjustment", "cash_count", "cash_count_denomination", "cash_difference_resolution", "cash_custodian_history", "cash_position_projection", "cash_forecast_version", "cash_forecast_item", "cash_forecast_projection", "opening_reconciliation"]),
         ["banking.accounts.read", "banking.accounts.create", "banking.accounts.edit", "banking.accounts.activate", "banking.accounts.suspend", "banking.accounts.close", "banking.accounts.sensitive_data.read", "banking.accounts.change.approve", "banking.connections.read", "banking.connections.manage", "banking.statements.read", "banking.statements.import", "banking.statements.validate", "banking.reconciliation.read", "banking.reconciliation.match", "banking.reconciliation.finalize", "banking.reconciliation.reopen", "banking.bank_originated.review", "banking.bank_originated.approve", "banking.cash.read", "banking.cash.count", "banking.cash.count.approve", "banking.cash.difference.resolve", "banking.transfers.read", "banking.transfers.initiate", "banking.cash_position.read", "banking.cash_forecast.read", "banking.cash_forecast.manage", "banking.reports.read", "banking.audit.read", "banking.export", "banking.settings.manage"],
         new(["banking.treasury-accounts", "banking.statement-evidence", "banking.reconciliation", "banking.cash-position", "banking.cash-forecast"], ["payments.money-movement", "payments.internal-transfers", "directory.party", "finbase.money", "ledger.semantic-facts", "subledger.open-items", "platform.audit", "platform.files"]),
         new(["TreasuryAccountActivatedV1", "TreasuryAccountSuspendedV1", "TreasuryAccountClosedV1", "ExternalStatementImportedV1", "ReconciliationFinalizedV1", "CashCountFinalizedV1", "BankOriginatedFinancialEventApprovedV1"], ["PaymentCompletedV1", "PaymentReversedV1", "PaymentRefundedV1", "InternalTransferCompletedV1", "ExternalFeedTransactionReceivedV1", "ProviderSettlementImportedV1", "PosSessionClosedV1"]), new(false, "blocked_if_dependents"));

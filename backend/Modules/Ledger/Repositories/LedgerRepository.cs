@@ -16,7 +16,7 @@ public sealed class LedgerRepository(
     NpgsqlDataSource dataSource,
     ITransactionCoordinator transactions,
     ILegalEntityFinancialReadStore financialRead,
-    TimeProvider clock) : ILedgerPostingEngine, ILedgerControlBalanceRead
+    TimeProvider clock) : ILedgerPostingEngine, ILedgerControlBalanceRead, ILedgerTreasuryBalanceRead
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -78,6 +78,32 @@ public sealed class LedgerRepository(
     {
         var configurationVersionId = await GetActiveConfigurationVersionIdAsync(tenantId, legalEntityId, cancellationToken);
         return await GetControlBalanceAsync(tenantId, legalEntityId, controlRole, configurationVersionId, asOfDate, cancellationToken);
+    }
+
+    public async Task<LedgerTreasuryBalanceSnapshot> GetTreasuryBookBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId,
+        Guid treasuryAccountId, string currencyCode, DateOnly asOfDate, CancellationToken cancellationToken = default)
+    {
+        var currency = currencyCode.Trim().ToUpperInvariant();
+        if (treasuryAccountId == Guid.Empty || currency.Length != 3) throw new LedgerDomainException("ledger.treasury_balance_query_invalid", "A treasury account and currency are required.");
+        await using var connection = await OpenAsync(tenantId, cancellationToken);
+        const string sql = """
+            select coalesce(sum(l.transaction_debit-l.transaction_credit),0),
+                   coalesce(sum(l.base_debit-l.base_credit),0),
+                   max(e.base_currency_code), (array_agg(e.accounting_configuration_version_id order by e.posted_at desc))[1], max(e.posted_at), count(l.id)
+            from finance_ledger.journal_entry e
+            join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id
+            where e.tenant_id=$1 and e.legal_entity_id=$2 and e.status='Posted' and e.posting_date<=$3
+              and l.currency_code=$4 and l.line_reference=$5
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(legalEntityId.Value); command.Parameters.AddWithValue(asOfDate);
+        command.Parameters.AddWithValue(currency); command.Parameters.AddWithValue(treasuryAccountId.ToString("D"));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) throw new LedgerDomainException("ledger.treasury_balance_unavailable", "The Ledger balance could not be read.");
+        var baseCurrency = reader.IsDBNull(2) ? currency : reader.GetString(2).Trim();
+        return new(treasuryAccountId, legalEntityId.Value, currency, asOfDate, reader.GetDecimal(0), reader.GetDecimal(1), baseCurrency,
+            reader.IsDBNull(3) ? null : reader.GetGuid(3), reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4), reader.GetInt64(5),
+            $"finance_ledger.journal_entry_line:{treasuryAccountId:D}:{asOfDate:yyyy-MM-dd}:{currency}");
     }
 
     public async Task<IReadOnlyList<AccountDto>> ListAccountsAsync(TenantId tenant, LegalEntityId entity, CancellationToken ct)
@@ -1012,7 +1038,7 @@ public sealed class LedgerRepository(
         var rate = baseAmount / payload.Amount;
         var money = new LedgerPostingLinePayload(cashAccount, payload.Direction == "Incoming" ? baseAmount : 0m, payload.Direction == "Outgoing" ? baseAmount : 0m,
             transactionCurrency, payload.Direction == "Incoming" ? payload.Amount : 0m, payload.Direction == "Outgoing" ? payload.Amount : 0m,
-            payload.Direction == "Incoming" ? baseAmount : 0m, payload.Direction == "Outgoing" ? baseAmount : 0m, rate, [], "Operational payment account movement", null);
+            payload.Direction == "Incoming" ? baseAmount : 0m, payload.Direction == "Outgoing" ? baseAmount : 0m, rate, [], "Operational payment account movement", payload.PaymentAccountReference);
         var party = new LedgerPostingLinePayload(partyAccount, payload.Direction == "Outgoing" ? baseAmount : 0m, payload.Direction == "Incoming" ? baseAmount : 0m,
             transactionCurrency, payload.Direction == "Outgoing" ? payload.Amount : 0m, payload.Direction == "Incoming" ? payload.Amount : 0m,
             payload.Direction == "Outgoing" ? baseAmount : 0m, payload.Direction == "Incoming" ? baseAmount : 0m, rate, [], "Party settlement movement", payload.PartyId?.ToString("D"));

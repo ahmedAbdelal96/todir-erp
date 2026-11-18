@@ -13,7 +13,7 @@ public sealed record ImportStatementRequest(string StatementNumber, DateOnly? Op
     IReadOnlyList<ImportStatementLineRequest> Lines);
 public sealed record ImportStatementLineRequest(string ExternalLineId, DateOnly BookingDate, DateOnly? ValueDate, string Direction,
     decimal Amount, string CurrencyCode, string? Reference, string? TransactionCode, string? CounterpartyName, string? RawPayload);
-public sealed record CreateReconciliationRequest(Guid LegalEntityId, DateOnly AsOfDate, Guid StatementId, decimal BookBalance, string? Notes);
+public sealed record CreateReconciliationRequest(Guid LegalEntityId, DateOnly AsOfDate, Guid StatementId, decimal? BookBalance = null, string? Notes = null);
 public sealed record CreateMatchRequest(IReadOnlyList<Guid> StatementLineIds, IReadOnlyList<PaymentMatchReference> Payments, decimal ExternalAmount, decimal SystemAmount, decimal Difference, string Source, string? Explanation);
 public sealed record PaymentMatchReference(Guid PaymentId, decimal Amount);
 public sealed record CreateCashCountRequest(DateOnly CutoffDate, Guid CustodianId, decimal ExpectedAmount, IReadOnlyList<CashDenominationRequest> Denominations);

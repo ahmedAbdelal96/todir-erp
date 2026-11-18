@@ -1,4 +1,5 @@
 using Core.Services;
+using Core.Transactions;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -17,8 +18,14 @@ namespace Modules.Payments.Services;
 
 public sealed class PaymentsService(PaymentsRepository repository, IDirectoryCapabilities directory,
     IFinanceBaseCapabilities financeBase, IPlatformOrganizationCapabilities organization, ISubledgerCapabilities subledger,
-    IDirectoryPartyRoleCapabilities partyRoles, IReferencePaymentProvider referenceProvider, IProviderSecretResolver providerSecrets) : IPosPaymentCapabilities, IInternalTransferCapability, IPaymentChequeReadCapability, IBankOriginatedPaymentCapability
+    IDirectoryPartyRoleCapabilities partyRoles, IReferencePaymentProvider referenceProvider, IProviderSecretResolver providerSecrets) : IPosPaymentCapabilities, IInternalTransferCapability, IPaymentChequeReadCapability, IBankOriginatedPaymentCapability, ITransactionalPaymentReconciliationReadCapability, ITransactionalPaymentAccountCompatibilityCapability
 {
+    public Task<PaymentReconciliationMovement?> GetForReconciliationAsync(ITransactionContext context, TenantId tenantId, Guid legalEntityId, Guid paymentId, CancellationToken cancellationToken = default)
+        => PaymentsRepository.GetForReconciliationAsync(context, tenantId, legalEntityId, paymentId, cancellationToken);
+    public Task CreateCompatibilityInTransactionAsync(ITransactionContext context, TenantId tenantId, Guid legalEntityId, Guid accountId, Guid? branchId, string code, string name, string accountType, string currencyPolicy, string? currencyCode, string? bankName, string? accountHolder, string? maskedIdentifier, string? secretRef, string status, DateTimeOffset now, CancellationToken cancellationToken = default)
+        => PaymentsRepository.CreateCompatibilityInTransactionAsync(context, tenantId, legalEntityId, accountId, branchId, code, name, accountType, currencyPolicy, currencyCode, bankName, accountHolder, maskedIdentifier, secretRef, status, now, cancellationToken);
+    public Task ChangeCompatibilityStatusInTransactionAsync(ITransactionContext context, TenantId tenantId, Guid legalEntityId, Guid accountId, string status, CancellationToken cancellationToken = default)
+        => PaymentsRepository.ChangeCompatibilityStatusInTransactionAsync(context, tenantId, legalEntityId, accountId, status, cancellationToken);
     public async Task<BankOriginatedReceiptResult> CreateUnallocatedReceiptAsync(TenantId tenantId, Guid actorId, Guid membershipId,
         Guid correlationId, BankOriginatedReceiptRequest request, CancellationToken cancellationToken = default)
     {

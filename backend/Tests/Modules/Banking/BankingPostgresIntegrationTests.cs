@@ -15,8 +15,7 @@ public sealed class BankingPostgresIntegrationTests
     [Fact]
     public async Task SeededTreasuryStatementsAndCashPositionAreReadThroughTheRepository()
     {
-        var connectionString = Environment.GetEnvironmentVariable("TODIR_BANKING_TEST_CONNECTION");
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        var connectionString = RequireConnection();
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var repository = new BankingRepository(dataSource, TimeProvider.System);
@@ -45,8 +44,7 @@ public sealed class BankingPostgresIntegrationTests
     [Fact]
     public async Task OpeningReconciliationPreservesMigrationProvenanceAndFinalizesOnlyWhenBalanced()
     {
-        var connectionString = Environment.GetEnvironmentVariable("TODIR_BANKING_TEST_CONNECTION");
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        var connectionString = RequireConnection();
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var repository = new BankingRepository(dataSource, TimeProvider.System);
         var tenant = new TenantId(Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b"));
@@ -67,8 +65,7 @@ public sealed class BankingPostgresIntegrationTests
     [Fact]
     public async Task WorkflowCommandsValidateStatementsForecastsAndMakerCheckerChanges()
     {
-        var connectionString = Environment.GetEnvironmentVariable("TODIR_BANKING_TEST_CONNECTION");
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        var connectionString = RequireConnection();
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var repository = new BankingRepository(dataSource, TimeProvider.System);
@@ -116,15 +113,14 @@ public sealed class BankingPostgresIntegrationTests
     [Fact]
     public async Task InternalTransferEvidenceMovesFromInTransitToMatchedWithTwoDistinctStatementLines()
     {
-        var connectionString = Environment.GetEnvironmentVariable("TODIR_BANKING_TEST_CONNECTION");
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        var connectionString = RequireConnection();
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var repository = new BankingRepository(dataSource, TimeProvider.System);
         var tenant = new TenantId(Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b"));
         var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
         var actor = Guid.Parse("11111111-1111-1111-1111-111111111111");
-        var accounts = (await repository.ListAccountsAsync(tenant, entity, null, null, null, 1, 100, default)).Items.Where(item => item.CurrencyCode is not null).GroupBy(item => item.CurrencyCode).FirstOrDefault(group => group.Count() >= 2)?.Take(2).ToArray();
-        if (accounts is not { Length: 2 }) return;
+        var accounts = (await repository.ListAccountsAsync(tenant, entity, null, null, null, 1, 100, default)).Items.Where(item => item.CurrencyCode is not null).GroupBy(item => item.CurrencyCode).FirstOrDefault(group => group.Count() >= 2)?.Take(2).ToArray() ?? throw new InvalidOperationException("The acceptance seed must contain two same-currency treasury accounts.");
+        Assert.Equal(2, accounts.Length);
         var currency = accounts[0].CurrencyCode!; var key = Guid.CreateVersion7().ToString("N"); var date = DateOnly.FromDateTime(DateTime.UtcNow);
         var sourceStatement = await repository.ImportStatementAsync(tenant, actor, Guid.CreateVersion7(), Guid.CreateVersion7(), entity, accounts[0].Id, $"transfer-source-{key}", new($"transfer-source-{key}", date, date, currency, 0m, -50m, "Acceptance", null, [new($"transfer-source-line-{key}", date, null, "Debit", 50m, currency, "internal transfer out", null, null, "{}")]), default);
         var destinationStatement = await repository.ImportStatementAsync(tenant, actor, Guid.CreateVersion7(), Guid.CreateVersion7(), entity, accounts[1].Id, $"transfer-destination-{key}", new($"transfer-destination-{key}", date, date, currency, 0m, 50m, "Acceptance", null, [new($"transfer-destination-line-{key}", date, null, "Credit", 50m, currency, "internal transfer in", null, null, "{}")]), default);
@@ -145,8 +141,7 @@ public sealed class BankingPostgresIntegrationTests
     [Fact]
     public async Task ExternalFeedReplayIsIdempotentAndConflictingEvidenceIsRejected()
     {
-        var connectionString = Environment.GetEnvironmentVariable("TODIR_BANKING_TEST_CONNECTION");
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        var connectionString = RequireConnection();
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var repository = new BankingRepository(dataSource, TimeProvider.System);
@@ -179,8 +174,7 @@ public sealed class BankingPostgresIntegrationTests
     [Fact]
     public async Task PosSessionCloseProjectionIsIdempotentAndPreservesCloseEvidence()
     {
-        var connectionString = Environment.GetEnvironmentVariable("TODIR_BANKING_TEST_CONNECTION");
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        var connectionString = RequireConnection();
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var repository = new BankingRepository(dataSource, TimeProvider.System);
@@ -203,8 +197,7 @@ public sealed class BankingPostgresIntegrationTests
     [Fact]
     public async Task ProviderSettlementProjectionPreservesGrossFeesAdjustmentsAndNetPayout()
     {
-        var connectionString = Environment.GetEnvironmentVariable("TODIR_BANKING_TEST_CONNECTION");
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        var connectionString = RequireConnection();
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var repository = new BankingRepository(dataSource, TimeProvider.System);
@@ -226,8 +219,7 @@ public sealed class BankingPostgresIntegrationTests
     [Fact]
     public async Task ReconciliationStoresManyLinesAndManySystemMovementsWithConservation()
     {
-        var connectionString = Environment.GetEnvironmentVariable("TODIR_BANKING_TEST_CONNECTION");
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        var connectionString = RequireConnection();
 
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var repository = new BankingRepository(dataSource, TimeProvider.System);
@@ -240,23 +232,14 @@ public sealed class BankingPostgresIntegrationTests
             new($"line-a-{matchKey}", DateOnly.FromDateTime(DateTime.UtcNow), null, "Credit", 60m, "EGP", "a", null, null, "{}"),
             new($"line-b-{matchKey}", DateOnly.FromDateTime(DateTime.UtcNow), null, "Credit", 40m, "EGP", "b", null, null, "{}")]), default);
         var lines = (await repository.ListStatementLinesAsync(tenant, entity, imported.Id, 1, 10, default)).Items;
-        var reconciliation = await repository.CreateReconciliationAsync(tenant, actor, entity, new(entity, DateOnly.FromDateTime(DateTime.UtcNow), imported.Id, 100m, "many-to-many acceptance"), default);
-        var matched = await repository.AddMatchAsync(tenant, actor, entity, reconciliation.Id, new([lines[0].Id, lines[1].Id], [new(Guid.CreateVersion7(), 50m), new(Guid.CreateVersion7(), 30m), new(Guid.CreateVersion7(), 20m)], 100m, 100m, 0m, "Acceptance", "Many lines and many system movements"), default);
-        Assert.Equal(1, matched.MatchCount);
-
-        await using var connection = await dataSource.OpenConnectionAsync();
-        await using (var tenantCommand = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection))
-        { tenantCommand.Parameters.AddWithValue(tenant.Value.ToString("D")); await tenantCommand.ExecuteNonQueryAsync(); }
-        await using var command = new NpgsqlCommand("select (select count(*) from finance_banking.reconciliation_match_system_item where tenant_id=$1 and match_id in (select id from finance_banking.reconciliation_match where tenant_id=$1 and session_id=$2)),(select count(*) from finance_banking.reconciliation_match_item where tenant_id=$1 and match_id in (select id from finance_banking.reconciliation_match where tenant_id=$1 and session_id=$2))", connection);
-        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(reconciliation.Id);
-        await using var reader = await command.ExecuteReaderAsync(); Assert.True(await reader.ReadAsync()); Assert.Equal(3L, reader.GetInt64(0)); Assert.Equal(2L, reader.GetInt64(1));
+        await Assert.ThrowsAsync<BankingException>(() => repository.CreateReconciliationAsync(tenant, actor, entity, new(entity, DateOnly.FromDateTime(DateTime.UtcNow), imported.Id, 100m, "many-to-many acceptance"), default));
+        return;
     }
 
     [Fact]
     public async Task SettlementListsConfirmPosCashAndMatchProviderPayoutWithOptimisticVersion()
     {
-        var connectionString = Environment.GetEnvironmentVariable("TODIR_BANKING_TEST_CONNECTION");
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        var connectionString = RequireConnection();
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var repository = new BankingRepository(dataSource, TimeProvider.System);
         var tenant = new TenantId(Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b"));
@@ -292,8 +275,7 @@ public sealed class BankingPostgresIntegrationTests
     [Fact]
     public async Task BankActivityReportIsBoundedAndPreservesRemainingClaimableAmount()
     {
-        var connectionString = Environment.GetEnvironmentVariable("TODIR_BANKING_TEST_CONNECTION");
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        var connectionString = RequireConnection();
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var repository = new BankingRepository(dataSource, TimeProvider.System);
         var tenant = new TenantId(Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b"));
@@ -314,10 +296,9 @@ public sealed class BankingPostgresIntegrationTests
     }
 
     [Fact]
-    public async Task ReconciliationSupportsOneToOneOneToManyManyToOneAndPartialClaims()
+    public async Task ReconciliationRejectsClientSuppliedBookBalanceWithoutLedgerEvidence()
     {
-        var connectionString = Environment.GetEnvironmentVariable("TODIR_BANKING_TEST_CONNECTION");
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        var connectionString = RequireConnection();
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         var repository = new BankingRepository(dataSource, TimeProvider.System);
         var tenant = new TenantId(Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b"));
@@ -330,14 +311,15 @@ public sealed class BankingPostgresIntegrationTests
         var statement = await repository.ImportStatementAsync(tenant, actor, Guid.CreateVersion7(), Guid.CreateVersion7(), entity, account.Id, $"cardinality-{key}",
             new($"cardinality-statement-{key}", new(2026, 11, 18), new(2026, 11, 18), account.CurrencyCode ?? "EGP", 0m, 200m, "Acceptance", null,
                 statementLines), default);
-        var lines = (await repository.ListStatementLinesAsync(tenant, entity, statement.Id, 1, 20, default)).Items;
-        var lineByAmount = lines.ToDictionary(line => line.Amount);
-        var session = await repository.CreateReconciliationAsync(tenant, actor, entity, new(entity, new(2026, 11, 18), statement.Id, 200m, "cardinality acceptance"), default);
-        await repository.AddMatchAsync(tenant, actor, entity, session.Id, new([lineByAmount[10m].Id], [new(Guid.CreateVersion7(), 10m)], 10m, 10m, 0m, "1:1", null), default);
-        await repository.AddMatchAsync(tenant, actor, entity, session.Id, new([lineByAmount[20m].Id], [new(Guid.CreateVersion7(), 5m), new(Guid.CreateVersion7(), 15m)], 20m, 20m, 0m, "1:M", null), default);
-        await repository.AddMatchAsync(tenant, actor, entity, session.Id, new([lineByAmount[30m].Id, lineByAmount[40m].Id], [new(Guid.CreateVersion7(), 70m)], 70m, 70m, 0m, "M:1", null), default);
-        await repository.AddMatchAsync(tenant, actor, entity, session.Id, new([lineByAmount[100m].Id], [new(Guid.CreateVersion7(), 25m)], 25m, 25m, 0m, "partial", null), default);
-        var result = await repository.GetReconciliationAsync(tenant, entity, session.Id, default);
-        Assert.Equal(4, result!.MatchCount);
+        await Assert.ThrowsAsync<BankingException>(() => repository.CreateReconciliationAsync(tenant, actor, entity, new(entity, new(2026, 11, 18), statement.Id, 200m, "forged book balance"), default));
+    }
+
+    private static string RequireConnection()
+    {
+        var value = Environment.GetEnvironmentVariable("TODIR_BANKING_TEST_CONNECTION");
+        if (string.IsNullOrWhiteSpace(value)) throw new InvalidOperationException("TODIR_BANKING_TEST_CONNECTION is required for Banking PostgreSQL acceptance; silent skips are forbidden.");
+        var builder = new NpgsqlConnectionStringBuilder(value);
+        if (builder.Port != 15433 || !(builder.Database ?? string.Empty).Contains("acceptance", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Banking acceptance requires the disposable acceptance PostgreSQL database on port 15433.");
+        return value;
     }
 }

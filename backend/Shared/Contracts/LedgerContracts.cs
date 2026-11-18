@@ -6,6 +6,16 @@ using System.Text.Json.Nodes;
 
 namespace Shared.Contracts.Ledger;
 
+public sealed record LedgerTreasuryBalanceSnapshot(Guid TreasuryAccountId, Guid LegalEntityId, string CurrencyCode,
+    DateOnly AsOfDate, decimal SignedCurrencyBalance, decimal SignedBaseBalance, string BaseCurrencyCode,
+    Guid? LastConfigurationVersionId, DateTimeOffset? LastPostedAt, long PostedLineCount, string SourceReference);
+
+public interface ILedgerTreasuryBalanceRead
+{
+    Task<LedgerTreasuryBalanceSnapshot> GetTreasuryBookBalanceAsync(TenantId tenantId, LegalEntityId legalEntityId,
+        Guid treasuryAccountId, string currencyCode, DateOnly asOfDate, CancellationToken cancellationToken = default);
+}
+
 public static class AccountingFactTypes
 {
     public const string CustomerInvoicePosted = "CustomerInvoicePosted";

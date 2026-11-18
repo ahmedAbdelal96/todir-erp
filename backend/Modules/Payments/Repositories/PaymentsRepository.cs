@@ -18,9 +18,36 @@ namespace Modules.Payments.Repositories;
 public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITransactionalSequenceAllocator sequences, NpgsqlDataSource dataSource, TimeProvider clock,
     ITransactionalSubledgerOpenItemCapability subledger, ITransactionalPaymentLedgerPostingCapability ledger,
     ITransactionalInvoiceLedgerPostingCapability ledgerConfiguration, ISubledgerCapabilities subledgerRead,
-    IBankingTreasuryAccountCapability banking)
+    ITransactionalBankingTreasuryAccountCapability banking)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public static async Task<PaymentReconciliationMovement?> GetForReconciliationAsync(ITransactionContext context, TenantId tenant,
+        Guid legalEntityId, Guid paymentId, CancellationToken ct = default)
+    {
+        await using var command = new NpgsqlCommand("select id,legal_entity_id,payment_account_id,direction,amount,currency_code,business_state from finance_payments.payment where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", context.Connection, context.Transaction);
+        Add(command, tenant.Value, legalEntityId, paymentId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct)
+            ? new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3), reader.GetDecimal(4), reader.GetString(5).Trim(), reader.GetString(6))
+            : null;
+    }
+
+    public static async Task CreateCompatibilityInTransactionAsync(ITransactionContext context, TenantId tenant, Guid legalEntityId,
+        Guid accountId, Guid? branchId, string code, string name, string accountType, string currencyPolicy, string? currencyCode,
+        string? bankName, string? accountHolder, string? maskedIdentifier, string? secretRef, string status, DateTimeOffset now, CancellationToken ct = default)
+    {
+        await using var command = new NpgsqlCommand("insert into finance_payments.payment_account(tenant_id,legal_entity_id,id,branch_id,code,name,account_type,currency_policy,currency_code,status,bank_name,account_holder,masked_identifier,secret_ref,treasury_account_id,version,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,1,$16,$16) on conflict(tenant_id,legal_entity_id,id) do nothing", context.Connection, context.Transaction);
+        Add(command, tenant.Value, legalEntityId, accountId, Db(branchId), code.Trim(), name.Trim(), accountType, currencyPolicy, Db(currencyCode), status, Db(Clean(bankName)), Db(Clean(accountHolder)), Db(Clean(maskedIdentifier)), Db(Clean(secretRef)), accountId, now); await command.ExecuteNonQueryAsync(ct);
+        var method = accountType switch { "Cashbox" => "Cash", "ProviderClearing" => "PaymentGateway", "Wallet" => "Wallet", _ => "BankTransfer" };
+        await using var methodCommand = new NpgsqlCommand("insert into finance_payments.payment_method_config(tenant_id,legal_entity_id,id,payment_account_id,method,branch_id,channel,status,effective_from,created_at) values($1,$2,$3,$4,$5,$6,'BackOffice','Active',$7,$8) on conflict (tenant_id,legal_entity_id,id) do nothing", context.Connection, context.Transaction);
+        Add(methodCommand, tenant.Value, legalEntityId, Guid.CreateVersion7(), accountId, method, Db(branchId), DateOnly.MinValue, now); await methodCommand.ExecuteNonQueryAsync(ct);
+    }
+
+    public static async Task ChangeCompatibilityStatusInTransactionAsync(ITransactionContext context, TenantId tenant, Guid legalEntityId, Guid accountId, string status, CancellationToken ct = default)
+    {
+        await using var command = new NpgsqlCommand("update finance_payments.payment_account set status=$4,version=version+1,updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3", context.Connection, context.Transaction); Add(command, tenant.Value, legalEntityId, accountId, status); if (await command.ExecuteNonQueryAsync(ct) != 1) throw new PaymentException("payments.account_projection_missing", "The canonical treasury account has no Payments compatibility projection.");
+    }
 
     public Task<PaymentAccount> CreateAccountAsync(TenantId tenant, Guid actor, Guid membership, Guid correlationId, CreatePaymentAccountCommand request, CancellationToken ct) =>
         transactions.ExecuteAsync(tenant, async (context, token) =>
@@ -36,10 +63,9 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             TreasuryAccountReference? canonical = null;
             if (request.Type != PaymentAccountType.InternalClearing)
             {
-                canonical = await banking.CreateAsync(tenant, actor, membership, new(request.LegalEntityId, request.BranchId, request.Code, request.Name,
+                canonical = await banking.CreateInTransactionAsync(context, tenant, actor, membership, correlationId, new(request.LegalEntityId, request.BranchId, request.Code, request.Name,
                     request.Type switch { PaymentAccountType.Bank => TreasuryAccountType.Bank, PaymentAccountType.Cashbox => TreasuryAccountType.Cash, PaymentAccountType.Wallet => TreasuryAccountType.DigitalWallet, _ => TreasuryAccountType.ProviderSettlement },
-                    currencyPolicy == "MultiCurrency" ? TreasuryCurrencyPolicy.MultiCurrency : TreasuryCurrencyPolicy.SingleCurrency, currency, request.Name, "Operational", [], Clean(request.MaskedIdentifier), Clean(request.SecretRef)), correlationId, ct);
-                await banking.ChangeStatusAsync(tenant, actor, membership, correlationId, request.LegalEntityId, canonical.Id, TreasuryAccountStatus.Active, canonical.Status == TreasuryAccountStatus.Draft ? 1 : null, ct);
+                    currencyPolicy == "MultiCurrency" ? TreasuryCurrencyPolicy.MultiCurrency : TreasuryCurrencyPolicy.SingleCurrency, currency, request.Name, "Operational", [], Clean(request.MaskedIdentifier), Clean(request.SecretRef)), ct);
             }
             var id = canonical?.Id ?? Guid.CreateVersion7(); var now = clock.GetUtcNow();
             await using var command = new NpgsqlCommand("""
@@ -180,9 +206,9 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
         Guid? branchId, PaymentAccountStatus status, CancellationToken ct)
     {
         var target = status == PaymentAccountStatus.Archived ? TreasuryAccountStatus.Closed : status == PaymentAccountStatus.Suspended ? TreasuryAccountStatus.Suspended : TreasuryAccountStatus.Active;
-        await banking.ChangeStatusAsync(tenant, actor, membership, correlationId, legalEntityId, accountId, target, null, ct);
         await transactions.ExecuteAsync<bool>(tenant, async (context, token) =>
     {
+        await banking.ChangeStatusInTransactionAsync(context, tenant, actor, membership, correlationId, legalEntityId, accountId, target, null, token);
         var now = clock.GetUtcNow();
         var branchClause = branchId is null ? string.Empty : " and branch_id=$6";
         await using var command = new NpgsqlCommand($"update finance_payments.payment_account set status=$4,version=version+1,updated_at=$5 where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status <> 'Archived'{branchClause}", context.Connection, context.Transaction);
@@ -519,7 +545,7 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
             Add(load, tenant.Value, request.LegalEntityId, request.PaymentId);
             await using var reader = await load.ExecuteReaderAsync(token);
             if (!await reader.ReadAsync(token)) throw new PaymentException("payments.payment_not_found", "The payment was not found.");
-            var original = ReadPayment(reader); var accountCode = reader.GetString(22); await reader.CloseAsync();
+            var original = ReadPayment(reader); await reader.CloseAsync();
             if (original.Direction == PaymentDirection.InternalTransfer || original.PartyId is not { } partyId)
                 throw new PaymentException("payments.reversal_not_available", "Only customer or supplier payments can be reversed.");
             if (!string.Equals(financialContext.TransactionCurrencyCode, original.CurrencyCode, StringComparison.OrdinalIgnoreCase))
@@ -607,7 +633,7 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
                 snapshot is null ? null : JsonSerializer.Serialize(snapshot, JsonOptions), 1);
             var itemId = await subledger.CreatePaymentOpenItemAsync(context, tenant, new(new(request.LegalEntityId), partyId, [openItem], actor, correlationId), partyDirection, polarity, token);
             var factType = reversesIncoming ? AccountingFactTypes.RefundPaid : AccountingFactTypes.PaymentReceived;
-            var payload = new PaymentFactPayload(original.Amount, original.CurrencyCode, "Default", settlementRole, reversalDirection.ToString(), accountCode,
+            var payload = new PaymentFactPayload(original.Amount, original.CurrencyCode, "Default", settlementRole, reversalDirection.ToString(), original.PaymentAccountId.ToString("D"),
                 partyId, baseAmount, financialContext.BaseCurrencyCode, snapshot?.ApprovedRateId?.ToString("D") ?? (snapshot is null ? "base-currency" : snapshot.Rate));
             var fact = new AccountingFactEnvelope<IAccountingFactPayload>(reversalId, tenant, new(request.LegalEntityId), factType, 1, "payments", reversalId.ToString("D"),
                 $"payment-reversal:{original.Id:D}", request.PaymentDate, request.PostingDate, payload, correlationId, actor);
@@ -1310,7 +1336,7 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
                 """, context.Connection, context.Transaction);
             Add(load, tenant.Value, legalEntityId, paymentId); await using var reader = await load.ExecuteReaderAsync(token);
             if (!await reader.ReadAsync(token)) throw new PaymentException("payments.payment_not_found", "The payment was not found.");
-            var payment = ReadPayment(reader); var accountCode = reader.GetString(22); var accountStatus = reader.GetString(23); var accountType = reader.GetString(24); await reader.CloseAsync();
+            var payment = ReadPayment(reader); var accountStatus = reader.GetString(23); var accountType = reader.GetString(24); await reader.CloseAsync();
             if (payment.State == PaymentBusinessState.Completed) return payment;
             if (payment.Type == PaymentType.CustomerRefund)
             {
@@ -1400,7 +1426,7 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
                 var factType = payment.Type == PaymentType.CustomerRefund ? AccountingFactTypes.RefundPaid
                     : payment.Direction == PaymentDirection.Incoming ? AccountingFactTypes.PaymentReceived : AccountingFactTypes.PaymentMade;
                 var factPayload = new PaymentFactPayload(payment.Amount, payment.CurrencyCode, "Default", settlementRole, payment.Direction.ToString(),
-                    accountCode, payment.PartyId, baseAmount, financialContext.BaseCurrencyCode, snapshot?.ApprovedRateId?.ToString("D") ?? (snapshot is null ? "base-currency" : snapshot.Rate),
+                    payment.PaymentAccountId.ToString("D"), payment.PartyId, baseAmount, financialContext.BaseCurrencyCode, snapshot?.ApprovedRateId?.ToString("D") ?? (snapshot is null ? "base-currency" : snapshot.Rate),
                     feeAmount, baseFeeAmount);
                 var fact = new AccountingFactEnvelope<IAccountingFactPayload>(payment.Id, tenant, new(legalEntityId), factType, 1, "payments", payment.Id.ToString("D"),
                     $"payment:{payment.Id:D}", payment.PaymentDate, payment.PostingDate, factPayload, correlationId, actor);
@@ -1410,7 +1436,7 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
                     var feeBaseAmount = decimal.Round(fee.Amount * rate, financialContext.RoundingPolicy.MoneyScale, midpoint);
                     if (feeBaseAmount <= 0m) throw new PaymentException("payments.fee_amount_invalid", "The approved exchange rate produced an invalid fee amount.");
                     var feePayload = new PaymentFeeFactPayload(fee.Amount, payment.CurrencyCode, feeBaseAmount, financialContext.BaseCurrencyCode,
-                        accountCode, fee.Type, snapshot?.ApprovedRateId?.ToString("D") ?? (snapshot is null ? "base-currency" : snapshot.Rate));
+                        payment.PaymentAccountId.ToString("D"), fee.Type, snapshot?.ApprovedRateId?.ToString("D") ?? (snapshot is null ? "base-currency" : snapshot.Rate));
                     var feeFact = new AccountingFactEnvelope<IAccountingFactPayload>(fee.Id, tenant, new(legalEntityId), AccountingFactTypes.PaymentFeeRecognized, 1,
                         "payments", $"payment-fee:{fee.Id:D}", $"payment-fee:{fee.Id:D}", payment.PaymentDate, payment.PostingDate, feePayload, correlationId, actor);
                     await ledger.PostPaymentFeeAsync(context, feeFact, feePayload, token);

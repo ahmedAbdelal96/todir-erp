@@ -22,14 +22,15 @@ public sealed record StatementLineDto(Guid Id, Guid StatementId, string External
     string Direction, decimal Amount, string CurrencyCode, string? Reference, string? TransactionCode, string Classification, decimal ClaimedAmount, long Version);
 public sealed record StatementLinePage(IReadOnlyList<StatementLineDto> Items, int Page, int PageSize, bool HasMore, int TotalCount);
 public sealed record ReconciliationDto(Guid Id, Guid TreasuryAccountId, DateOnly AsOfDate, string State, decimal ExternalBalance,
-    decimal BookBalance, decimal Difference, int MatchCount, long Version);
+    decimal? BookBalance, decimal? Difference, int MatchCount, long Version, string? LedgerSourceReference = null,
+    DateTimeOffset? LedgerLastPostedAt = null, long LedgerPostedLineCount = 0);
 public sealed record ReconciliationPage(IReadOnlyList<ReconciliationDto> Items, int Page, int PageSize, bool HasMore, int TotalCount);
 public sealed record CashCountDto(Guid Id, Guid TreasuryAccountId, DateOnly CutoffDate, string State, decimal ExpectedAmount,
     decimal CountedAmount, decimal Difference, Guid CustodianId, long Version);
 public sealed record CashCountPage(IReadOnlyList<CashCountDto> Items, int Page, int PageSize, bool HasMore, int TotalCount);
 public sealed record CashPositionDto(Guid LegalEntityId, Guid TreasuryAccountId, string AccountCode, string AccountName,
-    TreasuryAccountType AccountType, string CurrencyCode, decimal BookBalance, decimal ExternalBalance, decimal AvailableBalance,
-    decimal InTransitAmount, string BalanceBasis, DateTimeOffset AsOf, DateTimeOffset? ExternalAsOf, bool IsStale);
+    TreasuryAccountType AccountType, string CurrencyCode, decimal? BookBalance, decimal? ExternalBalance, decimal? AvailableBalance,
+    decimal InTransitAmount, string BalanceBasis, DateTimeOffset? AsOf, DateTimeOffset? ExternalAsOf, bool IsStale);
 public sealed record ForecastItemDto(Guid Id, DateOnly DueDate, string Direction, decimal Amount, string CurrencyCode,
     string SourceType, string Description, string Confidence, Guid? TreasuryAccountId);
 public sealed record ForecastPage(Guid Id, DateOnly AsOfDate, int HorizonDays, string Status,

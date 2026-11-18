@@ -9,23 +9,23 @@
 | BK04 | Wallet and settlement profile | profile tables and type mapping | PASS |
 | BK05 | Lifecycle and optimistic concurrency | status/update endpoints and version predicates | PASS |
 | BK06 | Currency policy and pockets | checks, pocket insert, seed | PASS |
-| BK07 | PaymentAccount compatibility | migration bridge and Payments capability call | PASS |
+| BK07 | PaymentAccount compatibility | atomic Banking canonical account + Payments projection, stable treasury_account_id, method configuration, and cross-module acceptance | PASS |
 | BK08 | Tenant/legal-entity scope | composite keys, RLS, API guard | PASS |
 | BK09 | Statement import | idempotent import endpoint | PASS |
 | BK10 | Statement line evidence | line table, hash, paginated API | PASS |
 | BK11 | Import duplicate protection | unique external line and idempotency key | PASS |
 | BK12 | Statement account ownership | composite foreign keys | PASS |
 | BK12a | Transaction code mappings and rule-set foundation | persisted mapping/rule-set APIs, RLS, and seeded Development mapping/rule | PASS (foundation) |
-| BK13 | Reconciliation session | create/list/get API and persistence | PASS |
-| BK14 | Match conservation | locked lines and amount checks | PASS |
-| BK15 | Match finalization/reopen | state endpoint with version | PASS |
-| BK16 | Claim cardinality | claimed amount check, row locks, system-item persistence, and dedicated 1:1, 1:M, M:1, M:M and partial-claim acceptance | PASS |
+| BK13 | Reconciliation session | create/list/get API; book balance is derived from posted Ledger scope and persisted with source snapshot | PASS |
+| BK14 | Match conservation | locked lines, Payments-owned eligibility read, amount/direction/currency/state validation, and claim conservation | PASS |
+| BK15 | Match finalization/reopen | finalization re-reads Ledger, checks outstanding evidence/adjustments/difference, and uses versioned state transitions | PASS |
+| BK16 | Claim cardinality | claimed amount check, row locks, system-item persistence, reconciliation_system_claim ownership, and dedicated partial/cardinality acceptance | PASS |
 | BK17 | Cash count denominations | calculated count and denomination rows | PASS |
 | BK18 | Cash count approval/finalization | state endpoint and version | PASS |
 | BK19 | Cash count difference | persisted expected/count/difference | PASS |
 | BK20 | Custodian scope | custodian id and tenant/entity scope | PASS |
-| BK21 | Cash position read model | projection table and API | PASS |
-| BK22 | Staleness visibility | `IsStale` derived from projection age | PASS |
+| BK21 | Cash position read model | nullable Ledger/external/available balances with explicit basis and source watermark | PASS |
+| BK22 | Staleness visibility | `IsStale` derived from projection age; missing projections are not fabricated as zero | PASS |
 | BK23 | Forecast version/item lifecycle | forecast tables, version/item API, seed, and focused persistence test | PASS |
 | BK24 | Multi-currency storage | currency checks and USD seed | PASS |
 | BK25 | FX seam | Payments cross-currency internal-transfer acceptance preserves source/destination currencies, positive FX rate, immutable snapshot, and posted Ledger fact | PASS |
@@ -39,18 +39,18 @@
 | BK32 | API pagination | account/statement/line/reconciliation list pages | PASS |
 | BK33 | API business errors | stable Banking error codes and ProblemDetails | PASS |
 | BK34 | Worker composition | Worker registers external-feed, POS-close, provider-settlement, and bank-originated consumers with Inbox idempotency; live replay creates one completed unallocated receipt | PASS |
-| BK35 | Migration ordering | fresh/upgrade disposable migration with 228 ordered scripts | PASS |
+| BK35 | Migration ordering | fresh/upgrade disposable migration with 229 ordered scripts | PASS |
 | BK36 | Legacy compatibility | stable ids and PaymentAccount FK | PASS |
-| BK37 | Development seed | Atlas/Delta BankingSeed | PASS |
-| BK38 | Seed idempotency | second run passes | PASS |
+| BK37 | Development seed | Atlas/Delta BankingSeed with Ledger-required reconciliation and source-labelled cash projections | PASS |
+| BK38 | Seed idempotency | repeated runs pass and a mutated authoritative cash projection is not overwritten | PASS |
 | BK39 | Statement fixture | four seeded statements per tenant | PASS |
 | BK40 | Reconciliation fixture | seeded open reconciliation per tenant | PASS |
 | BK41 | Cash fixture | seeded submitted cash count per tenant | PASS |
 | BK42 | Forecast fixture | seeded published forecast per tenant | PASS |
-| BK43 | Focused automated tests | Banking PostgreSQL tests 11/11, Banking rules 4/4, Payments unknown-receipt and cross-currency acceptance, Ledger bank-originated posting acceptance, and authenticated Banking HTTP isolation test pass | PASS |
+| BK43 | Focused automated tests | Banking PostgreSQL 15/15, Banking rules 4/4, cross-module Banking→Payments→Ledger acceptance, Payments/Ledger/HTTP regressions, and seed verification pass | PASS |
 | BK44 | API build | `dotnet build Api` 0 warnings/errors | PASS |
 | BK45 | Worker/migrator build | both builds pass | PASS |
-| BK46 | Acceptance evidence and handoff | handoff, checkpoint, runbook, authenticated scope proof, migration/opening proof, and live Worker replay evidence are current; heavyweight performance certification is explicitly UNVERIFIED | PASS (performance disposition documented) |
+| BK46 | Acceptance evidence and handoff | handoff, checkpoint, runbook, authenticated scope proof, Ledger/payment ownership proof, migration/seed evidence, and live Worker replay evidence are current; heavyweight performance certification is explicitly UNVERIFIED | PASS (performance disposition documented) |
 
 ## Explicit open Build Now evidence
 

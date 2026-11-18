@@ -7,21 +7,50 @@ using Shared.Contracts.Banking;
 using Shared.Contracts.Ledger;
 using Shared.Contracts.Payments;
 using Shared.Primitives.Identifiers;
+using Core.Transactions;
 
 namespace Modules.Banking.Services;
 
-public sealed class BankingService(BankingRepository repository, ILedgerControlBalanceRead ledger, ILedgerAccountingWorkspaceCapabilities ledgerWorkspace, IServiceProvider services) : IBankingTreasuryAccountCapability
+public sealed class BankingService(BankingRepository repository, ILedgerControlBalanceRead ledger, ILedgerTreasuryBalanceRead treasuryLedger, ILedgerAccountingWorkspaceCapabilities ledgerWorkspace, ITransactionCoordinator transactions, IServiceProvider services) : IBankingTreasuryAccountCapability, ITransactionalBankingTreasuryAccountCapability
 {
     public Task<TreasuryAccountPage> ListAccountsAsync(TenantId tenant, Guid legalEntityId, string? search, TreasuryAccountType? type, TreasuryAccountStatus? status, int page, int pageSize, CancellationToken ct) => repository.ListAccountsAsync(tenant, legalEntityId, search, type, status, page, pageSize, ct);
     public Task<TreasuryAccountDto?> GetAccountAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct) => repository.GetAccountAsync(tenant, legalEntityId, id, ct);
-    public Task<TreasuryAccountDto> CreateAccountAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid correlationId, CreateTreasuryAccountRequest request, CancellationToken ct) => repository.CreateAccountAsync(tenant, actorId, membershipId, correlationId, new(request.LegalEntityId, request.BranchId, request.Code, request.Name, request.Type, request.CurrencyPolicy, request.CurrencyCode, request.Purpose, request.LiquidityClass, request.AllowedUses ?? [], request.MaskedIdentifier, request.SecretRef), ct);
+    public async Task<TreasuryAccountDto> CreateAccountAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid correlationId, CreateTreasuryAccountRequest request, CancellationToken ct)
+    {
+        var create = new TreasuryAccountCreateRequest(request.LegalEntityId, request.BranchId, request.Code, request.Name, request.Type, request.CurrencyPolicy, request.CurrencyCode, request.Purpose, request.LiquidityClass, request.AllowedUses ?? [], request.MaskedIdentifier, request.SecretRef);
+        var account = await transactions.ExecuteAsync(tenant, async (context, token) =>
+        {
+            var canonical = await repository.CreateCanonicalAccountInTransactionAsync(context, tenant, create, token);
+            var projection = services.GetRequiredService<ITransactionalPaymentAccountCompatibilityCapability>();
+            await projection.CreateCompatibilityInTransactionAsync(context, tenant, request.LegalEntityId, canonical.Id, request.BranchId, request.Code, request.Name, request.Type switch { TreasuryAccountType.Bank => "Bank", TreasuryAccountType.Cash => "Cashbox", TreasuryAccountType.DigitalWallet => "Wallet", _ => "ProviderClearing" }, request.CurrencyPolicy.ToString(), canonical.CurrencyCode, null, null, request.MaskedIdentifier, request.SecretRef, "Suspended", DateTimeOffset.UtcNow, token);
+            return canonical;
+        }, ct);
+        return (await repository.GetAccountAsync(tenant, account.LegalEntityId, account.Id, ct))!;
+    }
     public Task<TreasuryAccountDto> UpdateAccountAsync(TenantId tenant, Guid legalEntityId, Guid id, UpdateTreasuryAccountRequest request, CancellationToken ct) => repository.UpdateAccountAsync(tenant, legalEntityId, id, request, ct);
-    public Task<TreasuryAccountDto> ChangeStatusAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid correlationId, Guid legalEntityId, Guid id, string target, long? expectedVersion, CancellationToken ct) => repository.ChangeStatusAsync(tenant, actorId, membershipId, correlationId, legalEntityId, id, target, expectedVersion, ct);
+    public async Task<TreasuryAccountDto> ChangeStatusAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid correlationId, Guid legalEntityId, Guid id, string target, long? expectedVersion, CancellationToken ct)
+    {
+        var status = Enum.Parse<TreasuryAccountStatus>(target, true);
+        await transactions.ExecuteAsync(tenant, async (context, token) =>
+        {
+            await repository.ChangeStatusInTransactionAsync(context, tenant, legalEntityId, id, status, expectedVersion, token);
+            await services.GetRequiredService<ITransactionalPaymentAccountCompatibilityCapability>().ChangeCompatibilityStatusInTransactionAsync(context, tenant, legalEntityId, id, status switch { TreasuryAccountStatus.Closed => "Archived", TreasuryAccountStatus.Suspended => "Suspended", _ => "Active" }, token);
+            return true;
+        }, ct);
+        return (await repository.GetAccountAsync(tenant, legalEntityId, id, ct))!;
+    }
     async Task<TreasuryAccountReference> IBankingTreasuryAccountCapability.ChangeStatusAsync(TenantId tenantId, Guid actorId, Guid membershipId, Guid correlationId, Guid legalEntityId, Guid id, TreasuryAccountStatus status, long? expectedVersion, CancellationToken cancellationToken)
     {
-        var account = await repository.ChangeStatusAsync(tenantId, actorId, membershipId, correlationId, legalEntityId, id, status.ToString(), expectedVersion, cancellationToken);
+        var account = await ChangeStatusAsync(tenantId, actorId, membershipId, correlationId, legalEntityId, id, status.ToString(), expectedVersion, cancellationToken);
         return new(account.Id, tenantId, account.LegalEntityId, account.BranchId, account.Code, account.Name, account.Type, account.Status, account.CurrencyPolicy.ToString(), account.CurrencyCode);
     }
+    async Task<TreasuryAccountReference> ITransactionalBankingTreasuryAccountCapability.CreateInTransactionAsync(ITransactionContext context, TenantId tenantId, Guid actorId, Guid membershipId, Guid correlationId, TreasuryAccountCreateRequest request, CancellationToken cancellationToken)
+    {
+        var draft = await repository.CreateCanonicalAccountInTransactionAsync(context, tenantId, request, cancellationToken);
+        return await repository.ChangeStatusInTransactionAsync(context, tenantId, request.LegalEntityId, draft.Id, TreasuryAccountStatus.Active, 1, cancellationToken);
+    }
+    Task<TreasuryAccountReference> ITransactionalBankingTreasuryAccountCapability.ChangeStatusInTransactionAsync(ITransactionContext context, TenantId tenantId, Guid actorId, Guid membershipId, Guid correlationId, Guid legalEntityId, Guid id, TreasuryAccountStatus status, long? expectedVersion, CancellationToken cancellationToken)
+        => repository.ChangeStatusInTransactionAsync(context, tenantId, legalEntityId, id, status, expectedVersion, cancellationToken);
     public Task<StatementDto> ImportStatementAsync(TenantId tenant, Guid actorId, Guid membershipId, Guid correlationId, Guid legalEntityId, Guid accountId, string idempotencyKey, ImportStatementRequest request, CancellationToken ct) => repository.ImportStatementAsync(tenant, actorId, membershipId, correlationId, legalEntityId, accountId, idempotencyKey, request, ct);
     public Task<StatementPage> ListStatementsAsync(TenantId tenant, Guid legalEntityId, Guid accountId, int page, int pageSize, CancellationToken ct) => repository.ListStatementsAsync(tenant, legalEntityId, accountId, page, pageSize, ct);
     public Task<StatementDto?> GetStatementAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct) => repository.GetStatementAsync(tenant, legalEntityId, id, ct);
@@ -29,12 +58,24 @@ public sealed class BankingService(BankingRepository repository, ILedgerControlB
     public Task<StatementLineDto?> GetStatementLineAsync(TenantId tenant, Guid legalEntityId, Guid lineId, CancellationToken ct) => repository.GetStatementLineAsync(tenant, legalEntityId, lineId, ct);
     public Task<StatementDto> ValidateStatementAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid statementId, ValidateStatementRequest request, CancellationToken ct) => repository.ValidateStatementAsync(tenant, actorId, legalEntityId, statementId, request, ct);
     public Task<StatementLineDto> ClassifyStatementLineAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid lineId, ClassifyStatementLineRequest request, CancellationToken ct) => repository.ClassifyStatementLineAsync(tenant, actorId, legalEntityId, lineId, request, ct);
-    public Task<ReconciliationDto> CreateReconciliationAsync(TenantId tenant, Guid actorId, Guid legalEntityId, CreateReconciliationRequest request, CancellationToken ct) => repository.CreateReconciliationAsync(tenant, actorId, legalEntityId, request, ct);
+    public async Task<ReconciliationDto> CreateReconciliationAsync(TenantId tenant, Guid actorId, Guid legalEntityId, CreateReconciliationRequest request, CancellationToken ct)
+    {
+        var statement = await repository.GetStatementAsync(tenant, legalEntityId, request.StatementId, ct) ?? throw new BankingException("banking.statement_not_found", "The statement was not found.");
+        var snapshot = await treasuryLedger.GetTreasuryBookBalanceAsync(tenant, new(legalEntityId), statement.TreasuryAccountId, statement.CurrencyCode, request.AsOfDate, ct);
+        return await repository.CreateReconciliationFromLedgerAsync(tenant, actorId, legalEntityId, request, snapshot, ct);
+    }
     public Task<ReconciliationPage> ListReconciliationsAsync(TenantId tenant, Guid legalEntityId, Guid accountId, int page, int pageSize, CancellationToken ct) => repository.ListReconciliationsAsync(tenant, legalEntityId, accountId, page, pageSize, ct);
     public Task<ReconciliationPage> ListReconciliationsAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, CancellationToken ct) => repository.ListReconciliationsAsync(tenant, legalEntityId, page, pageSize, ct);
     public Task<ReconciliationDto?> GetReconciliationAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct) => repository.GetReconciliationAsync(tenant, legalEntityId, id, ct);
-    public Task<ReconciliationDto> AddMatchAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid sessionId, CreateMatchRequest request, CancellationToken ct) => repository.AddMatchAsync(tenant, actorId, legalEntityId, sessionId, request, ct);
-    public Task<ReconciliationDto> ChangeReconciliationStateAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, string target, long version, CancellationToken ct) => repository.ChangeReconciliationStateAsync(tenant, actorId, legalEntityId, id, target, version, ct);
+    public Task<ReconciliationDto> AddMatchAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid sessionId, CreateMatchRequest request, CancellationToken ct)
+        => repository.AddMatchAsync(tenant, actorId, legalEntityId, sessionId, request, ct, services.GetRequiredService<ITransactionalPaymentReconciliationReadCapability>());
+    public async Task<ReconciliationDto> ChangeReconciliationStateAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, string target, long version, CancellationToken ct)
+    {
+        if (target != "Finalized") return await repository.ChangeReconciliationStateAsync(tenant, actorId, legalEntityId, id, target, version, ct);
+        var scope = await repository.GetReconciliationScopeAsync(tenant, legalEntityId, id, ct) ?? throw new BankingException("banking.reconciliation_not_found", "The reconciliation was not found.");
+        var snapshot = await treasuryLedger.GetTreasuryBookBalanceAsync(tenant, new LegalEntityId(legalEntityId), scope.TreasuryAccountId, scope.CurrencyCode, scope.AsOfDate, ct);
+        return await repository.FinalizeReconciliationAsync(tenant, actorId, legalEntityId, id, version, snapshot, ct);
+    }
     public Task<IReadOnlyList<ReconciliationSuggestionDto>> GetReconciliationSuggestionsAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct) => repository.GetReconciliationSuggestionsAsync(tenant, legalEntityId, id, ct);
     public Task<ReconciliationDto> UnmatchAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, UnmatchRequest request, CancellationToken ct) => repository.UnmatchAsync(tenant, actorId, legalEntityId, id, request, ct);
     public Task<CashCountDto> CreateCashCountAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid accountId, CreateCashCountRequest request, CancellationToken ct) => repository.CreateCashCountAsync(tenant, actorId, legalEntityId, accountId, request, ct);
@@ -69,9 +110,10 @@ public sealed class BankingService(BankingRepository repository, ILedgerControlB
     {
         var ledgerBalance = await ledger.GetActiveControlBalanceAsync(tenant, new(legalEntityId), "Cash", asOfDate, ct);
         var banking = await repository.GetCashToLedgerBaseBalanceAsync(tenant, legalEntityId, ledgerBalance.BaseCurrencyCode, ct);
-        var difference = banking.BookBalance - ledgerBalance.SignedBaseBalance;
-        return new(legalEntityId, ledgerBalance.BaseCurrencyCode, banking.BookBalance, ledgerBalance.SignedBaseBalance, difference,
-            banking.ExternalBalance, banking.InTransitAmount, banking.AsOf, $"Ledger control role {ledgerBalance.ControlRole}; projection basis {banking.BalanceBasis}", difference == 0m);
+        if (banking.BookBalance is null || banking.AsOf is null) throw new BankingException("banking.cash_projection_missing", "A cash projection with an authoritative Ledger balance is not available for this currency.");
+        var difference = banking.BookBalance.Value - ledgerBalance.SignedBaseBalance;
+        return new(legalEntityId, ledgerBalance.BaseCurrencyCode, banking.BookBalance.Value, ledgerBalance.SignedBaseBalance, difference,
+            banking.ExternalBalance ?? 0m, banking.InTransitAmount, banking.AsOf.Value, $"Ledger control role {ledgerBalance.ControlRole}; projection basis {banking.BalanceBasis}", difference == 0m);
     }
     public async Task<Modules.Banking.Entities.ChequeInTransitPage> ListChequeInTransitAsync(TenantId tenant, Guid legalEntityId, int page, int pageSize, CancellationToken ct)
     {

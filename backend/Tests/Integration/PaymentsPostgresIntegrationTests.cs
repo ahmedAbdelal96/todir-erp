@@ -8,7 +8,11 @@ using System.Globalization;
 using Modules.Payments.DTOs;
 using Modules.Payments.Entities;
 using Modules.Payments.Services;
+using Modules.Banking.DTOs;
+using Modules.Banking.Services;
 using Shared.Contracts.Payments;
+using Shared.Contracts.Banking;
+using Shared.Contracts.Ledger;
 using Modules.Expenses.Repositories;
 using Modules.Expenses.Services;
 using Modules.Hr.DTOs;
@@ -27,6 +31,49 @@ public sealed class PaymentsPostgresIntegrationTests : DatabaseIntegrationTestBa
     private readonly ITestOutputHelper output;
 
     public PaymentsPostgresIntegrationTests(ITestOutputHelper output) => this.output = output;
+
+    [Fact]
+    public async Task BankingCreatedAccountUsesOneCanonicalIdentityForPaymentsAndLedger()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for payment integration tests.");
+        var runtimeConnectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for payment integration tests.");
+        var fixture = await ReadFixtureAsync(adminConnectionString);
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("TODIR_DATABASE_CONNECTION", runtimeConnectionString);
+            builder.UseSetting("TODIR_RABBITMQ_HOST", string.Empty);
+        });
+        var banking = factory.Services.GetRequiredService<BankingService>();
+        var payments = factory.Services.GetRequiredService<PaymentsService>();
+        var ledger = factory.Services.GetRequiredService<ILedgerTreasuryBalanceRead>();
+        var tenant = new TenantId(fixture.TenantId);
+        var code = "BANKING-CANONICAL-" + Guid.CreateVersion7().ToString("N")[^8..];
+        var account = await banking.CreateAccountAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(),
+            new(fixture.LegalEntityId, null, code, "Banking canonical acceptance", TreasuryAccountType.Bank,
+                TreasuryCurrencyPolicy.SingleCurrency, "EGP", "Acceptance", "Operational", [], "****1234", null), CancellationToken.None);
+        var activated = await banking.ChangeStatusAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(),
+            fixture.LegalEntityId, account.Id, "Active", account.Version, CancellationToken.None);
+        Assert.Equal(account.Id, activated.Id);
+
+        var draft = await payments.CreateDraftAsync(tenant, fixture.ActorId, fixture.MembershipId, Guid.CreateVersion7(),
+            new(fixture.LegalEntityId, null, PaymentType.CustomerReceipt, fixture.PartyId, "19.25", "EGP", PaymentMethod.BankTransfer,
+                activated.Id, new(2026, 10, 1), new(2026, 10, 1), null, "CANONICAL-ACCEPTANCE", null, null, "BankingCanonical", code),
+            "banking-canonical-" + Guid.CreateVersion7().ToString("N"), CancellationToken.None);
+        var completed = await payments.CompleteManualAsync(tenant, fixture.ActorId, fixture.MembershipId, fixture.LegalEntityId,
+            draft.Id, "banking-canonical-complete-" + Guid.CreateVersion7().ToString("N"), Guid.CreateVersion7(), CancellationToken.None);
+        var snapshot = await ledger.GetTreasuryBookBalanceAsync(tenant, new(fixture.LegalEntityId), activated.Id, "EGP", new(2026, 10, 1));
+
+        Assert.Equal(PaymentBusinessState.Completed, completed.State);
+        await using var admin = new NpgsqlConnection(adminConnectionString);
+        await admin.OpenAsync();
+        Assert.Equal(activated.Id, (Guid)(await ScalarAsync(admin,
+            "select treasury_account_id from finance_payments.payment_account where tenant_id=$1 and legal_entity_id=$2 and id=$3", fixture.TenantId, fixture.LegalEntityId, activated.Id))!);
+        Assert.Equal(19.25m, snapshot.SignedCurrencyBalance);
+        Assert.True(snapshot.PostedLineCount > 0);
+    }
 
     [Fact]
     public async Task BankOriginatedUnknownReceiptIsRecordedOnceAsUnallocatedPayment()

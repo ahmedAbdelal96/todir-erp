@@ -1,5 +1,6 @@
 using Npgsql;
 using Shared.Contracts.Ledger;
+using Shared.Contracts.Banking;
 using Shared.Contracts.Subledger;
 using Shared.Primitives.Identifiers;
 
@@ -16,6 +17,36 @@ public interface ITransactionContext : IAsyncDisposable
 public interface ITransactionCoordinator
 {
     Task<T> ExecuteAsync<T>(TenantId tenantId, Func<ITransactionContext, CancellationToken, Task<T>> action, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Banking owns the canonical treasury account and can enlist its write in a caller transaction.</summary>
+public interface ITransactionalBankingTreasuryAccountCapability
+{
+    Task<TreasuryAccountReference> CreateInTransactionAsync(ITransactionContext context, TenantId tenantId, Guid actorId,
+        Guid membershipId, Guid correlationId, TreasuryAccountCreateRequest request, CancellationToken cancellationToken = default);
+    Task<TreasuryAccountReference> ChangeStatusInTransactionAsync(ITransactionContext context, TenantId tenantId, Guid actorId,
+        Guid membershipId, Guid correlationId, Guid legalEntityId, Guid id, TreasuryAccountStatus status,
+        long? expectedVersion = null, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Payments owns the compatibility projection and exposes read-only reconciliation evidence inside a transaction.</summary>
+public interface ITransactionalPaymentAccountCompatibilityCapability
+{
+    Task CreateCompatibilityInTransactionAsync(ITransactionContext context, TenantId tenantId, Guid legalEntityId,
+        Guid accountId, Guid? branchId, string code, string name, string accountType, string currencyPolicy,
+        string? currencyCode, string? bankName, string? accountHolder, string? maskedIdentifier, string? secretRef,
+        string status, DateTimeOffset now, CancellationToken cancellationToken = default);
+    Task ChangeCompatibilityStatusInTransactionAsync(ITransactionContext context, TenantId tenantId, Guid legalEntityId,
+        Guid accountId, string status, CancellationToken cancellationToken = default);
+}
+
+public sealed record PaymentReconciliationMovement(Guid PaymentId, Guid LegalEntityId, Guid PaymentAccountId,
+    string Direction, decimal Amount, string CurrencyCode, string BusinessState);
+
+public interface ITransactionalPaymentReconciliationReadCapability
+{
+    Task<PaymentReconciliationMovement?> GetForReconciliationAsync(ITransactionContext context, TenantId tenantId,
+        Guid legalEntityId, Guid paymentId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Stable cross-module seam for Ledger work inside a caller-owned transaction.</summary>

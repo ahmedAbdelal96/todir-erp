@@ -51,9 +51,9 @@ Import is bounded to 10,000 lines. Retry with the same key returns the original 
 
 | Method | Path | Request/filters | Response | Permission |
 |---|---|---|---|---|
-| POST | `/reconciliations` | legalEntityId, asOfDate, statementId, bookBalance, notes | 201 `ReconciliationDto` | `banking.reconciliation.read` |
+| POST | `/reconciliations` | legalEntityId, asOfDate, statementId, notes; `bookBalance` is deprecated compatibility input and is rejected if it differs from the posted Ledger value | 201 `ReconciliationDto` with nullable `bookBalance`, `difference`, `ledgerSourceReference`, `ledgerLastPostedAt`, and `ledgerPostedLineCount` | `banking.reconciliation.read` |
 | GET | `/treasury-accounts/{id}/reconciliations?legalEntityId=&page=&pageSize=` | pagination | `ReconciliationPage` | `banking.reconciliation.read` |
-| POST | `/reconciliations/{id}/matches?legalEntityId=` | line ids, payment refs, external/system/difference, source | `ReconciliationDto` | `banking.reconciliation.match` |
+| POST | `/reconciliations/{id}/matches?legalEntityId=` | line ids, payment refs, external/system/difference, source | `ReconciliationDto`; payment refs are verified through Payments ownership and cannot claim another account/currency/direction/state or exceed remaining amount | `banking.reconciliation.match` |
 | PUT | `/reconciliations/{id}/state?legalEntityId=` | target state + version | `ReconciliationDto` | finalize/reopen permission |
 | GET | `/reconciliations?legalEntityId=&page=&pageSize=` | pagination | `ReconciliationPage` | `banking.reconciliation.read` |
 | GET | `/reconciliations/{id}?legalEntityId=` | none | `ReconciliationDto` | `banking.reconciliation.read` |
@@ -61,7 +61,7 @@ Import is bounded to 10,000 lines. Retry with the same key returns the original 
 | POST | `/reconciliations/{id}/match` or `/unmatch` | match or unmatch request + version | `ReconciliationDto` | `banking.reconciliation.match` |
 | POST | `/reconciliations/{id}/finalize` or `/reopen` | version | `ReconciliationDto` | finalize/reopen permission |
 
-The invariant is `externalAmount = systemAmount + difference`. A match cannot claim more than the remaining line amount. Open sessions may be finalized; reopening requires the explicit reopen permission.
+The invariant is `externalAmount = systemAmount + difference`. A match cannot claim more than the remaining line amount. Finalization revalidates the current posted Ledger balance, statement scope, outstanding line claims, adjustments, posting cutoff, and zero difference; a client cannot finalize by changing state alone. Reopening requires the explicit reopen permission.
 
 ## Cash and position
 
@@ -91,7 +91,7 @@ The invariant is `externalAmount = systemAmount + difference`. A match cannot cl
 | POST | `/treasury-accounts/{id}/connections` | `CreateConnectionRequest` → `ConnectionDto` | `banking.connections.manage` |
 | POST | `/connections/{id}/refresh` or `/disconnect` | versioned state command | `banking.connections.manage` |
 
-Cash totals come from denomination arithmetic. `IsStale` is true when the projection is older than 24 hours. `BalanceBasis`, `AsOf`, and `ExternalAsOf` must be shown to users; a missing external balance is not silently treated as reconciled. Cash-to-Ledger compares the Banking base-currency projection with Ledger's authoritative `Cash` control balance and exposes the difference rather than hiding it.
+Cash totals come from denomination arithmetic. `IsStale` is true when the projection is older than 24 hours or its source is missing. `BookBalance`, `ExternalBalance`, and `AvailableBalance` are nullable; missing values are not silently treated as zero or reconciled. `BalanceBasis`, `AsOf`, and `ExternalAsOf` must be shown to users. Cash-to-Ledger compares the Banking projection with Ledger's authoritative `Cash` control balance and exposes the difference rather than hiding it.
 
 ## Cross-module event contracts
 
@@ -111,6 +111,6 @@ The statement classification determines the candidate event type: `BankFee`, `In
 
 POS close projections are listed through `PosCashSettlementPage` and confirmed with an active same-currency cash account and optimistic version. Provider settlements are listed through `ProviderSettlementPage`; matching claims the payout against a same-currency statement line under row locks, links both records, and projects the treasury activity. Internal transfers have explicit source/destination currencies and optimistic versioning: claiming only the source or destination evidence preserves `InTransit`; claiming both distinct, account- and direction-matching statement lines sets `Matched` and clears in-transit. Stale versions and duplicate matches return business conflicts. Bank activity retains statement provenance and remaining claimable amount. Cheque visibility is deliberately a cross-module read capability: Payments remains the single writer and only unsettled `Cheque` payments are returned as in-transit evidence.
 
-## Deferred gate
+## Acceptance and deferred gate
 
-The 100k/1M-row performance certification is not represented as PASS. Normal pagination/index/query-shape work is implemented; large-scale certification requires a separate approved performance run. Current focused Banking evidence is 11 PostgreSQL integration tests plus 4 rules tests against `todir_module25_acceptance` after 228 ordered scripts, including unknown receipt and internal-transfer evidence reconciliation, opening reconciliation, authenticated HTTP isolation, and live Worker replay, plus focused Ledger and Payments acceptance.
+Current focused Banking evidence is 15 PostgreSQL integration tests plus 4 rules tests against `todir_module25_acceptance` after 229 ordered scripts. It includes Ledger-derived reconciliation, forged book-balance rejection, Payments-owned matching, canonical Banking/Payments account identity, unknown receipt and internal-transfer evidence reconciliation, opening reconciliation, authenticated HTTP isolation, and live Worker replay, plus focused Ledger and Payments acceptance. The 100k/1M-row performance certification is not represented as PASS. Normal pagination/index/query-shape work is implemented; large-scale certification requires a separate approved performance run.

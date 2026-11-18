@@ -17,7 +17,7 @@ public static class BankingSeed
                 case p.status when 'Archived' then 'Closed' else p.status end,p.currency_policy,p.currency_code,'Development treasury account','Operational','[]'::jsonb,p.masked_identifier,p.secret_ref,p.version,p.created_at,p.updated_at
             from finance_payments.payment_account p
             where p.tenant_id=$1 and p.account_type <> 'InternalClearing'
-            on conflict(tenant_id,id) do update set updated_at=excluded.updated_at, status=excluded.status, name=excluded.name
+            on conflict(tenant_id,id) do nothing
             """, cancellationToken, tenant);
         await context.ExecuteAsync("update finance_payments.payment_account p set treasury_account_id=p.id where p.tenant_id=$1 and p.account_type <> 'InternalClearing' and p.treasury_account_id is null", cancellationToken, tenant);
         await context.ExecuteAsync("""
@@ -48,11 +48,11 @@ public static class BankingSeed
         await context.ExecuteAsync("""
             insert into finance_banking.cash_position_projection(tenant_id,legal_entity_id,treasury_account_id,currency_code,book_balance,external_balance,available_balance,in_transit_amount,balance_basis,source_watermark,as_of,external_as_of)
             select p.tenant_id,p.legal_entity_id,p.id,p.currency_code,
-                case when p.account_type='Cashbox' then 55000 else case when p.currency_code='USD' then 12500 else 250000 end end,
+                null,
                 case when p.account_type in ('Bank','Cashbox') then case when p.currency_code='USD' then 12500 else case when p.account_type='Cashbox' then 55000 else 250000 end end else null end,
-                case when p.currency_code='USD' then 12500 else case when p.account_type='Cashbox' then 55000 else 250000 end end,0,'Development seed projection',$2,$2,$2
+                null,0,'DevelopmentSeed.ExternalEvidenceOnly',null,$2,$2
             from finance_payments.payment_account p where p.tenant_id=$1 and p.account_type <> 'InternalClearing' and p.currency_policy='SingleCurrency'
-            on conflict(tenant_id,treasury_account_id,currency_code) do update set book_balance=excluded.book_balance,external_balance=excluded.external_balance,available_balance=excluded.available_balance,as_of=excluded.as_of,external_as_of=excluded.external_as_of
+            on conflict(tenant_id,treasury_account_id,currency_code) do nothing
             """, cancellationToken, tenant, now);
 
         var statementCount = 0;
@@ -80,7 +80,7 @@ public static class BankingSeed
         var reconciliationId = SeedIds.Child(tenant, "banking-reconciliation", 1);
         var mainEgpStatement = SeedIds.Child(tenant, $"banking-statement:{context.EntityId:N}:main:EGP", 1);
         var mainEgpAccount = SeedIds.Child(tenant, $"payment-account:{context.EntityId:N}:main", 1);
-        await context.ExecuteAsync("insert into finance_banking.reconciliation_session(tenant_id,legal_entity_id,id,treasury_account_id,statement_id,as_of_date,state,external_balance,book_balance,difference,notes,version,created_at,updated_at) values($1,$2,$3,$4,$5,'2026-10-01','Open',250000,250000,0,'Development seed reconciliation',1,$6,$6) on conflict(tenant_id,id) do nothing", cancellationToken, tenant, context.EntityId, reconciliationId, mainEgpAccount, mainEgpStatement, now);
+        await context.ExecuteAsync("insert into finance_banking.reconciliation_session(tenant_id,legal_entity_id,id,treasury_account_id,statement_id,as_of_date,state,external_balance,book_balance,difference,notes,version,created_at,updated_at) values($1,$2,$3,$4,$5,'2026-10-01','Open',250000,null,null,'Development seed reconciliation; Ledger evidence is intentionally required at runtime',1,$6,$6) on conflict(tenant_id,id) do nothing", cancellationToken, tenant, context.EntityId, reconciliationId, mainEgpAccount, mainEgpStatement, now);
 
         var cashAccount = SeedIds.Child(tenant, $"payment-account:{context.EntityId:N}:main", 2);
         var cashCountId = SeedIds.Child(tenant, "banking-cash-count", 1);

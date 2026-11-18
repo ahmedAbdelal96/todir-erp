@@ -308,6 +308,7 @@ foreach (var script in scripts)
         "banking-forward-fix-internal-transfer-reconciliation.sql" => new[] { "finance_banking.transfer_reconciliation_projection", "finance_banking.external_statement_line" },
         "banking-forward-fix-internal-transfer-fx-evidence.sql" => new[] { "finance_banking.transfer_reconciliation_projection" },
         "banking-forward-fix-opening-reconciliation.sql" => new[] { "finance_banking.treasury_account" },
+        "banking-forward-fix-financial-truth.sql" => new[] { "finance_banking.reconciliation_session", "finance_banking.cash_position_projection" },
         "sales-forward-fix-return-lifecycle.sql" => new[] { "business_sales.sales_order_reservation" },
         "pos-forward-fix-exchanges-role-permissions.sql" => new[] { "platform.tenant", "platform.role", "platform.role_permission" },
         "expenses-forward-fix-typed-travel-facts.sql" => new[] { "business_expenses.expense", "business_expenses.mileage_expense_detail", "business_expenses.per_diem_expense_detail" },
