@@ -2,7 +2,11 @@
   <PropertyGroup>
     <AssemblyName>Api</AssemblyName>
     <RootNamespace>Api</RootNamespace>
+    <ApiDevelopmentPort Condition="'$(ApiDevelopmentPort)' == ''">5080</ApiDevelopmentPort>
   </PropertyGroup>
+  <Target Name="EnsureDevelopmentPortIsFree" BeforeTargets="PrepareForBuild" Condition="'$(OS)' == 'Windows_NT' and '$(DisableApiPortCleanup)' != 'true'">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\Properties\ensure-development-port.ps1&quot; -Port $(ApiDevelopmentPort)" />
+  </Target>
   <ItemGroup>
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
