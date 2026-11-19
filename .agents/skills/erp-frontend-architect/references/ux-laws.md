@@ -56,6 +56,9 @@ Do not bury tables under an endless grid of oversized KPI cards. On operational 
 - **Status Counts as Filter Chips**: Instead of a card per status, use clickable status filter pills:
   `[الكل 120] [جديد 15] [قيد المعالجة 45] [معتمد 60]`
   Clicking a chip instantly filters the table.
+- **Data-first density**: KPI cards are compact summaries, not dashboards inside the dashboard. Use content-sized height, restrained vertical padding, and a stable hierarchy of title → value → short helper text. Do not add fixed heights or empty space merely to make cards feel large.
+- **Protect the data surface**: Tables, lists, and operational panels receive the majority of the viewport. A KPI ribbon must not force the user to scroll past oversized cards before reaching actionable records. When more metrics are needed, use compact chips or a summary row, then place detailed values in the relevant table or panel.
+- **Responsive behavior**: Keep the ribbon in a dense multi-column layout when space allows and stack it without horizontal overflow on narrow screens. Compactness must never reduce contrast, readable type, RTL alignment, or the separation between a metric label and its value.
 
 ---
 
