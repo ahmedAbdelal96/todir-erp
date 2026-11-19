@@ -22,15 +22,24 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
   const createMutation = useCreateTransfer(legalEntityId);
 
   const [accountSearch, setAccountSearch] = useState("");
-  const trimmedSearch = accountSearch.trim();
-  const accountQueryFilters = useMemo(() => {
-    return trimmedSearch
-      ? { pageSize: 100, search: trimmedSearch }
-      : { pageSize: 100 };
-  }, [trimmedSearch]);
-  const { data: accountsData } = useTreasuryAccounts(legalEntityId, accountQueryFilters);
+  const trimmedSearch = accountSearch.trim().toLowerCase();
+  const { data: accountsData } = useTreasuryAccounts(legalEntityId, { pageSize: 100 });
   const allAccounts = accountsData?.items ?? [];
   const activeAccounts = allAccounts.filter((a) => a.status === "Active");
+
+  const [sourceAccountId, setSourceAccountId] = useState("");
+  const [destAccountId, setDestAccountId] = useState("");
+
+  const filteredAccounts = useMemo(() => {
+    if (!trimmedSearch) return activeAccounts;
+    return activeAccounts.filter(
+      (acc) =>
+        acc.id === sourceAccountId ||
+        acc.id === destAccountId ||
+        acc.code.toLowerCase().includes(trimmedSearch) ||
+        acc.name.toLowerCase().includes(trimmedSearch)
+    );
+  }, [activeAccounts, trimmedSearch, sourceAccountId, destAccountId]);
 
   const { data: entityCurrenciesData } = useEntityCurrencies(legalEntityId);
   const availableCurrencies = useMemo(() => {
@@ -50,9 +59,6 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
     if (list.length === 0) list.push("EGP", "USD", "EUR", "SAR");
     return list;
   }, [entityCurrenciesData, allAccounts]);
-
-  const [sourceAccountId, setSourceAccountId] = useState("");
-  const [destAccountId, setDestAccountId] = useState("");
   const [amount, setAmount] = useState("");
   const [currencyCode, setCurrencyCode] = useState("EGP");
 
@@ -87,7 +93,7 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
     }
   };
 
-  const destinationOptions = activeAccounts
+  const destinationOptions = filteredAccounts
     .filter((acc) => acc.id !== sourceAccountId)
     .map((acc) => {
       const curr = acc.currencyCode ? ` - ${acc.currencyCode}` : "";
@@ -180,7 +186,7 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
             label={t("transfers.sourceAccountLabel")}
             selectedKey={sourceAccountId}
             onSelectionChange={(key) => handleSourceAccountChange(key ? String(key) : "")}
-            options={activeAccounts.map((acc) => {
+            options={filteredAccounts.map((acc) => {
               const curr = acc.currencyCode ? ` - ${acc.currencyCode}` : "";
               return {
                 id: acc.id,

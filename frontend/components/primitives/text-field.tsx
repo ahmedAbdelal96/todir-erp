@@ -139,6 +139,7 @@ export function TextField({
       >
         {startAdornment && <div style={{ marginInlineEnd: "0.5rem", color: "var(--color-content-muted)" }}>{startAdornment}</div>}
         <AriaInput
+          {...(type !== undefined ? { type } : {})}
           {...(placeholder !== undefined ? { placeholder } : {})}
           dir={inputDir}
           style={{

@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import {
   useTransferReconciliations,
   useProviderSettlements,
-  useMatchProviderSettlement,
   useChequesInTransit
 } from "../../hooks/use-banking-queries.ts";
 import { Surface } from "../../../../components/pages/surface.tsx";
@@ -15,7 +14,8 @@ import { BdiText } from "../../../../components/formatting/bidi-text.tsx";
 import { formatDate } from "../../../../components/formatting/date-formatter.ts";
 import { NewTransferModal } from "./new-transfer-modal.tsx";
 import { ReconcileTransferModal } from "./reconcile-transfer-modal.tsx";
-import type { TransferReconciliationDto } from "../../types.ts";
+import { MatchProviderModal } from "./match-provider-modal.tsx";
+import type { TransferReconciliationDto, ProviderSettlementDto } from "../../types.ts";
 
 interface Props {
   readonly legalEntityId: string;
@@ -28,27 +28,12 @@ export function TransfersTab({ legalEntityId }: Props): React.JSX.Element {
   // Modals state
   const [isNewTransferOpen, setIsNewTransferOpen] = useState(false);
   const [selectedTransferForReconcile, setSelectedTransferForReconcile] = useState<TransferReconciliationDto | null>(null);
+  const [selectedSettlementForMatch, setSelectedSettlementForMatch] = useState<ProviderSettlementDto | null>(null);
 
   // Queries
   const { data: transfersData, isLoading: isTransfersLoading } = useTransferReconciliations(legalEntityId);
   const { data: providerData, isLoading: isProviderLoading, refetch: refetchProvider } = useProviderSettlements(legalEntityId);
   const { data: chequesData, isLoading: isChequesLoading } = useChequesInTransit(legalEntityId);
-
-  const matchProviderMutation = useMatchProviderSettlement(legalEntityId);
-
-  const handleMatchProvider = async (settlementId: string, version: number) => {
-    // Generate a statement line claim ID for demonstration or testing
-    const sampleLineId = "00000000-0000-0000-0000-000000000001";
-    try {
-      await matchProviderMutation.mutateAsync({
-        settlementId,
-        request: { statementLineId: sampleLineId, version }
-      });
-      void refetchProvider();
-    } catch {
-      // ignore
-    }
-  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -207,8 +192,7 @@ export function TransfersTab({ legalEntityId }: Props): React.JSX.Element {
                         <Button
                           size="compact"
                           variant="secondary"
-                          onClick={() => handleMatchProvider(settlement.id, settlement.version)}
-                          isDisabled={matchProviderMutation.isPending}
+                          onClick={() => setSelectedSettlementForMatch(settlement)}
                         >
                           {t("transfers.matchWithStatement")}
                         </Button>
@@ -276,6 +260,17 @@ export function TransfersTab({ legalEntityId }: Props): React.JSX.Element {
         transfer={selectedTransferForReconcile}
         isOpen={Boolean(selectedTransferForReconcile)}
         onClose={() => setSelectedTransferForReconcile(null)}
+      />
+
+      <MatchProviderModal
+        legalEntityId={legalEntityId}
+        settlement={selectedSettlementForMatch}
+        isOpen={Boolean(selectedSettlementForMatch)}
+        onClose={() => setSelectedSettlementForMatch(null)}
+        onMatched={() => {
+          void refetchProvider();
+          setSelectedSettlementForMatch(null);
+        }}
       />
     </div>
   );

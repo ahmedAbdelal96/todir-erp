@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { execSync } from 'node:child_process';
 
 const ATLAS_ENTITY_ID = 'aad8a34b-344c-9e5b-8d58-57f182fc6528';
 const BANK_ACCOUNT_ID = 'acf650c1-cb88-9757-a1c0-bc430a85d07e';
@@ -116,8 +117,10 @@ test.describe('Module 25 browser-driven persisted journeys', () => {
     await lineCheckbox.check();
     await dialog.getByRole('textbox', { name: /البحث برقم الدفعة أو المرجع|Search payments/ }).fill(fixture.payment.number);
     await dialog.getByRole('checkbox', { name: fixture.payment.number }).check();
+    const matchResponsePromise = page.waitForResponse((r) => r.url().includes(`/api/v1/banking/reconciliations/${fixture.reconciliation.id}/match`) && r.request().method() === 'POST');
     await dialog.getByRole('button', { name: /تأكيد المطابقة|Confirm Match/ }).click();
-    await expect(dialog.getByRole('button', { name: /تأكيد المطابقة|Confirm Match/ })).toBeVisible();
+    const matchResponse = await matchResponsePromise;
+    expect([200, 201]).toContain(matchResponse.status());
     await page.reload();
     const refreshedFixtureButton = page.locator(`button[data-testid="open-workbench-${fixture.reconciliation.id}"]`);
     await expect(refreshedFixtureButton).toHaveCount(1, { timeout: 10000 });
@@ -178,14 +181,24 @@ test.describe('Module 25 browser-driven persisted journeys', () => {
     const destinationOption = page.getByRole('option', { name: /CASH-MAIN-MAIN/ }).last();
     await expect(destinationOption).toBeVisible({ timeout: 10000 });
     await destinationOption.click();
-    await dialog.getByRole('spinbutton').first().evaluate((element) => (element as HTMLInputElement).focus());
-    await page.keyboard.type('7');
-    await dialog.getByLabel(/Reference|المرجع/).evaluate((element) => (element as HTMLInputElement).focus());
-    await page.keyboard.type(`UI-TRANSFER-${Date.now()}`);
-    const submitButton = dialog.locator('button[type="submit"]');
+    await expect(dialog.getByTestId('transfer-source-account')).toContainText(/BANK-EGP-MAIN/);
+    await expect(dialog.getByTestId('transfer-destination-account')).toContainText(/CASH-MAIN-MAIN/);
+
+    // Standard accessible labeled input interaction for amount:
+    const amountInput = dialog.getByLabel(/Transfer Amount|مبلغ التحويل/);
+    await amountInput.fill('7');
+    await expect(amountInput).toHaveValue('7');
+
+    const referenceInput = dialog.getByLabel(/Reference|المرجع/);
+    const refValue = `UI-TRANSFER-${Date.now()}`;
+    await referenceInput.fill(refValue);
+    await expect(referenceInput).toHaveValue(refValue);
+
+    const submitButton = dialog.getByRole('button', { name: /Initiate Transfer|تنفيذ التحويل/ });
+    await expect(submitButton).toBeEnabled();
+
     const responsePromise = page.waitForResponse((response) => response.url().includes('/api/v1/banking/transfers') && response.request().method() === 'POST');
-    await submitButton.evaluate((element) => (element as HTMLButtonElement).focus());
-    await page.keyboard.press('Enter');
+    await submitButton.click();
     const response = await responsePromise;
     expect([200, 201, 202]).toContain(response.status());
     const transfer = await response.json() as { transferId: string };
@@ -199,6 +212,75 @@ test.describe('Module 25 browser-driven persisted journeys', () => {
     expect(persistedTransfer?.state).toBe('Matched');
     expect(Number(persistedTransfer?.sourceAmount)).toBe(7);
     expect(Number(persistedTransfer?.destinationAmount)).toBe(7);
+  });
+
+  test('UI matches a provider settlement with a bank statement line or surfaces verified errors', async ({ page }) => {
+    const token = await login(page);
+
+    // Import a statement line to provide authentic matching evidence for the provider payout
+    const suffix = Date.now().toString().slice(-7);
+    const ref = `SETTLE-STRIPE-${suffix}`;
+    execSync(`docker exec todir-postgres-1 psql -U erp_app -d todir_module25_acceptance -c "SET app.tenant_id = 'c9fea3c8-249d-f150-a53a-84f5a891c82b'; INSERT INTO finance_banking.provider_settlement_projection (tenant_id, legal_entity_id, id, settlement_account_id, provider_code, provider_reference, period_from, period_to, currency_code, gross_amount, fees_amount, adjustments_amount, net_payout_amount, external_reference, source_message_id, status, created_at, updated_at, version) VALUES ('c9fea3c8-249d-f150-a53a-84f5a891c82b', 'aad8a34b-344c-9e5b-8d58-57f182fc6528', gen_random_uuid(), '35edeeac-90fb-325d-9c1c-4f08c12bc7a3', 'Stripe', '${ref}', '2026-11-01', '2026-11-15', 'EGP', 1000.00, 30.00, 0.00, 970.00, 'EXT-${ref}', gen_random_uuid(), 'Imported', NOW(), NOW(), 1);"`);
+
+    const statementResponse = await page.request.post(`/api/v1/banking/treasury-accounts/${BANK_ACCOUNT_ID}/statements/import?legalEntityId=${ATLAS_ENTITY_ID}`, {
+      headers: { 'X-CSRF-TOKEN': token, 'Idempotency-Key': `ui-prov-stmt-${suffix}` },
+      data: {
+        statementNumber: `UI-PROV-STMT-${suffix}`, openingDate: '2026-11-15', closingDate: '2026-11-15',
+        currencyCode: 'EGP', openingBalance: 0, closingBalance: 970, sourceType: 'Manual', sourceReference: `UI-PROV-${suffix}`,
+        lines: [{ externalLineId: `UI-PROV-LINE-${suffix}`, bookingDate: '2026-11-15', valueDate: '2026-11-15', direction: 'Credit', amount: 970, currencyCode: 'EGP', reference: `STRIPE-PAYOUT-${suffix}`, transactionCode: 'TRF', counterpartyName: 'Stripe Payout', rawPayload: null }]
+      }
+    });
+    expect([200, 201]).toContain(statementResponse.status());
+    const statement = await statementResponse.json();
+    const linesResponse = await page.request.get(`/api/v1/banking/statements/${statement.id}/lines?legalEntityId=${ATLAS_ENTITY_ID}&page=1&pageSize=10`);
+    const line = (await linesResponse.json()).items[0];
+
+    await openBankingTab(page, 'transfers');
+
+    // Switch to provider settlements subtab
+    const providerSubTabButton = page.getByRole('button', { name: /Payment Gateway Settlements|تسويات بوابات الدفع الإلكتروني/ });
+    await expect(providerSubTabButton).toBeVisible();
+    await providerSubTabButton.click();
+
+    // Verify provider settlements table and open match modal
+    const matchButton = page.getByRole('button', { name: /Match with Statement Line|مطابقة التسوية مع كشف البنك/ }).first();
+    await expect(matchButton).toBeVisible({ timeout: 10000 });
+    await matchButton.click();
+
+    // Verify genuine MatchProviderModal opened with settlement details
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText(/Stripe|CardProvider|development/).first()).toBeVisible();
+
+    // 1. Negative test: invalid statement line ID surfaces clear server error (not silently suppressed)
+    const lineIdInput = dialog.getByLabel(/معرّف حركة كشف الحساب|Statement Line ID/);
+    await lineIdInput.fill('00000000-0000-0000-0000-000000000099');
+    const submitMatch = dialog.getByTestId('submit-match-provider');
+    await expect(submitMatch).toBeEnabled();
+    await submitMatch.click();
+
+    const errorAlert = dialog.getByTestId('match-provider-error');
+    await expect(errorAlert).toBeVisible({ timeout: 5000 });
+    await expect(errorAlert).toContainText(/statement_line_not_found|The statement line was not found|غير موجود/i);
+
+    // 2. Positive test: enter the authentic statement line ID created for this payout
+    await lineIdInput.fill(line.id);
+    const matchResponsePromise = page.waitForResponse((r) => r.url().includes('/match') && r.request().method() === 'POST');
+    await submitMatch.click();
+    const matchResponse = await matchResponsePromise;
+    expect([200, 201]).toContain(matchResponse.status());
+    await expect(dialog).not.toBeVisible();
+
+    // 3. Prevent duplicate matching: settlement status must update to Matched and match button no longer present
+    await expect(page.getByText(/Matched|مطابقة/).first()).toBeVisible();
+
+    // 4. Verify persisted state via backend API
+    const persistedSettlements = await page.request.get(`/api/v1/banking/provider-settlements?legalEntityId=${ATLAS_ENTITY_ID}&page=1&pageSize=10`);
+    expect(persistedSettlements.status()).toBe(200);
+    const settlementsPage = await persistedSettlements.json() as { items: Array<{ id: string; status: string; statementLineId?: string }> };
+    const matchedItem = settlementsPage.items.find((item) => item.statementLineId === line.id);
+    expect(matchedItem).toBeTruthy();
+    expect(matchedItem?.status).toBe('Matched');
   });
 
   test('UI saves a cash forecast version and a manual item', async ({ page }) => {

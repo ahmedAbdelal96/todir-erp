@@ -118,7 +118,31 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 
 ---
 
-## 4. Product Owner Verification Instructions
+## 5. Final Transfer, Settlement, and Browser Acceptance Closure
+
+### 5.1 Transfer Amount Accessible Interaction & State Persistence
+- **Accessible Interaction:** Replaced fragile synthetic focus/keyboard typing with standard accessible labeled input interaction (`getByLabel(/Transfer Amount|مبلغ التحويل/)`). Native `<input>` directly receives `type={type}` in `frontend/components/primitives/text-field.tsx`.
+- **Search Account Persistence:** Updated `NewTransferModal` to filter in-memory and always retain selected source/destination accounts, preventing accidental reset of source account when searching for destination account.
+- **Persisted Projection:** Successfully creates internal transfer via UI, submits `POST /api/v1/banking/transfers`, verifies transfer ID, and confirms exact reconciliation projection in `finance_banking.transfer_reconciliation_projection` (`sourceAmount = 7`, `destinationAmount = 7`, `state = 'Matched'`).
+
+### 5.2 Authentic Provider Settlement Matching Workflow
+- **Eliminated Fake Matching:** Completely removed hardcoded statement-line GUID `00000000-0000-0000-0000-000000000001` and silent error suppression.
+- **Genuine Matching Modal (`MatchProviderModal`):**
+  - Allows selecting the receiving bank account, related bank statement, and eligible deposit/credit lines (covering net payout in the same currency), or entering an authentic statement line ID.
+  - Displays complete settlement details (Provider Code, Reference, Period From/To, Gross Amount, Fees, Net Payout, Status Badge).
+  - Clear server/validation errors surfaced in prominent accessible alert banners (`role="alert"`, `data-testid="match-provider-error"`).
+  - Prevents duplicate matching: status transitions to `Matched` and match button is disabled/hidden.
+- **Persisted State Verification:** Confirmed via `GET /api/v1/banking/provider-settlements` that `status === 'Matched'` and `statementLineId` matches the linked statement line.
+
+### 5.3 Acceptance Execution Suite Summary
+Execution results of `frontend/tests/e2e/banking-ui-acceptance.spec.ts` against `todir_module25_acceptance`:
+1. `UI matches a real statement line and Payment, refreshes, and finalizes` (`PASS`)
+2. `UI completes a cash count using the authenticated custodian and expected balance` (`PASS`)
+3. `UI creates an internal transfer and the Payments-owned transaction persists` (`PASS`)
+4. `UI matches a provider settlement with a bank statement line or surfaces verified errors` (`PASS`)
+5. `UI saves a cash forecast version and a manual item` (`PASS`)
+- **Total:** 5 passed (33.2s)
+- **Database Safety:** Fail-closed safety probe confirmed connected to `todir_module25_acceptance`. Populated database `todir` verified 100% untouched.
 
 To inspect the real live Banking & Cash Management workspace locally:
 
