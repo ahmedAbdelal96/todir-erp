@@ -3,8 +3,9 @@
 **File:** `26_ERP_SAAS_MANUFACTURING_MRP_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`  
 **Product:** **TODIR**  
 **Status:** PRODUCT + MANUFACTURING DEFINITION + MRP + PRODUCTION EXECUTION + CAPACITY + COST + PROFITABILITY + TRACEABILITY + IMPLEMENTATION BASELINE  
-**Version:** v1.0  
-**Date:** 2026-10-07  
+**Version:** v1.1  
+**Date:** 2026-11-20  
+**Revision:** Operational manufacturing corrections grounded in verified vendor workflows, TODIR contracts, and source-of-truth accounting/inventory invariants.  
 **Risk Class:** **CRITICAL — MATERIALS + PRODUCTION + INVENTORY + COST + MARGIN + WIP + TRACEABILITY + ACCOUNTING**
 
 ## Canonical dependencies
@@ -635,17 +636,16 @@ Historical order does not later adopt new master costs silently.
 
 # 27. Actual Production Cost
 
-Built from actual:
-
+Built only from traceable **actual canonical source facts**, not current supplier price:
 ```text
-Consumed materials
-Actual inventory valuation
-Labor time
-Machine time
-Subcontract cost
-Scrap
-Overhead
+Consumed material quantity + movement-specific Inventory issue valuation (FIFO/MovingAverage)
+Actual operation and labor time × approved privacy-safe rate
+Actual machine/resource time × effective-dated cost rate
+Subcontract cost allocated from Purchasing/Invoicing source
+Overhead from approved versioned policy
+Normal loss, abnormal scrap, yield and co-/by-product allocation
 ```
+Preserve source operation/movement IDs, costing method, currency/FX evidence, date and later append-only semantic adjustments. If Inventory has not confirmed the actual issue valuation, do not invent a replacement cost.
 
 ---
 
@@ -743,20 +743,19 @@ Rebuildable only.
 
 # 33. Profitability Workspace
 
-For a manufactured product show:
-
+For a manufactured product, show **illustrative contribution economics**, not accounting net profit:
 ```text
 Selling Price                  1,300
 Current Estimated Cost           925
-Estimated Profit                 375
+Estimated Contribution           375
 Estimated Margin               28.85%
 Estimated Markup               40.54%
-
 Last Actual Production Cost      948
 Margin at Last Actual Cost     27.08%
 30-Day Avg Actual Cost           940
 Margin at 30-Day Avg           27.69%
 ```
+The calculation requires the same legal entity, output UOM, net selling-price/tax/discount basis and currency, a valid selling context from Pricing, appropriate FinBase conversion evidence and an identified production quantity/batch size. Show **Unavailable/Incomparable** with reason if a valid comparable basis is missing, never silently zero or mix units/currencies. Setup cost/unit varies with production lot size.
 
 ---
 
@@ -844,27 +843,14 @@ for old/new components.
 
 # 38. Max Producible Quantity
 
-Product workspace can calculate:
-
+The following is a **single-level illustrative material-only** calculation, not a guaranteed production promise:
 ```text
-Wood allows      500 chairs
-Foam allows      320 chairs
-Fabric allows    700 chairs
-Screws allow   1,000 chairs
-
-Bottleneck:
-Foam
-
-Max producible now:
-320 chairs
+Wood allows 500 chairs; Foam allows 320; Fabric allows 700; Screws allow 1,000.
+MaterialFeasibleNow (preferred) = 320; using approved Foam B = 500.
 ```
+Real availability-to-produce must aggregate repeated components across multi-level BOMs and phantom assemblies; apply UOM conversions, formula scaling/yield, quantity rounding and min/max batch rules; read eligible unreserved stock by warehouse/lot/status/expiry; avoid allocating shared stock to multiple lines/orders/substitutes; and respect approved replacement ratios/cost/quality limits. For complex shared-pool substitute optimization, return an explained conservative bound rather than an overstatement.
 
-With substitute:
-
-```text
-Using Foam B:
-500 chairs
-```
+Distinguish **MaterialFeasibleNow**, **MaterialFeasibleByDate** (confirmed on-time receipts only), **CapacityFeasibleByDate** (only if calendars/routing evidence exists) and **ConfirmedProducibleByDate** (only when all modeled gates are satisfied). Include bottlenecks, assumptions, as-of date, inventory watermark and unknown readiness. Material-only feasibility does **not** certify a customer delivery promise.
 
 ---
 
@@ -1053,24 +1039,16 @@ MPS can be hidden entirely.
 # 52. MRP Inputs
 
 Core:
-
 ```text
-Demand
-Active/selected Production Definition
-BOM/Formula
-On Hand
-Available
-Reserved
-Scheduled Receipts
-Open Purchase Orders
-Open Production Orders
-Transfer supply
-Lead Times
-Safety Stock
-Order multiples/min/max
-Substitutes
-Calendars
+Accepted Sales/MPS/stock/project demand with source revision, status and need date
+Versioned forecast and forecast-consumption policy where overlapping actual Sales exist
+Active/selected Production Definition, BOM/Formula, scrap/yield and substitutions
+Inventory stock/available/reserved by plant and warehouse, eligible lot/status and snapshot
+Open Purchase Orders, Production Orders and transfers by remaining eligible due-date supply
+Already pegged/allocated supply, safety stock and planning fences
+Lead times, order multiples/min/max, quantity UOM, lot sizing, calendars
 ```
+Forecast and actual demand are **not automatically additive**. Example: a 1,000-unit forecast with 600 accepted Sales units consuming that same bucket contributes 600 actual + 400 residual forecast = 1,000, not 1,600. Standalone Make-to-Order demand outside the applicable forecast remains separate. CRM weighted opportunity forecast never becomes firm demand without an approved transformation. A Purchase Order is not received inventory; late/held/cancelled receipts cannot net earlier need. Never count a planned suggestion together with the firm order derived from it.
 
 ---
 
@@ -1082,17 +1060,17 @@ Raw demand before available supply.
 
 # 54. Net Requirement
 
-After considering eligible supply.
+Net only **eligible, unallocated and date-correct** supply from the same product/plant/UOM scope. Do not subtract reservations twice if `Available` already excludes them; preserve safety stock and existing pegging.
 
-Example:
-
+Illustrative same-bucket example:
 ```text
-Need                400
-On Hand            -250
-Confirmed Incoming -100
-------------------------
-Net Shortage          50
+Need                    400
+Eligible On Hand       -250
+Confirmed On-Time      -100
+---------------------------
+Net Shortage             50
 ```
+Exclude supply later than the need date, blocked/expired stock, cancelled/unapproved source orders and quantities already allocated elsewhere. Apply lead time and order multiple policies after determining gross/net requirement.
 
 ---
 
@@ -1338,20 +1316,21 @@ PlanningRun
 
 # 76. Planning Run Snapshot
 
-Results must be traceable to:
-
+Trace results to the planning as-of/horizon and a coherent source snapshot or recorded watermarks:
 ```text
-demand snapshot
-inventory snapshot/watermark
-definitions
-lead-time policies
+Demand source lines/versions; forecast consumption and deduplication
+Inventory stock/reservations/lot eligibility and already allocated supply
+Eligible open supply with expected date, approval/state and remaining quantity
+Definition/BOM/Formula, substitute, lead time, calendar and lot-sizing policy versions
+Demand → requirement → suggested supply pegging, exceptions and deterministic run ID
 ```
+An updated source invalidates affected recommendations; a planning run is an advisory result and never an authorization to move stock, order from a supplier or release production.
 
 ---
 
 # 77. Replanning
 
-New plan does not silently rewrite firmed Production/Purchase Orders.
+New planning runs may supersede **unfirmed** suggestions but cannot rewrite firmed Production Orders, approved Purchase Orders, reservations or completed Inventory transfers. Preserve prior run history. Before firming, revalidate eligibility, source versions, quantity, remaining demand, and current watermarks; reject stale recommendations with actionable explanation. One suggestion may be firmed at most once under concurrency/retries; avoid leaving original suggested and converted firm supply counted twice.
 
 ---
 
@@ -1716,9 +1695,13 @@ Inventory-owned physical move.
 
 # 108. Consumption
 
-Business statement that material was consumed by production.
-
-Inventory owns quantity/value movement; Manufacturing owns production context.
+Actual manufacturing use, distinct from reservation and staging:
+```text
+Direct issue/consumption: raw stock is deducted once by Inventory.
+Staged issue: Inventory moves stock from raw warehouse to production staging.
+Later staged consumption: deducts staged stock once, not raw stock a second time.
+```
+Manufacturing owns order/operation/report attribution; Inventory owns quantity, locations, movements and actual valuation. Issued but unused material can be returned or explicitly scrapped. No independent Manufacturing decrement, duplicated raw-stock deduction or double posting of consumed material cost.
 
 ---
 
@@ -1768,12 +1751,15 @@ Internally Inventory still records correct movement semantics.
 
 # 113. Backflush
 
-Policy:
+Backflush is an **optional approved policy**: compute *incremental*, still-unconsumed materials for the **specific confirmed output/operation report** using the released definition snapshot, actual yield, manual consumption already recorded, selected substitutes and UOM rules.
 
 ```text
-When output reported
-→ automatically calculate/confirm expected material consumption
+Validate production/quality gates → calculate incremental requirements
+→ verify/reserve eligible stock → Inventory-owned consumption exactly once
+→ Inventory-owned output receipt exactly once → linked Manufacturing state/evidence
 ```
+
+Prefer transaction-enlisted owner capabilities for stock-dependent invariants. If separate commits cannot be avoided, return a **recoverable pending/unknown** state and reconcile owner operation IDs by stable report/idempotency key; never claim completion on an ambiguous result or apply an untracked adjustment. If stock is insufficient and negative stock is forbidden, do not finalize output while required backflush consumption failed. Concurrent devices and mixed manual/backflush flows cannot duplicate movements.
 
 ---
 
@@ -1854,17 +1840,14 @@ Inventory receipt from Production.
 
 # 122. Finished Goods Receipt
 
-Inventory owns physical receipt and valuation.
-
-Manufacturing supplies:
-
+Inventory owns **physical receipt and valuation**. Manufacturing supplies:
 ```text
-ProductionOrderRef
-OutputProduct
-Qty
-Lot/Serial context
-Cost source context
+ProductionOrder, output-report/operation/batch identity and stable idempotency key
+Product, output classification, quantity, UOM, lot/serial, location, effective date
+Canonical allocated production-cost source or approved provisional cost basis
+Currency, allocation version, source movement/fact references, recovery status
 ```
+Partial output can be received in an allowed Inventory stock status. If actual cost is incomplete, use an explicit **provisional finished-goods valuation** policy and subsequent owner-approved delta adjustment; never post zero/arbitrary cost to hide a gap. Accumulate unallocated cost in WIP and ensure every report/receipt corresponds to one Inventory operation even after retry/reversal.
 
 ---
 
@@ -1923,17 +1906,9 @@ Manufacturing links to production execution.
 
 # 129. Genealogy
 
-Must answer:
+Answer which input lots/serials actually contributed to output lot FG-900, and where input lot RM-100 may have gone.
 
-```text
-Which input lots produced Finished Lot FG-900?
-```
-
-and reverse:
-
-```text
-Where was Raw Lot RM-100 used?
-```
+Use linked Inventory consumption and output receipt **at operation/reporting-batch/lot-segment grain**, not merely join every raw lot and every output lot on one Production Order. Multiple partial batches can use different raw lots; a mixed process may legitimately imply many-to-many **possible/commingled** ancestry. Preserve event ordering, time, output-report identity, amount, source references, reversal and correction. Never falsely assert exact serial attribution when the physical process does not support it.
 
 ---
 
@@ -2208,14 +2183,15 @@ without duplicating HR Attendance.
 
 # 153. Effective Capacity
 
-Concept:
-
+Use consistent units and **one documented loss convention**:
 ```text
-Calendar Capacity
-× Efficiency
-- Downtime
-= Available Capacity
+ScheduledMinutes = working windows from plant/resource shift calendars
+EligibleDowntime = union of maintenance intervals intersecting working windows
+NetWorkingMinutes = max(0, ScheduledMinutes - EligibleDowntime)
+ResourceCapacityMinutes = NetWorkingMinutes × eligible parallel resource count
+EffectiveCapacityMinutes = ResourceCapacityMinutes × one applicable efficiency factor
 ```
+Do **not** subtract downtime already excluded from the calendar. Apply efficiency **either** to capacity or to operation-time requirement, not both. Setup/run/queue/move time have distinct bases. This supports explained capacity readiness and overload warnings, **not** a claim to deliver Advanced Finite APS.
 
 ---
 
@@ -2591,7 +2567,7 @@ only when configured.
 
 # 186. Simple Company
 
-No quality gate screens if Quality module inactive.
+When Quality is not enabled and **no configured or legally mandatory gate applies**, do not show unnecessary inspection screens. But a required gate must **fail closed** if the Quality capability is absent: `Unknown/Pending` never means `QualityPass`. Manufacturing cannot fabricate a quality result or override Inventory-owned quality-held stock.
 
 ---
 
@@ -2873,9 +2849,13 @@ Absolute.
 
 # 219. Finished Goods Valuation
 
-Manufacturing supplies accumulated production cost context.
-
-Inventory applies configured valuation policy.
+Manufacturing provides actual accumulated or **approved provisional** production-cost context; Inventory owns receipt and valuation policy. Partial receipts receive only their allocated goods value, with the remaining value retained in WIP or another explicitly approved disposition.
+```text
+Production source costs + authorized correction facts
+= capitalized finished/co-/by-product receipts
++ remaining WIP + recognized losses/variances under approved policy
+```
+Use source IDs, currency/effective dates, versioned allocation policy and reversals; do not create a parallel FIFO engine, phantom receipt or duplicate GL entry.
 
 ---
 
@@ -2899,9 +2879,7 @@ If raw-material valuation increases due to freight/customs, current manufacturin
 
 # 223. Purchase Price Correction
 
-Supplier final invoice may adjust Inventory valuation.
-
-Manufacturing current cost projection updates; old closed production history remains historical.
+If Purchasing/Invoicing leads Inventory to recognize a later supplier price/landed-cost adjustment, **current** manufacturing estimates for affected definitions refresh via reverse usage. Historical closed order original source facts are immutable; a legitimate late historical cost/period adjustment, when approved, is a **new linked semantic correction** through Inventory/Ledger. Do not overwrite original actual cost or recompute historical margin from today's price.
 
 ---
 
@@ -2927,15 +2905,7 @@ Uses historical actual production cost.
 
 # 227. Profitability Basis Label
 
-Every profitability number shows:
-
-```text
-Selling price basis
-Cost basis
-Currency
-AsOf
-Production definition
-```
+Each profitability number declares legal entity/plant, production definition, simulated quantity/batch size, selling-price list/version/party basis, discount and tax treatment, cost basis, output UOM, currency, approved FX conversion snapshot, as-of date and source freshness. Mixed price/cost currencies or inconsistent UOM/tax bases make margin **Unavailable**, not guessed. Manufacturing unit contribution/margin is **not accounting P&L**.
 
 ---
 
@@ -3614,7 +3584,7 @@ business_manufacturing
 
 # 302. ManufacturingDbContext
 
-Owns Manufacturing tables only.
+Manufacturing owns `business_manufacturing` tables only. `ManufacturingDbContext` applies **when EF Core is selected**; using existing module-owned approved Npgsql repositories is also valid. No global ERP DbContext or direct cross-module contexts, and no new Domain/Application/Infrastructure **project-per-layer** split contrary to `docs/architecture/solution-boundaries.md`. Preserve the repo's actual implementation architecture.
 
 ---
 
@@ -3782,16 +3752,7 @@ High precision decimal.
 
 # 314. Time
 
-NodaTime.
-
-Use correct semantics:
-
-```text
-LocalDate
-Instant
-Duration
-DateTimeZone
-```
+Use the repository-approved time policy: UTC instants, explicit business dates, injected `TimeProvider`, and plant-local calendars/time zones with defined DST gap/overlap semantics. NodaTime `LocalDate/Instant/Duration/DateTimeZone` are **semantic examples**, not permission to force an unapproved framework into existing code that uses `DateOnly`/`DateTimeOffset`. Never use server-local time to determine factory shifts or planning buckets.
 
 ---
 
@@ -4344,16 +4305,15 @@ Execution commands require strong transactional validation.
 
 # 360. Inventory Transaction Boundary
 
-Where immediate integrity matters:
-
+Where immediate stock integrity matters:
 ```text
-Manufacturing command
-→ Inventory application contract
+Manufacturing command validates state, quantity, permissions, idempotency
+→ owner-published Inventory application/transaction capability
+→ durable Inventory movement and movement-specific valuation evidence
+→ linked Manufacturing execution fact and outbox intent
+→ one approved transaction commit OR explicit pending/reconciliation state
 ```
-
-may participate in Platform Transaction Coordinator if approved.
-
-Do not replace with eventual event when stock invariant requires synchronous confirmation.
+The Platform Transaction Coordinator can enlist owner capabilities **only when their contracts explicitly support it**. Existing standalone Inventory interfaces must not be assumed atomic across modules. MF00 must define/extend owner contracts for production receipt, issue valuation, staging, returns, lot/serial and idempotent lookup. On unknown outcomes use stable source/report IDs to query owner state; do not blindly retry physical movements or patch another module's tables. RabbitMQ/outbox is not a replacement for stock/accounting ACID invariants.
 
 ---
 
@@ -6155,13 +6115,13 @@ according to workflow/state.
 
 # 555. Property Test — Output
 
+No false conservation across unrelated measurement bases. At **one defined process stage and compatible UOM**:
 ```text
-Reported output
-=
-Good + Scrap + Rework/other explicitly classified output
+Measured output/disposition = good + separately identified co-/by-products
+                            + rejects/scrap + measured process loss
+                            + explicitly accounted WIP change
 ```
-
-for configured production basis.
+Use an approved mass/volume/yield conversion or explicit reconciliation variance when physical/chemical transformations make direct equality invalid. Rework reclassifies previously rejected quantity; it is **not** a new original output. No duplicate classification on partial reports.
 
 ---
 
@@ -6626,6 +6586,71 @@ TODIR does not copy screen complexity.
 # 609. Competitive Product Target
 
 > **Odoo/Acumatica usability + SAP/Oracle manufacturing-definition correctness + Dynamics-grade planning + TODIR domain ownership.**
+
+---
+
+
+## Normative v1.1 Operational Decision Register — MF00 and Acceptance Clarifications
+
+This **binding clarification** supplements the numbered requirements without creating separate Manufacturing subfeature packs or weakening the existing MF00–MF47 / Build Now gates. The evidence comprises inspected current TODIR implementation contracts and verified official manufacturing workflow documentation. It is **desk research and architecture review**, not factory interviews, on-site observations or proof of sector-specific regulatory compliance. Industry-specific compliance claims require actual customer/industry validation.
+
+### A. Current contract reality and extension ownership
+
+At the reviewed `dev` revision, `backend/Modules/Inventory/Contracts/InventoryCapabilities.cs` exposes batch availability, reservations, consumption, returns, movement history and an as-of valuation snapshot. `backend/Shared/Contracts/InventoryCapabilities.cs` is narrower, and a manufacturing output receipt plus movement-specific actual issue valuation are **not fully exposed through an approved manufacturing-facing contract**. Inventory internally stores FIFO layer usage and `valuation_entry`; Manufacturing must not duplicate its costing logic. Current Purchasing public contracts do not supply a complete MRP planned-purchase request/accepted commitment integration; Sales has Orders but needs an owner-published accepted-demand feed; Service has downtime facts but needs a scoped read capability for Manufacturing. **Reinspect current HEAD at MF00** before adding code and extend each owning module's contract rather than writing foreign schemas.
+
+For each seam, record `current capability → missing workflow → owner-published contract → transaction semantics → authorization → persistence/status evidence → test`. Ensure batch reads, bounded search/pagination and tenant/legal-entity/plant ownership.
+
+### B. Required production financial posting matrix
+
+Before implementation, define and validate the versioned posting matrix with columns `event / physical Inventory effect / valuation source / WIP effect / Ledger posting owner & account roles / timing / idempotency / correction or reversal`. Rows MUST include: material requirement (no stock), reservation (no stock/GL), transfer to staging, direct consumption, staged consumption, returned unused material, labor/machine/overhead accrual, partial good receipt, co-/by-product receipt, normal and abnormal scrap/loss, subcontract invoice allocation, Production Close, approved variance, and late post-close cost adjustment. Accounting periods and currencies must be respected. Reuse existing Inventory-owned posting with Ledger account determination; prevent a second Manufactured-owned posting for the same Inventory movement.
+
+**Material conservation fixture:** raw warehouse issue/staging 100 units; consume 60; return 40. Net depletion is exactly 60, not 100 plus 60. WIP and Ledger reconcile to the canonical issue valuations. **Partial receipt fixture:** 60 good output received provisionally, 40 units remaining to produce; only received value enters finished stock, with residual WIP identified. At close, all capitalized output plus remaining WIP and approved losses/variance reconcile to authorized source cost, with explicit correction records.
+
+### C. Costing and multiple outputs
+
+The approved legal-entity/plant cost policy must version actual Inventory issue-cost source, effective resource/overhead rates, provisional partial-receipt valuation, final cost reconciliation, loss and scrap classification, co-/by-product allocation, variance posting and post-close corrections. Co-products, by-products and scrap are **different economic outputs**. Allocate a 10,000 EGP batch across actual outputs by an expressly configured fixed-value/percentage policy, with explicit residual handling; **never** assign each output 10,000 or classify a by-product as zero-value scrap without a policy. Cost conservation is financial; a physical mass-balance assertion requires genuinely compatible units and a process-specific yield/conversion basis. No arbitrary zero-cost fallback for perpetual-valued stock.
+
+### D. Planning demand, receipt dates and stale recommendations
+
+Use forecast-consumption semantics when accepted Sales and forecast/MPS represent the same demand bucket. Document bucket scope and reduction precedence. An approved Sales Order and its fulfilled forecast portion must not double count. A suggested planned purchase is **not** an approved Purchase Order or inventory receipt. Eligible supply requires documented status, remaining quantity, due date, warehouse/location, quality and source-line pegging. Replanning preserves already firmed commitments. Before converting suggestions, validate source watermarks and enforce exactly-once firming. Expose actionable `LateSupply`, `StalePlan`, `ForecastOverlap` and `DuplicateSupply` exceptions.
+
+### E. Factory execution, cost recovery and genealogy
+
+Stock-mutating output and consumption commands need stable **per-report** source identity, optimistic/concurrency guard, idempotency key and link to exact owner Inventory operations. If a timeout follows an Inventory commit but precedes Manufacturing's response, recovery queries the owner by the business operation key and reconciles; it must neither report false completion nor create a second movement. Shop-floor partial reports retain operation/batch identity; two separate output batches consuming different input lots must not be merged into a fictitious all-to-all genealogy. Explicitly represent genuinely commingled or uncertain provenance.
+
+### F. Quality and factory capacity
+
+When the optional Quality module is unavailable, non-gated simple production must remain usable; a **configured mandatory** gate is `Unknown/Blocked`, never auto-approved. Warehouse `QualityHold` remains enforced by Inventory. Capacity computations subtract maintenance downtime only once, use consistent duration units, eligible parallel resources, operation dependencies and one efficiency convention. Material readiness is never a proxy for capacity/date readiness; an unknown calendar cannot produce a certified date.
+
+### G. Mandatory extra acceptance fixtures
+
+1. Forecast 1,000; matching accepted Sales 600; residual forecast 400, not 1,600 aggregate.
+2. Purchase supply of 100 received **after** need date does not erase an earlier shortage; already pegged stock does not count twice.
+3. Same raw component repeated at two BOM levels uses one shared stock pool; approved substitutes and batch rounding cannot inflate availability.
+4. 100 staged → 60 consumed + 40 returned; quantity, WIP and canonical issue valuations reconcile.
+5. Backflush mixed with manual consumption, replay and two concurrent devices never double-consumes.
+6. Partial output 60/100 with provisional receipt, then final price/cost adjustment; Inventory, WIP and ledger all balance.
+7. Supplier valuation adjustment updates affected current projections without overwriting original closed-order source facts; linked historical adjustments remain visible.
+8. One batch with primary/co-/by-products allocates source value exactly once, independently of physically measured yield.
+9. Two partial output batches and a commingled process show honest lot ancestry and reverse traceability.
+10. Maintenance already excluded from a work-center calendar does not get deducted twice; efficiency applied once.
+11. Quality disabled + no gate allows simple production; mandatory gate + unavailable Quality blocks release/receipt/close per policy.
+12. Lost response after committed Inventory output recovers exactly one receipt and one matching valuation/Ledger effect.
+
+Use isolated real PostgreSQL for mutating acceptance, cross-tenant/plant security tests, source-ID reconciliation, and safe forward-only migrations. Do not touch protected live/development financial data, edit applied migration checksums or patch another module's SQL tables.
+
+### Official operational evidence considered
+
+- Dynamics 365 WIP/material/finished output posting: https://learn.microsoft.com/en-us/dynamics365/supply-chain/cost-management/production-posting
+- Dynamics 365 report-as-finished and backflush: https://learn.microsoft.com/en-us/dynamics365/supply-chain/production-control/report-production-orders-as-finished
+- Dynamics 365 flushing principles (double consumption risk): https://learn.microsoft.com/en-us/dynamics365/supply-chain/production-control/flushing-principles
+- Dynamics 365 forecast reduction: https://learn.microsoft.com/en-us/dynamics365/supply-chain/master-planning/reduction-keys
+- Dynamics 365 operations resources and efficiency: https://learn.microsoft.com/en-us/dynamics365/supply-chain/production-control/operations-resources
+- Oracle process manufacturing cost roll-up/co-/by-product allocation: https://docs.oracle.com/en/cloud/saas/supply-chain-and-manufacturing/26b/fapma/cost-rollup-for-process-manufacturing.html
+- Oracle manufacturing work-order costing/provisional completion: https://docs.oracle.com/en/cloud/saas/supply-chain-and-manufacturing/26b/fapma/cost-accounting-for-manufacturing-work-orders.html
+- Oracle genealogy granularity/sequence: https://docs.oracle.com/en/cloud/saas/supply-chain-and-manufacturing/25d/faumf/how-you-view-product-genealogy-details.html
+- Odoo 19 manufacturing lots/serials: https://www.odoo.com/documentation/19.0/applications/inventory_and_mrp/manufacturing/workflows/manufacture_lots_serials.html
+- Odoo 19 by-product workflow: https://www.odoo.com/documentation/19.0/applications/inventory_and_mrp/manufacturing/workflows/byproducts.html
 
 ---
 
@@ -7363,37 +7388,21 @@ What is current margin?
 
 # 700. MF45 Cross-Module Reconciliation
 
-Validate:
-
+Reconcile at tenant/legal entity/plant/Production Order/source-line and currency:
 ```text
-Manufacturing material consumption
-= Inventory production consumption
-
-Production output
-= Inventory production receipts
-
-Manufacturing material cost
-= Inventory issue valuation
-
-Planned purchases
-= Purchasing accepted requirements
-
-Subcontract cost
-= Purchasing/Invoicing source allocation
-
-Machine identity
-= Fixed Assets ref
-
-Downtime
-= Service/Maintenance source
-
-Accounting facts
-= Ledger postings
+Manufacturing consumed quantities = Inventory production consumption movements
+Manufacturing actual material value = Inventory movement-specific issue valuation
+Reported/received good/co-/by-product output = canonical Inventory receipt movements
+Staging issued = consumed + unused returned + remaining staged + explicitly scrapped
+Production cost facts + adjustments = capitalized outputs + remaining WIP + allowed loss/variance
+Ledger valuation/WIP postings = owning semantic events exactly once
+Planned purchases accepted = linked Purchasing requirements, not automatically approved PO
+Subcontract value = Purchasing/Invoicing source allocation
+Machine identity = Fixed Assets; downtime = Service & Maintenance source
 ```
+Verify provisional receipt then adjustment, late landed-cost correction, reversal, concurrent reporting, lost response after Inventory commit and retries using real isolated PostgreSQL and original source evidence. Zero unexplained differences.
 
-Zero unexplained differences.
-
-
+---
 
 # 701. MF46 E2E — Simple Production
 
@@ -7589,46 +7598,24 @@ known limitations
 # 714. Build Now — MUST
 
 ```text
-Manufacturing Product Profile
-Plant
-Production Definition
-BOM
-BOM Versioning
-Formula foundation
-Routing foundation
-Operations
-Work Centers foundation
-Approved Substitute Groups
-Substitution Preview
-Current Cost Roll-Up
-Reverse Component Usage
-Product Profitability
-Production Orders
-Definition Snapshot
-Material Requirements
-Inventory reservation/issue/consume/return integration
-Partial Production
-Output Receipt
-Scrap / Yield
-Planned vs Actual Cost
-Variance foundation
-Shop Floor
-MRP
-Planned Production
-Planned Purchase
-Planned Transfer
-Multi-level explosion
-Lead time / delay propagation
-Lot/Serial genealogy
-Subcontracting
-Maintenance integration
-Quality integration seam
-Permissions/RLS/Audit
-Migration
-Performance
-Runbooks
-Acceptance gates
+Manufacturing Product Profile / Plant / Production Definition / Resolver
+BOM and Versioning / Formula and Routing foundation / Operations / Work Centers
+Approved Substitute Groups / Impact Preview / Cost Roll-Up / Reverse Usage
+Product Profitability with matched currency/UOM/price basis
+Production Orders / immutable snapshots / Material Requirements
+Inventory reservation / staging/direct issue / consume / return with actual valuation
+Partial Output Receipt with valuation/reconciliation / Scrap / Yield
+Planned vs Actual Cost / variance foundation / WIP and semantic Ledger boundaries
+Shop Floor with retry-safe operation and output reporting
+MRP with conditionally applicable forecast consumption, netting, pegging
+Planned Production/Purchase/Transfer / multi-level explosion / stale-plan protection
+Lead time / delay propagation / material-versus-capacity readiness
+Lot/Serial genealogy at actual operation/report-batch grain
+Subcontracting / Maintenance integration / fail-closed Quality integration seam
+Permissions/RLS/Audit / forward-only migrations / realistic Development Seed
+Performance / Runbooks / Acceptance gates
 ```
+MF00–MF47 remains binding. Implement optional-by-configuration workflows correctly when enabled, but do not force MPS, routings, quality screens or enterprise planning terminology on a small factory.
 
 ---
 
