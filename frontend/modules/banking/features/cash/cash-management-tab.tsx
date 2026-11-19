@@ -13,6 +13,7 @@ import {
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { Select } from "../../../../components/primitives/select.tsx";
+import { TextField } from "../../../../components/primitives/text-field.tsx";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../../../../components/primitives/table.tsx";
 import { BankingMoney } from "../../components/banking-money.tsx";
 import { StatusBadge } from "../../../../components/fields/status-badge.tsx";
@@ -32,7 +33,8 @@ export function CashManagementTab({ legalEntityId }: Props): React.JSX.Element {
   const [activeSubTab, setActiveSubTab] = useState<"counts" | "pos">("counts");
 
   // Fetch only Cash and PettyCash accounts
-  const { data: accountsData } = useTreasuryAccounts(legalEntityId, { pageSize: 100 });
+  const [accountSearch, setAccountSearch] = useState("");
+  const { data: accountsData } = useTreasuryAccounts(legalEntityId, { pageSize: 100, search: accountSearch.trim() || undefined });
   const cashAccounts = (accountsData?.items ?? []).filter(
     (a) => a.type === "Cash" || a.type === "PettyCash"
   );
@@ -114,7 +116,7 @@ export function CashManagementTab({ legalEntityId }: Props): React.JSX.Element {
               <Button variant="secondary" onClick={() => setIsCustodyOpen(true)} isDisabled={!activeAccountId}>
                 {t("cash.transferCustodyButton")}
               </Button>
-              <Button variant="primary" onClick={() => setIsCountOpen(true)} isDisabled={!activeAccountId}>
+              <Button variant="primary" data-testid="new-cash-count" onClick={() => setIsCountOpen(true)} isDisabled={!activeAccountId}>
                 {t("cash.newCountButton")}
               </Button>
             </>
@@ -143,7 +145,13 @@ export function CashManagementTab({ legalEntityId }: Props): React.JSX.Element {
       {/* Account Selector Surface (shown in counts tab) */}
       {activeSubTab === "counts" && (
         <Surface style={{ padding: "1rem" }}>
-          <div style={{ maxWidth: "360px" }}>
+          <div style={{ maxWidth: "520px", display: "grid", gap: "0.75rem" }}>
+            <TextField
+              label={t("accounts.searchAccounts")}
+              value={accountSearch}
+              onChange={setAccountSearch}
+              placeholder={t("accounts.searchPlaceholder")}
+            />
             <Select
               label={t("cash.selectCashAccount")}
               selectedKey={activeAccountId}

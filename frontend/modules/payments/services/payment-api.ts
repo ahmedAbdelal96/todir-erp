@@ -69,6 +69,7 @@ export const paymentApi = {
     if (params.toDate) searchParams.set("toDate", params.toDate);
     if (params.branchId) searchParams.set("branchId", params.branchId);
     if (params.paymentAccountId) searchParams.set("paymentAccountId", params.paymentAccountId);
+    if (params.currencyCode) searchParams.set("currencyCode", params.currencyCode);
 
     const query = searchParams.toString() ? `?${searchParams.toString()}` : "";
     return httpClient<PaymentPage>(`/api/v1/payments/legal-entities/${params.legalEntityId}${query}`);

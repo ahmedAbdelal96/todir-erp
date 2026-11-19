@@ -62,10 +62,10 @@ export function CashForecastTab({ legalEntityId }: Props): React.JSX.Element {
           <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: "var(--color-content-muted)" }}>{t("forecast.subtitle")}</p>
         </div>
         <div style={{ display: "flex", gap: "0.5rem" }}>
-          <Button variant="secondary" onClick={() => setIsVersionOpen(true)}>
+          <Button variant="secondary" data-testid="new-forecast-version" onClick={() => setIsVersionOpen(true)}>
             {t("forecast.newVersionButton")}
           </Button>
-          <Button variant="primary" onClick={() => setIsItemOpen(true)} isDisabled={!forecastData?.id}>
+          <Button variant="primary" data-testid="new-forecast-item" onClick={() => setIsItemOpen(true)} isDisabled={!forecastData?.id}>
             {t("forecast.newManualItemButton")}
           </Button>
         </div>

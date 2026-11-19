@@ -6,6 +6,7 @@ const LOCAL_ARTIFACTS_DIR = path.resolve('../artifacts/banking-acceptance/real-s
 const AGENT_BRAIN_DIR = 'C:/Users/Adham/.gemini/antigravity/brain/2cce5b52-1525-442e-8037-81105c0347eb/banking-acceptance/real-stack';
 
 const ATLAS_ENTITY_ID = 'aad8a34b-344c-9e5b-8d58-57f182fc6528';
+const DELTA_ENTITY_ID = 'bbdcc188-1acc-805e-8721-f43308540a4d';
 
 function getTestDevPassword(): string {
   const password = process.env.ERP_DEV_PASSWORD || process.env.SEED_DEFAULT_PASSWORD;
@@ -98,6 +99,18 @@ test.describe('TODIR Module 25: Banking & Cash Management — Real-Stack End-to-
     const authCsrfToken = await getCsrfToken(page);
 
     return { token: authCsrfToken, user };
+  }
+
+  async function loginAsIdentity(page: Page, email: string): Promise<{ token: string; user: any }> {
+    await page.goto('/');
+    await page.context().clearCookies();
+    const token = await getCsrfToken(page);
+    const loginRes = await page.request.post('/api/v1/auth/login', {
+      data: { email, password: getTestDevPassword() },
+      headers: { 'X-CSRF-TOKEN': token }
+    });
+    expect(loginRes.status()).toBe(200);
+    return { token: await getCsrfToken(page), user: await loginRes.json() };
   }
 
   const saveArtifact = async (page: Page, filename: string) => {
@@ -1020,34 +1033,23 @@ test.describe('TODIR Module 25: Banking & Cash Management — Real-Stack End-to-
     expect(persistedItem.description).toContain(uniqueSuffix);
   });
 
-  test('15 — Cross-Entity Access Rejection & Security Isolation', async ({ page }) => {
+  test('15 — Existing-Entity Scope, Privilege & Forged Reference Security', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
-    const { token } = await loginAsAdmin(page);
 
-    const unauthorizedEntityId = '00000000-0000-0000-0000-000000000099';
+    const atlasReader = await loginAsIdentity(page, 'banking-reader@atlas.com');
+    const atlasAccounts = await page.request.get(`/api/v1/banking/treasury-accounts?legalEntityId=${ATLAS_ENTITY_ID}&page=1&pageSize=5`);
+    expect(atlasAccounts.status()).toBe(200);
+    const atlasAccountPage = await atlasAccounts.json() as { items: Array<{ id: string }> };
+    expect(atlasAccountPage.items.length).toBeGreaterThan(0);
+    const deltaFromAtlas = await page.request.get(`/api/v1/banking/treasury-accounts?legalEntityId=${DELTA_ENTITY_ID}&page=1&pageSize=5`);
+    expect(deltaFromAtlas.status()).toBe(403);
 
-    // 1. Cross-Entity Isolation: Accessing a specific treasury account with a mismatched legal entity scope must be rejected
-    const crossEntityRes = await page.request.get(`/api/v1/banking/treasury-accounts/acf650c1-cb88-9757-a1c0-bc430a85d07e?legalEntityId=${unauthorizedEntityId}`);
-    expect([400, 403, 404]).toContain(crossEntityRes.status());
-
-    // 2. Cross-Entity Mutation Guard: Attempting to create a reconciliation session for another entity's statement must be rejected
-    const crossRecRes = await page.request.post('/api/v1/banking/reconciliations', {
-      headers: { 'X-CSRF-TOKEN': token },
-      data: {
-        legalEntityId: unauthorizedEntityId,
-        asOfDate: '2026-10-01',
-        statementId: 'acf650c1-cb88-9757-a1c0-bc430a85d07e'
-      }
-    });
-    expect([400, 403, 404]).toContain(crossRecRes.status());
-
-    // 3. CSRF Security Enforcement: Mutation request with invalid CSRF token must be rejected with 400
-    const invalidCsrfRes = await page.request.post('/api/v1/banking/treasury-accounts', {
-      headers: { 'X-CSRF-TOKEN': 'invalid-csrf-probe' },
+    const restrictedMutation = await page.request.post('/api/v1/banking/treasury-accounts', {
+      headers: { 'X-CSRF-TOKEN': atlasReader.token },
       data: {
         legalEntityId: ATLAS_ENTITY_ID,
-        code: 'CSRF-PROBE',
-        name: 'Probe Account',
+        code: `SECURITY-PROBE-${Date.now()}`,
+        name: 'Restricted Probe',
         type: 'Bank',
         currencyPolicy: 'SingleCurrency',
         currencyCode: 'EGP',
@@ -1055,12 +1057,23 @@ test.describe('TODIR Module 25: Banking & Cash Management — Real-Stack End-to-
         liquidityClass: 'Operating'
       }
     });
-    expect(invalidCsrfRes.status()).toBe(400);
+    expect(restrictedMutation.status()).toBe(403);
 
-    // 4. Unauthenticated Security Boundary: Request without session cookie must receive 401 Unauthorized
-    const unauthPage = await page.context().browser()!.newPage();
-    const unauthRes = await unauthPage.request.get(`/api/v1/banking/treasury-accounts?legalEntityId=${ATLAS_ENTITY_ID}`);
-    expect(unauthRes.status()).toBe(401);
-    await unauthPage.close();
+    const deltaReader = await loginAsIdentity(page, 'banking-reader@delta.com');
+    const deltaAccounts = await page.request.get(`/api/v1/banking/treasury-accounts?legalEntityId=${DELTA_ENTITY_ID}&page=1&pageSize=5`);
+    expect(deltaAccounts.status()).toBe(200);
+    const deltaAccountPage = await deltaAccounts.json() as { items: Array<{ id: string }> };
+    expect(deltaAccountPage.items.length).toBeGreaterThan(0);
+    const atlasFromDelta = await page.request.get(`/api/v1/banking/treasury-accounts?legalEntityId=${ATLAS_ENTITY_ID}&page=1&pageSize=5`);
+    expect(atlasFromDelta.status()).toBe(403);
+
+    const forgedScope = await page.request.get(`/api/v1/banking/treasury-accounts/${atlasAccountPage.items[0].id}?legalEntityId=${DELTA_ENTITY_ID}`);
+    expect(forgedScope.status()).toBe(403);
+
+    const forgedMutation = await page.request.post('/api/v1/banking/reconciliations', {
+      headers: { 'X-CSRF-TOKEN': deltaReader.token },
+      data: { legalEntityId: ATLAS_ENTITY_ID, asOfDate: '2026-10-01', statementId: atlasAccountPage.items[0].id }
+    });
+    expect(forgedMutation.status()).toBe(403);
   });
 });

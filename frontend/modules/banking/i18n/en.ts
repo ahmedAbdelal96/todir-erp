@@ -239,6 +239,7 @@ export const en = {
     reloadSession: "Reload Session",
     searchPaymentsPlaceholder: "Search by payment number or reference...",
     matchingCurrency: "Matching Currency",
+    accountCurrencyUnavailable: "Matching is unavailable until the treasury account currency is known.",
     paymentAccountMismatch: "Selected payment does not belong to this treasury account",
     directionMismatch: "Payment direction does not match statement line direction",
     paymentAlreadyClaimed: "This payment has already been claimed by another reconciliation match",

@@ -356,7 +356,7 @@ export function CashCountModal({
           <Button type="button" variant="secondary" onClick={onClose} isDisabled={createMutation.isPending}>
             {t("accounts.cancel")}
           </Button>
-          <Button type="submit" variant="primary" isDisabled={isSubmissionDisabled}>
+          <Button type="submit" data-testid="submit-cash-count" variant="primary" isDisabled={isSubmissionDisabled}>
             {createMutation.isPending ? t("common.loading") : t("cash.countSubmit")}
           </Button>
         </div>

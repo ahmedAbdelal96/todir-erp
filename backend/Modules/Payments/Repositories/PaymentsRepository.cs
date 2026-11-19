@@ -1260,10 +1260,11 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
               and ($7::text is null or p.business_state=$7)
               and ($8::date is null or p.payment_date >= $8)
               and ($9::date is null or p.payment_date <= $9)
+              and ($10::text is null or p.currency_code=$10)
             """;
         await using var countCommand = new NpgsqlCommand(countSql, connection);
         Add(countCommand, tenant.Value, query.LegalEntityId, Db(query.BranchId), Db(query.PaymentAccountId),
-            NormalizeSearch(query.Search), query.Direction?.ToString(), query.State?.ToString(), Db(query.FromDate), Db(query.ToDate));
+            NormalizeSearch(query.Search), query.Direction?.ToString(), query.State?.ToString(), Db(query.FromDate), Db(query.ToDate), Db(query.CurrencyCode is null ? null : PaymentRules.NormalizeCurrency(query.CurrencyCode)));
         var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
         var sql = """
             select p.id,p.legal_entity_id,p.payment_number,p.branch_id,p.direction,p.payment_type,p.party_id,p.amount,p.currency_code,p.method,p.payment_account_id,p.payment_date,p.posting_date,p.value_date,p.bank_reference,p.customer_reference,p.supplier_reference,p.source_type,p.source_reference,p.business_state,p.completed_at,p.row_version
@@ -1276,11 +1277,12 @@ public sealed class PaymentsRepository(ITransactionCoordinator transactions, ITr
               and ($7::text is null or p.business_state=$7)
               and ($8::date is null or p.payment_date >= $8)
               and ($9::date is null or p.payment_date <= $9)
-            order by p.payment_date desc,p.id desc offset $10 limit $11
+              and ($10::text is null or p.currency_code=$10)
+            order by p.payment_date desc,p.id desc offset $11 limit $12
             """;
         await using var command = new NpgsqlCommand(sql, connection);
         Add(command, tenant.Value, query.LegalEntityId, Db(query.BranchId), Db(query.PaymentAccountId),
-            NormalizeSearch(query.Search), query.Direction?.ToString(), query.State?.ToString(), Db(query.FromDate), Db(query.ToDate),
+            NormalizeSearch(query.Search), query.Direction?.ToString(), query.State?.ToString(), Db(query.FromDate), Db(query.ToDate), Db(query.CurrencyCode is null ? null : PaymentRules.NormalizeCurrency(query.CurrencyCode)),
             (page - 1) * pageSize, pageSize + 1);
         var result = new List<PaymentRecord>(); await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) result.Add(ReadPayment(reader));

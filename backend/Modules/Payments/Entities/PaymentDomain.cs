@@ -39,7 +39,8 @@ public sealed record InternalTransferResult(Guid Id, PaymentRecord SourcePayment
     string BaseCurrencyCode, string? FxSnapshot, DateTimeOffset CompletedAt);
 
 public sealed record PaymentListQuery(Guid LegalEntityId, int Page, int PageSize, string? Search, PaymentDirection? Direction,
-    PaymentBusinessState? State, DateOnly? FromDate, DateOnly? ToDate, Guid? BranchId = null, Guid? PaymentAccountId = null);
+    PaymentBusinessState? State, DateOnly? FromDate, DateOnly? ToDate, Guid? BranchId = null, Guid? PaymentAccountId = null,
+    string? CurrencyCode = null);
 
 public sealed record PaymentPage(IReadOnlyList<PaymentRecord> Items, int Page, int PageSize, bool HasMore, int TotalCount = 0);
 

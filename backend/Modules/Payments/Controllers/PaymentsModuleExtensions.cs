@@ -63,12 +63,12 @@ public static class PaymentsModuleExtensions
             catch (PaymentException exception) { return Render(exception); }
         });
         group.MapGet("/legal-entities/{entityId:guid}", async (Guid entityId, Guid? branchId, int? page, int? pageSize, string? search,
-            PaymentDirection? direction, PaymentBusinessState? state, DateOnly? fromDate, DateOnly? toDate, Guid? paymentAccountId, HttpContext http,
+            PaymentDirection? direction, PaymentBusinessState? state, DateOnly? fromDate, DateOnly? toDate, Guid? paymentAccountId, string? currencyCode, HttpContext http,
             PaymentsService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
             var access = await AuthorizeAsync(http, subjects, authorizer, "payments.read", entityId, branchId, ct);
             if (access is null) return Results.Unauthorized(); if (!access.Allowed) return Results.Forbid();
-            return Results.Ok(await service.ListAsync(access.Tenant, new(entityId, page ?? 1, pageSize ?? 50, search, direction, state, fromDate, toDate, branchId, paymentAccountId), ct));
+            return Results.Ok(await service.ListAsync(access.Tenant, new(entityId, page ?? 1, pageSize ?? 50, search, direction, state, fromDate, toDate, branchId, paymentAccountId, currencyCode), ct));
         });
         group.MapGet("/legal-entities/{entityId:guid}/{paymentId:guid}", async (Guid entityId, Guid paymentId, Guid? branchId,
             HttpContext http, PaymentsService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>

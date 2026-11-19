@@ -239,6 +239,7 @@ export const ar = {
     reloadSession: "إعادة تحميل الجلسة",
     searchPaymentsPlaceholder: "البحث برقم الدفعة أو المرجع...",
     matchingCurrency: "العملة المطابقة",
+    accountCurrencyUnavailable: "لا يمكن بدء المطابقة قبل تحميل العملة المعتمدة لحساب الخزانة.",
     paymentAccountMismatch: "الدفعة المحددة لا تنتمي إلى حساب الخزانة هذا",
     directionMismatch: "اتجاه الدفعة لا يطابق اتجاه بند كشف الحساب",
     paymentAlreadyClaimed: "تمت تسوية هذه الدفعة مسبقاً في مطابقة بنكية أخرى",

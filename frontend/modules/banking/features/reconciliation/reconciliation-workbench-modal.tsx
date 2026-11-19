@@ -20,7 +20,7 @@ import { formatDate } from "../../../../components/formatting/date-formatter.ts"
 import { CheckCircleIcon, AlertTriangleIcon } from "../../components/banking-icons.tsx";
 import { paymentApi } from "../../../payments/public.ts";
 import type { PaymentRecord } from "../../../payments/public.ts";
-import type { ReconciliationDto } from "../../types.ts";
+import type { ReconciliationDto, StatementLineDto } from "../../types.ts";
 
 interface Props {
   readonly legalEntityId: string;
@@ -38,6 +38,7 @@ export function ReconciliationWorkbenchModal({
   const { t } = useTranslation("banking");
 
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
+  const [selectedLinesMap, setSelectedLinesMap] = useState<Map<string, StatementLineDto>>(new Map());
   const [selectedPaymentsMap, setSelectedPaymentsMap] = useState<
     Map<string, { payment: PaymentRecord; matchedAmount: number }>
   >(new Map());
@@ -47,6 +48,7 @@ export function ReconciliationWorkbenchModal({
   const [availablePayments, setAvailablePayments] = useState<readonly PaymentRecord[]>([]);
   const [paymentSearch, setPaymentSearch] = useState("");
   const [paymentPage, setPaymentPage] = useState(1);
+  const [linePage, setLinePage] = useState(1);
   const [hasMorePayments, setHasMorePayments] = useState(false);
   const [isLoadingPayments, setIsLoadingPayments] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -62,14 +64,15 @@ export function ReconciliationWorkbenchModal({
     legalEntityId,
     currentSession?.treasuryAccountId ?? ""
   );
-  const activeCurrency = treasuryAccount?.currencyCode || "EGP";
+  const activeCurrency = treasuryAccount?.currencyCode ?? null;
+  const displayCurrency = activeCurrency ?? "—";
 
   const statementId = currentSession?.statementId ?? "";
 
   const { data: linesData, refetch: refetchLines } = useStatementLines(
     legalEntityId,
     statementId,
-    1,
+    linePage,
     50
   );
   const { data: suggestions, refetch: refetchSuggestions } = useReconciliationSuggestions(
@@ -86,14 +89,18 @@ export function ReconciliationWorkbenchModal({
   const finalizeMutation = useFinalizeReconciliation(legalEntityId, currentSession?.id ?? "");
 
   const lines = linesData?.items ?? [];
-  const selectedLines = lines.filter((l) => selectedLineIds.includes(l.id));
+  const selectedLines = Array.from(selectedLinesMap.values());
   const lineDirection = selectedLines[0]?.direction;
   const expectedPaymentDirection =
     lineDirection === "Credit" ? "Incoming" : lineDirection === "Debit" ? "Outgoing" : undefined;
 
   // Load eligible completed payments for this treasury account, currency & direction
   const fetchPayments = useCallback(async () => {
-    if (!isOpen || !legalEntityId) return;
+    if (!isOpen || !legalEntityId || !activeCurrency) {
+      setAvailablePayments([]);
+      setHasMorePayments(false);
+      return;
+    }
     setIsLoadingPayments(true);
     try {
       const res = await paymentApi.listPayments({
@@ -103,16 +110,10 @@ export function ReconciliationWorkbenchModal({
         page: paymentPage,
         pageSize: 20,
         state: "Completed",
-        search: paymentSearch.trim() || undefined
+        search: paymentSearch.trim() || undefined,
+        currencyCode: activeCurrency
       });
-      // Authoritatively filter by account currency & payment account
-      const currencyFiltered = (res.items ?? []).filter(
-        (p) =>
-          (!p.currencyCode || p.currencyCode === activeCurrency) &&
-          (!currentSession?.treasuryAccountId || p.paymentAccountId === currentSession.treasuryAccountId) &&
-          (!expectedPaymentDirection || p.direction === expectedPaymentDirection)
-      );
-      setAvailablePayments(currencyFiltered);
+      setAvailablePayments(res.items ?? []);
       setHasMorePayments(res.hasMore);
     } catch {
       setAvailablePayments([]);
@@ -124,6 +125,15 @@ export function ReconciliationWorkbenchModal({
   useEffect(() => {
     void fetchPayments();
   }, [fetchPayments]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setLinePage(1);
+    setPaymentPage(1);
+    setSelectedLineIds([]);
+    setSelectedLinesMap(new Map());
+    setSelectedPaymentsMap(new Map());
+  }, [isOpen, reconciliation?.id]);
 
   if (!isOpen || !currentSession) return null;
 
@@ -145,6 +155,10 @@ export function ReconciliationWorkbenchModal({
   const matchDiff = Math.round((externalSum - calculatedSystemSum) * 100) / 100;
 
   const handleToggleLine = (line: { id: string; currencyCode?: string; direction?: string }) => {
+    if (!activeCurrency) {
+      setErrorMsg(t("reconciliation.accountCurrencyUnavailable"));
+      return;
+    }
     if (line.currencyCode && line.currencyCode !== activeCurrency) {
       setErrorMsg(t("reconciliation.crossCurrencyForbidden"));
       return;
@@ -154,12 +168,23 @@ export function ReconciliationWorkbenchModal({
       return;
     }
     setErrorMsg(null);
-    setSelectedLineIds((prev) =>
-      prev.includes(line.id) ? prev.filter((id) => id !== line.id) : [...prev, line.id]
-    );
+    setSelectedLineIds((prev) => prev.includes(line.id) ? prev.filter((id) => id !== line.id) : [...prev, line.id]);
+    setSelectedLinesMap((prev) => {
+      const next = new Map(prev);
+      if (next.has(line.id)) next.delete(line.id);
+      else {
+        const selectedLine = lines.find((item) => item.id === line.id);
+        if (selectedLine) next.set(line.id, selectedLine);
+      }
+      return next;
+    });
   };
 
   const handleTogglePayment = (p: PaymentRecord) => {
+    if (!activeCurrency) {
+      setErrorMsg(t("reconciliation.accountCurrencyUnavailable"));
+      return;
+    }
     if (p.currencyCode && p.currencyCode !== activeCurrency) {
       setErrorMsg(t("reconciliation.crossCurrencyForbidden"));
       return;
@@ -224,6 +249,7 @@ export function ReconciliationWorkbenchModal({
           (isDirectAdjustment ? t("reconciliation.directAdjustmentNotice") : null)
       });
       setSelectedLineIds([]);
+      setSelectedLinesMap(new Map());
       setSelectedPaymentsMap(new Map());
       setSystemAmountInput("");
       setExplanation("");
@@ -292,7 +318,7 @@ export function ReconciliationWorkbenchModal({
               {t("reconciliation.matchingCurrency")}:
             </span>{" "}
             <span style={{ fontWeight: 700, color: "var(--color-brand-primary)" }}>
-              <BdiText>{activeCurrency}</BdiText>
+              <BdiText>{displayCurrency}</BdiText>
             </span>
           </div>
           <div>
@@ -300,7 +326,7 @@ export function ReconciliationWorkbenchModal({
               {t("reconciliation.externalBalance")}:
             </span>{" "}
             <span style={{ fontWeight: 600 }}>
-              <BankingMoney amount={currentSession.externalBalance} currency={activeCurrency} />
+              <BankingMoney amount={currentSession.externalBalance} currency={displayCurrency} />
             </span>
           </div>
           <div>
@@ -309,7 +335,7 @@ export function ReconciliationWorkbenchModal({
             </span>{" "}
             <span style={{ fontWeight: 600 }}>
               {currentSession.bookBalance != null ? (
-                <BankingMoney amount={currentSession.bookBalance} currency={activeCurrency} />
+                <BankingMoney amount={currentSession.bookBalance} currency={displayCurrency} />
               ) : (
                 "—"
               )}
@@ -326,7 +352,7 @@ export function ReconciliationWorkbenchModal({
               }}
             >
               {currentSession.difference != null ? (
-                <BankingMoney amount={currentSession.difference} currency={activeCurrency} />
+                <BankingMoney amount={currentSession.difference} currency={displayCurrency} />
               ) : (
                 "—"
               )}
@@ -359,6 +385,12 @@ export function ReconciliationWorkbenchModal({
                 {t("reconciliation.reloadSession")}
               </Button>
             )}
+          </div>
+        )}
+
+        {!activeCurrency && (
+          <div role="alert" style={{ padding: "0.75rem 1rem", background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a", borderRadius: "var(--radius-sm)", fontSize: "0.875rem" }}>
+            {t("reconciliation.accountCurrencyUnavailable")}
           </div>
         )}
 
@@ -421,7 +453,10 @@ export function ReconciliationWorkbenchModal({
                     size="compact"
                     variant="secondary"
                     onClick={() => {
+                      const suggestedLine = lines.find((line) => line.id === s.statementLineId);
+                      if (!suggestedLine) return;
                       setSelectedLineIds([s.statementLineId]);
+                      setSelectedLinesMap(new Map([[suggestedLine.id, suggestedLine]]));
                       setSystemAmountInput(String(s.amount));
                     }}
                   >
@@ -445,8 +480,15 @@ export function ReconciliationWorkbenchModal({
                 color: "var(--color-brand-primary)"
               }}
             >
-              {t("reconciliation.externalLinesTitle")} ({lines.length})
+                {t("reconciliation.externalLinesTitle")} ({linesData?.totalCount ?? lines.length})
             </div>
+            {(linePage > 1 || Boolean(linesData?.hasMore)) && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.375rem", fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                <Button size="compact" variant="secondary" isDisabled={linePage <= 1} onClick={() => setLinePage((p) => Math.max(1, p - 1))}>&larr;</Button>
+                <span>{linePage}</span>
+                <Button size="compact" variant="secondary" isDisabled={!linesData?.hasMore} onClick={() => setLinePage((p) => p + 1)}>&rarr;</Button>
+              </div>
+            )}
             <div
               style={{
                 maxHeight: "280px",
@@ -501,7 +543,9 @@ export function ReconciliationWorkbenchModal({
                           <TableCell style={{ width: "36px" }}>
                             <input
                               type="checkbox"
+                              data-testid={`statement-line-${line.id}`}
                               checked={isSelected}
+                              onClick={(event) => event.stopPropagation()}
                               onChange={() => handleToggleLine(line)}
                               aria-label={line.externalLineId}
                             />
@@ -584,7 +628,7 @@ export function ReconciliationWorkbenchModal({
                 <span style={{ fontWeight: 600 }}>
                   <BankingMoney
                     amount={selectedPaymentsList.reduce((acc, item) => acc + item.matchedAmount, 0)}
-                    currency={activeCurrency}
+                    currency={displayCurrency}
                   />
                 </span>
               </div>
@@ -593,6 +637,7 @@ export function ReconciliationWorkbenchModal({
             {!isDirectAdjustment && (
               <div style={{ marginBottom: "0.5rem" }}>
                 <TextField
+                  data-testid="reconciliation-payment-search"
                   value={paymentSearch}
                   onChange={(val) => {
                     setPaymentSearch(val);
@@ -682,8 +727,10 @@ export function ReconciliationWorkbenchModal({
                             <TableCell style={{ width: "36px" }}>
                               <input
                                 type="checkbox"
+                                data-testid={`reconciliation-payment-${p.id}`}
                                 checked={isSelected}
                                 disabled={isFullyClaimed}
+                                onClick={(event) => event.stopPropagation()}
                                 onChange={() => handleTogglePayment(p)}
                                 aria-label={p.number}
                               />
@@ -700,7 +747,7 @@ export function ReconciliationWorkbenchModal({
                             <TableCell align="end" style={{ whiteSpace: "nowrap" }}>
                               <BankingMoney
                                 amount={remainingAmount}
-                                currency={p.currencyCode || activeCurrency}
+                                currency={p.currencyCode || displayCurrency}
                               />
                               {isFullyClaimed && (
                                 <span style={{ fontSize: "0.75rem", color: "var(--color-status-danger)", display: "block" }}>
@@ -774,7 +821,7 @@ export function ReconciliationWorkbenchModal({
                 {t("reconciliation.selectedExternal")}
               </span>
               <span style={{ fontSize: "1.125rem", fontWeight: 700 }}>
-                <BankingMoney amount={externalSum} currency={activeCurrency} />
+                <BankingMoney amount={externalSum} currency={displayCurrency} />
               </span>
             </div>
             <div>
@@ -782,7 +829,7 @@ export function ReconciliationWorkbenchModal({
                 {t("reconciliation.selectedSystem")}
               </span>
               <span style={{ fontSize: "1.125rem", fontWeight: 700 }}>
-                <BankingMoney amount={calculatedSystemSum} currency={activeCurrency} />
+                <BankingMoney amount={calculatedSystemSum} currency={displayCurrency} />
               </span>
             </div>
             <div>
@@ -796,7 +843,7 @@ export function ReconciliationWorkbenchModal({
                   color: matchDiff === 0 ? "#16a34a" : "var(--color-status-danger)"
                 }}
               >
-                <BankingMoney amount={matchDiff} currency={activeCurrency} />
+                <BankingMoney amount={matchDiff} currency={displayCurrency} />
               </span>
             </div>
           </div>
@@ -814,7 +861,8 @@ export function ReconciliationWorkbenchModal({
             <Button
               variant="primary"
               onClick={handleConfirmMatch}
-              isDisabled={selectedLineIds.length === 0 || addMatchMutation.isPending}
+              data-testid="confirm-reconciliation-match"
+              isDisabled={!activeCurrency || selectedLineIds.length === 0 || addMatchMutation.isPending}
             >
               {addMatchMutation.isPending ? t("common.loading") : t("reconciliation.confirmMatchButton")}
             </Button>
@@ -857,6 +905,7 @@ export function ReconciliationWorkbenchModal({
               <Button
                 variant="primary"
                 onClick={handleFinalize}
+                data-testid="finalize-reconciliation"
                 isDisabled={!canFinalize || finalizeMutation.isPending}
               >
                 {finalizeMutation.isPending ? t("common.loading") : t("reconciliation.finalizeAction")}

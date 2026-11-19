@@ -59,7 +59,7 @@ export function TransfersTab({ legalEntityId }: Props): React.JSX.Element {
           <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: "var(--color-content-muted)" }}>{t("transfers.subtitle")}</p>
         </div>
         {activeSubTab === "transfers" && (
-          <Button variant="primary" onClick={() => setIsNewTransferOpen(true)}>
+          <Button variant="primary" data-testid="new-internal-transfer" onClick={() => setIsNewTransferOpen(true)}>
             {t("transfers.newTransferButton")}
           </Button>
         )}

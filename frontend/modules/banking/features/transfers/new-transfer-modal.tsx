@@ -165,19 +165,18 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
         )}
 
         {/* Account search helper for large account lists */}
-        {allAccounts.length > 5 && (
-          <div>
+        <div>
             <TextField
               label={t("accounts.searchAccounts")}
               value={accountSearch}
               onChange={(val) => setAccountSearch(val)}
               placeholder={t("accounts.searchPlaceholder")}
             />
-          </div>
-        )}
+        </div>
 
         <div>
           <Select
+            data-testid="transfer-source-account"
             label={t("transfers.sourceAccountLabel")}
             selectedKey={sourceAccountId}
             onSelectionChange={(key) => handleSourceAccountChange(key ? String(key) : "")}
@@ -194,6 +193,7 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
 
         <div>
           <Select
+            data-testid="transfer-destination-account"
             label={t("transfers.destinationAccountLabel")}
             selectedKey={destAccountId}
             onSelectionChange={(key) => setDestAccountId(key ? String(key) : "")}

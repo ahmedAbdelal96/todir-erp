@@ -165,7 +165,6 @@ export function ReconciliationTab({ legalEntityId }: Props): React.JSX.Element {
                           variant="secondary"
                           data-testid={`open-workbench-${session.id}`}
                           onClick={() => setSelectedSession(session)}
-                          onPress={() => setSelectedSession(session)}
                         >
                           {t("reconciliation.openWorkbench")}
                         </Button>
