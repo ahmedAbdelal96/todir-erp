@@ -20,6 +20,7 @@ public interface IInventoryCapabilities
 {
     Task<Guid> ReserveAsync(Guid tenantId, Guid actorId, InventoryReservationRequest request, CancellationToken cancellationToken = default);
     Task<Guid> ConsumeReservationAsync(Guid tenantId, Guid actorId, Guid reservationId, InventoryMovementRequest issue, CancellationToken cancellationToken = default);
+    Task<Guid> ReceiveAsync(Guid tenantId, Guid actorId, InventoryMovementRequest receipt, CancellationToken cancellationToken = default);
     Task<Guid> ReceiveReturnAsync(Guid tenantId, Guid actorId, InventoryReturnRequest request, CancellationToken cancellationToken = default);
     Task<Guid> ReverseOperationAsync(Guid tenantId, Guid actorId, Guid legalEntityId, Guid operationId,
         DateOnly operationalDate, DateOnly postingDate, string idempotencyKey, CancellationToken cancellationToken = default);

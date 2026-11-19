@@ -28,5 +28,6 @@
     <ProjectReference Include="../Modules/Projects/Projects.csproj" />
     <ProjectReference Include="../Modules/FixedAssets/FixedAssets.csproj" />
     <ProjectReference Include="../Modules/Service/Service.csproj" />
+    <ProjectReference Include="../Modules/Manufacturing/Manufacturing.csproj" />
   </ItemGroup>
 </Project>

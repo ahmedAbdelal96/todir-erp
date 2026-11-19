@@ -165,6 +165,14 @@ public sealed class InventoryService(InventoryRepository repository, ILedgerPost
     public Task<IReadOnlyList<InventoryAsOfView>> GetStockAsOfAsync(TenantId tenant, Guid entity, DateTimeOffset asOf, Guid? variantId, Guid? warehouseId, int limit, CancellationToken ct) => repository.GetStockAsOfAsync(tenant, entity, asOf, variantId, warehouseId, limit, ct);
     public Task<IReadOnlyList<ProductLocatorView>> LocateProductAsync(TenantId tenant, Guid entity, Guid variantId, int limit, CancellationToken ct) => repository.LocateProductAsync(tenant, entity, variantId, limit, ct);
     public Task<InventoryOperationResult> ReceiveAsync(TenantId tenant, Guid actor, Guid entity, ConfirmStockMovementRequest request, Guid correlationId, string? traceParent, CancellationToken ct) => repository.ReceiveAsync(tenant, actor, entity, request, correlationId, traceParent, ct);
+    public async Task<Guid> ReceiveAsync(Guid tenantId, Guid actorId, Shared.Contracts.Inventory.InventoryMovementRequest receipt, CancellationToken cancellationToken = default)
+    {
+        var result = await repository.ReceiveAsync(new TenantId(tenantId), actorId, receipt.LegalEntityId,
+            new ConfirmStockMovementRequest(receipt.ProductVariantId, receipt.WarehouseId, receipt.LocationId, receipt.EnteredUomId,
+                receipt.Quantity, receipt.OperationalDate, receipt.PostingDate, receipt.IdempotencyKey, receipt.SourceModule,
+                receipt.SourceDocumentId, StockStatus.Available, receipt.LotId, receipt.SerialId), Guid.CreateVersion7(), null, cancellationToken);
+        return result.OperationId;
+    }
     public async Task<Shared.Contracts.Inventory.PurchaseReceiptResult> ReceivePurchaseAsync(Guid tenantId, Guid actorId, Shared.Contracts.Inventory.PurchaseReceiptRequest request, CancellationToken cancellationToken = default)
     {
         var receipts = new List<Guid>();

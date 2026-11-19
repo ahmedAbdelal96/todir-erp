@@ -21,6 +21,7 @@ using Modules.CRM;
 using Modules.Expenses;
 using Modules.POS;
 using Modules.Projects;
+using Modules.Manufacturing;
 using Modules.FixedAssets;
 using Modules.Service;
 using Modules.FixedAssets.Controllers;
@@ -56,6 +57,7 @@ builder.Services.AddCore(builder.Configuration, bus =>
     bus.AddConsumer<ProjectsNotificationConsumer, ProjectsNotificationConsumerDefinition>();
     bus.AddConsumer<ProjectsSourceEventConsumer, ProjectsSourceEventConsumerDefinition>();
     bus.AddConsumer<ProjectCapitalHandoffConsumer, ProjectCapitalHandoffConsumerDefinition>();
+    bus.AddConsumer<ManufacturingIntegrationConsumer, ManufacturingIntegrationConsumerDefinition>();
 });
 builder.Services.AddSampleModule();
 builder.Services.AddCatalogModule();
@@ -76,6 +78,7 @@ builder.Services.AddCrmModule();
 builder.Services.AddExpensesModule();
 builder.Services.AddPosModule();
 builder.Services.AddProjectsModule();
+builder.Services.AddManufacturingModule();
 builder.Services.AddFixedAssetsModule();
 builder.Services.AddServiceModule();
 builder.Services.AddScheduling(builder.Configuration, options =>
