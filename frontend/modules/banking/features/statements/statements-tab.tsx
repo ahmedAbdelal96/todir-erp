@@ -24,7 +24,7 @@ interface Props {
 export function StatementsTab({ legalEntityId }: Props): React.JSX.Element {
   const { t } = useTranslation("banking");
 
-  const { data: accountsData } = useTreasuryAccounts(legalEntityId);
+  const { data: accountsData } = useTreasuryAccounts(legalEntityId, { pageSize: 100 });
   const accounts = (accountsData?.items ?? []).filter((a) => a.status === "Active" || a.status === "Suspended");
 
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");

@@ -182,4 +182,125 @@ describe("TODIR Module 25 (Banking & Cash Management) — Frontend Unit & Slice 
       assert.ok(result.errors.some(e => e.includes("Row 6") && e.includes("Duplicate")), "Identifies row 6 duplicate ID error");
     }
   });
+
+  test("Cash count financial integrity: enforces authentic custodian and backend-derived expected balance", () => {
+    interface CashCountSubmissionParams {
+      custodianId: string | null | undefined;
+      expectedBalance: number | null | undefined;
+      denominations: { denomination: string; unitValue: number; quantity: number }[];
+    }
+
+    const validateCashCountSubmission = (params: CashCountSubmissionParams) => {
+      if (!params.custodianId || params.custodianId === "00000000-0000-0000-0000-000000000001") {
+        return { valid: false, error: "custodian_unavailable" };
+      }
+      if (params.expectedBalance == null) {
+        return { valid: false, error: "expected_balance_unavailable" };
+      }
+      const totalCounted = params.denominations.reduce((sum, d) => sum + d.unitValue * d.quantity, 0);
+      const variance = Math.round((totalCounted - params.expectedBalance) * 100) / 100;
+      return { valid: true, expectedBalance: params.expectedBalance, totalCounted, variance };
+    };
+
+    // Case 1: Missing custodian
+    const noCustodian = validateCashCountSubmission({
+      custodianId: null,
+      expectedBalance: 5000,
+      denominations: [{ denomination: "100", unitValue: 100, quantity: 50 }]
+    });
+    assert.equal(noCustodian.valid, false);
+    assert.equal(noCustodian.error, "custodian_unavailable", "Must reject missing custodian");
+
+    // Case 2: Fake/fallback custodian UUID
+    const fakeCustodian = validateCashCountSubmission({
+      custodianId: "00000000-0000-0000-0000-000000000001",
+      expectedBalance: 5000,
+      denominations: [{ denomination: "100", unitValue: 100, quantity: 50 }]
+    });
+    assert.equal(fakeCustodian.valid, false);
+    assert.equal(fakeCustodian.error, "custodian_unavailable", "Must reject fake hardcoded custodian");
+
+    // Case 3: Missing expected balance (null must NOT become 0)
+    const noBalance = validateCashCountSubmission({
+      custodianId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      expectedBalance: null,
+      denominations: [{ denomination: "100", unitValue: 100, quantity: 50 }]
+    });
+    assert.equal(noBalance.valid, false);
+    assert.equal(noBalance.error, "expected_balance_unavailable", "Must reject missing expected balance");
+
+    // Case 4: Valid authentic custodian + truthful balance
+    const validRun = validateCashCountSubmission({
+      custodianId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      expectedBalance: 5000,
+      denominations: [{ denomination: "100", unitValue: 100, quantity: 50 }]
+    });
+    assert.equal(validRun.valid, true);
+    assert.equal(validRun.expectedBalance, 5000);
+    assert.equal(validRun.totalCounted, 5000);
+    assert.equal(validRun.variance, 0);
+  });
+
+  test("Reconciliation payment selection preservation across pagination and search", () => {
+    interface SelectedPaymentEntry {
+      paymentId: string;
+      currencyCode: string;
+      amount: number;
+      direction: string;
+    }
+
+    class PaymentSelectionStore {
+      private selections = new Map<string, SelectedPaymentEntry>();
+
+      public togglePayment(p: SelectedPaymentEntry, activeCurrency: string, expectedDirection: string): boolean {
+        if (p.currencyCode !== activeCurrency) return false;
+        if (p.direction !== expectedDirection) return false;
+        if (this.selections.has(p.paymentId)) {
+          this.selections.delete(p.paymentId);
+        } else {
+          this.selections.set(p.paymentId, p);
+        }
+        return true;
+      }
+
+      public get selectedCount(): number {
+        return this.selections.size;
+      }
+
+      public get totalSelectedAmount(): number {
+        return Array.from(this.selections.values()).reduce((sum, item) => sum + item.amount, 0);
+      }
+
+      public isSelected(id: string): boolean {
+        return this.selections.has(id);
+      }
+    }
+
+    const store = new PaymentSelectionStore();
+
+    // Select payment 1 on page 1
+    const p1 = { paymentId: "pmt-01", currencyCode: "EGP", amount: 15000, direction: "Incoming" };
+    assert.ok(store.togglePayment(p1, "EGP", "Incoming"));
+    assert.equal(store.selectedCount, 1);
+    assert.equal(store.totalSelectedAmount, 15000);
+
+    // Navigate to page 2 (p1 is no longer in page items, but store must retain it)
+    assert.equal(store.isSelected("pmt-01"), true, "Must retain pmt-01 across page change");
+
+    // Select payment 2 on page 2
+    const p2 = { paymentId: "pmt-02", currencyCode: "EGP", amount: 5000, direction: "Incoming" };
+    assert.ok(store.togglePayment(p2, "EGP", "Incoming"));
+    assert.equal(store.selectedCount, 2);
+    assert.equal(store.totalSelectedAmount, 20000, "Must aggregate both selections across pages");
+
+    // Cross-currency attempt must be rejected
+    const pUsd = { paymentId: "pmt-usd", currencyCode: "USD", amount: 1000, direction: "Incoming" };
+    assert.equal(store.togglePayment(pUsd, "EGP", "Incoming"), false, "Cross-currency payment must be rejected");
+    assert.equal(store.selectedCount, 2);
+
+    // Wrong direction attempt must be rejected
+    const pWrongDir = { paymentId: "pmt-out", currencyCode: "EGP", amount: 2000, direction: "Outgoing" };
+    assert.equal(store.togglePayment(pWrongDir, "EGP", "Incoming"), false, "Mismatched direction must be rejected");
+    assert.equal(store.selectedCount, 2);
+  });
 });

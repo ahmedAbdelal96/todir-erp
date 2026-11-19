@@ -48,39 +48,33 @@ export function CashCountModal({
   const createMutation = useCreateCashCount(legalEntityId, accountId);
   const user = useOptionalUserContext();
   const outlet = useOutletContext<{ userId?: string } | undefined>();
-  const effectiveUserId =
-    outlet?.userId ||
-    user?.userId ||
-    "00000000-0000-0000-0000-000000000001";
+  const effectiveUserId = outlet?.userId || user?.userId || null;
 
-  const { data: positions } = useCashPosition(legalEntityId);
+  const { data: positions, isLoading: isPositionLoading } = useCashPosition(legalEntityId);
   const currentPosition = positions?.find((p) => p.treasuryAccountId === accountId);
   const resolvedExpected =
     expectedBalance != null
       ? expectedBalance
       : currentPosition?.bookBalance != null
       ? currentPosition.bookBalance
-      : 0;
+      : null;
 
   const today = new Date().toISOString().slice(0, 10);
   const [cutoffDate, setCutoffDate] = useState(today);
-  const [expectedAmount, setExpectedAmount] = useState(resolvedExpected.toString());
   const [denominations, setDenominations] = useState<DenominationRow[]>(
     DEFAULT_DENOMINATIONS.map((d) => ({ ...d, quantity: 0 }))
   );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (resolvedExpected != null && expectedAmount === "0") {
-      setExpectedAmount(resolvedExpected.toString());
-    }
-  }, [resolvedExpected, expectedAmount]);
-
   if (!isOpen) return null;
 
   const totalCounted = denominations.reduce((acc, d) => acc + d.unitValue * d.quantity, 0);
-  const expectedNum = parseFloat(expectedAmount) || 0;
-  const variance = Math.round((totalCounted - expectedNum) * 100) / 100;
+  const variance =
+    resolvedExpected != null
+      ? Math.round((totalCounted - resolvedExpected) * 100) / 100
+      : null;
+  const isSubmissionDisabled =
+    !effectiveUserId || resolvedExpected == null || createMutation.isPending;
 
   const handleQuantityChange = (index: number, val: string) => {
     const qty = parseInt(val, 10) || 0;
@@ -93,8 +87,8 @@ export function CashCountModal({
     e.preventDefault();
     setErrorMsg(null);
 
-    if (!expectedAmount.trim()) {
-      setErrorMsg(t("cash.expectedAmountLabel"));
+    if (!effectiveUserId || resolvedExpected == null) {
+      setErrorMsg(t("cash.cannotSubmitWithoutBalanceOrCustodian"));
       return;
     }
 
@@ -102,7 +96,7 @@ export function CashCountModal({
       await createMutation.mutateAsync({
         cutoffDate,
         custodianId: effectiveUserId,
-        expectedAmount: expectedNum,
+        expectedAmount: resolvedExpected,
         denominations: denominations
           .filter((d) => d.quantity > 0)
           .map((d) => ({
@@ -149,6 +143,36 @@ export function CashCountModal({
           </div>
         )}
 
+        {!effectiveUserId && (
+          <div
+            role="alert"
+            style={{
+              padding: "0.75rem",
+              background: "var(--color-surface-danger)",
+              color: "var(--color-status-danger)",
+              borderRadius: "var(--radius-sm)",
+              fontSize: "0.875rem"
+            }}
+          >
+            {t("cash.custodianUnavailable")}
+          </div>
+        )}
+
+        {resolvedExpected == null && !isPositionLoading && (
+          <div
+            role="alert"
+            style={{
+              padding: "0.75rem",
+              background: "var(--color-surface-danger)",
+              color: "var(--color-status-danger)",
+              borderRadius: "var(--radius-sm)",
+              fontSize: "0.875rem"
+            }}
+          >
+            {t("cash.expectedBalanceUnavailable")}
+          </div>
+        )}
+
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
           <TextField
             label={t("cash.cutoffDate")}
@@ -157,13 +181,34 @@ export function CashCountModal({
             onChange={(val) => setCutoffDate(val)}
             isRequired
           />
-          <TextField
-            label={t("cash.expectedAmountLabel")}
-            type="number"
-            value={expectedAmount}
-            onChange={(val) => setExpectedAmount(val)}
-            isRequired
-          />
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+            <label style={{ fontSize: "0.8125rem", fontWeight: 500, color: "var(--color-content-default)" }}>
+              {t("cash.expectedAmountLabel")}
+            </label>
+            <div
+              data-testid="expected-cash-balance"
+              style={{
+                padding: "0.625rem 0.875rem",
+                background: "var(--color-surface-page)",
+                border: `1px solid ${resolvedExpected == null ? "var(--color-border-danger, #ef4444)" : "var(--color-border-subtle)"}`,
+                borderRadius: "var(--radius-sm)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                minHeight: "42px"
+              }}
+            >
+              {resolvedExpected != null ? (
+                <span style={{ fontWeight: 600, fontSize: "0.875rem", color: "var(--color-content-default)" }}>
+                  <BankingMoney amount={resolvedExpected} currency={currencyCode} />
+                </span>
+              ) : (
+                <span style={{ color: "var(--color-status-danger)", fontSize: "0.8125rem" }}>
+                  {isPositionLoading ? t("common.loading") : t("cash.expectedBalanceUnavailable")}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Authenticated Custodian Badge (Zero raw UUID entry) */}
@@ -172,22 +217,34 @@ export function CashCountModal({
             {t("cash.custodian")}
           </label>
           <div
+            data-testid="cash-custodian-badge"
             style={{
               padding: "0.625rem 0.875rem",
               background: "var(--color-surface-page)",
-              border: "1px solid var(--color-border-subtle)",
+              border: `1px solid ${!effectiveUserId ? "var(--color-border-danger, #ef4444)" : "var(--color-border-subtle)"}`,
               borderRadius: "var(--radius-sm)",
               display: "flex",
               alignItems: "center",
-              justifyContent: "space-between"
+              justifyContent: "space-between",
+              minHeight: "42px"
             }}
           >
-            <span style={{ fontWeight: 600, fontSize: "0.875rem", color: "var(--color-content-default)" }}>
-              {user?.displayName || "—"}
-            </span>
-            <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-              {user?.email || "admin@erp.local"}
-            </span>
+            {effectiveUserId ? (
+              <>
+                <span style={{ fontWeight: 600, fontSize: "0.875rem", color: "var(--color-content-default)" }}>
+                  {user?.displayName || effectiveUserId}
+                </span>
+                {user?.email && (
+                  <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
+                    {user.email}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span style={{ color: "var(--color-status-danger)", fontSize: "0.8125rem" }}>
+                {t("cash.custodianUnavailable")}
+              </span>
+            )}
           </div>
         </div>
 
@@ -276,10 +333,21 @@ export function CashCountModal({
               style={{
                 fontSize: "1.25rem",
                 fontWeight: 700,
-                color: variance === 0 ? "#16a34a" : variance < 0 ? "var(--color-status-danger)" : "#2563eb"
+                color:
+                  variance == null
+                    ? "var(--color-content-muted)"
+                    : variance === 0
+                    ? "#16a34a"
+                    : variance < 0
+                    ? "var(--color-status-danger)"
+                    : "#2563eb"
               }}
             >
-              <BankingMoney amount={variance} currency={currencyCode} />
+              {variance != null ? (
+                <BankingMoney amount={variance} currency={currencyCode} />
+              ) : (
+                "—"
+              )}
             </span>
           </div>
         </div>
@@ -288,7 +356,7 @@ export function CashCountModal({
           <Button type="button" variant="secondary" onClick={onClose} isDisabled={createMutation.isPending}>
             {t("accounts.cancel")}
           </Button>
-          <Button type="submit" variant="primary" isDisabled={createMutation.isPending}>
+          <Button type="submit" variant="primary" isDisabled={isSubmissionDisabled}>
             {createMutation.isPending ? t("common.loading") : t("cash.countSubmit")}
           </Button>
         </div>

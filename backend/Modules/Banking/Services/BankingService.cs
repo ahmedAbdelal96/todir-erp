@@ -77,6 +77,7 @@ public sealed class BankingService(BankingRepository repository, ILedgerControlB
         return await repository.FinalizeReconciliationAsync(tenant, actorId, legalEntityId, id, version, snapshot, ct);
     }
     public Task<IReadOnlyList<ReconciliationSuggestionDto>> GetReconciliationSuggestionsAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct) => repository.GetReconciliationSuggestionsAsync(tenant, legalEntityId, id, ct);
+    public Task<IReadOnlyDictionary<string, decimal>> GetReconciliationClaimsAsync(TenantId tenant, Guid legalEntityId, CancellationToken ct) => repository.GetReconciliationClaimsAsync(tenant, legalEntityId, ct);
     public Task<ReconciliationDto> UnmatchAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid id, UnmatchRequest request, CancellationToken ct) => repository.UnmatchAsync(tenant, actorId, legalEntityId, id, request, ct);
     public Task<CashCountDto> CreateCashCountAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid accountId, CreateCashCountRequest request, CancellationToken ct) => repository.CreateCashCountAsync(tenant, actorId, legalEntityId, accountId, request, ct);
     public Task<CashCountDto?> GetCashCountAsync(TenantId tenant, Guid legalEntityId, Guid id, CancellationToken ct) => repository.GetCashCountAsync(tenant, legalEntityId, id, ct);

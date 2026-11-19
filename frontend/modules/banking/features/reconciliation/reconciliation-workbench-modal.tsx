@@ -4,6 +4,7 @@ import {
   useAddMatch,
   useFinalizeReconciliation,
   useReconciliationSuggestions,
+  useReconciliationClaims,
   useStatementLines,
   useTreasuryAccount,
   useReconciliation
@@ -37,7 +38,9 @@ export function ReconciliationWorkbenchModal({
   const { t } = useTranslation("banking");
 
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
-  const [selectedPaymentIds, setSelectedPaymentIds] = useState<string[]>([]);
+  const [selectedPaymentsMap, setSelectedPaymentsMap] = useState<
+    Map<string, { payment: PaymentRecord; matchedAmount: number }>
+  >(new Map());
   const [isDirectAdjustment, setIsDirectAdjustment] = useState<boolean>(false);
   const [systemAmountInput, setSystemAmountInput] = useState<string>("");
   const [explanation, setExplanation] = useState("");
@@ -73,25 +76,41 @@ export function ReconciliationWorkbenchModal({
     legalEntityId,
     currentSession?.id ?? ""
   );
+  const { data: claimsData, refetch: refetchClaims } = useReconciliationClaims(
+    legalEntityId,
+    currentSession?.id ?? ""
+  );
+  const claims = claimsData ?? {};
 
   const addMatchMutation = useAddMatch(legalEntityId, currentSession?.id ?? "");
   const finalizeMutation = useFinalizeReconciliation(legalEntityId, currentSession?.id ?? "");
 
-  // Load eligible completed payments for this legal entity & currency
+  const lines = linesData?.items ?? [];
+  const selectedLines = lines.filter((l) => selectedLineIds.includes(l.id));
+  const lineDirection = selectedLines[0]?.direction;
+  const expectedPaymentDirection =
+    lineDirection === "Credit" ? "Incoming" : lineDirection === "Debit" ? "Outgoing" : undefined;
+
+  // Load eligible completed payments for this treasury account, currency & direction
   const fetchPayments = useCallback(async () => {
     if (!isOpen || !legalEntityId) return;
     setIsLoadingPayments(true);
     try {
       const res = await paymentApi.listPayments({
         legalEntityId,
+        paymentAccountId: currentSession?.treasuryAccountId || undefined,
+        direction: expectedPaymentDirection,
         page: paymentPage,
         pageSize: 20,
         state: "Completed",
         search: paymentSearch.trim() || undefined
       });
-      // Authoritatively filter by account currency to prevent cross-currency mismatch
+      // Authoritatively filter by account currency & payment account
       const currencyFiltered = (res.items ?? []).filter(
-        (p) => !p.currencyCode || p.currencyCode === activeCurrency
+        (p) =>
+          (!p.currencyCode || p.currencyCode === activeCurrency) &&
+          (!currentSession?.treasuryAccountId || p.paymentAccountId === currentSession.treasuryAccountId) &&
+          (!expectedPaymentDirection || p.direction === expectedPaymentDirection)
       );
       setAvailablePayments(currencyFiltered);
       setHasMorePayments(res.hasMore);
@@ -100,7 +119,7 @@ export function ReconciliationWorkbenchModal({
     } finally {
       setIsLoadingPayments(false);
     }
-  }, [isOpen, legalEntityId, paymentPage, paymentSearch, activeCurrency]);
+  }, [isOpen, legalEntityId, currentSession?.treasuryAccountId, expectedPaymentDirection, paymentPage, paymentSearch, activeCurrency]);
 
   useEffect(() => {
     void fetchPayments();
@@ -108,31 +127,30 @@ export function ReconciliationWorkbenchModal({
 
   if (!isOpen || !currentSession) return null;
 
-  const lines = linesData?.items ?? [];
-  const selectedLines = lines.filter((l) => selectedLineIds.includes(l.id));
-
   const externalSum = selectedLines.reduce(
     (acc, l) => acc + (l.amount - l.claimedAmount),
     0
   );
 
-  const selectedPayments = availablePayments.filter((p) =>
-    selectedPaymentIds.includes(p.id)
-  );
+  const selectedPaymentsList = Array.from(selectedPaymentsMap.values());
 
   const calculatedSystemSum = isDirectAdjustment
     ? 0
-    : selectedPayments.length > 0
-    ? selectedPayments.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0)
+    : selectedPaymentsList.length > 0
+    ? selectedPaymentsList.reduce((acc, item) => acc + item.matchedAmount, 0)
     : systemAmountInput
     ? parseFloat(systemAmountInput) || 0
     : externalSum;
 
   const matchDiff = Math.round((externalSum - calculatedSystemSum) * 100) / 100;
 
-  const handleToggleLine = (line: { id: string; currencyCode?: string }) => {
+  const handleToggleLine = (line: { id: string; currencyCode?: string; direction?: string }) => {
     if (line.currencyCode && line.currencyCode !== activeCurrency) {
       setErrorMsg(t("reconciliation.crossCurrencyForbidden"));
+      return;
+    }
+    if (selectedLines.length > 0 && !selectedLineIds.includes(line.id) && line.direction && line.direction !== lineDirection) {
+      setErrorMsg(t("reconciliation.directionMismatch"));
       return;
     }
     setErrorMsg(null);
@@ -146,10 +164,32 @@ export function ReconciliationWorkbenchModal({
       setErrorMsg(t("reconciliation.crossCurrencyForbidden"));
       return;
     }
+    if (p.paymentAccountId && currentSession?.treasuryAccountId && p.paymentAccountId !== currentSession.treasuryAccountId) {
+      setErrorMsg(t("reconciliation.paymentAccountMismatch"));
+      return;
+    }
+    if (expectedPaymentDirection && p.direction !== expectedPaymentDirection) {
+      setErrorMsg(t("reconciliation.directionMismatch"));
+      return;
+    }
+    const rawAmount = parseFloat(p.amount) || 0;
+    const claimed = claims[p.id] || 0;
+    const remainingAmount = Math.max(0, Math.round((rawAmount - claimed) * 100) / 100);
+    if (remainingAmount <= 0) {
+      setErrorMsg(t("reconciliation.paymentAlreadyClaimed"));
+      return;
+    }
+
     setErrorMsg(null);
-    setSelectedPaymentIds((prev) =>
-      prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id]
-    );
+    setSelectedPaymentsMap((prev) => {
+      const next = new Map(prev);
+      if (next.has(p.id)) {
+        next.delete(p.id);
+      } else {
+        next.set(p.id, { payment: p, matchedAmount: remainingAmount });
+      }
+      return next;
+    });
   };
 
   const handleConfirmMatch = async () => {
@@ -159,16 +199,16 @@ export function ReconciliationWorkbenchModal({
       return;
     }
 
-    if (!isDirectAdjustment && calculatedSystemSum > 0 && selectedPayments.length === 0) {
+    if (!isDirectAdjustment && calculatedSystemSum > 0 && selectedPaymentsList.length === 0) {
       setErrorMsg(t("reconciliation.selectPaymentRequired"));
       return;
     }
 
     const paymentReferences = isDirectAdjustment
       ? []
-      : selectedPayments.map((p) => ({
-          paymentId: p.id,
-          amount: parseFloat(p.amount) || 0
+      : selectedPaymentsList.map((item) => ({
+          paymentId: item.payment.id,
+          amount: item.matchedAmount
         }));
 
     try {
@@ -184,12 +224,13 @@ export function ReconciliationWorkbenchModal({
           (isDirectAdjustment ? t("reconciliation.directAdjustmentNotice") : null)
       });
       setSelectedLineIds([]);
-      setSelectedPaymentIds([]);
+      setSelectedPaymentsMap(new Map());
       setSystemAmountInput("");
       setExplanation("");
       setIsDirectAdjustment(false);
       void refetchLines();
       void refetchSuggestions();
+      void refetchClaims();
       void refetchSession();
     } catch (err: unknown) {
       const errStr = err instanceof Error ? err.message : String(err);
@@ -523,6 +564,32 @@ export function ReconciliationWorkbenchModal({
               </label>
             </div>
 
+            {!isDirectAdjustment && selectedPaymentsList.length > 0 && (
+              <div
+                style={{
+                  padding: "0.5rem 0.75rem",
+                  background: "var(--color-surface-page)",
+                  border: "1px solid var(--color-border-subtle)",
+                  borderRadius: "var(--radius-sm)",
+                  fontSize: "0.8125rem",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "0.5rem"
+                }}
+              >
+                <span style={{ fontWeight: 600, color: "var(--color-brand-primary)" }}>
+                  {t("reconciliation.selectedCountLabel", { count: selectedPaymentsList.length })}
+                </span>
+                <span style={{ fontWeight: 600 }}>
+                  <BankingMoney
+                    amount={selectedPaymentsList.reduce((acc, item) => acc + item.matchedAmount, 0)}
+                    currency={activeCurrency}
+                  />
+                </span>
+              </div>
+            )}
+
             {!isDirectAdjustment && (
               <div style={{ marginBottom: "0.5rem" }}>
                 <TextField
@@ -568,7 +635,7 @@ export function ReconciliationWorkbenchModal({
                         {t("statements.direction")}
                       </TableHead>
                       <TableHead style={{ minWidth: "120px", whiteSpace: "nowrap" }} align="end">
-                        {t("statements.amount")}
+                        {t("reconciliation.remainingMatchable")}
                       </TableHead>
                     </TableRow>
                   </TableHeader>
@@ -594,20 +661,29 @@ export function ReconciliationWorkbenchModal({
                       </TableRow>
                     ) : (
                       availablePayments.map((p) => {
-                        const isSelected = selectedPaymentIds.includes(p.id);
+                        const isSelected = selectedPaymentsMap.has(p.id);
+                        const rawAmount = parseFloat(p.amount) || 0;
+                        const claimed = claims[p.id] || 0;
+                        const remainingAmount = Math.max(0, Math.round((rawAmount - claimed) * 100) / 100);
+                        const isFullyClaimed = remainingAmount <= 0;
+
                         return (
                           <TableRow
                             key={p.id}
-                            onClick={() => handleTogglePayment(p)}
+                            onClick={() => {
+                              if (!isFullyClaimed) handleTogglePayment(p);
+                            }}
                             style={{
-                              cursor: "pointer",
-                              background: isSelected ? "var(--color-surface-hover)" : "transparent"
+                              cursor: isFullyClaimed ? "not-allowed" : "pointer",
+                              background: isSelected ? "var(--color-surface-hover)" : "transparent",
+                              opacity: isFullyClaimed ? 0.6 : 1
                             }}
                           >
                             <TableCell style={{ width: "36px" }}>
                               <input
                                 type="checkbox"
                                 checked={isSelected}
+                                disabled={isFullyClaimed}
                                 onChange={() => handleTogglePayment(p)}
                                 aria-label={p.number}
                               />
@@ -623,9 +699,14 @@ export function ReconciliationWorkbenchModal({
                             </TableCell>
                             <TableCell align="end" style={{ whiteSpace: "nowrap" }}>
                               <BankingMoney
-                                amount={parseFloat(p.amount) || 0}
+                                amount={remainingAmount}
                                 currency={p.currencyCode || activeCurrency}
                               />
+                              {isFullyClaimed && (
+                                <span style={{ fontSize: "0.75rem", color: "var(--color-status-danger)", display: "block" }}>
+                                  {t("reconciliation.fullyClaimedBadge")}
+                                </span>
+                              )}
                             </TableCell>
                           </TableRow>
                         );

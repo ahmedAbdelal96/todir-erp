@@ -295,6 +295,14 @@ export function useReconciliationSuggestions(legalEntityId: string, reconciliati
   });
 }
 
+export function useReconciliationClaims(legalEntityId: string, reconciliationId: string) {
+  return useQuery({
+    queryKey: [...bankingKeys.reconciliations(legalEntityId), "claims", reconciliationId],
+    queryFn: () => bankingApi.getClaims(legalEntityId, reconciliationId),
+    enabled: Boolean(legalEntityId && reconciliationId)
+  });
+}
+
 export function useCreateReconciliation(legalEntityId: string) {
   const queryClient = useQueryClient();
   return useMutation({

@@ -32,7 +32,7 @@ export function CashManagementTab({ legalEntityId }: Props): React.JSX.Element {
   const [activeSubTab, setActiveSubTab] = useState<"counts" | "pos">("counts");
 
   // Fetch only Cash and PettyCash accounts
-  const { data: accountsData } = useTreasuryAccounts(legalEntityId);
+  const { data: accountsData } = useTreasuryAccounts(legalEntityId, { pageSize: 100 });
   const cashAccounts = (accountsData?.items ?? []).filter(
     (a) => a.type === "Cash" || a.type === "PettyCash"
   );

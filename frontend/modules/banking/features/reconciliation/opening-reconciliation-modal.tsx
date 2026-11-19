@@ -19,7 +19,7 @@ export function OpeningReconciliationModal({ legalEntityId, isOpen, onClose }: P
   const { t } = useTranslation("banking");
   const createMutation = useCreateOpeningReconciliation(legalEntityId);
 
-  const { data: accountsData } = useTreasuryAccounts(legalEntityId);
+  const { data: accountsData } = useTreasuryAccounts(legalEntityId, { pageSize: 100 });
   const accounts = accountsData?.items ?? [];
 
   const [accountId, setAccountId] = useState("");

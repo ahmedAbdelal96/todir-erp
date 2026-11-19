@@ -15,29 +15,38 @@
 
 The complete frontend implementation and real-stack acceptance for Module 25 (Banking & Cash Management) is verified and complete. The implementation operates against the live .NET backend (`http://127.0.0.1:5080`) backed by PostgreSQL, with zero mocked business APIs in acceptance runs.
 
-Key accomplishments and domain architectural guarantees delivered:
+Key accomplishments and domain architectural guarantees delivered across the four-point correction mandate:
 
-1. **Enterprise Banking Workspaces & Separation of Concerns:**
-   - **Cash & Treasury Overview (`BankingOverviewTab`):** Live aggregated position metrics from `GET /api/v1/banking/cash-position`, multi-currency balances, and real Cash-to-Ledger control reconciliation card (`GET /api/v1/banking/reports/cash-to-ledger`).
-   - **Treasury Accounts Management (`TreasuryAccountsTab`):** Comprehensive registry across Bank Accounts, Cash Vaults, Payment Gateways, and Clearing Accounts. Includes 360-degree Inspector Drawer with Overview, Balances & Ledger, Signatories & Limits, and Audit Trail tabs. Account creation via focused modal dialog.
-   - **Bank Statements & Line Classification (`StatementsTab`):** Statement upload and classification workbench supporting CSV, MT940, and CAMT.053 formats with status badges (`Rule-Matched`, `Auto-Matched`, `Needs Review`, `Manual`).
-   - **Bank Reconciliation Workbench (`ReconciliationTab`):** Real two-sided reconciliation matrix with exact conservation arithmetic indicator (`Bank Balance - Outstanding Withdrawals + Outstanding Deposits = GL Balance`).
-   - **Cash & Vault Operations (`CashManagementTab`):** Physical vault register, custody handovers, and cash count sessions with live denomination breakdown grid (200, 100, 50, 20, 10, 5) with automatic variance calculation and variance settlement workflow.
-   - **Internal Transfers & Gateway Settlements (`TransfersTab`):** Inter-account transfers with in-transit tracking and settlement reconciliation modal requiring documentary evidence.
-   - **Liquidity Forecasting & Reports (`ForecastingTab`):** Rolling liquidity projection across 30, 60, and 90-day horizons with expected inflows/outflows and financial code mappings.
+### 1. Truthful Cash Count Identity & Balance Derivation (Mandate Point 1)
+- **Authentic Custodian Context:** Removed fallback custodian ID (`00000000-0000-0000-0000-000000000001`). Custodian is resolved strictly from user context (`effectiveUserId = outlet?.userId || user?.userId`).
+- **Backend-Derived Expected Balance:** Expected balance is obtained directly from active cash position (`useCashPosition`) linked to the vault's ledger snapshot. Removed any fallback coercing missing balance to zero.
+- **Read-Only Enforced Financial Baseline:** Users cannot manually enter or fabricate an expected balance. When either the authenticated custodian or the backend expected balance is unavailable, the UI renders an unavailable alert state and blocks form submission.
 
-2. **Backend Hardening & Error Resilience:**
-   - Handled unconfigured ledger control roles gracefully in `BankingService.cs` (`GetCashToLedgerReportAsync`), returning clear advisory status rather than unhandled 500 crashes when chart-of-accounts control roles are pending configuration.
-   - Seeded and verified all 32 `banking.*` permissions across `platform.role_permission` for tenant administrators.
-   - Verified all 37 database tables across the `finance_banking` PostgreSQL schema.
+### 2. Multi-Page Payment Matching & Authoritative Querying (Mandate Point 2)
+- **Multi-Factor Payment Discovery:** Extended payment querying to respect:
+  - Treasury account (`paymentAccountId`)
+  - Legal entity (`legalEntityId`)
+  - Currency (`currency`)
+  - Direction (`direction`)
+  - Eligible Payment state (`status === "Completed"`)
+- **Preserved Selections Across Pagination & Search:** Implemented `selectedPaymentsMap` (`Record<string, SelectedPaymentState>`) in `reconciliation-workbench-modal.tsx`. Selected payments, matched amounts, and partial allocation amounts are retained when switching server pages or changing search terms.
+- **Remaining Matchable Calculation via Claims Query:** Added `GET /api/v1/banking/reconciliations/{id}/claims` to accurately retrieve claims per payment, ensuring payments cannot be over-claimed across sessions.
+- **Cross-Currency Arithmetic Guards:** Strictly prevents selecting or matching transactions with mismatched currencies or directions.
+- **Authoritative Backend Finalization:** Live session refetch dynamically updates difference and version; finalization enforces `difference === 0 && outstanding === 0` authoritatively on the backend.
 
-3. **High-Contrast Corporate Design System & Zero Tailwind:**
-   - Strictly built using pure CSS modules and design system tokens. Zero Tailwind utility classes.
-   - Dark Oxford Navy header (`#102a43`), cool neutral slate background canvas (`#f0f4f8`), crisp white cards (`#ffffff`) with `#cbd5e1` perimeter borders and dual-layer elevation shadows.
+### 3. Proved Missing Business Transitions (Mandate Point 3)
+All 15 real-stack acceptance tests pass on the live stack against the isolated database `todir_module25_acceptance` on port 15433 (zero mutations to populated `todir` on port 15432):
+- **Test 10 (Persisted Statement & Payment Matching):** Created isolated bank account, imported a statement, executed and completed an incoming payment, matched them in the reconciliation session, and verified DB-persisted matching state (`MatchedLines == 1`, `OutstandingLines == 0`, `Difference == 0`).
+- **Test 11 (Reconciliation Finalization & Invariant Guards):** Verified finalization of balanced reconciliation session transitioning to `'Finalized'`, and verified invariant rejection (cannot match lines on a finalized session).
+- **Test 12 (Cash Count Submission, Approval & Resolution):** Submitted physical cash count with denomination breakdown (1,000 EGP counted vs 2,500 EGP expected -> 1,500 EGP variance). Verified supervisor approval transitioning session to `'Approved'`, followed by variance settlement.
+- **Test 13 (Treasury Transfer via Payments & Banking Settlement):** Created internal transfer through Payments API between accounts, verified creation of projection record in `finance_banking.transfer_reconciliation_projection`, and verified settlement state transitions.
+- **Test 14 (Cash Forecast Version & Manual Items):** Created a Draft forecast version, persisted manual forecast inflow/outflow items, and verified DB persistence.
+- **Test 15 (Cross-Entity Security Isolation):** Verified that requests scoped to non-existent or foreign entities reject access (404/403), unauthenticated requests reject (401), and invalid anti-forgery tokens reject (400).
 
-4. **Authentic Arabic-First Vocabulary Charter:**
-   - 100% Arabic and English dictionary parity verified with zero literal machine translations.
-   - Authentic financial terminology: `إدارة البنوك والنقدية`, `قيد يومية`, `مطابقة كشف الحساب البنكي`, `تسوية الفروقات النقدية`, `سند صرف`, `سند قبض`, `أرباح مبقاة`.
+### 4. Accurate Documentation & Honest Acceptance (Mandate Point 4)
+- Reconciled all frontend coverage matrices, routes, and DTOs with actual backend endpoints (`/statements/import`, `/claims`, `/treasury-accounts`).
+- Verified zero synthetic generators and zero mocked APIs.
+- Cleanly passed all local quality gates: TypeScript strict, localization parity, architecture boundaries, unit/slice tests, and production build.
 
 ---
 
@@ -47,41 +56,17 @@ All mandatory frontend quality gates pass locally with zero errors:
 
 | Quality Gate | Command | Result | Verification Scope |
 | :--- | :--- | :--- | :--- |
-| **TypeScript Strict** | `pnpm run typecheck` | **PASS (0 errors)** | Full repository frontend + root strict type safety |
+| **TypeScript Strict** | `pnpm --dir frontend run typecheck` | **PASS (0 errors)** | Full repository frontend strict type safety (`tsc --noEmit`) |
 | **Localization Parity** | `pnpm run localization:verify` | **PASS (0 errors)** | Arabic/English key parity & hardcoded copy guard |
-| **Architecture Boundaries** | `pnpm run architecture:frontend` | **PASS (0 errors)** | Module boundary isolation & import rules |
-| **Unit & Slice Tests** | `pnpm run test:frontend` | **PASS (236 passed)** | 236 test cases passed, including Banking slice & CSV parser unit tests |
+| **Architecture Boundaries** | `pnpm run architecture:frontend` | **PASS (0 errors)** | Module boundary isolation, fixture verification & import rules |
+| **Unit & Slice Tests** | `node --test frontend/modules/banking/tests/banking-slice.test.ts` | **PASS (9 / 9 passed)** | Denomination arithmetic, conservation equation, CSV parser, custodian guard, multi-page selection |
+| **Full Frontend Unit Suite** | `pnpm run test:frontend` | **PASS (238 / 238 passed)** | Full frontend unit test suite |
 | **Production Build** | `pnpm --dir frontend build` | **PASS (1.32s)** | Vite production bundle compilation clean |
-| **Real-Stack E2E Acceptance** | `pnpm --dir frontend exec playwright test banking-real-stack` | **PASS (9 / 9 passed)** | Real authenticated live .NET backend API integration (42.7s) |
+| **Real-Stack E2E Acceptance** | `pnpm --dir frontend exec playwright test banking-real-stack` | **PASS (15 / 15 passed)** | Real authenticated live .NET backend API integration (54.7s) |
 
 ---
 
-### Priority 0 & Financial Safety Corrections Delivered
-
-1. **Populated Development Database Protection:**
-   - Populated development database (`todir` on port 15432) was completely frozen from all test/seed writes.
-   - Consistent snapshot taken: `artifacts/tmp/todir_populated_backup_20261118.dump` (9.57 MB).
-   - **Verified Restore Rehearsal:** Backup was restored into isolated database `todir_restore_test` on port 15433; all 579 tables restored cleanly with exit code 0.
-   - Comprehensive audit documented in `docs/engineering/BANKING_DEVELOPMENT_DATABASE_INTEGRITY_AUDIT.md`.
-   - Test execution isolated to containerized database `todir_module25_acceptance` on port 15433.
-   - Built backend pre-flight safety probe `GET /api/v1/banking/target` secured with `X-Todir-Test-Secret` and `TODIR_TEST_PROBE_SECRET`; fails closed if target is `todir`.
-
-2. **Test Credentials Security:**
-   - Removed all embedded/hardcoded password fallbacks from `frontend/tests/e2e/banking-real-stack.spec.ts`.
-   - Secrets required exclusively via environment variables (`ERP_DEV_PASSWORD`, `SEED_DEFAULT_PASSWORD`, `TODIR_TEST_PROBE_SECRET`).
-
-3. **Financial Workflows & Usability Corrections:**
-   - **Statement Import:** Purged synthetic line generator. Implemented RFC 4180 compliant CSV parser supporting quoted strings, escaped quotes `""`, embedded commas, and CRLF linebreaks with row-specific validation error reporting and genuine manual line entry fallback.
-   - **Table Usability & Visual Ergonomics:** Widened all modal dialogs (`min(96vw, 1100px)` for statement lines and `min(96vw, 1250px)` for reconciliation workbench), added horizontal scroll containers, explicit column `minWidth`s, `whiteSpace: "nowrap"`, and `<BdiText>` wrapping for all numbers, dates, and codes.
-   - **Reconciliation Workbench:** Resolves exact linked statement (zero arbitrary `items[0]` fallback), loads server-side paginated/searchable payment discovery filtered strictly by currency and direction, prevents cross-currency selection, performs live session refetch after matching, handles 409 conflict detection with reload option, and enforces authoritative finalization rule (`difference === 0 && matchCount > 0`).
-   - **Cash Position & Ledger Control:** Preserves missing balance integrity (never converts missing balance to zero during aggregation), tracks component coverage and source freshness indicators, and restricts backend `GetCashToLedgerReportAsync` exception handling in `BankingService.cs` strictly to documented ledger configuration exceptions.
-   - **Cash Count & Custody:** Replaced editable raw UUID with authenticated custodian identity badge. Links expected balance dynamically to vault book balance (`useCashPosition`). Intercepts PostgreSQL unique constraint violation on `(tenant_id, treasury_account_id, cutoff_date)` in `BankingRepository.cs` and maps to `banking.cash_count_duplicate`.
-   - **Internal Transfers:** Implemented searchable active accounts picker (`status === "Active"`), excluded source account from destination options, enforced `amount > 0` and same-account validation with stable idempotency keys.
-   - **Cash Forecast:** Eliminated mixed-currency aggregation; metrics and curves strictly grouped per ISO currency code with distinct empty vs error states.
-
----
-
-## 3. Real-Stack Acceptance Scenarios (9/9 Passing)
+## 3. Real-Stack Acceptance Scenarios (15/15 Passing)
 
 The dedicated Playwright suite (`frontend/tests/e2e/banking-real-stack.spec.ts`) verifies authentic end-to-end user journeys against the running .NET API (`:5080`) and PostgreSQL database:
 
@@ -94,6 +79,12 @@ The dedicated Playwright suite (`frontend/tests/e2e/banking-real-stack.spec.ts`)
 7. **Journey 07:** Liquidity, Cash Forecasting & Financial Reports (`PASS`)
 8. **Journey 08:** Responsive Mobile Ergonomics (390px Viewport) (`PASS`)
 9. **Journey 09:** English LTR Parity & Corporate Visual Integrity (`PASS`)
+10. **Journey 10:** Real Bank Statement & Payment Matching (Persisted State Verification) (`PASS`)
+11. **Journey 11:** Authorized Reconciliation Finalization & Invariant Guards (`PASS`)
+12. **Journey 12:** Cash Count Submission, Approval & Difference Resolution Lifecycle (`PASS`)
+13. **Journey 13:** Treasury Transfer via Payments & Banking Settlement Lifecycle (`PASS`)
+14. **Journey 14:** Liquidity Forecast Version & Manual Items Persistence (`PASS`)
+15. **Journey 15:** Cross-Entity Access Rejection & Security Isolation (`PASS`)
 
 ---
 

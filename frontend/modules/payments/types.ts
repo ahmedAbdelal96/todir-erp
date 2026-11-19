@@ -88,6 +88,7 @@ export interface PaymentListQuery {
   readonly state?: PaymentBusinessState | undefined;
   readonly fromDate?: string | undefined;
   readonly toDate?: string | undefined;
+  readonly paymentAccountId?: string | undefined;
 }
 
 export interface PaymentPage {

@@ -308,6 +308,18 @@ public sealed class BankingRepository(NpgsqlDataSource dataSource, TimeProvider 
         var result = new List<ReconciliationSuggestionDto>(); await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) result.Add(new(reader.GetGuid(0), reader.GetDecimal(1), reader.GetString(2).Trim(), StringValue(reader, 3), StringValue(reader, 4), reader.GetString(5))); return result;
     }
 
+    public async Task<IReadOnlyDictionary<string, decimal>> GetReconciliationClaimsAsync(TenantId tenant, Guid legalEntityId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct); await SetTenantAsync(connection, tenant, ct);
+        await using var command = new NpgsqlCommand("select system_reference, claimed_amount from finance_banking.reconciliation_system_claim where tenant_id=$1 and legal_entity_id=$2", connection);
+        Add(command, tenant.Value, legalEntityId);
+        var dict = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            dict[reader.GetString(0).Trim()] = reader.GetDecimal(1);
+        return dict;
+    }
+
     public async Task<ReconciliationDto> UnmatchAsync(TenantId tenant, Guid actorId, Guid legalEntityId, Guid reconciliationId, UnmatchRequest request, CancellationToken ct)
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct); await using var transaction = await connection.BeginTransactionAsync(ct); await SetTenantAsync(connection, tenant, transaction, ct);

@@ -319,6 +319,11 @@ export const bankingApi = {
     return httpClient<readonly ReconciliationSuggestionDto[]>(`${BASE_URL}/reconciliations/${reconciliationId}/suggestions${qs}`, { legalEntityId });
   },
 
+  getClaims(legalEntityId: string, reconciliationId: string): Promise<Record<string, number>> {
+    const qs = buildQuery({ legalEntityId });
+    return httpClient<Record<string, number>>(`${BASE_URL}/reconciliations/${reconciliationId}/claims${qs}`, { legalEntityId });
+  },
+
   runRules(legalEntityId: string, reconciliationId: string): Promise<readonly ReconciliationSuggestionDto[]> {
     const qs = buildQuery({ legalEntityId });
     return httpClient<readonly ReconciliationSuggestionDto[]>(`${BASE_URL}/reconciliations/${reconciliationId}/run-rules${qs}`, {
