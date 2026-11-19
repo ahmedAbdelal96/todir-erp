@@ -341,8 +341,13 @@ export const en = {
 
   attendance: {
     title: "Attendance Punches & Daily Records",
+    subtitle: "Review attendance and correct exceptions within the selected period.",
+    recordsTitle: "Recorded Attendance",
+    recordsDescription: "Daily attendance records for employees within the selected period.",
     tableAria: "Attendance records table",
     emptyState: "No attendance records found for the selected date range.",
+    noRecordsDescription: "Change the date range to view other punches, or record a manual punch when an employee profile is available.",
+    loadError: "The attendance register could not be loaded. Please try again.",
     loading: "Loading...",
     missingCheckout: "Missing Checkout",
     selectEmployeeHelper: "Recording attendance requires an employee account or selected employee context",
