@@ -1,14 +1,16 @@
-import React from "react";
+import React, { type ReactNode } from "react";
 import { Surface } from "../../../components/pages/surface.tsx";
+import { BidiText } from "../../../components/primitives/bidi-text.tsx";
 
 export interface HrKpiCardProps {
   readonly title: string;
-  readonly value: string | number;
+  readonly value: ReactNode;
   readonly subtitle?: string | undefined;
   readonly tone?: "default" | "primary" | "success" | "warning" | "danger" | undefined;
+  readonly testId?: string | undefined;
 }
 
-export function HrKpiCard({ title, value, subtitle, tone = "default" }: HrKpiCardProps): React.JSX.Element {
+export function HrKpiCard({ title, value, subtitle, tone = "default", testId }: HrKpiCardProps): React.JSX.Element {
   let borderColor = "var(--color-border-default)";
   let valueColor = "var(--color-content-primary)";
 
@@ -25,27 +27,28 @@ export function HrKpiCard({ title, value, subtitle, tone = "default" }: HrKpiCar
   }
 
   return (
-    <Surface
-      style={{
-        flex: "1 1 200px",
-        padding: "1.25rem",
-        display: "flex",
-        flexDirection: "column",
-        gap: "0.375rem",
-        borderTop: `3px solid ${borderColor}`
-      }}
-    >
-      <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", fontWeight: 500 }}>
-        {title}
-      </span>
-      <span style={{ fontSize: "1.75rem", fontWeight: 700, color: valueColor, lineHeight: 1.2 }}>
-        {value}
-      </span>
-      {subtitle && (
-        <span style={{ fontSize: "0.75rem", color: "var(--color-content-muted)" }}>
-          {subtitle}
+    <div {...(testId ? { "data-testid": testId } : {})} style={{ minWidth: 0 }}>
+      <Surface
+        padding="compact"
+        style={{
+          minHeight: "9.25rem",
+          borderTop: `3px solid ${borderColor}`
+        }}
+      >
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", height: "100%" }}>
+        <span style={{ fontSize: "0.8125rem", color: "var(--color-content-muted)", fontWeight: 600, lineHeight: 1.45 }}>
+          {title}
         </span>
-      )}
-    </Surface>
+        <strong style={{ fontSize: "2rem", fontWeight: 750, color: valueColor, lineHeight: 1.1 }}>
+          <BidiText direction="ltr">{value}</BidiText>
+        </strong>
+        {subtitle && (
+          <span style={{ marginTop: "auto", fontSize: "0.75rem", color: "var(--color-content-muted)", lineHeight: 1.5 }}>
+            {subtitle}
+          </span>
+        )}
+      </div>
+      </Surface>
+    </div>
   );
 }

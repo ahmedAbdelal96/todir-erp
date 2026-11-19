@@ -107,6 +107,18 @@ export const en = {
       expiringDocs: "Expiring Documents",
       expiringDocsDesc: "Documents expiring within 30 days"
     },
+    compliance: {
+      title: "Upcoming Compliance Follow-up",
+      description: "A concise view of documents and contracts that need review within 30 days.",
+      expiringDocuments: "Documents needing follow-up",
+      expiringContracts: "Contracts needing follow-up",
+      expiringContractsDesc: "Contracts approaching their end date",
+      noData: "No compliance follow-up data is available right now."
+    },
+    states: {
+      loading: "Loading the HR summary...",
+      error: "The HR summary could not be loaded. Please try again."
+    },
     reminders: {
       title: "Operational Alerts & Compliance Tasks",
       empty: "No urgent alerts or reminders at this time.",
