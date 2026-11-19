@@ -39,7 +39,7 @@ export function HrHomeTab({ legalEntityId, onNavigateTab, onOpenNewEmployee }: H
         });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       {/* Quick Action Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
         <div>
@@ -85,7 +85,7 @@ export function HrHomeTab({ legalEntityId, onNavigateTab, onOpenNewEmployee }: H
         />
       </div>
 
-      <Surface title={t("home.compliance.title")} description={t("home.compliance.description")}>
+      <Surface padding="compact" title={t("home.compliance.title")} description={t("home.compliance.description")}>
         {expiringDocs === null && expiringContracts === null ? (
           <p style={{ margin: 0, color: "var(--color-content-muted)", fontSize: "0.875rem" }}>
             {t("home.compliance.noData")}
