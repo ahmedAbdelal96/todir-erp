@@ -141,8 +141,27 @@ Execution results of `frontend/tests/e2e/banking-ui-acceptance.spec.ts` against 
 3. `UI creates an internal transfer and the Payments-owned transaction persists` (`PASS`)
 4. `UI matches a provider settlement with a bank statement line or surfaces verified errors` (`PASS`)
 5. `UI saves a cash forecast version and a manual item` (`PASS`)
-- **Total:** 5 passed (33.2s)
+- **Total:** 5 passed (23.1s)
 - **Database Safety:** Fail-closed safety probe confirmed connected to `todir_module25_acceptance`. Populated database `todir` verified 100% untouched.
+
+### 5.4 Final Provider Settlement Integrity & Bounded Account Selection Closure
+- **Provider Settlement Domain Invariants Enforced in Backend (`MatchProviderSettlementAsync`):**
+  - **Incoming Bank Credit:** Requires `direction == "Credit"`; debit statement lines are rejected with `banking.provider_settlement_direction_invalid` and leave records unmutated.
+  - **Active Bank Account:** Requires the statement line's treasury account to be an active `Bank` account of the legal entity (`account_type == 'Bank'` and `status == 'Active'`); non-bank accounts (e.g. Cash, Petty Cash) are rejected with `banking.provider_settlement_account_invalid`.
+  - **Currency Match:** Enforces statement line currency matches provider settlement currency; mismatches throw `banking.provider_settlement_currency_mismatch`.
+  - **Amount Coverage:** Enforces `lineAmount - claimedAmount >= netPayoutAmount`; insufficient lines throw `banking.provider_settlement_amount_mismatch`.
+  - **Duplicate Rejection:** Matches against already matched settlements are rejected with `banking.provider_settlement_already_matched`.
+  - **Atomic Rollback:** Rejections leave settlement status, statement line claimed amounts, and treasury activities completely unmutated.
+- **Frontend Candidate Line Filter (`MatchProviderModal`):**
+  - Updated `eligibleLines` to filter strictly on `direction === "Credit"` alongside currency and available claimable amount coverage.
+- **Bounded Server-Side Account Selection (`NewTransferModal`):**
+  - Replaced hardcoded `pageSize: 100` local filtering with server-side searchable lookup (`useTreasuryAccounts(legalEntityId, { search, status: "Active", pageSize: 50 })`).
+  - Implemented stable selection preservation: selected source and destination accounts are retained in state and injected into available options even when search queries filter active pages, preventing selection drops.
+  - Verified with 56 accounts where target accounts are beyond page 1; search successfully resolves and completes the transfer journey.
+- **Full Verification Suite:**
+  - `BankingPostgresIntegrationTests.cs`: 12/12 passed (including comprehensive invariant tests).
+  - `banking-ui-acceptance.spec.ts`: 5/5 passed.
+  - Populated database `todir`: 0 rows mutated.
 
 To inspect the real live Banking & Cash Management workspace locally:
 

@@ -10,9 +10,10 @@ interface Props {
   readonly legalEntityId: string;
   readonly isOpen: boolean;
   readonly onClose: () => void;
+  readonly onCreated?: ((asOfDate: string, horizonDays: string) => void) | undefined;
 }
 
-export function CreateForecastVersionModal({ legalEntityId, isOpen, onClose }: Props): React.JSX.Element | null {
+export function CreateForecastVersionModal({ legalEntityId, isOpen, onClose, onCreated }: Props): React.JSX.Element | null {
   const { t } = useTranslation("banking");
   const createMutation = useCreateForecastVersion(legalEntityId);
 
@@ -28,11 +29,14 @@ export function CreateForecastVersionModal({ legalEntityId, isOpen, onClose }: P
     setErrorMsg(null);
 
     try {
+      const parsedHorizon = parseInt(horizonDays, 10) || 30;
+      const finalDate = asOfDate || today;
       await createMutation.mutateAsync({
         legalEntityId,
-        asOfDate: asOfDate || today,
-        horizonDays: parseInt(horizonDays, 10) || 30
+        asOfDate: finalDate,
+        horizonDays: parsedHorizon
       });
+      onCreated?.(finalDate, String(parsedHorizon));
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t("common.error");
@@ -50,7 +54,8 @@ export function CreateForecastVersionModal({ legalEntityId, isOpen, onClose }: P
         )}
 
         <TextField
-          label={t("forecast.asOfDateLabel")}
+          data-testid="forecast-version-as-of-date"
+          label={t("forecast.asOfDateLabel", "تاريخ الأساس")}
           type="date"
           value={asOfDate}
           onChange={(val) => setAsOfDate(val)}

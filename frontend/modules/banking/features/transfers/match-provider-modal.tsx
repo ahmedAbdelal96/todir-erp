@@ -89,9 +89,10 @@ export function MatchProviderModal({
   const eligibleLines = useMemo(() => {
     if (!settlement) return [];
     return allLines.filter((line: StatementLineDto) => {
+      const isCredit = line.direction?.toLowerCase() === "credit";
       const isSameCurrency = line.currencyCode === settlement.currencyCode;
       const remainingAmount = Number(line.amount) - (Number(line.claimedAmount) || 0);
-      return isSameCurrency && remainingAmount >= Number(settlement.netPayoutAmount);
+      return isCredit && isSameCurrency && remainingAmount >= Number(settlement.netPayoutAmount);
     });
   }, [allLines, settlement]);
 

@@ -288,6 +288,13 @@ test.describe('Module 25 browser-driven persisted journeys', () => {
     await openBankingTab(page, 'forecast');
     await page.getByTestId('new-forecast-version').click();
     let dialog = page.getByRole('dialog');
+    const suffix = Date.now().toString().slice(-4);
+    const day = String((Number(suffix) % 27) + 1).padStart(2, '0');
+    const month = String((Number(suffix) % 11) + 1).padStart(2, '0');
+    const year = 2030 + (Number(suffix) % 50);
+    const uniqueDate = `${year}-${month}-${day}`;
+    const dateInput = dialog.getByTestId('forecast-version-as-of-date').locator('input');
+    await dateInput.fill(uniqueDate);
     const versionResponsePromise = page.waitForResponse((response) => response.url().includes('/api/v1/banking/cash-forecast/versions') && response.request().method() === 'POST');
     await dialog.getByRole('button', { name: /Confirm|تأكيد/ }).click();
     const versionResponse = await versionResponsePromise;

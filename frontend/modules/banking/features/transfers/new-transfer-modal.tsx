@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import type { TreasuryAccountDto } from "../../types.ts";
 import {
   useCreateTransfer,
+  useTreasuryAccount,
   useTreasuryAccounts
 } from "../../hooks/use-banking-queries.ts";
 import { useEntityCurrencies } from "../../../finbase/public.ts";
@@ -22,24 +24,41 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
   const createMutation = useCreateTransfer(legalEntityId);
 
   const [accountSearch, setAccountSearch] = useState("");
-  const trimmedSearch = accountSearch.trim().toLowerCase();
-  const { data: accountsData } = useTreasuryAccounts(legalEntityId, { pageSize: 100 });
-  const allAccounts = accountsData?.items ?? [];
-  const activeAccounts = allAccounts.filter((a) => a.status === "Active");
+  const trimmedSearch = accountSearch.trim();
+  const { data: accountsData } = useTreasuryAccounts(legalEntityId, {
+    search: trimmedSearch || undefined,
+    status: "Active",
+    page: 1,
+    pageSize: 50
+  });
+  const serverAccounts = useMemo(() => accountsData?.items ?? [], [accountsData]);
 
   const [sourceAccountId, setSourceAccountId] = useState("");
   const [destAccountId, setDestAccountId] = useState("");
+  const [selectedSourceAccount, setSelectedSourceAccount] = useState<TreasuryAccountDto | null>(null);
+  const [selectedDestAccount, setSelectedDestAccount] = useState<TreasuryAccountDto | null>(null);
 
-  const filteredAccounts = useMemo(() => {
-    if (!trimmedSearch) return activeAccounts;
-    return activeAccounts.filter(
-      (acc) =>
-        acc.id === sourceAccountId ||
-        acc.id === destAccountId ||
-        acc.code.toLowerCase().includes(trimmedSearch) ||
-        acc.name.toLowerCase().includes(trimmedSearch)
-    );
-  }, [activeAccounts, trimmedSearch, sourceAccountId, destAccountId]);
+  const { data: directSourceAccount } = useTreasuryAccount(legalEntityId, sourceAccountId);
+  const { data: directDestAccount } = useTreasuryAccount(legalEntityId, destAccountId);
+
+  // Keep selected accounts stable in options even when server-side search filters the active page
+  const allAvailableAccounts = useMemo(() => {
+    const map = new Map<string, TreasuryAccountDto>();
+    for (const acc of serverAccounts) {
+      if (acc.status === "Active") {
+        map.set(acc.id, acc);
+      }
+    }
+    const effSource = selectedSourceAccount ?? directSourceAccount;
+    if (effSource && effSource.status === "Active") {
+      map.set(effSource.id, effSource);
+    }
+    const effDest = selectedDestAccount ?? directDestAccount;
+    if (effDest && effDest.status === "Active") {
+      map.set(effDest.id, effDest);
+    }
+    return Array.from(map.values());
+  }, [serverAccounts, selectedSourceAccount, directSourceAccount, selectedDestAccount, directDestAccount]);
 
   const { data: entityCurrenciesData } = useEntityCurrencies(legalEntityId);
   const availableCurrencies = useMemo(() => {
@@ -51,14 +70,14 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
         }
       });
     }
-    allAccounts.forEach((acc) => {
+    allAvailableAccounts.forEach((acc) => {
       if (acc.currencyCode && !list.includes(acc.currencyCode)) {
         list.push(acc.currencyCode);
       }
     });
     if (list.length === 0) list.push("EGP", "USD", "EUR", "SAR");
     return list;
-  }, [entityCurrenciesData, allAccounts]);
+  }, [entityCurrenciesData, allAvailableAccounts]);
   const [amount, setAmount] = useState("");
   const [currencyCode, setCurrencyCode] = useState("EGP");
 
@@ -70,6 +89,10 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
       setIdempotencyKey(crypto.randomUUID());
       setErrorMsg(null);
       setAccountSearch("");
+      setSourceAccountId("");
+      setDestAccountId("");
+      setSelectedSourceAccount(null);
+      setSelectedDestAccount(null);
     }
   }, [isOpen]);
 
@@ -79,29 +102,46 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
   const [reference, setReference] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  if (!isOpen) return null;
-
   const isSameAccount = Boolean(sourceAccountId && destAccountId && sourceAccountId === destAccountId);
   const parsedAmount = parseFloat(amount) || 0;
   const isAmountValid = parsedAmount > 0;
 
   const handleSourceAccountChange = (key: string) => {
     setSourceAccountId(key);
-    const src = allAccounts.find((a) => a.id === key);
-    if (src?.currencyCode) {
-      setCurrencyCode(src.currencyCode);
+    const found = allAvailableAccounts.find((a) => a.id === key) ?? null;
+    setSelectedSourceAccount(found);
+    if (found?.currencyCode) {
+      setCurrencyCode(found.currencyCode);
     }
   };
 
-  const destinationOptions = filteredAccounts
-    .filter((acc) => acc.id !== sourceAccountId)
-    .map((acc) => {
+  const handleDestAccountChange = (key: string) => {
+    setDestAccountId(key);
+    const found = allAvailableAccounts.find((a) => a.id === key) ?? null;
+    setSelectedDestAccount(found);
+  };
+
+  const sourceOptions = useMemo(() => {
+    return allAvailableAccounts.map((acc) => {
       const curr = acc.currencyCode ? ` - ${acc.currencyCode}` : "";
       return {
         id: acc.id,
         label: `${acc.name} (${acc.code})${curr}`
       };
     });
+  }, [allAvailableAccounts]);
+
+  const destinationOptions = useMemo(() => {
+    return allAvailableAccounts
+      .filter((acc) => acc.id !== sourceAccountId)
+      .map((acc) => {
+        const curr = acc.currencyCode ? ` - ${acc.currencyCode}` : "";
+        return {
+          id: acc.id,
+          label: `${acc.name} (${acc.code})${curr}`
+        };
+      });
+  }, [allAvailableAccounts, sourceAccountId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,6 +183,8 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={t("transfers.newTransferModalTitle")}>
       <form
@@ -170,14 +212,19 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
           </div>
         )}
 
-        {/* Account search helper for large account lists */}
+        {/* Account search helper for bounded / paginated account selection */}
         <div>
-            <TextField
-              label={t("accounts.searchAccounts")}
-              value={accountSearch}
-              onChange={(val) => setAccountSearch(val)}
-              placeholder={t("accounts.searchPlaceholder")}
-            />
+          <TextField
+            label={t("accounts.searchAccounts")}
+            value={accountSearch}
+            onChange={(val) => setAccountSearch(val)}
+            placeholder={t("accounts.searchPlaceholder")}
+          />
+          {accountsData?.hasMore && (
+            <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--color-text-secondary)" }}>
+              {t("accounts.moreAccountsHint", "Showing top results. Type in search to find specific accounts.")}
+            </p>
+          )}
         </div>
 
         <div>
@@ -186,13 +233,7 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
             label={t("transfers.sourceAccountLabel")}
             selectedKey={sourceAccountId}
             onSelectionChange={(key) => handleSourceAccountChange(key ? String(key) : "")}
-            options={filteredAccounts.map((acc) => {
-              const curr = acc.currencyCode ? ` - ${acc.currencyCode}` : "";
-              return {
-                id: acc.id,
-                label: `${acc.name} (${acc.code})${curr}`
-              };
-            })}
+            options={sourceOptions}
             isRequired
           />
         </div>
@@ -202,7 +243,7 @@ export function NewTransferModal({ legalEntityId, isOpen, onClose }: Props): Rea
             data-testid="transfer-destination-account"
             label={t("transfers.destinationAccountLabel")}
             selectedKey={destAccountId}
-            onSelectionChange={(key) => setDestAccountId(key ? String(key) : "")}
+            onSelectionChange={(key) => handleDestAccountChange(key ? String(key) : "")}
             options={destinationOptions}
             isRequired
           />

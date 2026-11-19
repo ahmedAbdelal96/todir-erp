@@ -204,6 +204,10 @@ export function CashForecastTab({ legalEntityId }: Props): React.JSX.Element {
         legalEntityId={legalEntityId}
         isOpen={isVersionOpen}
         onClose={() => setIsVersionOpen(false)}
+        onCreated={(date, horizon) => {
+          setAsOfDate(date);
+          setHorizonDays(horizon);
+        }}
       />
 
       <CreateForecastItemModal

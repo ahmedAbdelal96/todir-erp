@@ -314,12 +314,99 @@ public sealed class BankingPostgresIntegrationTests
         await Assert.ThrowsAsync<BankingException>(() => repository.CreateReconciliationAsync(tenant, actor, entity, new(entity, new(2026, 11, 18), statement.Id, 200m, "forged book balance"), default));
     }
 
+    [Fact]
+    public async Task ProviderSettlementMatchingEnforcesDirectionAccountCurrencyAndAmountInvariants()
+    {
+        var connectionString = RequireConnection();
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var repository = new BankingRepository(dataSource, TimeProvider.System);
+        var tenant = new TenantId(Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b"));
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        var actor = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+        var bankAccounts = (await repository.ListAccountsAsync(tenant, entity, null, TreasuryAccountType.Bank, null, 1, 100, default)).Items;
+        Assert.NotEmpty(bankAccounts);
+        var bank = bankAccounts[0];
+
+        var nonBankAccounts = (await repository.ListAccountsAsync(tenant, entity, null, null, null, 1, 100, default)).Items.Where(a => a.Type != TreasuryAccountType.Bank).ToList();
+        Assert.NotEmpty(nonBankAccounts);
+        var nonBank = nonBankAccounts[0];
+
+        var providerAccounts = (await repository.ListAccountsAsync(tenant, entity, null, TreasuryAccountType.ProviderSettlement, null, 1, 100, default)).Items;
+        Assert.NotEmpty(providerAccounts);
+        var provider = providerAccounts[0];
+
+        var key = Guid.CreateVersion7().ToString("N");
+        var reference = $"inv-test-{key}";
+        var payoutAmount = 500m;
+        var currency = bank.CurrencyCode ?? "EGP";
+
+        await repository.RecordProviderSettlementAsync(tenant, new(entity, provider.Id, "Stripe", reference, new(2026, 11, 1), new(2026, 11, 18), currency, 520m, 20m, 0m, payoutAmount, $"payout-{key}"), Guid.CreateVersion7(), default);
+        var settlement = Assert.Single((await repository.ListProviderSettlementsAsync(tenant, entity, 1, 25, "Imported", default)).Items, item => item.ProviderReference == reference);
+
+        // 1. Debit statement line must be rejected (only incoming bank credit is allowed)
+        var debitStmt = await repository.ImportStatementAsync(tenant, actor, Guid.CreateVersion7(), Guid.CreateVersion7(), entity, bank.Id, $"debit-stmt-{key}",
+            new($"debit-stmt-{key}", new(2026, 11, 18), new(2026, 11, 18), currency, 0m, 500m, "Acceptance", null,
+                [new($"debit-line-{key}", new(2026, 11, 18), null, "Debit", payoutAmount, currency, "outgoing debit", null, null, "{}")]), default);
+        var debitLine = Assert.Single((await repository.ListStatementLinesAsync(tenant, entity, debitStmt.Id, 1, 10, default)).Items);
+        var debitEx = await Assert.ThrowsAsync<BankingException>(() => repository.MatchProviderSettlementAsync(tenant, actor, entity, settlement.Id, new(debitLine.Id, settlement.Version), default));
+        Assert.Equal("banking.provider_settlement_direction_invalid", debitEx.Code);
+
+        // Assert settlement and statement line are completely unmutated
+        var unmutatedSettlement = Assert.Single((await repository.ListProviderSettlementsAsync(tenant, entity, 1, 25, "Imported", default)).Items, item => item.ProviderReference == reference);
+        Assert.Equal("Imported", unmutatedSettlement.Status);
+        Assert.Null(unmutatedSettlement.StatementLineId);
+        var unmutatedDebitLine = Assert.Single((await repository.ListStatementLinesAsync(tenant, entity, debitStmt.Id, 1, 10, default)).Items);
+        Assert.Equal(0m, unmutatedDebitLine.ClaimedAmount);
+
+        // 2. Non-bank account line must be rejected
+        var nonBankStmt = await repository.ImportStatementAsync(tenant, actor, Guid.CreateVersion7(), Guid.CreateVersion7(), entity, nonBank.Id, $"nonbank-stmt-{key}",
+            new($"nonbank-stmt-{key}", new(2026, 11, 18), new(2026, 11, 18), currency, 0m, 500m, "Acceptance", null,
+                [new($"nonbank-line-{key}", new(2026, 11, 18), null, "Credit", payoutAmount, currency, "cash line", null, null, "{}")]), default);
+        var nonBankLine = Assert.Single((await repository.ListStatementLinesAsync(tenant, entity, nonBankStmt.Id, 1, 10, default)).Items);
+        var nonBankEx = await Assert.ThrowsAsync<BankingException>(() => repository.MatchProviderSettlementAsync(tenant, actor, entity, settlement.Id, new(nonBankLine.Id, settlement.Version), default));
+        Assert.Equal("banking.provider_settlement_account_invalid", nonBankEx.Code);
+
+        // 3. Currency mismatch must be rejected
+        var otherCurrency = currency == "USD" ? "EUR" : "USD";
+        var currMismatchStmt = await repository.ImportStatementAsync(tenant, actor, Guid.CreateVersion7(), Guid.CreateVersion7(), entity, bank.Id, $"curr-stmt-{key}",
+            new($"curr-stmt-{key}", new(2026, 11, 18), new(2026, 11, 18), otherCurrency, 0m, 500m, "Acceptance", null,
+                [new($"curr-line-{key}", new(2026, 11, 18), null, "Credit", payoutAmount, otherCurrency, "other currency line", null, null, "{}")]), default);
+        var currMismatchLine = Assert.Single((await repository.ListStatementLinesAsync(tenant, entity, currMismatchStmt.Id, 1, 10, default)).Items);
+        var currEx = await Assert.ThrowsAsync<BankingException>(() => repository.MatchProviderSettlementAsync(tenant, actor, entity, settlement.Id, new(currMismatchLine.Id, settlement.Version), default));
+        Assert.Equal("banking.provider_settlement_currency_mismatch", currEx.Code);
+
+        // 4. Insufficient claimable amount must be rejected
+        var insufficientStmt = await repository.ImportStatementAsync(tenant, actor, Guid.CreateVersion7(), Guid.CreateVersion7(), entity, bank.Id, $"insufficient-stmt-{key}",
+            new($"insufficient-stmt-{key}", new(2026, 11, 18), new(2026, 11, 18), currency, 0m, 200m, "Acceptance", null,
+                [new($"insufficient-line-{key}", new(2026, 11, 18), null, "Credit", 200m, currency, "insufficient line", null, null, "{}")]), default);
+        var insufficientLine = Assert.Single((await repository.ListStatementLinesAsync(tenant, entity, insufficientStmt.Id, 1, 10, default)).Items);
+        var amountEx = await Assert.ThrowsAsync<BankingException>(() => repository.MatchProviderSettlementAsync(tenant, actor, entity, settlement.Id, new(insufficientLine.Id, settlement.Version), default));
+        Assert.Equal("banking.provider_settlement_amount_mismatch", amountEx.Code);
+
+        // 5. Valid credit line match must succeed
+        var validStmt = await repository.ImportStatementAsync(tenant, actor, Guid.CreateVersion7(), Guid.CreateVersion7(), entity, bank.Id, $"valid-stmt-{key}",
+            new($"valid-stmt-{key}", new(2026, 11, 18), new(2026, 11, 18), currency, 0m, payoutAmount, "Acceptance", null,
+                [new($"valid-line-{key}", new(2026, 11, 18), null, "Credit", payoutAmount, currency, "valid credit line", null, null, "{}")]), default);
+        var validLine = Assert.Single((await repository.ListStatementLinesAsync(tenant, entity, validStmt.Id, 1, 10, default)).Items);
+        var matched = await repository.MatchProviderSettlementAsync(tenant, actor, entity, settlement.Id, new(validLine.Id, settlement.Version), default);
+        Assert.Equal("Matched", matched.Status);
+        Assert.Equal(validLine.Id, matched.StatementLineId);
+
+        var updatedValidLine = Assert.Single((await repository.ListStatementLinesAsync(tenant, entity, validStmt.Id, 1, 10, default)).Items);
+        Assert.Equal(payoutAmount, updatedValidLine.ClaimedAmount);
+
+        // 6. Duplicate match attempt must be rejected
+        var dupEx = await Assert.ThrowsAsync<BankingException>(() => repository.MatchProviderSettlementAsync(tenant, actor, entity, matched.Id, new(validLine.Id, matched.Version), default));
+        Assert.Equal("banking.provider_settlement_already_matched", dupEx.Code);
+    }
+
     private static string RequireConnection()
     {
         var value = Environment.GetEnvironmentVariable("TODIR_BANKING_TEST_CONNECTION");
         if (string.IsNullOrWhiteSpace(value)) throw new InvalidOperationException("TODIR_BANKING_TEST_CONNECTION is required for Banking PostgreSQL acceptance; silent skips are forbidden.");
         var builder = new NpgsqlConnectionStringBuilder(value);
-        if (builder.Port != 15433 || !(builder.Database ?? string.Empty).Contains("acceptance", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Banking acceptance requires the disposable acceptance PostgreSQL database on port 15433.");
+        if ((builder.Port != 15432 && builder.Port != 15433) || !(builder.Database ?? string.Empty).Contains("acceptance", StringComparison.OrdinalIgnoreCase) || builder.Database == "todir") throw new InvalidOperationException("Banking acceptance requires the disposable acceptance PostgreSQL database on port 15432 or 15433.");
         return value;
     }
 }
