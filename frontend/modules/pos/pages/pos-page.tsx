@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useOutletContext } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import { useQueryTab } from "../../../core/routing/use-query-tab.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 import { BidiText } from "../../../components/primitives/bidi-text.tsx";
 import {
@@ -27,7 +28,10 @@ export function PosPage(): React.JSX.Element {
     outletContext?.legalEntityId ||
     (typeof window !== "undefined" ? window.sessionStorage.getItem("erp.current.legalEntityId") || "" : "");
 
-  const [activeTab, setActiveTab] = useState<PosTab>("checkout");
+  const [activeTab, setActiveTab] = useQueryTab<PosTab>({
+    defaultTab: "checkout",
+    allowedTabs: ["checkout", "sessions", "registers", "returns", "offline", "reports"]
+  });
   const [selectedRegisterId, setSelectedRegisterId] = useState<string>(() => {
     return typeof window !== "undefined" ? window.sessionStorage.getItem("erp.pos.selectedRegisterId") || "" : "";
   });

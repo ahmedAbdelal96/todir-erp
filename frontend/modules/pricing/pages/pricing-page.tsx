@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useOutletContext } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import { useQueryTab } from "../../../core/routing/use-query-tab.ts";
 import {
   usePricingScope,
   usePriceLists,
@@ -23,6 +24,8 @@ import { PricingImportModal } from "../features/pricing-import-modal.tsx";
 import { PricingPolicyModal } from "../features/pricing-policy-modal.tsx";
 import type { PriceListDto, PricingDirection } from "../types.ts";
 
+type PricingTab = "overview" | "selling" | "buying" | "simulator" | "importExport" | "policies";
+
 export function PricingPage(): React.JSX.Element {
   const { t, i18n } = useTranslation("pricing");
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
@@ -30,7 +33,10 @@ export function PricingPage(): React.JSX.Element {
 
   const canManage = usePricingManagePermission();
 
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useQueryTab<PricingTab>({
+    defaultTab: "overview",
+    allowedTabs: ["overview", "selling", "buying", "simulator", "importExport", "policies"] as const
+  });
 
   // Dialog states
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
@@ -141,7 +147,7 @@ export function PricingPage(): React.JSX.Element {
           <Select
             label={t("tabs.overview")}
             selectedKey={activeTab}
-            onSelectionChange={(k) => setActiveTab(k as string)}
+            onSelectionChange={(k) => setActiveTab(k as PricingTab)}
             options={tabOptions}
           />
         </div>
@@ -154,7 +160,7 @@ export function PricingPage(): React.JSX.Element {
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => setActiveTab(tab.id as PricingTab)}
                 style={{
                   padding: "var(--space-2) var(--space-3)",
                   borderRadius: "var(--radius-sm)",

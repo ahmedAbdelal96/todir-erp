@@ -522,6 +522,19 @@ test.describe('TODIR Inventory — Complete Frontend E2E & Visual Acceptance Sui
     });
   });
 
+  test('tab selection survives a page refresh', async ({ page }) => {
+    await page.goto('/inventory');
+    await selectInventoryTab(page, 'المخزون', 'أرصدة المخزون');
+
+    await expect(page).toHaveURL(/\/inventory\?tab=stock$/);
+    await expect(page.getByRole('tab', { name: 'أرصدة المخزون', exact: true })).toHaveAttribute('aria-selected', 'true');
+
+    await page.reload();
+
+    await expect(page).toHaveURL(/\/inventory\?tab=stock$/);
+    await expect(page.getByRole('tab', { name: 'أرصدة المخزون', exact: true })).toHaveAttribute('aria-selected', 'true');
+  });
+
   test('01 to 06: Overview, Stock Balances, Stock Card, Locator, Warehouses & Hierarchy', async ({ page }) => {
     // 01-inventory-overview-final.png
     await page.setViewportSize({ width: 1280, height: 800 });

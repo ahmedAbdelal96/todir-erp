@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useOutletContext } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import { useQueryTab } from "../../../core/routing/use-query-tab.ts";
 import { InventoryTabNav } from "../components/inventory-tab-nav.tsx";
 import {
   InventoryWorkspaceNav,
@@ -35,13 +36,22 @@ import {
   useInventoryPolicy
 } from "../hooks/use-inventory-queries.ts";
 
+const inventoryTabIds = [
+  "overview", "stock", "locator", "warehouses", "transfers", "reservations",
+  "traceability", "counts", "adjustments", "opening", "history", "valuation"
+] as const;
+type InventoryTabId = typeof inventoryTabIds[number];
+
 export function InventoryPage(): React.JSX.Element {
   const { t } = useTranslation("inventory");
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const { legalEntityId } = useInventoryScope({ legalEntityId: outletCtx?.legalEntityId });
   const permissions = useInventoryPermissions();
 
-  const [activeTab, setActiveTab] = useState<string>("overview");
+  const [activeTab, setActiveTab] = useQueryTab({
+    defaultTab: "overview",
+    allowedTabs: inventoryTabIds
+  });
 
   // Operational modal triggers
   const [isReceiveOpen, setIsReceiveOpen] = useState(false);
@@ -109,7 +119,15 @@ export function InventoryPage(): React.JSX.Element {
   const handleWorkspaceSelect = (workspaceId: string) => {
     const workspace = workspaceGroups.find((item) => item.id === workspaceId);
     const firstTab = workspace?.tabs[0];
-    if (firstTab) setActiveTab(firstTab.id);
+    if (firstTab && inventoryTabIds.some((id) => id === firstTab.id)) {
+      setActiveTab(firstTab.id as InventoryTabId);
+    }
+  };
+
+  const handleTabSelect = (tabId: string) => {
+    if (inventoryTabIds.some((id) => id === tabId)) {
+      setActiveTab(tabId as InventoryTabId);
+    }
   };
 
   return (
@@ -168,7 +186,7 @@ export function InventoryPage(): React.JSX.Element {
       <InventoryTabNav
         tabs={activeWorkspace?.tabs ?? []}
         activeTab={activeTab}
-        onSelectTab={setActiveTab}
+        onSelectTab={handleTabSelect}
       />
 
       {/* Tab Panels */}

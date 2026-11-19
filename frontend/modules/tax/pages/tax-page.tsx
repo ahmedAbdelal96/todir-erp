@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useOutletContext } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import { useQueryTab } from "../../../core/routing/use-query-tab.ts";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Spinner } from "../../../components/primitives/spinner.tsx";
@@ -43,13 +44,20 @@ import type {
   TaxRuleSetDto
 } from "../types.ts";
 
+type TaxTab = "overview" | "registrations" | "productProfiles" | "partyProfiles" | "rules" | "countryPacks" | "simulator";
+
 export function TaxPage(): React.JSX.Element {
   const { t } = useTranslation("tax");
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const { legalEntityId, countryCode, today } = useTaxScope({ legalEntityId: outletCtx?.legalEntityId });
   const permissions = useTaxPermissions();
 
-  const [activeTab, setActiveTab] = useState<string>("overview");
+  const [activeTab, setActiveTab] = useQueryTab<TaxTab>({
+    defaultTab: "overview",
+    allowedTabs: [
+      "overview", "registrations", "productProfiles", "partyProfiles", "rules", "countryPacks", "simulator"
+    ] as const
+  });
 
   // Modals state
   const [isCapabilityModalOpen, setIsCapabilityModalOpen] = useState(false);
@@ -579,7 +587,7 @@ export function TaxPage(): React.JSX.Element {
                 key={tab.id}
                 variant={activeTab === tab.id ? "primary" : "ghost"}
                 size="compact"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => setActiveTab(tab.id as TaxTab)}
               >
                 {tab.label}
               </Button>

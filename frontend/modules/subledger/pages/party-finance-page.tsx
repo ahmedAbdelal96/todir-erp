@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useSearchParams } from "react-router-dom";
+import { useQueryTab } from "../../../core/routing/use-query-tab.ts";
 import { PageHeader } from "../../../components/pages/page-header.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { PartyPicker } from "../../directory/public.ts";
@@ -28,7 +29,10 @@ export function PartyFinancePage(): React.JSX.Element {
 
   const [partyId, setPartyId] = useState<string>(initialParty);
   const [direction, setDirection] = useState<SubledgerDirection>(initialDirection);
-  const [activeTab, setActiveTab] = useState<"cockpit" | "application" | "aging" | "statement">("cockpit");
+  const [activeTab, setActiveTab] = useQueryTab({
+    defaultTab: "cockpit",
+    allowedTabs: ["cockpit", "application", "aging", "statement"] as const
+  });
 
   // Query customer (AR) and supplier (AP) exposure
   const customerExposureQuery = usePartyExposureQuery(
@@ -49,7 +53,12 @@ export function PartyFinancePage(): React.JSX.Element {
 
   const handleApplyParty = (newPartyId: string) => {
     setPartyId(newPartyId);
-    setSearchParams({ partyId: newPartyId, direction });
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("partyId", newPartyId);
+      next.set("direction", direction);
+      return next;
+    }, { replace: true });
   };
 
   return (

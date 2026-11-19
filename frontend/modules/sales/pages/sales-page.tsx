@@ -17,7 +17,7 @@ import type { WorkspaceOutletContext } from "../../../app/router/route-contract.
 export function SalesPage(): React.JSX.Element {
   const { t } = useTranslation("sales");
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   let contextEntityId: string | undefined;
   try {
@@ -31,7 +31,16 @@ export function SalesPage(): React.JSX.Element {
 
   // Tab State
   const tabParam = searchParams.get("tab") as SalesTabId | null;
-  const [activeTab, setActiveTab] = useState<SalesTabId>(tabParam ?? "overview");
+  const activeTab: SalesTabId = tabParam && ["overview", "quotations", "orders", "returns", "history", "settings"].includes(tabParam)
+    ? tabParam
+    : "overview";
+  const handleTabChange = (tab: SalesTabId) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("tab", tab);
+      return next;
+    }, { replace: true });
+  };
 
   // Derive capability disclosure from backend authority / session / query params
   const distributionParam = searchParams.get("distribution");
@@ -113,7 +122,7 @@ export function SalesPage(): React.JSX.Element {
       {/* Primary Tab Navigation */}
       <SalesTabNav
         activeTab={effectiveActiveTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
         tabs={tabs}
       />
 
@@ -186,7 +195,7 @@ export function SalesPage(): React.JSX.Element {
           onOrderCreated={() => {
             setSelectedQuotationId(null);
             if (canViewOrders) {
-              setActiveTab("orders");
+              handleTabChange("orders");
             }
           }}
         />

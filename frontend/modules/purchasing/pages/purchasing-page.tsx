@@ -24,7 +24,7 @@ import type { PurchaseOrderListItem, PurchaseOrderView } from "../types.ts";
 export function PurchasingPage(): React.JSX.Element {
   const { t } = useTranslation("purchasing");
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const toOrderView = (item: PurchaseOrderListItem): PurchaseOrderView => ({
     ...item,
@@ -64,7 +64,16 @@ export function PurchasingPage(): React.JSX.Element {
 
   // Tab State
   const tabParam = searchParams.get("tab") as PurchasingTabId | null;
-  const [activeTab, setActiveTab] = useState<PurchasingTabId>(tabParam ?? "overview");
+  const activeTab: PurchasingTabId = tabParam && ["overview", "orders", "receipts", "matching", "returns", "suppliers", "history", "settings"].includes(tabParam)
+    ? tabParam
+    : "overview";
+  const handleTabChange = (tab: PurchasingTabId) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("tab", tab);
+      return next;
+    }, { replace: true });
+  };
 
   // Capabilities & Permissions
   const inventoryParam = searchParams.get("inventory");
@@ -176,7 +185,7 @@ export function PurchasingPage(): React.JSX.Element {
       {/* Tab Navigation */}
       <PurchasingTabNav
         activeTab={effectiveActiveTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
         tabs={tabs}
       />
 

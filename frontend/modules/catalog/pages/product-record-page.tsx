@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { useQueryTab } from "../../../core/routing/use-query-tab.ts";
 import { RecordPage } from "../../../components/pages/record-page.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { PropertyGrid, PropertyItem, StatCard } from "../../../components/pages/property-grid.tsx";
@@ -41,6 +42,8 @@ export interface ProductRecordPageProps {
   readonly onBack: () => void;
 }
 
+type ProductRecordTab = "overview" | "variants" | "unitsAndBarcodes" | "references" | "audit";
+
 function useIsMobile(breakpoint = 768): boolean {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth <= breakpoint : false
@@ -64,7 +67,10 @@ export function ProductRecordPage({
   const isMobile = useIsMobile();
   const { data: product, error, isLoading, refetch } = useProduct(productId);
 
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useQueryTab<ProductRecordTab>({
+    defaultTab: "overview",
+    allowedTabs: ["overview", "variants", "unitsAndBarcodes", "references", "audit"] as const
+  });
 
   // Dialog states
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -199,7 +205,7 @@ export function ProductRecordPage({
               <Select
                 aria-label={t("productRecord.tabsAria")}
                 selectedKey={activeTab}
-                onSelectionChange={(k) => setActiveTab(String(k))}
+                onSelectionChange={(k) => setActiveTab(String(k) as ProductRecordTab)}
               >
                 <SelectItem id="overview">{t("productRecord.tabOverview")}</SelectItem>
                 <SelectItem id="variants">{t("productRecord.tabVariants")}</SelectItem>
@@ -211,7 +217,7 @@ export function ProductRecordPage({
           )}
 
           {/* Tabs Container */}
-          <Tabs selectedKey={activeTab} onSelectionChange={(k) => setActiveTab(String(k))}>
+          <Tabs selectedKey={activeTab} onSelectionChange={(k) => setActiveTab(String(k) as ProductRecordTab)}>
             <div style={{ display: isMobile ? "none" : "block" }}>
               <TabList aria-label={t("productRecord.tabsAria")}>
                 <Tab id="overview">{t("productRecord.tabOverview")}</Tab>

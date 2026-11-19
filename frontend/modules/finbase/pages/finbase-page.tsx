@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useOutletContext } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import { useQueryTab } from "../../../core/routing/use-query-tab.ts";
 import { PageHeader } from "../../../components/pages/page-header.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
@@ -51,7 +52,10 @@ export function FinBasePage(): React.JSX.Element {
   const outlet = useOutletContext<WorkspaceOutletContext | undefined>();
   const { legalEntityId, baseCurrencyCode } = useFinBaseScope({ legalEntityId: outlet?.legalEntityId });
 
-  const [activeTab, setActiveTab] = useState<FinBaseTab>("overview");
+  const [activeTab, setActiveTab] = useQueryTab<FinBaseTab>({
+    defaultTab: "overview",
+    allowedTabs: ["overview", "currencies", "rates", "sources", "paymentTerms", "policies"]
+  });
   const [includeArchivedTerms, setIncludeArchivedTerms] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 

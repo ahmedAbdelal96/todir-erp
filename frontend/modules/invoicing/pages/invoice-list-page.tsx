@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { useQueryTab } from "../../../core/routing/use-query-tab.ts";
 import { ListPage } from "../../../components/pages/list-page.tsx";
 import { FilterBar } from "../../../components/primitives/filter-bar.tsx";
 import { SearchField } from "../../../components/primitives/search-field.tsx";
@@ -34,10 +35,11 @@ export function InvoiceListPage({ initialTab }: InvoiceListPageProps): React.JSX
   const perms = useInvoicingPermissions();
 
   // Determine active tab based on permissions and initialTab
-  const [activeTab, setActiveTab] = useState<"customer" | "supplier">(() => {
-    if (initialTab) return initialTab;
-    if (!perms.canReadCustomerInvoices && perms.canReadSupplierInvoices) return "supplier";
-    return "customer";
+  const defaultTab: "customer" | "supplier" = initialTab ??
+    (!perms.canReadCustomerInvoices && perms.canReadSupplierInvoices ? "supplier" : "customer");
+  const [activeTab, setActiveTab] = useQueryTab({
+    defaultTab,
+    allowedTabs: ["customer", "supplier"] as const
   });
 
   const [search, setSearch] = useState("");

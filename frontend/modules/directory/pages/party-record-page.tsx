@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
+import { useQueryTab } from "../../../core/routing/use-query-tab.ts";
 import { DateTimeDisplay, LocalDateDisplay } from "../../../components/fields/index.ts";
 import type { Party, PartyRoleCode, AddressInput, ContactPointInput, IdentifierInput, AddContactPersonRequest, AliasInput, VisibilityInput, MergePartyRequest } from "../types.ts";
 import {
@@ -154,7 +155,10 @@ function duplicateStatusLabel(status: string, t: DirectoryTranslator): string {
 
 export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps): React.JSX.Element {
   const { t } = useTranslation("directory");
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [activeTab, setActiveTab] = useQueryTab<Tab>({
+    defaultTab: "overview",
+    allowedTabs: ["overview", "contacts", "addresses", "identifiers", "audit"]
+  });
   const [editing, setEditing] = useState(false);
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);

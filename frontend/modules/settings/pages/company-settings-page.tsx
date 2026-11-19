@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import { SettingsPage } from "../../../components/pages/settings-page.tsx";
 import { Alert } from "../../../components/primitives/alert.tsx";
 import { useOptionalLegalEntityContext } from "../../../core/runtime/runtime-provider.tsx";
@@ -17,8 +17,7 @@ export function CompanySettingsPage(): React.JSX.Element {
   const { t } = useTranslation("settings");
   const outletContext = useOutletContext<WorkspaceOutletContext | undefined>();
   const legalEntity = useOptionalLegalEntityContext();
-  const [activeWorkspace, setActiveWorkspace] = useState<SettingsWorkspace>("operations");
-  const [activeTab, setActiveTab] = useState("inventoryPolicy");
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const entityLabel = outletContext?.legalEntityName
     ? `${outletContext.legalEntityName}${outletContext.legalEntityCode ? ` (${outletContext.legalEntityCode})` : ""}`
@@ -52,13 +51,39 @@ export function CompanySettingsPage(): React.JSX.Element {
     ]
   };
 
+  const requestedWorkspace = searchParams.get("workspace") as SettingsWorkspace | null;
+  const requestedTab = searchParams.get("tab");
+  const tabWorkspace = workspaceIds.find((workspace) =>
+    tabsByWorkspace[workspace].some((tab) => tab.id === requestedTab)
+  );
+  const activeWorkspace: SettingsWorkspace = requestedWorkspace && workspaceIds.includes(requestedWorkspace)
+    ? requestedWorkspace
+    : tabWorkspace ?? "operations";
   const currentTabs = tabsByWorkspace[activeWorkspace];
+  const activeTab = currentTabs.some((tab) => tab.id === requestedTab)
+    ? requestedTab ?? currentTabs[0]?.id ?? ""
+    : currentTabs[0]?.id ?? "";
   const hasInventorySettings = activeWorkspace === "operations" && activeTab === "inventoryPolicy";
 
   const handleWorkspaceChange = (workspace: string) => {
     const nextWorkspace = workspace as SettingsWorkspace;
-    setActiveWorkspace(nextWorkspace);
-    setActiveTab(tabsByWorkspace[nextWorkspace][0]?.id ?? "");
+    if (!workspaceIds.includes(nextWorkspace)) return;
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("workspace", nextWorkspace);
+      next.set("tab", tabsByWorkspace[nextWorkspace][0]?.id ?? "");
+      return next;
+    }, { replace: true });
+  };
+
+  const handleTabChange = (tab: string) => {
+    if (!currentTabs.some((item) => item.id === tab)) return;
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("workspace", activeWorkspace);
+      next.set("tab", tab);
+      return next;
+    }, { replace: true });
   };
 
   return (
@@ -75,7 +100,7 @@ export function CompanySettingsPage(): React.JSX.Element {
       />
 
       <div id="settings-workspace-content" role="tabpanel" aria-labelledby={activeWorkspace} style={{ display: "flex", flexDirection: "column", gap: "1rem", minWidth: 0 }}>
-        <SettingsTabNav tabs={currentTabs} activeTab={activeTab} panelId="settings-section-content" onSelectTab={setActiveTab} />
+        <SettingsTabNav tabs={currentTabs} activeTab={activeTab} panelId="settings-section-content" onSelectTab={handleTabChange} />
         <div id="settings-section-content" role="tabpanel" aria-labelledby={activeTab} style={{ minWidth: 0 }}>
           {hasInventorySettings ? (
             <InventoryPolicySettings />
