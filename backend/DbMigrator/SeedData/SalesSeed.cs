@@ -31,6 +31,19 @@ public static class SalesSeed
                 await context.ExecuteAsync("insert into business_sales.quotation_acceptance(tenant_id,id,legal_entity_id,quotation_id,revision_number,accepted_at,acceptance_method,recorded_by,note,idempotency_key) values($1,$2,$3,$4,1,$5,'Email',$6,'development_seed',$7) on conflict(tenant_id,quotation_id,revision_number) do nothing", cancellationToken, context.Tenant.Id, SeedIds.Child(context.Tenant.Id, "sales-acceptance", index), context.EntityId, quoteId, context.AsOf, context.AdministratorId, $"seed-sales-accept-{index}");
             if (state == "Draft") draft++; else if (state == "Open") open++; else accepted++;
         }
+
+        // Keep one confirmed line in the source module so Manufacturing can prove
+        // accepted-demand refresh and line-level pegging against a real owner fact.
+        var manufacturingOrderId = SeedIds.Child(context.Tenant.Id, "sales-order-manufacturing", 1);
+        var manufacturingLineId = SeedIds.Child(context.Tenant.Id, "sales-order-line-manufacturing", 1);
+        var manufacturingParty = SeedIds.Party(context.Tenant.Id, 1);
+        var manufacturingProduct = SeedIds.Variant(context.Tenant.Id, 1, "default");
+        await context.ExecuteAsync("insert into business_sales.sales_order(tenant_id,id,legal_entity_id,branch_id,number,quotation_id,quotation_revision,party_id,order_date,currency_code,warehouse_id,commercial_state,fulfillment_state,invoicing_state,credit_state,customer_reference,requested_delivery_date,version,created_by,created_at,updated_at) values($1,$2,$3,$4,'SO-MFG-0001',null,null,$5,$6,$7,$8,'Confirmed','Pending','NotInvoiced','Approved','development_seed',$9,1,$10,$11,$11) on conflict(tenant_id,id) do update set commercial_state='Confirmed',fulfillment_state='Pending',requested_delivery_date=excluded.requested_delivery_date,updated_at=excluded.updated_at", cancellationToken,
+            context.Tenant.Id, manufacturingOrderId, context.EntityId, context.BranchId, manufacturingParty,
+            DateOnly.FromDateTime(context.AsOf.UtcDateTime).AddDays(-2), context.Tenant.BaseCurrency, SeedIds.Stable($"{context.Tenant.Id:D}:inventory:warehouse-main"),
+            DateOnly.FromDateTime(context.AsOf.UtcDateTime).AddDays(60), context.AdministratorId, context.AsOf);
+        await context.ExecuteAsync("insert into business_sales.sales_order_line(tenant_id,id,legal_entity_id,order_id,sequence,product_variant_id,unit_of_measure_id,description,ordered_quantity,fulfilled_quantity,cancelled_quantity,invoiced_quantity,unit_price) values($1,$2,$3,$4,1,$5,$6,'Manufacturing acceptance finished product',600,0,0,0,100) on conflict(tenant_id,id) do update set ordered_quantity=excluded.ordered_quantity,fulfilled_quantity=0,cancelled_quantity=0", cancellationToken,
+            context.Tenant.Id, manufacturingLineId, context.EntityId, manufacturingOrderId, manufacturingProduct, SeedIds.Uom(context.Tenant.Id, "EA"));
         return new(QuoteCount, draft, open, accepted);
     }
 

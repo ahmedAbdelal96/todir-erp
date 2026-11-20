@@ -20,7 +20,7 @@ This is a backend handoff draft, not `FRONTEND COMPLETE` or `MODULE COMPLETE`. T
 - `/api/v1/manufacturing/planning-runs`, demand/run/supplies, and planned-production firming
 - `/api/v1/manufacturing/production-orders/{id}/operations`, operation action commands, close-readiness, plant capacity, and genealogy forward/reverse reads
 
-The planning-run execution endpoint refreshes accepted Sales demand and eligible Purchasing supply through owner capabilities before calculating Manufacturing suggestions. A missing capability is treated as an empty optional source; the current development fixture still needs non-empty source-line acceptance coverage.
+The planning-run execution endpoint refreshes accepted Sales demand and eligible Purchasing supply through owner capabilities before calculating Manufacturing suggestions. Missing owner capabilities fail closed. The canonical development fixture provides one confirmed 600-unit Sales line and one approved 100-unit Purchasing line per tenant inside the horizon; the run persists source-line references, due dates, and a `salesDemandCount=1` / `purchaseSupplyCount=1` watermark.
 
 Execution commands now validate the production order and output identity/quantity before invoking Inventory. Inventory-backed material/output facts require a tenant/legal-entity-scoped confirmed operation snapshot; a retry can recover a committed Inventory operation by the Manufacturing source key. New material/output keys are bound to a request hash and reuse with a different payload is rejected. The frontend must treat an unknown Inventory outcome as recoverable and retry with the same idempotency key; it must not create a new key automatically.
 
@@ -34,13 +34,14 @@ All endpoints require authentication, tenant context, the relevant `manufacturin
 - Show the confirmed Inventory receipt status and canonical valuation separately from final manufacturing cost; client-entered provisional value is not authoritative.
 - Do not present MRP suggestions as authorized production or purchase orders until explicitly firmed.
 - Show forecast consumption and accepted sales demand in the MRP explanation; never add them blindly.
+- For the canonical overlap fixture, show 1,000 forecast, 600 consumed by accepted Sales, and 400 residual forecast; the 100-unit Purchase supply is a separate firmed, date-correct supply.
 - Use explicit retry/idempotency keys for shop-floor and material/output commands.
 
 ## Development seed scenarios available for UI evaluation
 
 - Atlas and Delta each have a main plant, active finished-goods BOM and approved production definition.
 - `MO-SEED-0001` contains 100 ordered, 60 completed, component material with 100 issued / 60 consumed / 40 returned, a pending provisional 60-unit output, planned/actual cost facts, and an explainable variance.
-- MRP seed contains 1,000 forecast units with 600 consumed by accepted demand and a 400-unit residual planned production suggestion.
+- MRP seed contains 1,000 forecast units with 600 consumed by accepted demand and a 400-unit residual planned production suggestion. Authenticated source refresh additionally proves one Sales source demand and one approved Purchasing supply per tenant.
 
 ## Not ready for frontend acceptance yet
 

@@ -1,12 +1,22 @@
 using Modules.Inventory.Services;
 using Modules.Inventory.DTOs;
 using Modules.Inventory.Entities;
+using Todir.Inventory.Contracts;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Inventory.Contracts;
 
 public sealed class InventoryCapabilityAdapter(InventoryService service) : Shared.Contracts.Inventory.IInventoryCapabilities
 {
+    public async Task<IReadOnlyList<Shared.Contracts.Inventory.InventoryAvailabilitySnapshot>> GetAvailabilityAsync(Guid tenantId, Guid legalEntityId,
+        Guid productVariantId, bool includeReservations = true, CancellationToken cancellationToken = default)
+    {
+        var rows = await service.GetBatchAvailabilityAsync(tenantId,
+            new InventoryAvailabilityRequest(productVariantId, legalEntityId, IncludeReservations: includeReservations), cancellationToken);
+        return rows.Select(row => new Shared.Contracts.Inventory.InventoryAvailabilitySnapshot(row.ProductVariantId, row.WarehouseId,
+            row.OnHand, row.Reserved, row.Available, row.InTransit, row.BaseUnitCode)).ToArray();
+    }
+
     public Task<Guid> ReserveAsync(Guid tenantId, Guid actorId, Shared.Contracts.Inventory.InventoryReservationRequest request, CancellationToken cancellationToken = default) =>
         service.ReserveAsync(tenantId, actorId, new Todir.Inventory.Contracts.InventoryReservationRequest(request.ProductVariantId, request.LegalEntityId, request.WarehouseId, request.LocationId, request.Quantity, request.SourceModule, request.SourceDocumentId, request.SourceLineId, request.IdempotencyKey, request.ExpiresAt, request.LotId, request.SerialId), cancellationToken);
 

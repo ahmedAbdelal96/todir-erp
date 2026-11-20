@@ -54,8 +54,9 @@ public sealed class ManufacturingExecutionService(ManufacturingRepository reposi
         if (request.WarehouseId is null || request.EnteredUomId is null) throw new ManufacturingException("manufacturing.inventory_context_required");
         if (order.State is not ("Released" or "InProgress" or "OnHold")) throw new ManufacturingException("manufacturing.production_not_executable");
         if (request.Quantity <= 0 || string.IsNullOrWhiteSpace(request.IdempotencyKey)) throw new ManufacturingException("manufacturing.output_invalid");
+        if (request.OutputType is not ("Good" or "CoProduct" or "ByProduct")) throw new ManufacturingException("manufacturing.output_type_invalid");
         var outputProductVariantId = request.ProductVariantId ?? order.ProductVariantId;
-        await repository.ValidateOutputRequestAsync(tenant, orderId, outputProductVariantId, request.Quantity, ct);
+        await repository.ValidateOutputRequestAsync(tenant, orderId, outputProductVariantId, request.Quantity, request.OutputType, ct);
         var operationId = await ResolveInventoryOperationAsync(tenant.Value, order.LegalEntityId, orderId, request.IdempotencyKey,
             () => inventory.ReceiveAsync(tenant.Value, actor, new InventoryMovementRequest(outputProductVariantId, order.LegalEntityId, request.WarehouseId.Value, request.LocationId, request.Quantity, request.EnteredUomId.Value, request.ConversionFactorSnapshot, "manufacturing", orderId, request.IdempotencyKey, order.NeedDate, order.NeedDate, "ProductionOutput", request.LotId, request.SerialId), ct), ct);
         var evidence = await inventory.GetOperationSnapshotAsync(tenant.Value, order.LegalEntityId, operationId, ct)

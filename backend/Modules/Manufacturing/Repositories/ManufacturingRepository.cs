@@ -17,7 +17,8 @@ public sealed partial class ManufacturingRepository(
     ITransactionCoordinator coordinator,
     ITransactionalSequenceAllocator sequences,
     IManufacturingDemandCapabilities? demandCapabilities = null,
-    IManufacturingSupplyCapabilities? supplyCapabilities = null) : IManufacturingCostReader
+    IManufacturingSupplyCapabilities? supplyCapabilities = null,
+    Shared.Contracts.Inventory.IInventoryCapabilities? inventoryCapabilities = null) : IManufacturingCostReader
 {
     public Task<PlantResponse> CreatePlantAsync(TenantId tenant, Guid actor, CreatePlantRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
@@ -205,7 +206,17 @@ public sealed partial class ManufacturingRepository(
         if (request.Quantity <= 0 || string.IsNullOrWhiteSpace(request.IdempotencyKey)) throw new ManufacturingException("manufacturing.material_event_invalid");
         if (request.EventType is not ("Reserved" or "Issued" or "Consumed" or "Returned" or "Scrapped")) throw new ManufacturingException("manufacturing.material_event_invalid");
         var material = await ReadMaterialAsync(context, tenant.Value, request.RequirementId, token) ?? throw new ManufacturingException("manufacturing.material_requirement_not_found");
-        var orderExists = await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_order where tenant_id=$1 and id=$2 and state in ('Released','InProgress','OnHold'))", token, tenant.Value, orderId); if (!orderExists) throw new ManufacturingException("manufacturing.production_not_executable");
+        var orderLegalEntity = await ScalarAsync<Guid?>(context, "select legal_entity_id from business_manufacturing.production_order where tenant_id=$1 and id=$2 and state in ('Released','InProgress','OnHold')", token, tenant.Value, orderId) ?? throw new ManufacturingException("manufacturing.production_not_executable");
+        if (request.EventType is "Issued" or "Returned")
+        {
+            if (inventoryEvidence is null || inventoryEvidence.OperationId != request.InventoryOperationId || inventoryEvidence.LegalEntityId != orderLegalEntity
+                || !string.Equals(inventoryEvidence.Status, "Confirmed", StringComparison.Ordinal)
+                || !string.Equals(inventoryEvidence.SourceModule, "manufacturing", StringComparison.OrdinalIgnoreCase)
+                || inventoryEvidence.SourceDocumentId != orderId || !string.Equals(inventoryEvidence.IdempotencyKey, request.IdempotencyKey, StringComparison.Ordinal)
+                || inventoryEvidence.ProductVariantId != (request.SubstituteProductVariantId ?? material.PreferredProductVariantId)
+                || inventoryEvidence.BaseQuantity != decimal.Abs(request.Quantity * request.ConversionFactorSnapshot))
+                throw new ManufacturingException("manufacturing.inventory_operation_mismatch");
+        }
         var belongsToOrder = await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_material_requirement where tenant_id=$1 and id=$2 and production_order_id=$3)", token, tenant.Value, request.RequirementId, orderId); if (!belongsToOrder) throw new ManufacturingException("manufacturing.material_order_mismatch");
         var requestHash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
         {
@@ -230,9 +241,15 @@ public sealed partial class ManufacturingRepository(
         var authoritativeUnitCost = inventoryEvidence is { BaseQuantity: > 0 } && request.EventType == "Issued"
             ? Math.Abs(inventoryEvidence.ValuationAmount) / inventoryEvidence.BaseQuantity
             : (decimal?)null;
-        await ExecuteAsync(context, "insert into business_manufacturing.production_material_event(tenant_id,id,requirement_id,event_type,quantity,uom_code,product_variant_id,inventory_operation_id,inventory_reservation_id,source_key,substitute_product_variant_id,unit_cost,currency_code,request_hash,actor_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)", token, tenant.Value, Guid.CreateVersion7(), request.RequirementId, request.EventType, request.Quantity, request.UomCode, request.SubstituteProductVariantId ?? material.PreferredProductVariantId, Db(request.InventoryOperationId), Db(request.InventoryReservationId), request.IdempotencyKey, Db(request.SubstituteProductVariantId), Db(authoritativeUnitCost), Db(inventoryEvidence?.CurrencyCode), requestHash, actor);
-        if (request.EventType == "Issued" && inventoryEvidence is { ValuationAmount: not 0, CurrencyCode: not null, OperationId: var inventoryOperationId })
-            await ExecuteAsync(context, "insert into business_manufacturing.production_actual_cost_fact(tenant_id,id,production_order_id,source_type,source_id,cost_category,amount,currency_code,quantity,source_date,idempotency_key) values($1,$2,$3,'InventoryOperation',$4,'Material',$5,$6,$7,current_date,$8) on conflict (tenant_id,idempotency_key) do nothing", token, tenant.Value, Guid.CreateVersion7(), orderId, inventoryOperationId.ToString("D"), Math.Abs(inventoryEvidence.ValuationAmount), inventoryEvidence.CurrencyCode, inventoryEvidence.BaseQuantity, $"inventory-material:{inventoryOperationId:D}");
+        var materialEventId = await ScalarAsync<Guid?>(context, "insert into business_manufacturing.production_material_event(tenant_id,id,requirement_id,event_type,quantity,uom_code,product_variant_id,inventory_operation_id,inventory_reservation_id,source_key,substitute_product_variant_id,unit_cost,currency_code,request_hash,actor_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) on conflict (tenant_id,source_key) do nothing returning id", token, tenant.Value, Guid.CreateVersion7(), request.RequirementId, request.EventType, request.Quantity, request.UomCode, request.SubstituteProductVariantId ?? material.PreferredProductVariantId, Db(request.InventoryOperationId), Db(request.InventoryReservationId), request.IdempotencyKey, Db(request.SubstituteProductVariantId), Db(authoritativeUnitCost), Db(inventoryEvidence?.CurrencyCode), requestHash, actor);
+        if (materialEventId is null)
+        {
+            var concurrentReplay = await ReadMaterialReplayAsync(context, tenant.Value, request.IdempotencyKey, token) ?? throw new ManufacturingException("manufacturing.idempotency_conflict");
+            if (concurrentReplay.RequirementId != request.RequirementId || concurrentReplay.RequestHash is not null && !string.Equals(concurrentReplay.RequestHash, requestHash, StringComparison.Ordinal)) throw new ManufacturingException("manufacturing.idempotency_conflict");
+            return await ReadMaterialAsync(context, tenant.Value, request.RequirementId, token) ?? throw new ManufacturingException("manufacturing.material_requirement_not_found");
+        }
+        if (request.EventType is "Issued" or "Returned" && inventoryEvidence is { ValuationAmount: not 0, CurrencyCode: not null, OperationId: var inventoryOperationId })
+            await ExecuteAsync(context, "insert into business_manufacturing.production_actual_cost_fact(tenant_id,id,production_order_id,source_type,source_id,cost_category,amount,currency_code,quantity,source_date,idempotency_key) values($1,$2,$3,'InventoryOperation',$4,'Material',$5,$6,$7,current_date,$8) on conflict (tenant_id,idempotency_key) do nothing", token, tenant.Value, Guid.CreateVersion7(), orderId, inventoryOperationId.ToString("D"), request.EventType == "Returned" ? -Math.Abs(inventoryEvidence.ValuationAmount) : Math.Abs(inventoryEvidence.ValuationAmount), inventoryEvidence.CurrencyCode, inventoryEvidence.BaseQuantity, $"inventory-material:{inventoryOperationId:D}");
         var column = request.EventType switch { "Reserved" => "reserved_qty", "Issued" => "issued_qty", "Consumed" => "consumed_qty", "Returned" => "returned_qty", "Scrapped" => "scrapped_qty", _ => throw new ManufacturingException("manufacturing.material_event_invalid") };
         var issued = request.EventType == "Issued" ? material.IssuedQty + request.Quantity : material.IssuedQty; var consumed = request.EventType == "Consumed" ? material.ConsumedQty + request.Quantity : material.ConsumedQty; var returned = request.EventType == "Returned" ? material.ReturnedQty + request.Quantity : material.ReturnedQty; var scrapped = request.EventType == "Scrapped" ? material.ScrappedQty + request.Quantity : material.ScrappedQty;
         ManufacturingRules.ValidateMaterialConservation(issued, consumed, returned, scrapped);
@@ -270,9 +287,22 @@ public sealed partial class ManufacturingRepository(
         }
         var order = await ReadOrderAsync(context, tenant.Value, orderId, token) ?? throw new ManufacturingException("manufacturing.production_order_not_found");
         ManufacturingRules.ValidateOutput(order.OrderedQty, order.CompletedQty, request.Quantity);
-        if (inventoryEvidence is null || inventoryEvidence.OperationId != request.InventoryOperationId || !string.Equals(inventoryEvidence.Status, "Confirmed", StringComparison.Ordinal)) throw new ManufacturingException("manufacturing.inventory_operation_unknown");
         var outputProductVariantId = request.ProductVariantId ?? order.ProductVariantId;
-        var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_manufacturing.production_output(tenant_id,id,production_order_id,operation_id,product_variant_id,output_type,quantity,uom_code,inventory_operation_id,inventory_receipt_status,lot_id,serial_id,provisional_value,final_value,currency_code,idempotency_key,request_hash,actor_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,'Committed',$10,$11,$12,$12,$13,$14,$15,$16,$17)", token, tenant.Value, id, orderId, Db(request.OperationId), outputProductVariantId, request.OutputType, request.Quantity, request.UomCode, Db(request.InventoryOperationId), Db(request.LotId), Db(request.SerialId), inventoryEvidence.ValuationAmount, inventoryEvidence.ValuationAmount, Db(inventoryEvidence.CurrencyCode), request.IdempotencyKey, requestHash, actor);
+        if (inventoryEvidence is null || inventoryEvidence.OperationId != request.InventoryOperationId || !string.Equals(inventoryEvidence.Status, "Confirmed", StringComparison.Ordinal)
+            || inventoryEvidence.LegalEntityId != order.LegalEntityId || !string.Equals(inventoryEvidence.SourceModule, "manufacturing", StringComparison.OrdinalIgnoreCase)
+            || inventoryEvidence.SourceDocumentId != orderId || !string.Equals(inventoryEvidence.IdempotencyKey, request.IdempotencyKey, StringComparison.Ordinal)
+            || inventoryEvidence.ProductVariantId != outputProductVariantId
+            || inventoryEvidence.BaseQuantity != decimal.Abs(request.Quantity * request.ConversionFactorSnapshot)
+            || inventoryEvidence.LotId != request.LotId || inventoryEvidence.SerialId != request.SerialId)
+            throw new ManufacturingException("manufacturing.inventory_operation_mismatch");
+        var id = Guid.CreateVersion7();
+        var outputId = await ScalarAsync<Guid?>(context, "insert into business_manufacturing.production_output(tenant_id,id,production_order_id,operation_id,product_variant_id,output_type,quantity,uom_code,inventory_operation_id,inventory_receipt_status,lot_id,serial_id,provisional_value,final_value,currency_code,idempotency_key,request_hash,actor_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,'Committed',$10,$11,$12,$12,$13,$14,$15,$16,$17) on conflict (tenant_id,idempotency_key) do nothing returning id", token, tenant.Value, id, orderId, Db(request.OperationId), outputProductVariantId, request.OutputType, request.Quantity, request.UomCode, Db(request.InventoryOperationId), Db(request.LotId), Db(request.SerialId), inventoryEvidence.ValuationAmount, inventoryEvidence.ValuationAmount, Db(inventoryEvidence.CurrencyCode), request.IdempotencyKey, requestHash, actor);
+        if (outputId is null)
+        {
+            var concurrentReplay = await ReadOutputReplayAsync(context, tenant.Value, request.IdempotencyKey, token) ?? throw new ManufacturingException("manufacturing.idempotency_conflict");
+            if (concurrentReplay.RequestHash is not null && !string.Equals(concurrentReplay.RequestHash, requestHash, StringComparison.Ordinal)) throw new ManufacturingException("manufacturing.idempotency_conflict");
+            return concurrentReplay.Response;
+        }
         if (request.OutputType == "Good") await ExecuteAsync(context, "update business_manufacturing.production_order set completed_qty=completed_qty+$1,state=case when completed_qty+$1 >= ordered_qty then 'Completed' else state end,updated_at=now(),row_version=row_version+1 where tenant_id=$2 and id=$3", token, request.Quantity, tenant.Value, orderId);
         context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "ProductionOutputReportedV1", JsonSerializer.Serialize(new { productionOrderId = orderId, outputId = id, quantity = request.Quantity, outputType = request.OutputType }), tenant, DateTimeOffset.UtcNow, correlationId, orderId, "manufacturing"));
         return new ProductionOutputResponse(id, orderId, outputProductVariantId, request.Quantity, request.OutputType, "Committed", request.IdempotencyKey);
@@ -283,13 +313,14 @@ public sealed partial class ManufacturingRepository(
         return await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_order where tenant_id=$1 and id=$2 and product_variant_id=$3) or exists(select 1 from business_manufacturing.production_definition_snapshot s join business_manufacturing.formula_output_line o on o.tenant_id=s.tenant_id and o.formula_version_id=s.formula_version_id where s.tenant_id=$1 and s.production_order_id=$2 and o.product_variant_id=$3)", token, tenant.Value, orderId, productVariantId);
     }, ct);
 
-    public async Task ValidateOutputRequestAsync(TenantId tenant, Guid orderId, Guid productVariantId, decimal quantity, CancellationToken ct)
+    public async Task ValidateOutputRequestAsync(TenantId tenant, Guid orderId, Guid productVariantId, decimal quantity, string outputType = "Good", CancellationToken ct = default)
     {
         _ = await coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
             var order = await ReadOrderAsync(context, tenant.Value, orderId, token) ?? throw new ManufacturingException("manufacturing.production_order_not_found");
             ManufacturingRules.ValidateOutput(order.OrderedQty, order.CompletedQty, quantity);
-            if (!await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_order where tenant_id=$1 and id=$2 and product_variant_id=$3) or exists(select 1 from business_manufacturing.production_definition_snapshot s join business_manufacturing.formula_output_line o on o.tenant_id=s.tenant_id and o.formula_version_id=s.formula_version_id where s.tenant_id=$1 and s.production_order_id=$2 and o.product_variant_id=$3)", token, tenant.Value, orderId, productVariantId)) throw new ManufacturingException("manufacturing.output_product_not_allowed");
+            if (outputType is not ("Good" or "CoProduct" or "ByProduct")) throw new ManufacturingException("manufacturing.output_type_invalid");
+            if (!await ScalarAsync<bool>(context, "select ($4='Good' and exists(select 1 from business_manufacturing.production_order where tenant_id=$1 and id=$2 and product_variant_id=$3)) or exists(select 1 from business_manufacturing.production_definition_snapshot s join business_manufacturing.formula_output_line o on o.tenant_id=s.tenant_id and o.formula_version_id=s.formula_version_id where s.tenant_id=$1 and s.production_order_id=$2 and o.product_variant_id=$3 and o.output_type=$4)", token, tenant.Value, orderId, productVariantId, outputType)) throw new ManufacturingException("manufacturing.output_product_not_allowed");
             return true;
         }, ct);
     }
@@ -319,16 +350,64 @@ public sealed partial class ManufacturingRepository(
         await ExecuteAsync(context, "delete from business_manufacturing.planned_supply where tenant_id=$1 and planning_run_id=$2 and state='Suggested'", token, tenant.Value, runId);
         await ExecuteAsync(context, "delete from business_manufacturing.planning_exception where tenant_id=$1 and planning_run_id=$2", token, tenant.Value, runId);
         await using var demandCommand = Command(context, "select id,product_variant_id,plant_id,need_date,quantity,uom_code,source_type,consumed_forecast_qty from business_manufacturing.planning_demand where tenant_id=$1 and planning_run_id=$2 order by need_date,id", tenant.Value, runId); await using var reader = await demandCommand.ExecuteReaderAsync(token); var demands = new List<(Guid Id, Guid ProductVariantId, Guid? PlantId, DateOnly NeedDate, decimal Quantity, string UomCode, string SourceType, decimal ConsumedForecastQty)>(); while (await reader.ReadAsync(token)) demands.Add((reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetFieldValue<DateOnly>(3), reader.GetDecimal(4), reader.GetString(5), reader.GetString(6), reader.GetDecimal(7))); await reader.DisposeAsync();
-        foreach (var demandGroup in demands.GroupBy(demand => new { demand.ProductVariantId, demand.PlantId, demand.NeedDate, demand.UomCode }))
+        var firmedSupplies = new List<(Guid Id, Guid ProductVariantId, Guid? PlantId, DateOnly NeedDate, decimal Quantity, string UomCode)>();
+        await using (var firmedCommand = Command(context, "select id,product_variant_id,plant_id,need_date,quantity,uom_code from business_manufacturing.planned_supply where tenant_id=$1 and state='Firmed' order by need_date,id", tenant.Value))
+        await using (var firmedReader = await firmedCommand.ExecuteReaderAsync(token))
         {
-            var forecast = demandGroup.Where(demand => string.Equals(demand.SourceType, "Forecast", StringComparison.OrdinalIgnoreCase)).Sum(demand => demand.Quantity);
+            while (await firmedReader.ReadAsync(token))
+                firmedSupplies.Add((firmedReader.GetGuid(0), firmedReader.GetGuid(1), firmedReader.IsDBNull(2) ? null : firmedReader.GetGuid(2), firmedReader.GetFieldValue<DateOnly>(3), firmedReader.GetDecimal(4), firmedReader.GetString(5)));
+        }
+        var firmedRemaining = firmedSupplies.ToDictionary(row => row.Id, row => row.Quantity);
+        var stockRemaining = new Dictionary<Guid, decimal>();
+
+        foreach (var demandGroup in demands.GroupBy(demand => new { demand.ProductVariantId, demand.PlantId, demand.NeedDate, demand.UomCode }).OrderBy(group => group.Key.NeedDate))
+        {
+            var forecastDemands = demandGroup.Where(demand => string.Equals(demand.SourceType, "Forecast", StringComparison.OrdinalIgnoreCase)).OrderBy(demand => demand.Id).ToList();
+            var forecast = forecastDemands.Sum(demand => demand.Quantity);
             var acceptedDemand = demandGroup.Where(demand => !string.Equals(demand.SourceType, "Forecast", StringComparison.OrdinalIgnoreCase)).Sum(demand => demand.Quantity);
-            var consumedForecast = demandGroup.Sum(demand => demand.ConsumedForecastQty);
+            var explicitConsumedForecast = forecastDemands.Sum(demand => demand.ConsumedForecastQty);
+            // Accepted demand consumes the matching forecast bucket; standalone demand on
+            // another date remains additive. Preserve explicit source consumption while
+            // filling the missing overlap from the owner-published accepted demand.
+            var consumedForecast = Math.Min(forecast, Math.Max(explicitConsumedForecast, acceptedDemand));
+            if (forecastDemands.Count > 0 && consumedForecast != explicitConsumedForecast)
+            {
+                var remainingForecastConsumption = consumedForecast;
+                foreach (var forecastDemand in forecastDemands)
+                {
+                    var allocatedConsumption = Math.Min(forecastDemand.Quantity, remainingForecastConsumption);
+                    await ExecuteAsync(context, "update business_manufacturing.planning_demand set consumed_forecast_qty=$1 where tenant_id=$2 and id=$3", token, allocatedConsumption, tenant.Value, forecastDemand.Id);
+                    remainingForecastConsumption -= allocatedConsumption;
+                }
+            }
             var grossRequirement = Math.Max(forecast, acceptedDemand);
-            var committedSupply = await ScalarAsync<decimal>(context, "select coalesce(sum(quantity),0) from business_manufacturing.planned_supply where tenant_id=$1 and product_variant_id=$2 and (($3::uuid is null and plant_id is null) or plant_id=$3) and need_date=$4 and state='Firmed'", token, tenant.Value, demandGroup.Key.ProductVariantId, Db(demandGroup.Key.PlantId), demandGroup.Key.NeedDate);
-            var residual = Math.Max(0m, grossRequirement - consumedForecast - committedSupply);
+            if (!stockRemaining.TryGetValue(demandGroup.Key.ProductVariantId, out var availableStock))
+            {
+                var availability = inventoryCapabilities is null
+                    ? []
+                    : await inventoryCapabilities.GetAvailabilityAsync(tenant.Value, run.LegalEntityId, demandGroup.Key.ProductVariantId, true, token);
+                availableStock = availability.Where(row => string.Equals(row.BaseUnitCode, demandGroup.Key.UomCode, StringComparison.OrdinalIgnoreCase)).Sum(row => row.Available);
+            }
+            var committedSupply = 0m;
+            var supplyAllocations = new List<(Guid Id, decimal Quantity)>();
+            foreach (var supply in firmedSupplies.Where(row => row.ProductVariantId == demandGroup.Key.ProductVariantId
+                && row.PlantId == demandGroup.Key.PlantId && row.UomCode == demandGroup.Key.UomCode && row.NeedDate <= demandGroup.Key.NeedDate))
+            {
+                var remaining = firmedRemaining[supply.Id];
+                if (remaining <= 0) continue;
+                var allocation = Math.Min(remaining, Math.Max(0m, grossRequirement - consumedForecast - committedSupply));
+                if (allocation <= 0) break;
+                firmedRemaining[supply.Id] = remaining - allocation;
+                committedSupply += allocation;
+                supplyAllocations.Add((supply.Id, allocation));
+            }
+            var stockAllocation = Math.Min(availableStock, Math.Max(0m, grossRequirement - consumedForecast - committedSupply));
+            stockRemaining[demandGroup.Key.ProductVariantId] = availableStock - stockAllocation;
+            var residual = Math.Max(0m, grossRequirement - consumedForecast - committedSupply - stockAllocation);
+            var demand = demandGroup.FirstOrDefault(item => string.Equals(item.SourceType, "Forecast", StringComparison.OrdinalIgnoreCase)) is var selectedForecastDemand && selectedForecastDemand.Id != Guid.Empty ? selectedForecastDemand : demandGroup.First();
+            foreach (var allocation in supplyAllocations)
+                await ExecuteAsync(context, "insert into business_manufacturing.mrp_pegging_link(tenant_id,id,planning_run_id,demand_id,planned_supply_id,allocated_qty) values($1,$2,$3,$4,$5,$6)", token, tenant.Value, Guid.CreateVersion7(), runId, demand.Id, allocation.Id, allocation.Quantity);
             if (residual <= 0) continue;
-            var demand = demandGroup.FirstOrDefault(item => string.Equals(item.SourceType, "Forecast", StringComparison.OrdinalIgnoreCase)) is var forecastDemand && forecastDemand.Id != Guid.Empty ? forecastDemand : demandGroup.First();
             var supplyId = Guid.CreateVersion7(); var start = demandGroup.Key.NeedDate.AddDays(-1); await ExecuteAsync(context, "insert into business_manufacturing.planned_supply(tenant_id,id,planning_run_id,product_variant_id,plant_id,supply_type,source_ref,need_date,suggested_start,quantity,uom_code,source_watermark) values($1,$2,$3,$4,$5,'Production',$6,$7,$8,$9,$10,jsonb_build_object('demandId',$2::text,'grossRequirement',$11,'consumedForecast',$12,'firmedSupply',$13))", token, tenant.Value, supplyId, runId, demandGroup.Key.ProductVariantId, Db(demandGroup.Key.PlantId), $"Demand:{demand.Id:D}", demandGroup.Key.NeedDate, start, residual, demandGroup.Key.UomCode, grossRequirement, consumedForecast, committedSupply);
             await ExecuteAsync(context, "insert into business_manufacturing.mrp_pegging_link(tenant_id,id,planning_run_id,demand_id,planned_supply_id,allocated_qty) values($1,$2,$3,$4,$5,$6)", token, tenant.Value, Guid.CreateVersion7(), runId, demand.Id, supplyId, residual);
         }
@@ -341,12 +420,9 @@ public sealed partial class ManufacturingRepository(
             await ReadPlanningRunAsync(context, tenant.Value, runId, token) ?? throw new ManufacturingException("manufacturing.planning_run_not_found"), ct);
         if (run.State is not ("Draft" or "Completed")) throw new ManufacturingException("manufacturing.planning_run_not_runnable");
 
-        var demands = demandCapabilities is null
-            ? []
-            : await demandCapabilities.ListAcceptedDemandAsync(tenant, run.LegalEntityId, run.HorizonStart, run.HorizonEnd, ct);
-        var supplies = supplyCapabilities is null
-            ? []
-            : await supplyCapabilities.ListEligibleSupplyAsync(tenant, run.LegalEntityId, run.HorizonStart, run.HorizonEnd, ct);
+        if (demandCapabilities is null || supplyCapabilities is null) throw new ManufacturingException("manufacturing.planning_source_provider_unavailable");
+        var demands = await demandCapabilities.ListAcceptedDemandAsync(tenant, run.LegalEntityId, run.HorizonStart, run.HorizonEnd, ct);
+        var supplies = await supplyCapabilities.ListEligibleSupplyAsync(tenant, run.LegalEntityId, run.HorizonStart, run.HorizonEnd, ct);
 
         await coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
@@ -435,7 +511,7 @@ public sealed partial class ManufacturingRepository(
     private static async Task<ProductionCostResponse> GetProductionCostInContextAsync(ITransactionContext context, Guid tenant, Guid orderId, CancellationToken token)
     {
         var order = await ReadOrderAsync(context, tenant, orderId, token) ?? throw new ManufacturingException("manufacturing.production_order_not_found");
-        await using var command = Command(context, "select coalesce(sum(amount) filter(where cost_category='Material'),0),coalesce(sum(amount) filter(where cost_category='Labor'),0),coalesce(sum(amount) filter(where cost_category='Machine'),0),coalesce(sum(amount) filter(where cost_category='Overhead'),0),coalesce(sum(amount) filter(where cost_category='Subcontract'),0),coalesce(sum(amount),0) from business_manufacturing.production_actual_cost_fact where tenant_id=$1 and production_order_id=$2 and source_type <> 'Correction'", tenant, orderId); await using var reader = await command.ExecuteReaderAsync(token); await reader.ReadAsync(token); var material = reader.GetDecimal(0); var labor = reader.GetDecimal(1); var machine = reader.GetDecimal(2); var overhead = reader.GetDecimal(3); var subcontract = reader.GetDecimal(4); var total = reader.GetDecimal(5); return new ProductionCostResponse(orderId, "EGP", material, labor, machine, overhead, subcontract, total, order.CompletedQty == 0 ? 0 : total / order.CompletedQty);
+        await using var command = Command(context, "select coalesce(sum(amount) filter(where cost_category='Material'),0),coalesce(sum(amount) filter(where cost_category='Labor'),0),coalesce(sum(amount) filter(where cost_category='Machine'),0),coalesce(sum(amount) filter(where cost_category='Overhead'),0),coalesce(sum(amount) filter(where cost_category='Subcontract'),0),coalesce(sum(amount),0) from business_manufacturing.production_actual_cost_fact where tenant_id=$1 and production_order_id=$2", tenant, orderId); await using var reader = await command.ExecuteReaderAsync(token); await reader.ReadAsync(token); var material = reader.GetDecimal(0); var labor = reader.GetDecimal(1); var machine = reader.GetDecimal(2); var overhead = reader.GetDecimal(3); var subcontract = reader.GetDecimal(4); var total = reader.GetDecimal(5); return new ProductionCostResponse(orderId, "EGP", material, labor, machine, overhead, subcontract, total, order.CompletedQty == 0 ? 0 : total / order.CompletedQty);
     }
 
     private async Task<ProductionOrderResponse> CreateProductionOrderInContextAsync(ITransactionContext context, TenantId tenant, Guid actor, CreateProductionOrderRequest request, Guid correlationId, CancellationToken token)

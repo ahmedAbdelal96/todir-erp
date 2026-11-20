@@ -17,10 +17,16 @@ public sealed record InventoryMovementHistoryItem(Guid Id, Guid OperationId, Gui
     string SourceModule, Guid? SourceDocumentId);
 public sealed record InventoryOperationSnapshot(Guid OperationId, Guid LegalEntityId, string Status, string SourceModule,
     Guid? SourceDocumentId, string IdempotencyKey, string IdempotencyHash, decimal BaseQuantity, decimal ValuationAmount,
-    string? CurrencyCode, bool IsReversal);
+    string? CurrencyCode, bool IsReversal, Guid? ProductVariantId = null, Guid? WarehouseId = null,
+    Guid? LocationId = null, Guid? EnteredUomId = null, decimal? ConversionFactorSnapshot = null,
+    Guid? LotId = null, Guid? SerialId = null);
+public sealed record InventoryAvailabilitySnapshot(Guid ProductVariantId, Guid WarehouseId, decimal OnHand,
+    decimal Reserved, decimal Available, decimal InTransit, string BaseUnitCode);
 
 public interface IInventoryCapabilities
 {
+    Task<IReadOnlyList<InventoryAvailabilitySnapshot>> GetAvailabilityAsync(Guid tenantId, Guid legalEntityId,
+        Guid productVariantId, bool includeReservations = true, CancellationToken cancellationToken = default);
     Task<Guid> ReserveAsync(Guid tenantId, Guid actorId, InventoryReservationRequest request, CancellationToken cancellationToken = default);
     Task<Guid> ConsumeReservationAsync(Guid tenantId, Guid actorId, Guid reservationId, InventoryMovementRequest issue, CancellationToken cancellationToken = default);
     Task<Guid> ReceiveAsync(Guid tenantId, Guid actorId, InventoryMovementRequest receipt, CancellationToken cancellationToken = default);

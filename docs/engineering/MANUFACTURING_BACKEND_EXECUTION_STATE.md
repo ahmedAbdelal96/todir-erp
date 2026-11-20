@@ -23,18 +23,21 @@ The assigned scope is the backend/database/integration/development-seed delivery
 - Corrected the execution boundary: Manufacturing validates output quantity/product and executable order state before calling Inventory, recovers an Inventory operation by source key after an unknown outcome, and requires a confirmed owner snapshot before committing the Manufacturing fact. Material issue unit cost and the corresponding Material actual-cost fact are derived from Inventory valuation evidence rather than the request body.
 - Added request-payload hashes for new material/output events, strict key-reuse conflict detection, co-/by-product output identity validation against the released formula snapshot, and an Inventory operation snapshot capability scoped by tenant and legal entity.
 - Removed silent negative-WIP clamping; close readiness reports a negative WIP reconciliation and close is fail-closed.
+- Added a forward-only cost-correction migration so signed Inventory returns can reduce WIP without erasing the economic fact, plus Inventory availability reads for MRP netting.
+- Added owner-owned Sales and Purchasing development fixtures inside the planning horizon and automatic same-bucket forecast consumption. The authenticated isolated run now proves 1,000 forecast + 600 accepted Sales = 600 consumed forecast + 400 residual production, while preserving a date-correct 100-unit firmed Purchase supply.
+- Re-ran the local gates after the latest source change: Manufacturing 6/6, Inventory 12/12, Sales 2/2, Purchasing 10/10, Projects cross-module 9/9, Security 7/7, Architecture 21/21, full Backend build zero warnings/errors, and Development Seed 5/5 with two seed passes on the isolated database.
 
 ## Remaining executable work
 
-- Complete the remaining cross-module demand/capacity integrations: CRM demand ingestion, non-empty Sales/Purchasing source fixtures, late-PO exceptions, multi-level explosion, lead-time propagation, transfers, MPS, maintenance downtime, HR labor/resource facts, Ledger semantic facts, Fixed Assets/CIP handoff, and project-cost integration.
+- Complete the remaining cross-module demand/capacity integrations: CRM demand ingestion, late-PO exceptions, multi-level explosion, lead-time propagation, transfers, MPS, maintenance downtime, HR labor/resource facts, Ledger semantic facts, Fixed Assets/CIP handoff, and project-cost integration.
 - Complete linked lot/serial genealogy acceptance, shop-floor queue/recovery, output unknown-outcome reconciliation, co-/by-product allocation, and full close/cost reconciliation.
 - Add isolated acceptance tests for those workflows, including non-empty source-line pegging, concurrent/retry cases, quality fail-closed configuration, and authenticated permission attack cases.
 - Resolve the pre-existing development database migration-history mismatch (`expenses-schema.sql` checksum differs from the current repository file) through the repository’s normal forward-fix process before claiming the existing `todir` database migration is complete. The isolated database migration is clean and the existing development volume was preserved.
 
 ## Last meaningful change
 
-The final source change added the Inventory operation evidence/recovery contract, execution prevalidation, strict request hashes, and negative-WIP fail-closed checks. The isolated migration applied 233 ordered scripts and the Manufacturing tests/build passed; the previously verified local API/MRP/operation and RabbitMQ/Worker evidence remains valid only for the earlier source revision and must be recaptured after this change.
+The final source change added same-bucket forecast-consumption calculation and owner-owned Sales/Purchasing source fixtures, on top of the Inventory operation evidence/recovery contract, strict request hashes, and negative-WIP fail-closed checks. The isolated migration applied 234 ordered scripts; the authenticated MRP run and all affected local gates were recaptured after the final source change.
 
 ## Next executable action
 
-Implement MF27–MF35 and MF45–MF47 gaps that are still marked PARTIAL/NOT COMPLETE, beginning with non-empty source-line fixtures, multi-level pegging, downtime/quality/resource seams, and real genealogy/output reconciliation; then recapture authenticated runtime evidence after the current execution-boundary changes.
+Implement MF27–MF35 and MF45–MF47 gaps that are still marked PARTIAL/NOT COMPLETE, beginning with multi-level pegging, downtime/quality/resource seams, and real genealogy/output reconciliation.
