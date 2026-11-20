@@ -209,8 +209,16 @@ public sealed partial class ManufacturingRepository(
         var belongsToOrder = await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_material_requirement where tenant_id=$1 and id=$2 and production_order_id=$3)", token, tenant.Value, request.RequirementId, orderId); if (!belongsToOrder) throw new ManufacturingException("manufacturing.material_order_mismatch");
         var requestHash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
         {
-            request.RequirementId, request.Quantity, request.UomCode, request.EventType, request.SubstituteProductVariantId,
-            request.WarehouseId, request.LocationId, request.EnteredUomId, request.ConversionFactorSnapshot, request.InventoryReservationId,
+            request.RequirementId,
+            request.Quantity,
+            request.UomCode,
+            request.EventType,
+            request.SubstituteProductVariantId,
+            request.WarehouseId,
+            request.LocationId,
+            request.EnteredUomId,
+            request.ConversionFactorSnapshot,
+            request.InventoryReservationId,
             request.InventoryOperationId
         }))).ToLowerInvariant();
         var replay = await ReadMaterialReplayAsync(context, tenant.Value, request.IdempotencyKey, token);
@@ -240,8 +248,18 @@ public sealed partial class ManufacturingRepository(
         if (string.IsNullOrWhiteSpace(request.IdempotencyKey)) throw new ManufacturingException("manufacturing.idempotency_required");
         var requestHash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
         {
-            orderId, request.Quantity, request.UomCode, request.OutputType, request.OperationId, request.LotId, request.SerialId,
-            request.WarehouseId, request.LocationId, request.EnteredUomId, request.ConversionFactorSnapshot, request.ProductVariantId,
+            orderId,
+            request.Quantity,
+            request.UomCode,
+            request.OutputType,
+            request.OperationId,
+            request.LotId,
+            request.SerialId,
+            request.WarehouseId,
+            request.LocationId,
+            request.EnteredUomId,
+            request.ConversionFactorSnapshot,
+            request.ProductVariantId,
             request.InventoryOperationId
         }))).ToLowerInvariant();
         var existing = await ReadOutputReplayAsync(context, tenant.Value, request.IdempotencyKey, token);
