@@ -44,6 +44,11 @@ Open and inspect every screen in the browser or via Playwright screenshots:
   - Verified guided empty state when table has 0 rows.
   - Verified actionable error state with retry button on API failure.
   - Verified calm no-permission message when RBAC denies access.
+- [ ] **Effective Access & Permission-Driven Navigation**:
+  - Verified module visibility against `EffectiveAccess` (no unauthorized modules displayed).
+  - Verified narrow roles: sub-capabilities render permitted sub-destinations while unauthorized tabs are hidden.
+  - Direct deep links to forbidden routes render `<DefaultAccessDeniedView>` fail-closed.
+  - Switching legal entity or branch immediately invalidates permissions cache.
 - [ ] **English LTR Mode**:
   - Click language switcher: layout flips cleanly to `dir="ltr"`, 100% translated English copy, zero stray Arabic strings.
 

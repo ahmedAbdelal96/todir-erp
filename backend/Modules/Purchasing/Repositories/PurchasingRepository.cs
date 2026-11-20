@@ -13,6 +13,18 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    public async Task<IReadOnlyList<Shared.Contracts.ManufacturingPlanning.ManufacturingSupplySnapshot>> ListEligibleManufacturingSupplyAsync(TenantId tenant, Guid legalEntityId, DateOnly from, DateOnly to, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await SetTenantAsync(connection, null, tenant, ct);
+        await using var command = new NpgsqlCommand("select o.id,l.id,o.legal_entity_id,l.product_variant_id,o.order_date,l.ordered_quantity-l.received_quantity-l.cancelled_quantity-l.closed_short_quantity,coalesce(l.unit_code,'EA'),o.state from business_purchasing.purchase_order o join business_purchasing.purchase_order_line l on l.tenant_id=o.tenant_id and l.legal_entity_id=o.legal_entity_id and l.purchase_order_id=o.id where o.tenant_id=$1 and o.legal_entity_id=$2 and o.state in ('Approved','Sent','Open','PartiallyCompleted') and l.product_variant_id is not null and l.ordered_quantity-l.received_quantity-l.cancelled_quantity-l.closed_short_quantity>0 and o.order_date between $3 and $4 order by o.order_date,o.id,l.sequence", connection);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(legalEntityId); command.Parameters.AddWithValue(from); command.Parameters.AddWithValue(to);
+        var result = new List<Shared.Contracts.ManufacturingPlanning.ManufacturingSupplySnapshot>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) result.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3), reader.GetFieldValue<DateOnly>(4), reader.GetDecimal(5), reader.GetString(6), "PurchaseOrder", reader.GetGuid(0).ToString("D"), reader.GetString(7)));
+        return result;
+    }
+
     public async Task<Guid> CreateAsync(TenantId tenant, Guid actor, CreatePurchaseOrderRequest request, bool approvalRequired, IReadOnlyList<ResolvedLine> lines, Guid correlation, CancellationToken ct)
     {
         var id = Uuid7.NewGuid();

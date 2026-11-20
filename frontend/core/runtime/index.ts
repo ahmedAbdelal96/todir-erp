@@ -5,3 +5,4 @@ export * from "./tenant-context.js";
 export * from "./entity-context.js";
 export * from "./runtime-context.js";
 export * from "./runtime-provider.js";
+export * from "./effective-access.js";

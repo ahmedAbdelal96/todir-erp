@@ -263,6 +263,73 @@ public static class PlatformHostingExtensions
             if (isSuper) perms.Add("*");
             return Results.Ok(perms);
         }).RequireAuthorization();
+        group.MapGet("/authorization/effective-access", async (HttpContext context, IAuthorizationSubjectStore subjectStore, IPlatformAdminSurfaceStore surfaceStore, CancellationToken cancellationToken) =>
+        {
+            if (!Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId) || !Guid.TryParse(context.User.FindFirstValue("membership_id"), out var membershipId)) return Results.Unauthorized();
+            var subject = await subjectStore.LoadAsync(new(tenantId), membershipId, cancellationToken);
+            if (subject is null) return Results.Forbid();
+
+            var legalEntityClaim = context.User.FindFirstValue("legal_entity_id");
+            var branchClaim = context.User.FindFirstValue("branch_id");
+            Guid? legalEntityId = Guid.TryParse(legalEntityClaim, out var lid) ? lid : null;
+            Guid? branchId = Guid.TryParse(branchClaim, out var bid) ? bid : null;
+
+            var scope = branchId.HasValue && legalEntityId.HasValue
+                ? PermissionScope.ForBranch(new(tenantId), new(legalEntityId.Value), new(branchId.Value))
+                : legalEntityId.HasValue
+                    ? PermissionScope.ForLegalEntity(new(tenantId), new(legalEntityId.Value))
+                    : PermissionScope.ForTenant(new(tenantId));
+
+            var isSuper = subject.Roles.Any(r => r.Code is "administrator" or "admin");
+
+            HashSet<string> effectivePermissions = [];
+            if (isSuper)
+            {
+                effectivePermissions.Add("*");
+                foreach (var p in subject.Permissions)
+                {
+                    effectivePermissions.Add(p.PermissionCode);
+                }
+            }
+            else
+            {
+                var roleIds = subject.Assignments
+                    .Where(a => a.TenantId == subject.TenantId && a.Scope.Contains(scope))
+                    .Select(a => a.RoleId)
+                    .ToHashSet();
+
+                var activeRoles = subject.Roles
+                    .Where(r => roleIds.Contains(r.Id) && r.IsActive)
+                    .Select(r => r.Id)
+                    .ToHashSet();
+
+                foreach (var p in subject.Permissions.Where(p => activeRoles.Contains(p.RoleId) && p.TenantId == subject.TenantId))
+                {
+                    effectivePermissions.Add(p.PermissionCode);
+                }
+            }
+
+            var entitlement = await surfaceStore.LoadEntitlementAsync(new(tenantId), cancellationToken);
+            var moduleInstances = await surfaceStore.ListModuleInstancesAsync(new(tenantId), 0, 100, cancellationToken);
+
+            var moduleStatuses = moduleInstances.ToDictionary(m => m.ModuleId, m => m.Status, StringComparer.OrdinalIgnoreCase);
+            var entitledModules = entitlement?.Modules ?? (IReadOnlyList<string>)moduleInstances.Select(m => m.ModuleId).Distinct().ToList();
+
+            var version = $"{tenantId:N}:{membershipId:N}:{legalEntityClaim ?? "none"}:{branchClaim ?? "none"}:{subject.Version}";
+
+            return Results.Ok(new
+            {
+                tenantId,
+                membershipId,
+                legalEntityId,
+                branchId,
+                isSuper,
+                permissions = effectivePermissions.ToList(),
+                entitledModules,
+                moduleStatuses,
+                version
+            });
+        }).RequireAuthorization();
         group.MapPost("/context/organization", async (OrganizationSelection request, HttpContext context, IPlatformAdminSurfaceStore surfaceStore, CancellationToken cancellationToken) =>
         {
             if (!Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId)) return Results.Unauthorized();

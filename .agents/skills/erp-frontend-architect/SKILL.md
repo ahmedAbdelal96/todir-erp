@@ -96,6 +96,13 @@ Before writing any component or markup, answer these 10 points:
    - **Tenant Isolation**: TanStack Query cache must be completely cleared on tenant/entity/session switch.
 5. **Layered RBAC Protection**:
    - Check permissions at navigation, route, tab, button, and action levels. Never show an actionable button that fails with HTTP 403 on click.
+6. **Permission-Driven Task Navigation & Destination Architecture**:
+   - **7 Shallow Category Domains**: `workspace`, `sales`, `purchasing`, `inventory`, `finance`, `hr`, `admin`. Sidebar groups primary navigation into these shallow domains instead of an unstructured 24-module dumping ground.
+   - **Zero Single-Permission Module Gates**: Never gate an entire operational module behind a single narrow permission (such as `banking.accounts.read` or `crm.lead.read`). If a user has any valid sub-capability (e.g. `banking.cash.count` or `crm.activity.read`), the module and permitted destinations must remain accessible.
+   - **Authoritative Scoped Effective-Access Projection**: Frontend derives visibility and permissions from `GET /api/v1/authorization/effective-access`. Never query unscoped permissions or assume client-side fallback permissions.
+   - **Fail-Closed Permission Verification**: Every route, tab, sub-destination, and action must fail closed. Direct URL navigation to forbidden modules/sub-routes renders `<DefaultAccessDeniedView>` with status `403`.
+   - **Contextual Task Sub-Destinations**: Active modules expose their distinct operational destinations (e.g. Banking: Accounts, Statements, Reconciliations, Cash, Transfers, Forecast, Reports; CRM: My Work, Leads, Opportunities, Activities, Management).
+   - **Tenant & Legal-Entity Cache Invalidation**: Switching organizations or legal entities must immediately flush the permissions and effective-access cache, triggering a clean refetch.
 
 ---
 

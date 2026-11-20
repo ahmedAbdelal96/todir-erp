@@ -44,6 +44,24 @@ test.describe('App Shell Bootstrap & Localization', () => {
         body: JSON.stringify({ allowed: true }),
       });
     });
+
+    await page.route('**/api/v1/authorization/effective-access*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          tenantId: 'tenant-demo',
+          membershipId: 'm1',
+          legalEntityId: 'le1',
+          branchId: 'b1',
+          isSuper: true,
+          permissions: ['*'],
+          entitledModules: ['home', 'settings'],
+          moduleStatuses: {},
+          version: '1'
+        }),
+      });
+    });
   });
 
   test('should render in RTL with Arabic as default language', async ({ page }) => {
@@ -186,7 +204,7 @@ test.describe('App Shell Bootstrap & Localization', () => {
 
     // Capture screenshot of the topbar
     await topbar.screenshot({
-      path: 'C:/Users/Adham/.gemini/antigravity/brain/2cce5b52-1525-442e-8037-81105c0347eb/appheader-redesign.png'
+      path: 'test-results/appheader-redesign.png'
     });
   });
 
@@ -215,7 +233,7 @@ test.describe('App Shell Bootstrap & Localization', () => {
 
     // 6. Capture visual proof
     await page.screenshot({
-      path: 'C:/Users/Adham/.gemini/antigravity/brain/2cce5b52-1525-442e-8037-81105c0347eb/command-palette-preview.png'
+      path: 'test-results/command-palette-preview.png'
     });
 
     // 7. Press Escape to close

@@ -1,8 +1,12 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext, useSearchParams } from "react-router-dom";
+import { useOutletContext, useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { useOptionalLegalEntityContext } from "../../../core/runtime/runtime-provider.tsx";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import type { EffectiveAccess } from "../../../core/runtime/effective-access.ts";
+import type { PermissionSet } from "../../../core/runtime/permissions.ts";
+import { hasPermissionInAccess } from "../../../core/runtime/effective-access.ts";
+import { DefaultAccessDeniedView } from "../../../core/runtime/permission-guard.tsx";
 import { BankingOverviewTab } from "../features/overview/banking-overview-tab.tsx";
 import { TreasuryAccountsTab } from "../features/accounts/treasury-accounts-tab.tsx";
 import { StatementsTab } from "../features/statements/statements-tab.tsx";
@@ -31,35 +35,99 @@ export type BankingTabId =
   | "forecast"
   | "reports";
 
-export function BankingPage(): React.JSX.Element {
+const TAB_PERMISSIONS: Record<BankingTabId, readonly string[]> = {
+  overview: ["banking.accounts.read", "banking.statement.read", "banking.reconciliation.read", "banking.reports.read"],
+  accounts: ["banking.accounts.read", "banking.accounts.manage"],
+  statements: ["banking.statement.read", "banking.statement.import", "banking.statement.validate"],
+  reconciliation: ["banking.reconciliation.read", "banking.reconciliation.manage", "banking.reconciliation.finalize"],
+  cash: ["banking.cash.count", "banking.cash.transfer"],
+  transfers: ["banking.cash.transfer", "banking.accounts.manage", "payments.read"],
+  forecast: ["banking.cash_forecast.manage", "banking.accounts.read"],
+  reports: ["banking.reports.read", "banking.accounts.read"]
+};
+
+function isTabAllowed(tabId: BankingTabId, access?: EffectiveAccess, perms?: PermissionSet): boolean {
+  if (access) {
+    if (access.isSuper) return true;
+    const required = TAB_PERMISSIONS[tabId];
+    return required.some(p => hasPermissionInAccess(access, p));
+  }
+  if (perms) {
+    const required = TAB_PERMISSIONS[tabId];
+    return required.some(p => perms.hasPermission(p));
+  }
+  return true;
+}
+
+export interface BankingPageProps {
+  readonly initialTab?: BankingTabId | undefined;
+}
+
+export function BankingPage({ initialTab }: BankingPageProps = {}): React.JSX.Element {
   const { t } = useTranslation("banking");
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const runtimeContext = useOptionalLegalEntityContext();
+  const effectiveAccess = outletCtx?.effectiveAccess;
+  const permissions = outletCtx?.permissions;
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = (searchParams.get("tab") as BankingTabId | null) ?? "overview";
+  const rawParamTab = searchParams.get("tab") as BankingTabId | null;
+
+  const allTabs: readonly { id: BankingTabId; label: string; icon: React.ReactNode; routePath: string }[] = [
+    { id: "overview", label: t("tabs.overview"), icon: <LandmarkIcon />, routePath: "/banking" },
+    { id: "accounts", label: t("tabs.accounts"), icon: <LandmarkIcon />, routePath: "/banking/accounts" },
+    { id: "statements", label: t("tabs.statements"), icon: <StatementIcon />, routePath: "/banking/statements" },
+    { id: "reconciliation", label: t("tabs.reconciliation"), icon: <ReconcileIcon />, routePath: "/banking/reconciliations" },
+    { id: "cash", label: t("tabs.cash"), icon: <VaultIcon />, routePath: "/banking/cash" },
+    { id: "transfers", label: t("tabs.transfers"), icon: <TransferIcon />, routePath: "/banking/transfers" },
+    { id: "forecast", label: t("tabs.forecast"), icon: <ForecastIcon />, routePath: "/banking/forecast" },
+    { id: "reports", label: t("tabs.reports"), icon: <ReportsIcon />, routePath: "/banking/reports" }
+  ];
+
+  const permittedTabs = allTabs.filter(tab => isTabAllowed(tab.id, effectiveAccess, permissions));
+
+  let activeTab: BankingTabId;
+  const isExplicitRequest = Boolean(initialTab || rawParamTab);
+  if (rawParamTab) {
+    activeTab = rawParamTab;
+  } else if (initialTab) {
+    activeTab = initialTab;
+  } else if (permittedTabs.some(tab => tab.id === "overview")) {
+    activeTab = "overview";
+  } else if (permittedTabs.length > 0) {
+    activeTab = permittedTabs[0]!.id;
+  } else {
+    activeTab = "overview";
+  }
 
   const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || "";
 
   const handleTabChange = (newTab: BankingTabId) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("tab", newTab);
-      return next;
-    });
+    const target = allTabs.find(t => t.id === newTab);
+    if (target && location.pathname !== "/banking") {
+      navigate(target.routePath);
+    } else {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        if (newTab === "overview") {
+          next.delete("tab");
+        } else {
+          next.set("tab", newTab);
+        }
+        return next;
+      });
+    }
   };
 
-  const tabs: readonly { id: BankingTabId; label: string; icon: React.ReactNode }[] = [
-    { id: "overview", label: t("tabs.overview"), icon: <LandmarkIcon /> },
-    { id: "accounts", label: t("tabs.accounts"), icon: <LandmarkIcon /> },
-    { id: "statements", label: t("tabs.statements"), icon: <StatementIcon /> },
-    { id: "reconciliation", label: t("tabs.reconciliation"), icon: <ReconcileIcon /> },
-    { id: "cash", label: t("tabs.cash"), icon: <VaultIcon /> },
-    { id: "transfers", label: t("tabs.transfers"), icon: <TransferIcon /> },
-    { id: "forecast", label: t("tabs.forecast"), icon: <ForecastIcon /> },
-    { id: "reports", label: t("tabs.reports"), icon: <ReportsIcon /> }
-  ];
+  const isCurrentTabPermitted = isTabAllowed(activeTab, effectiveAccess, permissions);
+  if (isExplicitRequest && !isCurrentTabPermitted) {
+    return <DefaultAccessDeniedView />;
+  }
+
+  const displayedTabs = permittedTabs.length > 0 ? permittedTabs : allTabs;
 
   return (
     <div data-testid="banking-page" style={{ display: "flex", flexDirection: "column", minHeight: "100%", gap: "1.5rem" }}>
@@ -100,7 +168,7 @@ export function BankingPage(): React.JSX.Element {
           borderBottom: "2px solid var(--color-border-subtle)"
         }}
       >
-        {tabs.map((tab) => {
+        {displayedTabs.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
             <button

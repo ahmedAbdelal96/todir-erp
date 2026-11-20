@@ -366,6 +366,7 @@ export const en = {
     availableAmount: "Available",
     noEligibleLines: "No compatible bank deposit lines found in this statement covering the net payout.",
     confirmMatch: "Confirm Settlement Match",
+    selectLine: "Select line {{value}}",
     chequesTab: "Cheques in Transit",
     paymentNumber: "Cheque Payment Number",
     direction: "Direction",

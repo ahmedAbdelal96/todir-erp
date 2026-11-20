@@ -29,6 +29,9 @@ public sealed record PlanningDemandRequest(Guid ProductVariantId, Guid? PlantId,
 public sealed record CreateWorkCenterCalendarRequest(short Weekday, TimeOnly ShiftStart, TimeOnly ShiftEnd, DateOnly EffectiveFrom, DateOnly? EffectiveTo = null, decimal BreakMinutes = 0);
 public sealed record RecordCostFactRequest(string SourceType, string SourceId, string CostCategory, decimal Amount, string CurrencyCode, decimal? Quantity, DateOnly SourceDate, string IdempotencyKey);
 public sealed record ScrapReportRequestV2(decimal Quantity, string UomCode, string Category, string? Reason, string IdempotencyKey, Guid? OperationId = null);
+public sealed record OperationActionRequest(long ExpectedVersion, string IdempotencyKey, string? Reason = null, decimal? Quantity = null, decimal? ActualMinutes = null);
+public sealed record GenealogyLinkRequest(Guid OutputId, Guid InputEventId, decimal InputQuantity, decimal OutputQuantity, Guid? InputLotId, Guid? OutputLotId, string Certainty, string IdempotencyKey);
+public sealed record CapacityQueryRequest(Guid PlantId, DateOnly From, DateOnly To, Guid? WorkCenterId = null);
 
 public sealed record PlantResponse(Guid Id, Guid LegalEntityId, string Code, string Name, string TimeZone, string State);
 public sealed record ManufacturingProfileResponse(Guid Id, Guid LegalEntityId, Guid ProductVariantId, bool ManufacturingEnabled, string DefaultMode, string MakeBuyPolicy, Guid? DefaultPlantId);
@@ -50,3 +53,8 @@ public sealed record ProductionCostResponse(Guid ProductionOrderId, string Curre
 public sealed record PlanningRunResponse(Guid Id, Guid LegalEntityId, Guid? PlantId, DateOnly HorizonStart, DateOnly HorizonEnd, string State, int DemandCount, int PlannedSupplyCount, int ExceptionCount);
 public sealed record PlannedSupplyResponse(Guid Id, Guid PlanningRunId, Guid ProductVariantId, string SupplyType, DateOnly NeedDate, DateOnly? SuggestedStart, decimal Quantity, string UomCode, string State, Guid? FirmedOrderId);
 public sealed record MaterialAvailabilityResponse(Guid ProductVariantId, decimal Required, decimal Available, decimal Shortage, string UomCode, string Basis);
+public sealed record ProductionOperationResponse(Guid Id, Guid ProductionOrderId, int SequenceNo, string Name, Guid? WorkCenterId, string State, decimal CompletedQty, decimal ActualGoodQty, decimal ActualScrapQty, decimal? ActualMinutes, bool QualityGateRequired, long RowVersion);
+public sealed record OperationEventResponse(Guid Id, Guid ProductionOperationId, string EventType, decimal? Quantity, decimal? ActualMinutes, string? Reason, string IdempotencyKey, DateTimeOffset OccurredAt);
+public sealed record GenealogyResponse(Guid Id, Guid ProductionOrderId, Guid OutputId, Guid InputEventId, Guid? InputLotId, Guid? OutputLotId, decimal InputQuantity, decimal OutputQuantity, string Certainty);
+public sealed record CapacityResponse(Guid WorkCenterId, DateOnly From, DateOnly To, decimal AvailableHours, decimal DowntimeHours, decimal PlannedHours, decimal RemainingHours, string State);
+public sealed record ProductionCloseReadinessResponse(Guid ProductionOrderId, string State, decimal MaterialIssuedQty, decimal MaterialAccountedQty, decimal GoodOutputQty, decimal ScrapQty, bool OperationsComplete, string QualityState, string CostState, decimal WipAmount, string? BlockReason);

@@ -81,3 +81,20 @@ Every meaningful filter and selection must be reflected in the URL query string:
 - `?page=2&status=Active&search=Atlas&id=<selected-record-id>`
 - Refreshing the browser or sharing a URL must restore the exact same view, active tab, table page, and open detail drawer.
 - Search input must be debounced (300ms) before updating URL and issuing API queries.
+
+---
+
+## Law 7: Task Discoverability & Independent Destination Deep Linking
+
+Users interact with enterprise software by tasks, not by monolithic system modules. A cashier comes to count physical cash, an accountant reconciles statement lines, and a sales rep manages leads.
+
+1. **Shallow Grouped Primary Navigation**:
+   - The primary navigation groups all modules into 7 clear domain categories: `Workspace` (الرئيسية), `Sales & Customers` (المبيعات والعملاء), `Purchasing & Suppliers` (المشتريات والموردون), `Inventory & Operations` (المخزون والتشغيل), `Finance & Treasury` (المالية والخزائن), `Human Resources` (الموارد البشرية), `Administration & Settings` (الإدارة والإعدادات).
+2. **Zero Single-Permission Module Gates**:
+   - Never gate a module behind a single coarse permission. An employee with cash-count permission must never be blocked from the Banking module just because they lack bank-account management rights.
+3. **Dedicated Task URLs**:
+   - Every major task must have a distinct, shareable URL route (e.g. `/banking/cash`, `/banking/statements`, `/crm/leads`, `/crm/opportunities`).
+4. **Dual-Mode Deep Linking**:
+   - Both direct nested path URLs (`/banking/cash`) and backward-compatible query strings (`/banking?tab=cash`) must resolve to the identical task tab and view.
+5. **Fail-Closed Protection**:
+   - Direct manual URL entry into an unauthorized task destination must fail closed and render `<DefaultAccessDeniedView>` with an explanation and clean fallback, never a blank screen, uncaught crash, or partial data leak.

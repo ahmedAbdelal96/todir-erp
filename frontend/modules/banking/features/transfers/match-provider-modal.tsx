@@ -327,7 +327,7 @@ export function MatchProviderModal({
                             name="statementLineSelection"
                             checked={isSelected}
                             onChange={() => handleSelectLine(line)}
-                            aria-label={`Select line ${line.reference || line.id}`}
+                            aria-label={t("transfers.selectLine", { value: line.reference || line.id })}
                           />
                         </TableCell>
                         <TableCell><BdiText>{formatDate(line.bookingDate)}</BdiText></TableCell>

@@ -36,9 +36,11 @@ import { buildCommandPaletteItems } from "./command-palette-registry.ts";
 import { AuthView } from "../auth/index.ts";
 import { requestCsrf, clearCsrfToken, logoutUser } from "../../core/api/auth-service.ts";
 import { changeLanguage, currentDirection, currentLanguage, i18n } from "../../core/i18n/i18n.ts";
-import { resolveNavigation } from "../router/navigation-registry.ts";
+import { resolveNavigation, resolveEffectiveNavigation } from "../router/navigation-registry.ts";
+import { NAVIGATION_CATEGORIES, getPermittedDestinationsForModule } from "../router/destination-registry.ts";
 import type { ModuleNavigationRegistration, WorkspaceOutletContext } from "../router/route-contract.ts";
 import { PermissionSet } from "../../core/runtime/permissions.ts";
+import { fetchEffectiveAccess, type EffectiveAccess } from "../../core/runtime/effective-access.ts";
 import { useNavigationPreferences } from "./use-navigation-preferences.ts";
 import { Dialog } from "../../components/primitives/dialog.tsx";
 import { Tooltip, TooltipTrigger } from "../../components/primitives/tooltip.tsx";
@@ -170,7 +172,8 @@ export function AppShell() {
   const [legalEntity, setLegalEntity] = useState("");
   const [branch, setBranch] = useState("");
   const [permissions, setPermissions] = useState<PermissionSet>(() => new PermissionSet());
-  const [modules, setModules] = useState<readonly ModuleNavigationRegistration[]>(resolveNavigation(fallbackModuleIds));
+  const [effectiveAccess, setEffectiveAccess] = useState<EffectiveAccess | null>(null);
+  const [modules, setModules] = useState<readonly ModuleNavigationRegistration[]>([]);
   const [contextError, setContextError] = useState<string | undefined>();
   const [operation, setOperation] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -288,6 +291,7 @@ export function AppShell() {
 
   const commandItems = buildCommandPaletteItems({
     modules,
+    effectiveAccess: effectiveAccess ?? undefined,
     navigate,
     t
   });
@@ -315,8 +319,9 @@ export function AppShell() {
       if (response.status === 403) { setScreen("forbidden"); return; }
       if (!response.ok) throw new Error("session.load_failed");
       const session = await response.json() as Session;
+      const identityId = session.identityId || session.memberships?.[0]?.id || "";
       setActiveTenantId(session.tenantId);
-      setActiveIdentityId(session.identityId);
+      setActiveIdentityId(identityId);
       setCompanyName(session.context.displayName || session.memberships?.[0]?.displayName || "شركة الأفق للتجارة");
       setLegalEntities(session.context.legalEntities);
       setBranches(session.context.branches);
@@ -334,18 +339,37 @@ export function AppShell() {
         || session.context.branches.find(item => !defaultEntity || item.legalEntityId === defaultEntity)?.id
         || "";
       setBranch(defaultBranch);
+      let access: EffectiveAccess | null = null;
       try {
-        const permResponse = await fetch("/api/v1/authorization/permissions", { headers: { "X-Correlation-Id": crypto.randomUUID() } });
-        if (permResponse.ok) {
-          const perms = (await permResponse.json()) as string[];
-          setPermissions(new PermissionSet(perms));
-        } else {
+        access = await fetchEffectiveAccess();
+        setEffectiveAccess(access);
+        setPermissions(new PermissionSet(access.permissions));
+      } catch {
+        try {
+          const permResponse = await fetch("/api/v1/authorization/permissions", { headers: { "X-Correlation-Id": crypto.randomUUID() } });
+          if (permResponse.ok) {
+            const perms = (await permResponse.json()) as string[];
+            setPermissions(new PermissionSet(perms));
+            access = {
+              tenantId: session.tenantId,
+              membershipId: session.identityId,
+              legalEntityId: defaultEntity || null,
+              branchId: defaultBranch || null,
+              isSuper: perms.includes("*") || perms.includes("admin"),
+              permissions: perms,
+              entitledModules: [],
+              moduleStatuses: {},
+              version: `${session.tenantId}:${Date.now()}`
+            };
+            setEffectiveAccess(access);
+          } else {
+            setPermissions(new PermissionSet());
+          }
+        } catch {
           setPermissions(new PermissionSet());
         }
-      } catch {
-        setPermissions(new PermissionSet());
       }
-      await loadNavigation();
+      loadNavigation(access);
       setScreen("authenticated");
     } catch {
       setError(t("common:shell.couldNotLoadSession"));
@@ -353,28 +377,14 @@ export function AppShell() {
     }
   }
 
-  async function loadNavigation() {
-    try {
-      const response = await fetch("/api/v1/modules", { headers: { "X-Correlation-Id": crypto.randomUUID() } });
-      if (!response.ok) throw new Error("modules.load_failed");
-      const registered = await response.json() as Array<{ id?: string }>;
-      const registeredIds = registered.flatMap(item => item.id ? [item.id] : []);
-      // Company settings is a platform destination, so it is not required to
-      // appear in the business-module registry returned by the API.
-      const candidates = resolveNavigation([...registeredIds, "settings"]);
-      const permitted = (await Promise.all(candidates.map(async item => {
-        if (!item.permission) return item;
-        if (permCacheRef.current[item.permission] !== undefined) {
-          return permCacheRef.current[item.permission] ? item : null;
-        }
-        const permissionResponse = await fetch(`/api/v1/authorization/check?permission=${encodeURIComponent(item.permission)}`, { headers: { "X-Correlation-Id": crypto.randomUUID() } });
-        permCacheRef.current[item.permission] = permissionResponse.ok;
-        return permissionResponse.ok ? item : null;
-      }))).filter((item): item is ModuleNavigationRegistration => item !== null);
-      setModules(permitted);
-    } catch {
-      setModules(resolveNavigation(fallbackModuleIds));
+  function loadNavigation(accessToUse?: EffectiveAccess | null) {
+    const access = accessToUse !== undefined ? accessToUse : effectiveAccess;
+    if (!access) {
+      setModules([]);
+      return;
     }
+    const permitted = resolveEffectiveNavigation(access);
+    setModules(permitted);
   }
 
   useEffect(() => { void loadSession(); }, []);
@@ -396,10 +406,20 @@ export function AppShell() {
           window.sessionStorage.removeItem("erp.current.legalEntityId");
         }
       }
+      permCacheRef.current = {};
       setLegalEntity(nextLegalEntity);
       setBranch(nextBranch);
       await queryClient.invalidateQueries();
-      await loadNavigation();
+      queryClient.clear();
+      let nextAccess: EffectiveAccess | null = null;
+      try {
+        nextAccess = await fetchEffectiveAccess();
+        setEffectiveAccess(nextAccess);
+        setPermissions(new PermissionSet(nextAccess.permissions));
+      } catch {
+        // Fallback
+      }
+      loadNavigation(nextAccess);
     } catch {
       setContextError(t("common:shell.couldNotUpdateScope"));
     } finally {
@@ -409,7 +429,9 @@ export function AppShell() {
 
   async function signOut() {
     permCacheRef.current = {};
+    setEffectiveAccess(null);
     setPermissions(new PermissionSet());
+    setModules([]);
     await logoutUser();
     queryClient.clear();
     setActiveTenantId("");
@@ -600,7 +622,11 @@ export function AppShell() {
           <button
             type="button"
             className="topbar-lang-btn"
-            onClick={() => displayPreferences.update({ language: language === "ar" ? "en" : "ar" })}
+            onClick={() => {
+              const next = language === "ar" ? "en" : "ar";
+              void changeLanguage(next);
+              displayPreferences.update({ language: next });
+            }}
           >
             <GlobeIcon size={14} style={{ color: "#93c5fd" }} />
             <span>{labels.language}</span>
@@ -610,7 +636,11 @@ export function AppShell() {
           <UserMenu
             userName={t("common:shell.administrator")}
             userEmail={userEmail}
-            onToggleLanguage={() => displayPreferences.update({ language: language === "ar" ? "en" : "ar" })}
+            onToggleLanguage={() => {
+              const next = language === "ar" ? "en" : "ar";
+              void changeLanguage(next);
+              displayPreferences.update({ language: next });
+            }}
             theme={theme}
             onToggleTheme={() => displayPreferences.update({ theme: theme === "default" ? "dark" : "default" })}
             density={density}
@@ -642,9 +672,85 @@ export function AppShell() {
       <div className="layout">
         <aside id="app-sidebar" className="sidebar" aria-label={t("common:accessibility.mainNavigation")}>
           <section className="sidebar-section sidebar-modules-section">
-            <div className="sidebar-section-title sidebar-label">{t("common:shell.modules")}</div>
             <nav aria-label={t("common:shell.modules")}>
-              {modules.map(item => <div key={item.id}>{renderNavigationLink(item, true)}</div>)}
+              {NAVIGATION_CATEGORIES.map(category => {
+                const categoryModules = modules.filter(m => m.category === category.id);
+                if (categoryModules.length === 0) return null;
+                return (
+                  <div key={category.id} className="sidebar-category-group" style={{ marginBottom: "0.5rem" }}>
+                    {!isSidebarCollapsed && category.id !== "workspace" && (
+                      <div
+                        className="sidebar-category-title"
+                        style={{
+                          fontSize: "0.6875rem",
+                          fontWeight: 700,
+                          color: "var(--color-content-muted, #94a3b8)",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          paddingInline: "0.875rem",
+                          paddingBlock: "0.25rem",
+                          marginTop: "0.375rem"
+                        }}
+                      >
+                        {t(`navigation:categories.${category.id}`, category.fallbackLabel)}
+                      </div>
+                    )}
+                    {categoryModules.map(item => {
+                      const isItemActive = location.pathname === item.path || (item.path !== "/" && location.pathname.startsWith(item.path));
+                      const taskDestinations = !isSidebarCollapsed && isItemActive && item.destinations && item.destinations.length > 0
+                        ? getPermittedDestinationsForModule(item, effectiveAccess)
+                        : [];
+
+                      return (
+                        <div key={item.id} className="sidebar-module-block">
+                          {renderNavigationLink(item, true)}
+                          {taskDestinations.length > 0 && (
+                            <div
+                              className="sidebar-task-destinations"
+                              style={{
+                                marginInlineStart: "1.75rem",
+                                marginTop: "0.125rem",
+                                marginBottom: "0.375rem",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "0.125rem",
+                                borderInlineStart: "2px solid var(--color-border-subtle, #e2e8f0)",
+                                paddingInlineStart: "0.5rem"
+                              }}
+                            >
+                              {taskDestinations.map(dest => {
+                                const isDestActive = location.pathname === dest.path || (dest.path === item.path && location.pathname === item.path);
+                                return (
+                                  <NavLink
+                                    key={dest.id}
+                                    to={dest.path}
+                                    end={dest.path === item.path}
+                                    className={`sidebar-sub-link${isDestActive ? " active" : ""}`}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      padding: "0.25rem 0.5rem",
+                                      fontSize: "0.78125rem",
+                                      fontWeight: isDestActive ? 600 : 500,
+                                      color: isDestActive ? "var(--color-brand-primary, #102a43)" : "var(--color-content-muted, #64748b)",
+                                      backgroundColor: isDestActive ? "rgba(16, 42, 67, 0.08)" : "transparent",
+                                      borderRadius: "var(--radius-sm, 0.25rem)",
+                                      textDecoration: "none",
+                                      transition: "all 0.12s ease"
+                                    }}
+                                  >
+                                    <span>{dest.fallbackLabel}</span>
+                                  </NavLink>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
             </nav>
           </section>
           <div className="sidebar-footer">
@@ -716,7 +822,7 @@ export function AppShell() {
         <main className="content" aria-live="polite">
           {contextError ? <div className="error" role="alert">{contextError}</div> : null}
           <Suspense fallback={<div style={{ padding: "2rem", textAlign: "center", color: "var(--color-content-muted)" }}>{labels.loading}</div>}>
-            <Outlet context={{ density, legalEntityId: legalEntity, legalEntityCode: activeLegalEntity?.code, legalEntityName: activeLegalEntity?.name, branchId: branch, permissions, tenantId: activeTenantId, userId: activeIdentityId } satisfies WorkspaceOutletContext} />
+            <Outlet context={{ density, legalEntityId: legalEntity, legalEntityCode: activeLegalEntity?.code, legalEntityName: activeLegalEntity?.name, branchId: branch, permissions, effectiveAccess: effectiveAccess ?? undefined, tenantId: activeTenantId, userId: activeIdentityId } satisfies WorkspaceOutletContext} />
           </Suspense>
         </main>
       </div>

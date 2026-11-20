@@ -1,13 +1,17 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext, useSearchParams } from "react-router-dom";
-import { useOptionalLegalEntityContext, useOptionalPermissions } from "../../../core/runtime/runtime-provider";
-import type { WorkspaceOutletContext } from "../../../app/router/route-contract";
-import { CrmSellerHomeTab } from "../features/home/crm-seller-home-tab";
-import { CrmLeadsTab } from "../features/leads/crm-leads-tab";
-import { CrmOpportunitiesTab } from "../features/opportunities/crm-opportunities-tab";
-import { CrmActivitiesTab } from "../features/activities/crm-activities-tab";
-import { CrmManagementTab } from "../features/management/crm-management-tab";
+import { useOutletContext, useSearchParams, useNavigate, useLocation } from "react-router-dom";
+import { useOptionalLegalEntityContext, useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
+import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import type { EffectiveAccess } from "../../../core/runtime/effective-access.ts";
+import type { PermissionSet } from "../../../core/runtime/permissions.ts";
+import { hasPermissionInAccess } from "../../../core/runtime/effective-access.ts";
+import { DefaultAccessDeniedView } from "../../../core/runtime/permission-guard.tsx";
+import { CrmSellerHomeTab } from "../features/home/crm-seller-home-tab.tsx";
+import { CrmLeadsTab } from "../features/leads/crm-leads-tab.tsx";
+import { CrmOpportunitiesTab } from "../features/opportunities/crm-opportunities-tab.tsx";
+import { CrmActivitiesTab } from "../features/activities/crm-activities-tab.tsx";
+import { CrmManagementTab } from "../features/management/crm-management-tab.tsx";
 import {
   Users,
   Target,
@@ -20,32 +24,88 @@ import {
 
 export type CrmTabId = "home" | "leads" | "opportunities" | "activities" | "management";
 
-export function CrmPage(): React.JSX.Element {
+const CRM_TAB_PERMISSIONS: Record<CrmTabId, readonly string[]> = {
+  home: ["crm.home.read", "crm.lead.read", "crm.opportunity.read", "crm.activity.read"],
+  leads: ["crm.lead.read", "crm.lead.create", "crm.lead.edit"],
+  opportunities: ["crm.opportunity.read", "crm.opportunity.create", "crm.opportunity.edit"],
+  activities: ["crm.activity.read", "crm.activity.create", "crm.activity.edit"],
+  management: ["crm.team.manage", "crm.pipeline.manage", "crm.team.read", "crm.all.view"]
+};
+
+function isCrmTabAllowed(tabId: CrmTabId, access?: EffectiveAccess, perms?: PermissionSet): boolean {
+  if (access) {
+    if (access.isSuper) return true;
+    const required = CRM_TAB_PERMISSIONS[tabId];
+    return required.some(p => hasPermissionInAccess(access, p));
+  }
+  if (perms) {
+    const required = CRM_TAB_PERMISSIONS[tabId];
+    return required.some(p => perms.hasPermission(p));
+  }
+  return false; // Fail closed
+}
+
+export interface CrmPageProps {
+  readonly initialTab?: CrmTabId | undefined;
+}
+
+export function CrmPage({ initialTab }: CrmPageProps = {}): React.JSX.Element {
   const { t } = useTranslation("crm");
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const runtimeContext = useOptionalLegalEntityContext();
-  const permissions = useOptionalPermissions();
+  const effectiveAccess = outletCtx?.effectiveAccess;
+  const permissions = useOptionalPermissions() || outletCtx?.permissions;
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = (searchParams.get("tab") as CrmTabId | null) ?? "home";
+  const rawParamTab = searchParams.get("tab") as CrmTabId | null;
 
   const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || "";
 
-  // Check if user has management permissions (can view all team data and manage pipelines/teams)
-  const canManage = permissions
-    ? permissions.hasPermission("crm.team.manage") ||
-      permissions.hasPermission("crm.pipeline.manage") ||
-      permissions.hasPermission("crm.all.view") ||
-      permissions.hasPermission("admin")
-    : true; // Default to true in dev if permissive
+  // Check if user has management permissions (fail-closed)
+  const canManage = isCrmTabAllowed("management", effectiveAccess, permissions);
+
+  const allTabs: readonly { id: CrmTabId; label: string; icon: React.ReactNode; routePath: string }[] = [
+    { id: "home", label: t("tabs.home", "مبيعاتي اليوم"), icon: <CalendarCheck style={{ width: "1rem", height: "1rem" }} />, routePath: "/crm" },
+    { id: "leads", label: t("tabs.leads", "العملاء المحتملين"), icon: <Users style={{ width: "1rem", height: "1rem" }} />, routePath: "/crm/leads" },
+    { id: "opportunities", label: t("tabs.opportunities", "الفرص والمسار البيعي"), icon: <Kanban style={{ width: "1rem", height: "1rem" }} />, routePath: "/crm/opportunities" },
+    { id: "activities", label: t("tabs.activities", "الأنشطة والمتابعات"), icon: <CheckSquare style={{ width: "1rem", height: "1rem" }} />, routePath: "/crm/activities" },
+    { id: "management", label: t("tabs.management", "إدارة المبيعات والتقارير"), icon: <BarChart2 style={{ width: "1rem", height: "1rem" }} />, routePath: "/crm/management" },
+  ];
+
+  const permittedTabs = allTabs.filter(tab => isCrmTabAllowed(tab.id, effectiveAccess, permissions));
+
+  let activeTab: CrmTabId;
+  const isExplicitRequest = Boolean(initialTab || rawParamTab);
+  if (rawParamTab) {
+    activeTab = rawParamTab;
+  } else if (initialTab) {
+    activeTab = initialTab;
+  } else if (permittedTabs.some(tab => tab.id === "home")) {
+    activeTab = "home";
+  } else if (permittedTabs.length > 0) {
+    activeTab = permittedTabs[0]!.id;
+  } else {
+    activeTab = "home";
+  }
 
   const handleTabChange = (newTab: CrmTabId) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("tab", newTab);
-      return next;
-    });
+    const target = allTabs.find(t => t.id === newTab);
+    if (target && location.pathname !== "/crm") {
+      navigate(target.routePath);
+    } else {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        if (newTab === "home") {
+          next.delete("tab");
+        } else {
+          next.set("tab", newTab);
+        }
+        return next;
+      });
+    }
   };
 
   if (!legalEntityId) {
@@ -73,13 +133,12 @@ export function CrmPage(): React.JSX.Element {
     );
   }
 
-  const tabs: Array<{ id: CrmTabId; label: string; icon: React.ReactNode }> = [
-    { id: "home", label: t("tabs.home", "مبيعاتي اليوم"), icon: <CalendarCheck style={{ width: "1rem", height: "1rem" }} /> },
-    { id: "leads", label: t("tabs.leads", "العملاء المحتملين"), icon: <Users style={{ width: "1rem", height: "1rem" }} /> },
-    { id: "opportunities", label: t("tabs.opportunities", "الفرص والمسار البيعي"), icon: <Kanban style={{ width: "1rem", height: "1rem" }} /> },
-    { id: "activities", label: t("tabs.activities", "الأنشطة والمتابعات"), icon: <CheckSquare style={{ width: "1rem", height: "1rem" }} /> },
-    { id: "management", label: t("tabs.management", "إدارة المبيعات والتقارير"), icon: <BarChart2 style={{ width: "1rem", height: "1rem" }} /> },
-  ];
+  const isCurrentTabPermitted = isCrmTabAllowed(activeTab, effectiveAccess, permissions);
+  if (isExplicitRequest && !isCurrentTabPermitted) {
+    return <DefaultAccessDeniedView />;
+  }
+
+  const displayedTabs = permittedTabs.length > 0 ? permittedTabs : allTabs;
 
   return (
     <div
@@ -160,7 +219,7 @@ export function CrmPage(): React.JSX.Element {
             }}
             aria-label={t("page.tabsNavAria", "تبويبات إدارة علاقات العملاء")}
           >
-            {tabs.map((tab) => {
+            {displayedTabs.map((tab) => {
               const isActive = activeTab === tab.id;
               return (
                 <button

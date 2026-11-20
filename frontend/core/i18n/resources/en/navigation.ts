@@ -1,4 +1,13 @@
 export const en = {
+  categories: {
+    workspace: "Workspace",
+    sales: "Sales & Customers",
+    purchasing: "Purchasing & Suppliers",
+    inventory: "Inventory & Operations",
+    finance: "Finance & Treasury",
+    hr: "Human Resources",
+    admin: "Administration & Settings"
+  },
   home: "Home", users: "Users", loginDomain: "Login settings", directory: "Directory",
   catalog: "Catalog", invoicing: "Invoicing", payments: "Payments", accounting: "General ledger",
   import: "Import wizard", financeBase: "Financial foundation", pricing: "Pricing", subledger: "Subledger", tax: "Tax", inventory: "Inventory", sales: "Sales & Quotations", purchasing: "Purchasing", hr: "Human Resources", payroll: "Payroll", crm: "Customer Relationships (CRM)", pos: "Point of Sale (POS)", expenses: "Expenses", fixedAssets: "Fixed Assets", projects: "Projects", service: "Service & Maintenance", banking: "Banking & Cash", preview: "System preview", settings: "Settings",

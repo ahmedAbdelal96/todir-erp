@@ -58,8 +58,8 @@ export function SalesPage(): React.JSX.Element {
     ? capabilities.isActivated("sales.returns") && !isDistributionOff
     : !isDistributionOff;
 
-  const canViewOrders = isOrderCapabilityActive && (permissions ? permissions.hasPermission("sales.order.read") : true);
-  const canViewReturns = isReturnCapabilityActive && (permissions ? permissions.hasPermission("sales.return.read") : true);
+  const canViewOrders = isOrderCapabilityActive && Boolean(permissions?.hasPermission("sales.order.read"));
+  const canViewReturns = isReturnCapabilityActive && Boolean(permissions?.hasPermission("sales.return.read"));
 
   const effectiveActiveTab = (!canViewOrders && activeTab === "orders") || (!canViewReturns && activeTab === "returns")
     ? "overview"

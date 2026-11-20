@@ -27,6 +27,8 @@ public sealed partial class SalesService(
     ISalesInventoryCapabilities? inventory = null,
     IInvoicingCorrectionCapabilities? correction = null)
 {
+    public Task<IReadOnlyList<Shared.Contracts.ManufacturingPlanning.ManufacturingDemandSnapshot>> ListAcceptedManufacturingDemandAsync(TenantId tenant, Guid legalEntityId, DateOnly from, DateOnly to, CancellationToken ct)
+        => repository.ListAcceptedManufacturingDemandAsync(tenant, legalEntityId, from, to, ct);
     public async Task<Guid> CreateQuotationAsync(TenantId tenant, Guid actor, CreateQuotationRequest request, CancellationToken ct)
     {
         ValidateHeader(request.LegalEntityId, request.CurrencyCode);

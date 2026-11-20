@@ -206,3 +206,24 @@ export function CreateLeadDialog({ open, onClose, entityId }: Props) {
    const canExport = hasPermission("crm.export");
    ```
 3. Never render an actionable button that yields an HTTP 403 Forbidden on click. Hide or disable with clear tooltip explanation.
+
+---
+
+## 7. Permission-Driven Navigation & Destination Architecture
+
+TODIR ERP replaces coarse module gates with an authoritative, fine-grained effective-access navigation architecture:
+
+1. **Scoped Effective-Access Model (`EffectiveAccess`)**:
+   - Evaluated server-side via `GET /api/v1/authorization/effective-access` for the active tenant, legal entity, and branch.
+   - Contains scoped permissions, module entitlements, and instance states.
+2. **Permission Condition (`PermissionCondition`)**:
+   - Supports single string permission or composite conditions: `{ anyOf: ["p1", "p2"] }`, `{ allOf: ["p1", "p2"] }`.
+3. **Route & Tab Guard (`<PermissionGuard>`)**:
+   ```tsx
+   <PermissionGuard permission={{ anyOf: ["banking.cash.count", "banking.cash.transfer"] }} moduleId="banking">
+     <BankingPage initialTab="cash" />
+   </PermissionGuard>
+   ```
+   If unauthorized, renders `<DefaultAccessDeniedView>` with status 403 and guidance.
+4. **Task Destination Registry (`NavDestination`)**:
+   - Modules declare discrete task destinations with associated permissions, categories, labels, and keywords for Command Palette spotlight search (Ctrl+K).

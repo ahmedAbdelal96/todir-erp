@@ -23,8 +23,10 @@ public sealed class PurchasingService(
     IInvoiceComplianceSnapshotCapability invoiceSnapshots,
     TimeProvider clock,
     IInventoryPurchasingCapabilities? inventory = null,
-    IInvoicingCorrectionCapabilities? corrections = null) : Shared.Contracts.Purchasing.IPurchasingSourceCapabilities, Shared.Contracts.Purchasing.IPurchasingFixedAssetCapabilities, Shared.Contracts.Purchasing.IPurchasingReadCapabilities, Shared.Contracts.Purchasing.IPurchasingLandedCostCapabilities
+    IInvoicingCorrectionCapabilities? corrections = null) : Shared.Contracts.Purchasing.IPurchasingSourceCapabilities, Shared.Contracts.Purchasing.IPurchasingFixedAssetCapabilities, Shared.Contracts.Purchasing.IPurchasingReadCapabilities, Shared.Contracts.Purchasing.IPurchasingLandedCostCapabilities, Shared.Contracts.ManufacturingPlanning.IManufacturingSupplyCapabilities
 {
+    public Task<IReadOnlyList<Shared.Contracts.ManufacturingPlanning.ManufacturingSupplySnapshot>> ListEligibleSupplyAsync(TenantId tenant, Guid legalEntityId, DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
+        => repository.ListEligibleManufacturingSupplyAsync(tenant, legalEntityId, from, to, cancellationToken);
     public async Task<Guid> CreateAsync(TenantId tenant, Guid actor, CreatePurchaseOrderRequest request, bool canOverridePrice, Guid correlation, CancellationToken ct)
     {
         Validate(request.LegalEntityId, request.CurrencyCode, request.Lines);

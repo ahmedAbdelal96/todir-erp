@@ -366,6 +366,7 @@ export const ar = {
     availableAmount: "المتاح",
     noEligibleLines: "لا توجد حركات إيداع بنكية متوافقة في هذا الكشف تغطي صافي مبلغ التسوية.",
     confirmMatch: "تأكيد مطابقة التسوية",
+    selectLine: "تحديد السطر {{value}}",
     chequesTab: "شيكات تحت التحصيل (في الطريق)",
     paymentNumber: "رقم مدفوعة الشيك",
     direction: "الاتجاه",

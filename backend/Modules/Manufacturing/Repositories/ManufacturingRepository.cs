@@ -12,7 +12,7 @@ using Shared.Primitives.Identifiers;
 
 namespace Modules.Manufacturing.Repositories;
 
-public sealed class ManufacturingRepository(ITransactionCoordinator coordinator, ITransactionalSequenceAllocator sequences) : IManufacturingCostReader
+public sealed partial class ManufacturingRepository(ITransactionCoordinator coordinator, ITransactionalSequenceAllocator sequences) : IManufacturingCostReader
 {
     public Task<PlantResponse> CreatePlantAsync(TenantId tenant, Guid actor, CreatePlantRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
@@ -174,6 +174,8 @@ public sealed class ManufacturingRepository(ITransactionCoordinator coordinator,
             if (await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_output where tenant_id=$1 and production_order_id=$2 and inventory_receipt_status <> 'Committed')", token, tenant.Value, orderId)) throw new ManufacturingException("manufacturing.close_output_unreconciled");
             if (order.QualityState is "Blocked" or "Unknown" or "Pending") throw new ManufacturingException("manufacturing.close_quality_unreconciled");
             if (order.CostState is "Unknown" or "Pending") throw new ManufacturingException("manufacturing.close_cost_unreconciled");
+            if (await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_operation where tenant_id=$1 and production_order_id=$2 and state <> 'Complete')", token, tenant.Value, orderId)) throw new ManufacturingException("manufacturing.close_operations_incomplete");
+            await ExecuteAsync(context, "insert into business_manufacturing.production_close_reconciliation(tenant_id,id,production_order_id,material_issued_qty,material_accounted_qty,good_output_qty,scrap_qty,operation_completed,quality_state,cost_state,wip_amount,state,idempotency_key,closed_at) select $1,$3,$2,coalesce(sum(r.issued_qty),0),coalesce(sum(r.consumed_qty+r.returned_qty+r.scrapped_qty),0),o.completed_qty,o.scrap_qty,true,o.quality_state,o.cost_state,greatest(coalesce((select sum(f.amount) from business_manufacturing.production_actual_cost_fact f where f.tenant_id=o.tenant_id and f.production_order_id=o.id),0)-coalesce((select sum(p.final_value) from business_manufacturing.production_output p where p.tenant_id=o.tenant_id and p.production_order_id=o.id and p.inventory_receipt_status='Committed'),0),0),'Ready',$4,now() from business_manufacturing.production_order o left join business_manufacturing.production_material_requirement r on r.tenant_id=o.tenant_id and r.production_order_id=o.id where o.tenant_id=$1 and o.id=$2 group by o.id,o.completed_qty,o.scrap_qty,o.quality_state,o.cost_state on conflict (tenant_id,production_order_id) do update set state='Ready',closed_at=excluded.closed_at,idempotency_key=excluded.idempotency_key", token, tenant.Value, orderId, Guid.CreateVersion7(), $"close:{orderId:D}:{expectedVersion}");
         }
         var state = ManufacturingRules.NextOrderState(order.State, action);
         await ExecuteAsync(context, "update business_manufacturing.production_order set state=$1,released_at=case when $1='Released' then now() else released_at end,updated_at=now(),row_version=row_version+1 where tenant_id=$2 and id=$3 and row_version=$4", token, state, tenant.Value, orderId, expectedVersion);
@@ -334,6 +336,16 @@ public sealed class ManufacturingRepository(ITransactionCoordinator coordinator,
                 var requiredQty = line.RequiredQty * request.OrderedQty / line.BaseOutputQty;
                 await ExecuteAsync(context, "insert into business_manufacturing.production_material_requirement(tenant_id,id,production_order_id,line_ref,product_variant_id,required_qty,uom_code,need_by,preferred_product_variant_id,substitute_group_id) values($1,$2,$3,$4,$5,$6,$7,$8,$5,$9)", token, tenant.Value, Guid.CreateVersion7(), orderId, line.LineId, line.ProductVariantId, requiredQty, line.UomCode, request.NeedDate, Db(line.SubstituteGroupId));
             }
+        }
+        if (definition.RoutingVersionId is { } routingVersionId)
+        {
+            await using var operations = Command(context, "select sequence_no,name,work_center_id,setup_minutes,run_minutes_per_unit,quality_gate_required from business_manufacturing.routing_operation where tenant_id=$1 and routing_version_id=$2 order by sequence_no", tenant.Value, routingVersionId);
+            await using var operationReader = await operations.ExecuteReaderAsync(token);
+            var routingOperations = new List<(int SequenceNo, string Name, Guid? WorkCenterId, decimal SetupMinutes, decimal RunMinutesPerUnit, bool QualityGateRequired)>();
+            while (await operationReader.ReadAsync(token)) routingOperations.Add((operationReader.GetInt32(0), operationReader.GetString(1), operationReader.IsDBNull(2) ? null : operationReader.GetGuid(2), operationReader.GetDecimal(3), operationReader.GetDecimal(4), operationReader.GetBoolean(5)));
+            await operationReader.DisposeAsync();
+            foreach (var operation in routingOperations)
+                await ExecuteAsync(context, "insert into business_manufacturing.production_operation(tenant_id,id,production_order_id,sequence_no,name,work_center_id,setup_minutes,run_minutes_per_unit,quality_gate_required) values($1,$2,$3,$4,$5,$6,$7,$8,$9)", token, tenant.Value, Guid.CreateVersion7(), orderId, operation.SequenceNo, operation.Name, Db(operation.WorkCenterId), operation.SetupMinutes, operation.RunMinutesPerUnit, operation.QualityGateRequired);
         }
         return await ReadOrderAsync(context, tenant.Value, orderId, token) ?? throw new ManufacturingException("manufacturing.production_order_not_found");
     }
