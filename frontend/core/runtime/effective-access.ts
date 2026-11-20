@@ -10,8 +10,30 @@ export interface EffectiveAccess {
   readonly version: string;
 }
 
-export async function fetchEffectiveAccess(): Promise<EffectiveAccess> {
-  const response = await fetch("/api/v1/authorization/effective-access", {
+let effectiveAccessAbortController: AbortController | null = null;
+
+export async function fetchEffectiveAccess(
+  legalEntityId?: string | null,
+  branchId?: string | null
+): Promise<EffectiveAccess> {
+  // Cancel any in-flight request to prevent stale out-of-order resolution during rapid switching
+  if (effectiveAccessAbortController) {
+    effectiveAccessAbortController.abort();
+  }
+  effectiveAccessAbortController = new AbortController();
+  const { signal } = effectiveAccessAbortController;
+
+  const params = new URLSearchParams();
+  if (legalEntityId) {
+    params.set("legalEntityId", legalEntityId);
+  }
+  if (branchId) {
+    params.set("branchId", branchId);
+  }
+  const queryString = params.toString() ? `?${params.toString()}` : "";
+
+  const response = await fetch(`/api/v1/authorization/effective-access${queryString}`, {
+    signal,
     headers: {
       "X-Correlation-Id": crypto.randomUUID(),
       Accept: "application/json"

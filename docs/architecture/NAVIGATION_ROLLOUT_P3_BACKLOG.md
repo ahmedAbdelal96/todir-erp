@@ -24,25 +24,28 @@ Each module migrated in P3 must adhere to the contract established in:
 
 ### Wave 1: High Tab-Pressure Modules (Immediate Next Priorities)
 
-#### 1. Accounting (`accounting`) — Category: `finance`
-- **Current State**: Single `/accounting` page with tabs for Journals, General Ledger, Trial Balance, Fiscal Periods, and Settings.
+#### 1. Accounting (`accounting` & `ledger`) — Category: `finance`
+- **Current State**: Single `/accounting` page with tabs for Chart of Accounts, Journals, General Ledger, Trial Balance, Fiscal Periods, and Settings.
 - **Target Destinations**:
-  - `accounting-overview`: `/accounting` — Overview & Financial Health (`accounting.reports.read`)
-  - `accounting-journals`: `/accounting/journals` — Daily Journal Entries / قيود اليومية (`accounting.journal.read`, `accounting.journal.create`, `accounting.journal.post`)
-  - `accounting-ledger`: `/accounting/ledger` — General Ledger / دفتر الأستاذ العام (`accounting.ledger.read`)
-  - `accounting-trial-balance`: `/accounting/trial-balance` — Trial Balance / ميزان المراجعة (`accounting.trial_balance.read`)
-  - `accounting-periods`: `/accounting/periods` — Fiscal Years & Periods / الفترات المالية والإقفال (`accounting.period.manage`)
-  - `accounting-closing`: `/accounting/closing` — Year-End Closing / الإقفال السنوي (`accounting.period.manage`, `accounting.year_end.close`)
+  - `accounting-overview`: `/accounting` — Chart of Accounts & Balances / دليل الحسابات والأرصدة (`ledger.account.read`)
+  - `accounting-journals`: `/accounting/journals` — Journal Entries & Posting / قيود اليومية والترحيل (`ledger.journal.read`, `ledger.journal.post`, `accounting.journal.read`)
+  - `accounting-ledger`: `/accounting/ledger` — General Ledger / دفتر الأستاذ العام (`ledger.general_ledger.read`)
+  - `accounting-trial-balance`: `/accounting/trial-balance` — Trial Balance / ميزان المراجعة (`ledger.trial_balance.read`)
+  - `accounting-statements`: `/accounting/statements` — Financial Statements / القوائم المالية والختامية (`accounting.financial_statement.read`)
+  - `accounting-periods`: `/accounting/periods` — Fiscal Years & Periods / الفترات المالية والإقفال (`accounting.period.read`, `accounting.fiscal_year.read`, `accounting.period_close.execute`)
+  - `accounting-reconciliation`: `/accounting/reconciliation` — Control Account Reconciliation / مطابقة حسابات المراقبة (`accounting.reconciliation.read`)
+  - `accounting-revaluation`: `/accounting/revaluation` — FX Currency Revaluation / تقييم فروق العملة (`accounting.fx_revaluation.read`)
 
 #### 2. Inventory & Stock Operations (`inventory`) — Category: `inventory`
 - **Current State**: Single `/inventory` page with tabs for Stock Balances, Movements, Adjustments, Transfers, and Counts.
 - **Target Destinations**:
-  - `inventory-overview`: `/inventory` — Stock Position / أرصدة المخزون (`inventory.stock.read`)
-  - `inventory-receipts`: `/inventory/receipts` — Goods Receipt Notes / إذن استلام بضاعة (`inventory.receipt.read`, `inventory.receipt.create`)
-  - `inventory-deliveries`: `/inventory/deliveries` — Delivery Orders / إذن صرف بضاعة (`inventory.delivery.read`, `inventory.delivery.create`)
-  - `inventory-adjustments`: `/inventory/adjustments` — Stock Adjustments / تسويات مخزنية (`inventory.adjustment.read`, `inventory.adjustment.manage`)
-  - `inventory-counts`: `/inventory/counts` — Physical Stock Count / جرد مخزني (`inventory.count.read`, `inventory.count.manage`)
-  - `inventory-transfers`: `/inventory/transfers` — Warehouse Transfers / تحويلات بين المستودعات (`inventory.transfer.read`, `inventory.transfer.manage`)
+  - `inventory-overview`: `/inventory` — Stock Position & Balances / أرصدة ومواقع المخزون (`inventory.stock.read`)
+  - `inventory-movements`: `/inventory/movements` — Stock Movement History / سجل حركة الأصناف المخزنية (`inventory.movement.read`)
+  - `inventory-transfers`: `/inventory/transfers` — Inter-Warehouse Transfers / أوامر التحويل بين المستودعات (`inventory.transfer.request`, `inventory.transfer.execute`)
+  - `inventory-counts`: `/inventory/counts` — Physical Stock Count Orders / محاضر الجرد الفعلي للمخزون (`inventory.count.read`, `inventory.count.execute`)
+  - `inventory-adjustments`: `/inventory/adjustments` — Stock Adjustments / أذون التسوية المخزنية (`inventory.adjustment.read`, `inventory.adjustment.execute`)
+  - `inventory-warehouses`: `/inventory/warehouses` — Warehouses & Storage Locations / المستودعات ومواقع التخزين (`inventory.warehouse.read`, `inventory.location.read`)
+  - `inventory-traceability`: `/inventory/traceability` — Batch, Lot & Serial Traceability / تتبع التشغيلات والأرقام التسلسلية (`inventory.traceability.read`)
 
 ---
 

@@ -7,6 +7,8 @@ import { evaluatePermissionCondition, isModuleOperational } from "../runtime/eff
 export interface PermissionGuardProps {
   readonly permission?: PermissionCondition | undefined;
   readonly moduleId?: string | undefined;
+  readonly moduleIds?: readonly string[] | undefined;
+  readonly allowReadOnly?: boolean | undefined;
   readonly children: React.ReactNode;
   readonly fallback?: React.ReactNode | undefined;
 }
@@ -14,6 +16,8 @@ export interface PermissionGuardProps {
 export function PermissionGuard({
   permission,
   moduleId,
+  moduleIds,
+  allowReadOnly = true,
   children,
   fallback
 }: PermissionGuardProps): React.JSX.Element {
@@ -27,7 +31,11 @@ export function PermissionGuard({
   }
 
   // Enforce module operational readiness (entitlement + lifecycle activation)
-  if (moduleId && !isModuleOperational(effectiveAccess, moduleId)) {
+  if (moduleId && !isModuleOperational(effectiveAccess, moduleId, allowReadOnly)) {
+    return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
+  }
+
+  if (moduleIds && moduleIds.length > 0 && !moduleIds.some(m => isModuleOperational(effectiveAccess, m, allowReadOnly))) {
     return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
   }
 

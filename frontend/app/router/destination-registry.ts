@@ -184,6 +184,194 @@ export const CRM_DESTINATIONS: readonly NavDestination[] = [
   }
 ];
 
+export const ACCOUNTING_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "accounting-overview",
+    category: "finance",
+    moduleId: "ledger",
+    path: "/accounting",
+    labelKey: "tabs.chartOfAccounts",
+    fallbackLabel: "دليل الحسابات والأرصدة",
+    icon: "landmark",
+    permission: { anyOf: ["ledger.account.read", "ledger.account.manage"] },
+    order: 10,
+    isPrimary: true,
+    keywords: ["حسابات", "دليل", "أرصدة", "شجرة الحسابات", "chart of accounts", "coa"]
+  },
+  {
+    id: "accounting-journals",
+    category: "finance",
+    moduleId: "ledger",
+    path: "/accounting/journals",
+    labelKey: "tabs.journals",
+    fallbackLabel: "قيود اليومية والترحيل",
+    icon: "statement",
+    permission: { anyOf: ["ledger.journal.read", "ledger.journal.manage", "ledger.general_journal.post"] },
+    order: 20,
+    keywords: ["قيد", "يومية", "ترحيل", "سند قيد", "journals", "entries"]
+  },
+  {
+    id: "accounting-ledger",
+    category: "finance",
+    moduleId: "ledger",
+    path: "/accounting/ledger",
+    labelKey: "tabs.generalLedger",
+    fallbackLabel: "دفتر الأستاذ العام",
+    icon: "reports",
+    permission: "ledger.reports.read",
+    order: 30,
+    keywords: ["أستاذ", "دفتر الأستاذ", "كشف حساب", "general ledger", "gl"]
+  },
+  {
+    id: "accounting-trial-balance",
+    category: "finance",
+    moduleId: "ledger",
+    path: "/accounting/trial-balance",
+    labelKey: "tabs.trialBalance",
+    fallbackLabel: "ميزان المراجعة",
+    icon: "reports",
+    permission: "ledger.reports.read",
+    order: 40,
+    keywords: ["ميزان", "مراجعة", "أرصدة", "trial balance", "tb"]
+  },
+  {
+    id: "accounting-statements",
+    category: "finance",
+    moduleId: "accounting",
+    path: "/accounting/statements",
+    labelKey: "tabs.financialStatements",
+    fallbackLabel: "القوائم المالية والختامية",
+    icon: "forecast",
+    permission: { anyOf: ["accounting.statement.read", "accounting.statement.manage"] },
+    order: 50,
+    keywords: ["قوائم مالية", "ميزانية", "أرباح وخسائر", "تدفقات", "financial statements", "balance sheet", "p&l"]
+  },
+  {
+    id: "accounting-periods",
+    category: "finance",
+    moduleId: "ledger",
+    path: "/accounting/periods",
+    labelKey: "tabs.periods",
+    fallbackLabel: "الفترات المالية والإقفال",
+    icon: "vault",
+    permission: { anyOf: ["ledger.period.read", "ledger.period.manage", "accounting.close.execute"] },
+    order: 60,
+    keywords: ["فترة مالية", "سنة مالية", "إقفال", "periods", "fiscal year", "close"]
+  },
+  {
+    id: "accounting-reconciliation",
+    category: "finance",
+    moduleId: "accounting",
+    path: "/accounting/reconciliation",
+    labelKey: "tabs.controlReconciliation",
+    fallbackLabel: "مطابقة حسابات المراقبة",
+    icon: "reconcile",
+    permission: { anyOf: ["accounting.reconciliation.read", "accounting.reconciliation.run"] },
+    order: 70,
+    keywords: ["مطابقة", "مراقبة", "subledger", "reconciliation"]
+  },
+  {
+    id: "accounting-revaluation",
+    category: "finance",
+    moduleId: "accounting",
+    path: "/accounting/revaluation",
+    labelKey: "tabs.fxRevaluation",
+    fallbackLabel: "تقييم فروق العملة",
+    icon: "transfer",
+    permission: { anyOf: ["accounting.fx-revaluation.read", "accounting.fx-revaluation.post"] },
+    order: 80,
+    keywords: ["عملات", "فروق عملة", "تقييم", "fx", "revaluation"]
+  }
+];
+
+export const INVENTORY_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "inventory-overview",
+    category: "inventory",
+    moduleId: "inventory",
+    path: "/inventory",
+    labelKey: "tabs.overview",
+    fallbackLabel: "أرصدة ومواقع المخزون",
+    icon: "inventory",
+    permission: "inventory.stock.read",
+    order: 10,
+    isPrimary: true,
+    keywords: ["مخزون", "أرصدة", "بضاعة", "مستودع", "stock", "balances", "inventory"]
+  },
+  {
+    id: "inventory-movements",
+    category: "inventory",
+    moduleId: "inventory",
+    path: "/inventory/movements",
+    labelKey: "tabs.history",
+    fallbackLabel: "سجل حركة الأصناف المخزنية",
+    icon: "statement",
+    permission: "inventory.history.read",
+    order: 20,
+    keywords: ["حركة", "وارد", "منصرف", "سجل", "movements", "transactions"]
+  },
+  {
+    id: "inventory-transfers",
+    category: "inventory",
+    moduleId: "inventory",
+    path: "/inventory/transfers",
+    labelKey: "tabs.transfers",
+    fallbackLabel: "أوامر التحويل بين المستودعات",
+    icon: "transfer",
+    permission: { anyOf: ["inventory.transfer.create", "inventory.transfer.ship", "inventory.transfer.receive"] },
+    order: 30,
+    keywords: ["تحويل مخزني", "نقل بضاعة", "مستودعات", "transfers"]
+  },
+  {
+    id: "inventory-counts",
+    category: "inventory",
+    moduleId: "inventory",
+    path: "/inventory/counts",
+    labelKey: "tabs.counts",
+    fallbackLabel: "محاضر الجرد الفعلي للمخزون",
+    icon: "vault",
+    permission: { anyOf: ["inventory.count.create", "inventory.count.enter", "inventory.count.approve", "inventory.count.post"] },
+    order: 40,
+    keywords: ["جرد", "جرد دوري", "مطابقة فعلية", "stock count", "physical inventory"]
+  },
+  {
+    id: "inventory-adjustments",
+    category: "inventory",
+    moduleId: "inventory",
+    path: "/inventory/adjustments",
+    labelKey: "tabs.adjustments",
+    fallbackLabel: "أذون التسوية المخزنية",
+    icon: "reconcile",
+    permission: { anyOf: ["inventory.adjustment.create", "inventory.adjustment.approve", "inventory.adjustment.post"] },
+    order: 50,
+    keywords: ["تسوية", "تعديل كميات", "عجز", "زيادة", "adjustments"]
+  },
+  {
+    id: "inventory-warehouses",
+    category: "inventory",
+    moduleId: "inventory",
+    path: "/inventory/warehouses",
+    labelKey: "tabs.warehouses",
+    fallbackLabel: "المستودعات ومواقع التخزين",
+    icon: "landmark",
+    permission: { anyOf: ["inventory.warehouse.manage", "inventory.location.manage"] },
+    order: 60,
+    keywords: ["مستودع", "موقع تخزين", "مخازن", "رفوف", "warehouses", "locations"]
+  },
+  {
+    id: "inventory-traceability",
+    category: "inventory",
+    moduleId: "inventory",
+    path: "/inventory/traceability",
+    labelKey: "tabs.traceability",
+    fallbackLabel: "تتبع التشغيلات والأرقام التسلسلية",
+    icon: "reports",
+    permission: "inventory.traceability.manage",
+    order: 70,
+    keywords: ["تشغيلة", "رقم تسلسلي", "صلاحية", "batch", "lot", "serial", "traceability"]
+  }
+];
+
 export function isDestinationPermitted(
   dest: NavDestination,
   access: EffectiveAccess | null | undefined
@@ -202,8 +390,8 @@ export function isModulePermitted(
   if (item.destinations && item.destinations.length > 0) {
     return item.destinations.some(d => isDestinationPermitted(d, access));
   }
-  const targetModuleId = item.moduleIds[0] ?? item.id;
-  if (!isModuleOperational(access, targetModuleId)) return false;
+  const moduleIds = item.moduleIds && item.moduleIds.length > 0 ? item.moduleIds : [item.id];
+  if (!moduleIds.some(m => isModuleOperational(access, m))) return false;
   return evaluatePermissionCondition(item.permissions ?? item.permission, access);
 }
 

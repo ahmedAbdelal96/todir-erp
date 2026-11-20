@@ -14,6 +14,8 @@ import {
   getPermittedDestinationsForModule,
   BANKING_DESTINATIONS,
   CRM_DESTINATIONS,
+  ACCOUNTING_DESTINATIONS,
+  INVENTORY_DESTINATIONS,
   NAVIGATION_CATEGORIES
 } from "../../app/router/destination-registry.ts";
 import type { ModuleNavigationRegistration } from "../../app/router/route-contract.ts";
@@ -249,5 +251,86 @@ describe("Permission-Driven Effective Access & Destination Architecture", () => 
     });
     const invoiceItemIds = invoicePalette.map(item => item.id);
     assert.ok(invoiceItemIds.includes("action-new-customer-invoice"), "Invoicing clerk should see new customer invoice action");
+  });
+
+  it("handles multi-module Accounting vs Ledger entitlements: non-purchasable core Ledger destinations remain accessible", () => {
+    const accountingRegistration: ModuleNavigationRegistration = {
+      id: "accounting",
+      moduleIds: ["accounting", "ledger"],
+      path: "/accounting",
+      navigationKey: "accounting",
+      category: "finance",
+      destinations: ACCOUNTING_DESTINATIONS,
+      icon: "accounting"
+    };
+
+    // Tenant has entitled "ledger" (core, non-purchasable) but NOT commercial "accounting"
+    const ledgerOnlyAccess: EffectiveAccess = {
+      ...emptyAccess,
+      entitledModules: ["ledger"], // No commercial "accounting" entitlement
+      permissions: ["ledger.account.read", "ledger.reports.read"]
+    };
+
+    // The module must be permitted because its ledger task destinations are operational
+    assert.equal(isModulePermitted(accountingRegistration, ledgerOnlyAccess), true);
+
+    const permittedDests = getPermittedDestinationsForModule(accountingRegistration, ledgerOnlyAccess);
+    const destIds = permittedDests.map(d => d.id);
+
+    // Ledger destinations are allowed
+    assert.ok(destIds.includes("accounting-overview"), "Chart of Accounts must be accessible under Ledger");
+    assert.ok(destIds.includes("accounting-ledger"), "General Ledger must be accessible under Ledger");
+    assert.ok(destIds.includes("accounting-trial-balance"), "Trial Balance must be accessible under Ledger");
+
+    // Commercial accounting destinations are NOT allowed
+    assert.ok(!destIds.includes("accounting-statements"), "Financial statements requires commercial accounting module");
+    assert.ok(!destIds.includes("accounting-reconciliation"), "Reconciliation requires commercial accounting module");
+    assert.ok(!destIds.includes("accounting-revaluation"), "FX revaluation requires commercial accounting module");
+  });
+
+  it("filters Inventory destinations between warehouse operator and logistics manager", () => {
+    const inventoryRegistration: ModuleNavigationRegistration = {
+      id: "inventory",
+      moduleIds: ["inventory"],
+      path: "/inventory",
+      navigationKey: "inventory",
+      category: "inventory",
+      destinations: INVENTORY_DESTINATIONS,
+      icon: "inventory"
+    };
+
+    // Operator with only stock reading permission
+    const operatorAccess: EffectiveAccess = {
+      ...emptyAccess,
+      entitledModules: ["inventory"],
+      permissions: ["inventory.stock.read", "inventory.history.read"]
+    };
+
+    const operatorDests = getPermittedDestinationsForModule(inventoryRegistration, operatorAccess);
+    const operatorDestIds = operatorDests.map(d => d.id);
+    assert.ok(operatorDestIds.includes("inventory-overview"));
+    assert.ok(operatorDestIds.includes("inventory-movements"));
+    assert.ok(!operatorDestIds.includes("inventory-transfers"), "Operator cannot perform transfers");
+    assert.ok(!operatorDestIds.includes("inventory-adjustments"), "Operator cannot perform adjustments");
+    assert.ok(!operatorDestIds.includes("inventory-counts"), "Operator cannot perform stock counts");
+
+    // Logistics manager with operational permissions
+    const managerAccess: EffectiveAccess = {
+      ...emptyAccess,
+      entitledModules: ["inventory"],
+      permissions: [
+        "inventory.stock.read",
+        "inventory.history.read",
+        "inventory.transfer.create",
+        "inventory.adjustment.create",
+        "inventory.count.create"
+      ]
+    };
+
+    const managerDests = getPermittedDestinationsForModule(inventoryRegistration, managerAccess);
+    const managerDestIds = managerDests.map(d => d.id);
+    assert.ok(managerDestIds.includes("inventory-transfers"));
+    assert.ok(managerDestIds.includes("inventory-adjustments"));
+    assert.ok(managerDestIds.includes("inventory-counts"));
   });
 });

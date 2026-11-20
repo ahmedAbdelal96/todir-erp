@@ -4,7 +4,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { BANKING_DESTINATIONS, CRM_DESTINATIONS } from "../../app/router/destination-registry.ts";
+import {
+  BANKING_DESTINATIONS,
+  CRM_DESTINATIONS,
+  ACCOUNTING_DESTINATIONS,
+  INVENTORY_DESTINATIONS
+} from "../../app/router/destination-registry.ts";
 import type { PermissionCondition } from "../../app/router/route-contract.ts";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -130,6 +135,32 @@ describe("Permission Manifest Authoritative Audit", () => {
       }
     }
     assert.deepEqual(invalidCodes, [], `All CRM_DESTINATIONS permissions must be valid manifests. Found invalid: ${invalidCodes.join(", ")}`);
+  });
+
+  it("verifies 100% of ACCOUNTING_DESTINATIONS permissions exist in manifest catalog", () => {
+    const invalidCodes: string[] = [];
+    for (const dest of ACCOUNTING_DESTINATIONS) {
+      const codes = extractPermissions(dest.permission);
+      for (const code of codes) {
+        if (!authoritativeCatalog.has(code)) {
+          invalidCodes.push(`${dest.id} -> ${code}`);
+        }
+      }
+    }
+    assert.deepEqual(invalidCodes, [], `All ACCOUNTING_DESTINATIONS permissions must be valid manifests. Found invalid: ${invalidCodes.join(", ")}`);
+  });
+
+  it("verifies 100% of INVENTORY_DESTINATIONS permissions exist in manifest catalog", () => {
+    const invalidCodes: string[] = [];
+    for (const dest of INVENTORY_DESTINATIONS) {
+      const codes = extractPermissions(dest.permission);
+      for (const code of codes) {
+        if (!authoritativeCatalog.has(code)) {
+          invalidCodes.push(`${dest.id} -> ${code}`);
+        }
+      }
+    }
+    assert.deepEqual(invalidCodes, [], `All INVENTORY_DESTINATIONS permissions must be valid manifests. Found invalid: ${invalidCodes.join(", ")}`);
   });
 
   it("verifies 100% of permissions in all module routes.tsx files match manifest catalog", () => {

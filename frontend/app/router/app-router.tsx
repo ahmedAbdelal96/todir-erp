@@ -1,3 +1,4 @@
+import React from "react";
 import { createBrowserRouter, isRouteErrorResponse, Link, Outlet, useRouteError, type RouteObject } from "react-router-dom";
 import { AppShell } from "../shell/app-shell.tsx";
 import { PreviewPage } from "../preview-page.tsx";
@@ -32,16 +33,23 @@ import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
 import type { ModuleRouteRegistration } from "./route-contract.ts";
 
 function protectModuleRoutes(registration: ModuleRouteRegistration): RouteObject[] {
-  const moduleId = registration.navigation.moduleIds[0] ?? registration.navigation.id;
+  const moduleIds = registration.navigation.moduleIds && registration.navigation.moduleIds.length > 0
+    ? registration.navigation.moduleIds
+    : [registration.navigation.id];
   const permission = registration.navigation.permissions ?? registration.navigation.permission;
 
   const wrapRoute = (route: RouteObject): RouteObject => {
+    // If route element is already guarded by a specific PermissionGuard, preserve it
+    const isAlreadyGuarded = React.isValidElement(route.element) && route.element.type === PermissionGuard;
+
     const wrapped: RouteObject = {
       ...route,
       element: route.element ? (
-        <PermissionGuard permission={permission} moduleId={moduleId}>
-          {route.element}
-        </PermissionGuard>
+        isAlreadyGuarded ? route.element : (
+          <PermissionGuard permission={permission} moduleIds={moduleIds}>
+            {route.element}
+          </PermissionGuard>
+        )
       ) : route.element
     };
     if (route.children) {

@@ -341,7 +341,7 @@ export function AppShell() {
       setBranch(defaultBranch);
       let access: EffectiveAccess | null = null;
       try {
-        access = await fetchEffectiveAccess();
+        access = await fetchEffectiveAccess(defaultEntity, defaultBranch);
         setEffectiveAccess(access);
         setPermissions(new PermissionSet(access.permissions));
       } catch {
@@ -403,7 +403,7 @@ export function AppShell() {
       queryClient.clear();
 
       // Fetch new scoped authorization; navigation restored only after verified success
-      const nextAccess = await fetchEffectiveAccess();
+      const nextAccess = await fetchEffectiveAccess(nextLegalEntity, nextBranch);
       setEffectiveAccess(nextAccess);
       setPermissions(new PermissionSet(nextAccess.permissions));
       loadNavigation(nextAccess);

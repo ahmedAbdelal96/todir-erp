@@ -3,6 +3,10 @@ import type { ModuleRouteRegistration, PermissionCondition } from "../../app/rou
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
 import { CRM_DESTINATIONS } from "../../app/router/destination-registry.ts";
 import { CrmPage } from "./pages/crm-page.tsx";
+import { CrmLeadsPage } from "./pages/crm-leads-page.tsx";
+import { CrmOpportunitiesPage } from "./pages/crm-opportunities-page.tsx";
+import { CrmActivitiesPage } from "./pages/crm-activities-page.tsx";
+import { CrmManagementPage } from "./pages/crm-management-page.tsx";
 
 const crmModulePermissions: PermissionCondition = {
   anyOf: [
@@ -46,7 +50,7 @@ export const crmRoutes: ModuleRouteRegistration = {
       path: "crm/leads",
       element: (
         <PermissionGuard permission={{ anyOf: ["crm.lead.read", "crm.lead.create", "crm.lead.edit"] }} moduleId="crm">
-          <CrmPage initialTab="leads" />
+          <CrmLeadsPage />
         </PermissionGuard>
       )
     },
@@ -54,7 +58,7 @@ export const crmRoutes: ModuleRouteRegistration = {
       path: "crm/opportunities",
       element: (
         <PermissionGuard permission={{ anyOf: ["crm.opportunity.read", "crm.opportunity.create", "crm.opportunity.edit"] }} moduleId="crm">
-          <CrmPage initialTab="opportunities" />
+          <CrmOpportunitiesPage />
         </PermissionGuard>
       )
     },
@@ -62,7 +66,7 @@ export const crmRoutes: ModuleRouteRegistration = {
       path: "crm/activities",
       element: (
         <PermissionGuard permission={{ anyOf: ["crm.activity.read", "crm.activity.create", "crm.activity.edit"] }} moduleId="crm">
-          <CrmPage initialTab="activities" />
+          <CrmActivitiesPage />
         </PermissionGuard>
       )
     },
@@ -70,7 +74,7 @@ export const crmRoutes: ModuleRouteRegistration = {
       path: "crm/management",
       element: (
         <PermissionGuard permission={{ anyOf: ["crm.team.manage", "crm.pipeline.manage", "crm.team.read", "crm.pipeline.read", "crm.forecast.read"] }} moduleId="crm">
-          <CrmPage initialTab="management" />
+          <CrmManagementPage />
         </PermissionGuard>
       )
     }
