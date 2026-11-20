@@ -358,7 +358,10 @@ public sealed partial class ManufacturingRepository(
                 firmedSupplies.Add((firmedReader.GetGuid(0), firmedReader.GetGuid(1), firmedReader.IsDBNull(2) ? null : firmedReader.GetGuid(2), firmedReader.GetFieldValue<DateOnly>(3), firmedReader.GetDecimal(4), firmedReader.GetString(5)));
         }
         var firmedRemaining = firmedSupplies.ToDictionary(row => row.Id, row => row.Quantity);
-        var stockRemaining = new Dictionary<Guid, decimal>();
+        // Keep inventory pools scoped to the planning demand's product, plant and UOM,
+        // and to each warehouse returned by Inventory. A product-only pool can let one
+        // plant or warehouse consume stock that belongs to another planning scope.
+        var stockRemaining = new Dictionary<(Guid ProductVariantId, Guid? PlantId, string UomCode, Guid WarehouseId), decimal>();
 
         foreach (var demandGroup in demands.GroupBy(demand => new { demand.ProductVariantId, demand.PlantId, demand.NeedDate, demand.UomCode }).OrderBy(group => group.Key.NeedDate))
         {
@@ -380,14 +383,22 @@ public sealed partial class ManufacturingRepository(
                     remainingForecastConsumption -= allocatedConsumption;
                 }
             }
-            var grossRequirement = Math.Max(forecast, acceptedDemand);
-            if (!stockRemaining.TryGetValue(demandGroup.Key.ProductVariantId, out var availableStock))
-            {
-                var availability = inventoryCapabilities is null
-                    ? []
-                    : await inventoryCapabilities.GetAvailabilityAsync(tenant.Value, run.LegalEntityId, demandGroup.Key.ProductVariantId, true, token);
-                availableStock = availability.Where(row => string.Equals(row.BaseUnitCode, demandGroup.Key.UomCode, StringComparison.OrdinalIgnoreCase)).Sum(row => row.Available);
-            }
+            var remainingForecast = Math.Max(0m, forecast - consumedForecast);
+            // Accepted demand consumes the matching forecast bucket; it does not
+            // erase the unconsumed forecast. Therefore forecast 1,000 + accepted
+            // sales 600 produces a gross requirement of 1,000, not 400.
+            var grossRequirement = acceptedDemand + remainingForecast;
+            var availability = inventoryCapabilities is null
+                ? []
+                : await inventoryCapabilities.GetAvailabilityAsync(tenant.Value, run.LegalEntityId, demandGroup.Key.ProductVariantId, true, token);
+            var stockPools = availability
+                .Where(row => string.Equals(row.BaseUnitCode, demandGroup.Key.UomCode, StringComparison.OrdinalIgnoreCase))
+                .Select(row =>
+                {
+                    var key = (demandGroup.Key.ProductVariantId, demandGroup.Key.PlantId, demandGroup.Key.UomCode, row.WarehouseId);
+                    return (key, available: stockRemaining.TryGetValue(key, out var remaining) ? remaining : row.Available);
+                })
+                .ToList();
             var committedSupply = 0m;
             var supplyAllocations = new List<(Guid Id, decimal Quantity)>();
             foreach (var supply in firmedSupplies.Where(row => row.ProductVariantId == demandGroup.Key.ProductVariantId
@@ -395,20 +406,26 @@ public sealed partial class ManufacturingRepository(
             {
                 var remaining = firmedRemaining[supply.Id];
                 if (remaining <= 0) continue;
-                var allocation = Math.Min(remaining, Math.Max(0m, grossRequirement - consumedForecast - committedSupply));
+                var allocation = Math.Min(remaining, Math.Max(0m, grossRequirement - committedSupply));
                 if (allocation <= 0) break;
                 firmedRemaining[supply.Id] = remaining - allocation;
                 committedSupply += allocation;
                 supplyAllocations.Add((supply.Id, allocation));
             }
-            var stockAllocation = Math.Min(availableStock, Math.Max(0m, grossRequirement - consumedForecast - committedSupply));
-            stockRemaining[demandGroup.Key.ProductVariantId] = availableStock - stockAllocation;
-            var residual = Math.Max(0m, grossRequirement - consumedForecast - committedSupply - stockAllocation);
+            var stockAllocation = 0m;
+            foreach (var pool in stockPools)
+            {
+                var allocation = Math.Min(pool.available, Math.Max(0m, grossRequirement - committedSupply - stockAllocation));
+                stockRemaining[pool.key] = pool.available - allocation;
+                stockAllocation += allocation;
+                if (stockAllocation >= grossRequirement - committedSupply) break;
+            }
+            var residual = Math.Max(0m, grossRequirement - committedSupply - stockAllocation);
             var demand = demandGroup.FirstOrDefault(item => string.Equals(item.SourceType, "Forecast", StringComparison.OrdinalIgnoreCase)) is var selectedForecastDemand && selectedForecastDemand.Id != Guid.Empty ? selectedForecastDemand : demandGroup.First();
             foreach (var allocation in supplyAllocations)
                 await ExecuteAsync(context, "insert into business_manufacturing.mrp_pegging_link(tenant_id,id,planning_run_id,demand_id,planned_supply_id,allocated_qty) values($1,$2,$3,$4,$5,$6)", token, tenant.Value, Guid.CreateVersion7(), runId, demand.Id, allocation.Id, allocation.Quantity);
             if (residual <= 0) continue;
-            var supplyId = Guid.CreateVersion7(); var start = demandGroup.Key.NeedDate.AddDays(-1); await ExecuteAsync(context, "insert into business_manufacturing.planned_supply(tenant_id,id,planning_run_id,product_variant_id,plant_id,supply_type,source_ref,need_date,suggested_start,quantity,uom_code,source_watermark) values($1,$2,$3,$4,$5,'Production',$6,$7,$8,$9,$10,jsonb_build_object('demandId',$2::text,'grossRequirement',$11,'consumedForecast',$12,'firmedSupply',$13))", token, tenant.Value, supplyId, runId, demandGroup.Key.ProductVariantId, Db(demandGroup.Key.PlantId), $"Demand:{demand.Id:D}", demandGroup.Key.NeedDate, start, residual, demandGroup.Key.UomCode, grossRequirement, consumedForecast, committedSupply);
+            var supplyId = Guid.CreateVersion7(); var start = demandGroup.Key.NeedDate.AddDays(-1); await ExecuteAsync(context, "insert into business_manufacturing.planned_supply(tenant_id,id,planning_run_id,product_variant_id,plant_id,supply_type,source_ref,need_date,suggested_start,quantity,uom_code,source_watermark) values($1,$2,$3,$4,$5,'Production',$6,$7,$8,$9,$10,jsonb_build_object('demandId',$2::text,'forecast',$11,'acceptedDemand',$12,'consumedForecast',$13,'remainingForecast',$14,'grossRequirement',$15,'firmedSupply',$16,'stock',$17))", token, tenant.Value, supplyId, runId, demandGroup.Key.ProductVariantId, Db(demandGroup.Key.PlantId), $"Demand:{demand.Id:D}", demandGroup.Key.NeedDate, start, residual, demandGroup.Key.UomCode, forecast, acceptedDemand, consumedForecast, remainingForecast, grossRequirement, committedSupply, stockAllocation);
             await ExecuteAsync(context, "insert into business_manufacturing.mrp_pegging_link(tenant_id,id,planning_run_id,demand_id,planned_supply_id,allocated_qty) values($1,$2,$3,$4,$5,$6)", token, tenant.Value, Guid.CreateVersion7(), runId, demand.Id, supplyId, residual);
         }
         await ExecuteAsync(context, "update business_manufacturing.planning_run set state='Completed',completed_at=now() where tenant_id=$1 and id=$2", token, tenant.Value, runId); return await ReadPlanningRunAsync(context, tenant.Value, runId, token) ?? throw new ManufacturingException("manufacturing.planning_run_not_found");

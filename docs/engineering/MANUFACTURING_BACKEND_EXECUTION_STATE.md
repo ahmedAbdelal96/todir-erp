@@ -24,7 +24,8 @@ The assigned scope is the backend/database/integration/development-seed delivery
 - Added request-payload hashes for new material/output events, strict key-reuse conflict detection, co-/by-product output identity validation against the released formula snapshot, and an Inventory operation snapshot capability scoped by tenant and legal entity.
 - Removed silent negative-WIP clamping; close readiness reports a negative WIP reconciliation and close is fail-closed.
 - Added a forward-only cost-correction migration so signed Inventory returns can reduce WIP without erasing the economic fact, plus Inventory availability reads for MRP netting.
-- Added owner-owned Sales and Purchasing development fixtures inside the planning horizon and automatic same-bucket forecast consumption. The authenticated isolated run now proves 1,000 forecast + 600 accepted Sales = 600 consumed forecast + 400 residual production, while preserving a date-correct 100-unit firmed Purchase supply.
+- Added owner-owned Sales and Purchasing development fixtures inside the planning horizon and automatic same-bucket forecast consumption. The planning rule now preserves the unconsumed forecast in gross requirement: 1,000 forecast + 600 accepted Sales consumes 600 forecast and leaves gross/net requirement 1,000 before supply. Finished-goods inventory is netted only after that gross requirement and is scoped by product, plant, UOM, and warehouse pool.
+- Corrected Sales source integration to resolve the entered UOM through the Catalog capability and convert to the effective base UOM; corrected development Sales/Purchasing fixtures so their unit IDs/codes match the product variants. The authenticated isolated runtime proved no-stock production 1,000 PACK, 600-stock production 400 PACK, 1,200 accepted-demand production 1,200 PACK, and the independent 100-unit component Purchase supply.
 - Re-ran the local gates after the latest source change: Manufacturing 6/6, Inventory 12/12, Sales 2/2, Purchasing 10/10, Projects cross-module 9/9, Security 7/7, Architecture 21/21, full Backend build zero warnings/errors, and Development Seed 5/5 with two seed passes on the isolated database.
 
 ## Remaining executable work
@@ -36,7 +37,7 @@ The assigned scope is the backend/database/integration/development-seed delivery
 
 ## Last meaningful change
 
-The final source change added same-bucket forecast-consumption calculation and owner-owned Sales/Purchasing source fixtures, on top of the Inventory operation evidence/recovery contract, strict request hashes, and negative-WIP fail-closed checks. The isolated migration applied 234 ordered scripts; the authenticated MRP run and all affected local gates were recaptured after the final source change.
+The final source change corrected gross-requirement arithmetic, warehouse/UOM-scoped stock allocation, Catalog-owned Sales UOM conversion, and the corresponding development fixtures. The isolated migration applied 234 ordered scripts; the authenticated MRP A/B/C runtime cases and affected local gates were recaptured after the final source change.
 
 ## Next executable action
 

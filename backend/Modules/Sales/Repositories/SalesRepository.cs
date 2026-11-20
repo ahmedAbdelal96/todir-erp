@@ -5,21 +5,40 @@ using Modules.Sales.DTOs;
 using Modules.Sales.Entities;
 using Npgsql;
 using NpgsqlTypes;
+using Shared.Contracts.Catalog;
 using Shared.Primitives.Identifiers;
 using Todir.Sales.Contracts;
 
 namespace Modules.Sales.Repositories;
 
-public sealed partial class SalesRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, TimeProvider clock)
+public sealed partial class SalesRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, TimeProvider clock, ICatalogCapabilities catalog)
 {
     public async Task<IReadOnlyList<Shared.Contracts.ManufacturingPlanning.ManufacturingDemandSnapshot>> ListAcceptedManufacturingDemandAsync(TenantId tenant, Guid legalEntityId, DateOnly from, DateOnly to, CancellationToken ct)
     {
         await using var connection = await OpenAsync(tenant, ct);
-        await using var command = new NpgsqlCommand("select o.id,l.id,o.legal_entity_id,l.product_variant_id,coalesce(o.requested_delivery_date,o.order_date),l.ordered_quantity-l.fulfilled_quantity-l.cancelled_quantity,'EA',o.number from business_sales.sales_order o join business_sales.sales_order_line l on l.tenant_id=o.tenant_id and l.legal_entity_id=o.legal_entity_id and l.order_id=o.id where o.tenant_id=$1 and o.legal_entity_id=$2 and o.commercial_state='Confirmed' and l.product_variant_id is not null and l.ordered_quantity-l.fulfilled_quantity-l.cancelled_quantity>0 and coalesce(o.requested_delivery_date,o.order_date) between $3 and $4 order by coalesce(o.requested_delivery_date,o.order_date),o.id,l.sequence", connection);
+        await using var command = new NpgsqlCommand("select o.id,l.id,o.legal_entity_id,l.product_variant_id,coalesce(o.requested_delivery_date,o.order_date),l.ordered_quantity-l.fulfilled_quantity-l.cancelled_quantity,l.unit_of_measure_id,o.number from business_sales.sales_order o join business_sales.sales_order_line l on l.tenant_id=o.tenant_id and l.legal_entity_id=o.legal_entity_id and l.order_id=o.id where o.tenant_id=$1 and o.legal_entity_id=$2 and o.commercial_state='Confirmed' and l.product_variant_id is not null and l.unit_of_measure_id is not null and l.ordered_quantity-l.fulfilled_quantity-l.cancelled_quantity>0 and coalesce(o.requested_delivery_date,o.order_date) between $3 and $4 order by coalesce(o.requested_delivery_date,o.order_date),o.id,l.sequence", connection);
         Add(command, tenant.Value, legalEntityId, from, to);
-        var result = new List<Shared.Contracts.ManufacturingPlanning.ManufacturingDemandSnapshot>();
+        var sourceRows = new List<(Guid DocumentId, Guid LineId, Guid EntityId, Guid ProductVariantId, DateOnly NeedDate, decimal Quantity, Guid UnitId, string SourceReference)>();
         await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct)) result.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3), reader.GetFieldValue<DateOnly>(4), reader.GetDecimal(5), reader.GetString(6), "SalesOrder", reader.GetString(7)));
+        while (await reader.ReadAsync(ct)) sourceRows.Add((reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3), reader.GetFieldValue<DateOnly>(4), reader.GetDecimal(5), reader.GetGuid(6), reader.GetString(7)));
+        if (sourceRows.Count == 0) return [];
+
+        // Sales stores the entered unit id; Catalog owns the effective conversion
+        // and base-unit identity. Planning must never guess a unit code or compare
+        // an entered quantity with Inventory's base quantity.
+        var allowedUoms = await catalog.GetAllowedUomsBatchAsync(tenant, sourceRows.Select(row => row.ProductVariantId).Distinct().ToArray(), DateTimeOffset.UtcNow, legalEntityId, ct);
+        var result = new List<Shared.Contracts.ManufacturingPlanning.ManufacturingDemandSnapshot>(sourceRows.Count);
+        foreach (var row in sourceRows)
+        {
+            if (!allowedUoms.TryGetValue(row.ProductVariantId, out var units))
+                throw new SalesException("sales.manufacturing_uom_unavailable");
+            var entered = units.FirstOrDefault(unit => unit.UnitId == row.UnitId);
+            var baseUnit = units.FirstOrDefault(unit => unit.IsBase);
+            if (entered is null || baseUnit is null)
+                throw new SalesException("sales.manufacturing_uom_unavailable");
+            result.Add(new(row.DocumentId, row.LineId, row.EntityId, row.ProductVariantId, row.NeedDate,
+                row.Quantity * entered.FactorToBase, baseUnit.UnitCode, "SalesOrder", row.SourceReference));
+        }
         return result;
     }
     public async Task<Guid> CreateQuotationAsync(TenantId tenant, Guid actor, CreateQuotationRequest request, IReadOnlyList<QuotationLineRequest> lines, string taxEvidence, CancellationToken ct)
