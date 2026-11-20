@@ -18,6 +18,9 @@ This is a backend handoff draft, not `FRONTEND COMPLETE` or `MODULE COMPLETE`. T
 - `/api/v1/manufacturing/production-orders/{id}/materials` plus reserve/issue/consume/return aliases
 - `/api/v1/manufacturing/production-orders/{id}/outputs|scrap|cost|cost-facts`
 - `/api/v1/manufacturing/planning-runs`, demand/run/supplies, and planned-production firming
+- `/api/v1/manufacturing/production-orders/{id}/operations`, operation action commands, close-readiness, plant capacity, and genealogy forward/reverse reads
+
+The planning-run execution endpoint refreshes accepted Sales demand and eligible Purchasing supply through owner capabilities before calculating Manufacturing suggestions. A missing capability is treated as an empty optional source; the current development fixture still needs non-empty source-line acceptance coverage.
 
 All endpoints require authentication, tenant context, the relevant `manufacturing.*` permission, and the API rate limit. Backend errors expose a stable `code`; frontend copy must map it to Arabic-market terminology and never display SQL/ORM details.
 
@@ -39,4 +42,4 @@ All endpoints require authentication, tenant context, the relevant `manufacturin
 
 ## Not ready for frontend acceptance yet
 
-The backend checkpoint remains `NOT COMPLETE` until the remaining MF27–MF35 integrations, genealogy/shop-floor/close readiness, and their authenticated isolated acceptance tests are delivered. Frontend work may use the stable master-data and order/material/cost/planning endpoints for contract exploration, but must not treat the module as production-ready. The final backend runtime evidence is recorded in `MANUFACTURING_BACKEND_COVERAGE_MATRIX.md`.
+The backend checkpoint remains `NOT COMPLETE` until the remaining MF27–MF35 and MF45–MF47 integrations, non-empty source fixtures, linked genealogy/output recovery, and authenticated isolated acceptance tests are delivered. Frontend work may use the stable master-data, order/material/cost/planning, operation, close-readiness, and capacity endpoints for contract exploration, but must not treat the module as production-ready. The final backend runtime evidence is recorded in `MANUFACTURING_BACKEND_COVERAGE_MATRIX.md`.

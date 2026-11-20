@@ -139,7 +139,13 @@ public sealed class NpgsqlTransactionCoordinator(NpgsqlDataSource dataSource) : 
             await transaction.CommitAsync(cancellationToken);
             return result;
         }
-        catch { await transaction.RollbackAsync(CancellationToken.None); throw; }
+        catch
+        {
+            try { await transaction.RollbackAsync(CancellationToken.None); }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { }
+            throw;
+        }
     }
 
     private sealed class TransactionContext(NpgsqlConnection connection, NpgsqlTransaction transaction) : ITransactionContext

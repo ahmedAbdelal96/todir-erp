@@ -17,18 +17,21 @@ The assigned scope is the backend/database/integration/development-seed delivery
 - Added a real Worker consumer with Inbox plus Manufacturing idempotency handling for Manufacturing outbox events.
 - Added deterministic two-tenant development seed fixtures, including the partial-output and MRP-netting scenarios.
 - Verified isolated migration, seed, build, architecture tests, domain tests, security tests, RLS, API health/OpenAPI, and a real local RabbitMQ path. The final runtime probe completed with one published outbox message, one Worker idempotency row, and one integration audit row.
+- Added owner-published Sales demand and Purchasing supply capabilities; authenticated MRP execution now refreshes those source snapshots before netting and preserves source ownership.
+- Added operation execution events with optimistic concurrency and replay-safe idempotency, capacity read-model calculation, genealogy command/read routes, and close-readiness reporting.
+- Revalidated authenticated API paths after the final fixes: production-order and planned-supply reads, MRP run, operation completion plus stale-version replay, close-readiness blocking, and capacity readiness.
 
 ## Remaining executable work
 
-- Complete the full cross-module demand/capacity integrations: Sales/CRM demand ingestion, Purchasing planned supply and late-PO exceptions, multi-level explosion, lead-time propagation, transfers, MPS, maintenance downtime, quality fail-closed gates, HR labor/resource facts, Ledger semantic facts, Fixed Assets/CIP handoff, and project-cost integration.
-- Complete genealogy commands/read APIs, shop-floor commands and retry recovery, operation execution, output reconciliation/unknown-outcome recovery, co-/by-product allocation, and production close/readiness reporting.
-- Add isolated integration acceptance tests for the above workflows and authenticated API/RLS permission attack cases.
+- Complete the remaining cross-module demand/capacity integrations: CRM demand ingestion, non-empty Sales/Purchasing source fixtures, late-PO exceptions, multi-level explosion, lead-time propagation, transfers, MPS, maintenance downtime, HR labor/resource facts, Ledger semantic facts, Fixed Assets/CIP handoff, and project-cost integration.
+- Complete linked lot/serial genealogy acceptance, shop-floor queue/recovery, output unknown-outcome reconciliation, co-/by-product allocation, and full close/cost reconciliation.
+- Add isolated acceptance tests for those workflows, including non-empty source-line pegging, concurrent/retry cases, quality fail-closed configuration, and authenticated permission attack cases.
 - Resolve the pre-existing development database migration-history mismatch (`expenses-schema.sql` checksum differs from the current repository file) through the repository’s normal forward-fix process before claiming the existing `todir` database migration is complete. The isolated database migration is clean and the existing development volume was preserved.
 
 ## Last meaningful change
 
-Manufacturing close guards were hardened to reject unreconciled output, quality, and cost states; the runtime manifest now includes canonical manufacturing permissions; the output command now reports the committed receipt state. The final build, scoped tests, formatter, isolated migration/seed, API runtime, RLS probe, and RabbitMQ/Worker probe were rerun after this change.
+The final source change fixed positional PostgreSQL parameter binding in Manufacturing, corrected the Sales owner capability to use the current Sales schema, and made operation idempotency replay succeed before stale-version rejection. The final local API probe then passed authenticated MRP execution and operation replay; the isolated migration/seed, architecture/security tests, formatter, and real RabbitMQ/Worker probe were rerun or freshly verified.
 
 ## Next executable action
 
-Implement the remaining MF27–MF35 integration/readiness workflows, add their isolated acceptance tests, rerun the affected migration/seed/runtime gates, then update this checkpoint and the frontend handoff.
+Implement MF27–MF35 and MF45–MF47 gaps that are still marked PARTIAL/NOT COMPLETE, beginning with non-empty source-line fixtures, multi-level pegging, downtime/quality/resource seams, and real genealogy/output reconciliation; then rerun all affected gates before any completion claim.

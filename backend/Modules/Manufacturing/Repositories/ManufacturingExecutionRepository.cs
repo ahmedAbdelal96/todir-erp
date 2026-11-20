@@ -26,9 +26,9 @@ public sealed partial class ManufacturingRepository
         {
             if (string.IsNullOrWhiteSpace(request.IdempotencyKey)) throw new ManufacturingException("manufacturing.operation_idempotency_required");
             var operation = await ReadOperationForUpdateAsync(context, tenant.Value, operationId, token) ?? throw new ManufacturingException("manufacturing.operation_not_found");
-            if (operation.RowVersion != request.ExpectedVersion) throw new ManufacturingException("manufacturing.concurrency_conflict");
             if (await ScalarAsync<Guid?>(context, "select id from business_manufacturing.production_operation_event where tenant_id=$1 and production_operation_id=$2 and idempotency_key=$3", token, tenant.Value, operationId, request.IdempotencyKey) is not null)
                 return await ReadOperationAsync(context, tenant.Value, operationId, token) ?? throw new ManufacturingException("manufacturing.operation_not_found");
+            if (operation.RowVersion != request.ExpectedVersion) throw new ManufacturingException("manufacturing.concurrency_conflict");
 
             var next = action switch
             {
