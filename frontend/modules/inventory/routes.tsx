@@ -1,6 +1,7 @@
 import React from "react";
 import type { ModuleRouteRegistration, PermissionCondition } from "../../app/router/route-contract.ts";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
+import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { INVENTORY_DESTINATIONS } from "../../app/router/destination-registry.ts";
 import { InventoryPage } from "./pages/inventory-page.tsx";
 import { InventoryBalancesPage } from "./pages/inventory-balances-page.tsx";
@@ -31,24 +32,28 @@ const inventoryModulePermissions: PermissionCondition = {
   ]
 };
 
+const inventoryNavigation = {
+  id: "inventory" as const,
+  moduleIds: ["inventory"] as const,
+  path: "/inventory",
+  navigationKey: "inventory" as const,
+  category: "inventory" as const,
+  destinations: INVENTORY_DESTINATIONS,
+  permissions: inventoryModulePermissions,
+  icon: "inventory"
+};
+
 export const inventoryRoutes: ModuleRouteRegistration = {
-  navigation: {
-    id: "inventory",
-    moduleIds: ["inventory"],
-    path: "/inventory",
-    navigationKey: "inventory",
-    category: "inventory",
-    destinations: INVENTORY_DESTINATIONS,
-    permissions: inventoryModulePermissions,
-    icon: "inventory"
-  },
+  navigation: inventoryNavigation,
   routes: [
     {
       path: "inventory",
       element: (
-        <PermissionGuard permission="inventory.stock.read" moduleId="inventory">
-          <InventoryPage />
-        </PermissionGuard>
+        <ModuleRootRoute
+          module={inventoryNavigation}
+          overviewPermission="inventory.stock.read"
+          defaultElement={<InventoryPage />}
+        />
       )
     },
     {

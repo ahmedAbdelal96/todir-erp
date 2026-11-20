@@ -22,19 +22,21 @@ import { paymentApi } from "../../../payments/public.ts";
 import type { PaymentRecord } from "../../../payments/public.ts";
 import type { ReconciliationDto, StatementLineDto } from "../../types.ts";
 
-interface Props {
+export interface ReconciliationWorkbenchProps {
   readonly legalEntityId: string;
   readonly reconciliation: ReconciliationDto | null;
-  readonly isOpen: boolean;
+  readonly isOpen?: boolean;
   readonly onClose: () => void;
+  readonly isPage?: boolean;
 }
 
 export function ReconciliationWorkbenchModal({
   legalEntityId,
   reconciliation,
-  isOpen,
-  onClose
-}: Props): React.JSX.Element | null {
+  isOpen = true,
+  onClose,
+  isPage = false
+}: ReconciliationWorkbenchProps): React.JSX.Element | null {
   const { t } = useTranslation("banking");
 
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
@@ -288,10 +290,33 @@ export function ReconciliationWorkbenchModal({
     currentSession.difference === 0 &&
     currentSession.matchCount > 0;
 
-  return (
-    <Dialog isOpen={isOpen} onClose={onClose} title={t("reconciliation.workbenchTitle")}>
-      <div style={{ minWidth: "360px", maxWidth: "min(96vw, 1250px)", display: "flex", flexDirection: "column", gap: "1rem" }}>
-        {/* Session Status Banner */}
+  if (!isPage && !isOpen) return null;
+
+  const content = (
+    <div
+      data-testid="reconciliation-workbench-page"
+      style={{
+        minWidth: "360px",
+        maxWidth: isPage ? "100%" : "min(96vw, 1250px)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "1rem",
+        padding: isPage ? "1.5rem" : 0
+      }}
+    >
+      {isPage && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
+          <div>
+            <h1 style={{ fontSize: "1.375rem", fontWeight: 700, margin: 0, color: "var(--color-content-primary)" }}>
+              {t("reconciliation.workbenchTitle")} — {treasuryAccount?.name ?? "..."}
+            </h1>
+          </div>
+          <Button variant="secondary" onClick={onClose}>
+            {t("reconciliation.backToReconciliations", "العودة إلى قائمة التسويات")}
+          </Button>
+        </div>
+      )}
+      {/* Session Status Banner */}
         <div
           style={{
             display: "flex",
@@ -914,6 +939,15 @@ export function ReconciliationWorkbenchModal({
           </div>
         </div>
       </div>
+  );
+
+  if (isPage) {
+    return content;
+  }
+
+  return (
+    <Dialog isOpen={isOpen} onClose={onClose} title={t("reconciliation.workbenchTitle")}>
+      {content}
     </Dialog>
   );
 }

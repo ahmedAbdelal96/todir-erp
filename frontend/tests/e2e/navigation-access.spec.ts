@@ -73,17 +73,9 @@ test.describe('TODIR ERP — Permission-Driven Navigation & Task Architecture (P
     // 2. Click on Banking to visit the module
     await bankingLink.click();
 
-    // Contextual Navigation / Tab Bar check:
-    // Cash tab must be visible and active
-    const cashTab = page.locator('[data-testid="banking-tab-cash"]');
-    await expect(cashTab).toBeVisible({ timeout: 10000 });
-
-    // Accounts, Statements, Reconciliations tabs must NOT be visible to cashier
-    const accountsTab = page.locator('[data-testid="banking-tab-accounts"]');
-    await expect(accountsTab).not.toBeVisible();
-
-    const reconciliationsTab = page.locator('[data-testid="banking-tab-reconciliation"]');
-    await expect(reconciliationsTab).not.toBeVisible();
+    // The cashier is directly taken to /banking/cash (their first permitted destination)
+    await expect(page).toHaveURL(/\/banking\/cash/);
+    await expect(page.locator('[data-testid="banking-cash-page"]')).toBeVisible({ timeout: 10000 });
 
     // 3. Direct route guard test: cashier navigating directly to /banking/accounts
     await page.goto('/banking/accounts');
@@ -187,5 +179,208 @@ test.describe('TODIR ERP — Permission-Driven Navigation & Task Architecture (P
     // Direct navigation to /crm
     await page.goto('/crm');
     await expect(page.locator('[data-testid="permission-denied-view"]')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('Narrow Inventory Count Clerk: lands on /inventory/counts, root redirects without 403, forbidden tasks denied', async ({ page }) => {
+    await setupSessionMock(page);
+
+    await page.route('**/api/v1/authorization/effective-access*', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          tenantId: 'tenant-demo',
+          membershipId: 'm1',
+          legalEntityId: 'le1',
+          branchId: 'b1',
+          isSuper: false,
+          permissions: ['inventory.count.create', 'inventory.count.enter'],
+          entitledModules: ['inventory'],
+          moduleStatuses: { inventory: 'Active' },
+          version: '1'
+        })
+      });
+    });
+
+    await page.route('**/api/v1/inventory/legal-entities/*/counts*', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], totalCount: 0, page: 1, pageSize: 25 })
+      });
+    });
+
+    await page.route('**/api/v1/inventory/legal-entities/*/warehouses', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ id: 'wh-1', code: 'WH01', name: 'المستودع الرئيسي' }])
+      });
+    });
+
+    // 1. Visit root /inventory directly
+    await page.goto('/inventory');
+
+    // 2. Deterministic redirect to /inventory/counts (NOT 403 Access Denied)
+    await expect(page).toHaveURL(/\/inventory\/counts/);
+    await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
+    await expect(page.locator('[data-testid="inventory-counts-page"]')).toBeVisible({ timeout: 10000 });
+
+    // 3. Direct access to forbidden sub-routes is denied
+    await page.goto('/inventory/balances');
+    await expect(page.locator('[data-testid="permission-denied-view"]')).toBeVisible({ timeout: 10000 });
+
+    await page.goto('/inventory/transfers');
+    await expect(page.locator('[data-testid="permission-denied-view"]')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('Narrow Journal Operator: root /accounting redirects to /accounting/journals without 403', async ({ page }) => {
+    await setupSessionMock(page);
+
+    await page.route('**/api/v1/authorization/effective-access*', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          tenantId: 'tenant-demo',
+          membershipId: 'm1',
+          legalEntityId: 'le1',
+          branchId: 'b1',
+          isSuper: false,
+          permissions: ['ledger.general_journal.post', 'ledger.journal.read'],
+          entitledModules: ['accounting', 'ledger'],
+          moduleStatuses: { accounting: 'Active', ledger: 'Active' },
+          version: '1'
+        })
+      });
+    });
+
+    await page.route('**/api/v1/ledger/legal-entities/*/journals', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([])
+      });
+    });
+
+    await page.route('**/api/v1/ledger/legal-entities/*/entries*', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], totalCount: 0 })
+      });
+    });
+
+    // 1. Visit root /accounting directly
+    await page.goto('/accounting');
+
+    // 2. Deterministic redirect to /accounting/journals (NOT 403 Access Denied)
+    await expect(page).toHaveURL(/\/accounting\/journals/);
+    await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
+    await expect(page.locator('[data-testid="accounting-journals-page"]')).toBeVisible({ timeout: 10000 });
+
+    // 3. Direct access to forbidden statements is denied
+    await page.goto('/accounting/statements');
+    await expect(page.locator('[data-testid="permission-denied-view"]')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('Banking Reconciliation Workbench: renders full-page workbench without modal dialog overlay', async ({ page }) => {
+    await setupSessionMock(page);
+
+    await page.route('**/api/v1/authorization/effective-access*', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          tenantId: 'tenant-demo',
+          membershipId: 'm1',
+          legalEntityId: 'le1',
+          branchId: 'b1',
+          isSuper: false,
+          permissions: ['banking.reconciliation.read', 'banking.reconciliation.match', 'banking.reconciliation.finalize'],
+          entitledModules: ['banking'],
+          moduleStatuses: { banking: 'Active' },
+          version: '1'
+        })
+      });
+    });
+
+    await page.route('**/api/v1/banking/reconciliations/rec-123*', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'rec-123',
+          sessionNumber: 1,
+          treasuryAccountId: 'ta-1',
+          statementId: 'stmt-1',
+          asOfDate: '2026-11-20',
+          externalBalance: 50000,
+          bookBalance: 50000,
+          difference: 0,
+          matchCount: 1,
+          state: 'Open'
+        })
+      });
+    });
+
+    await page.route('**/api/v1/banking/accounts/ta-1*', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'ta-1',
+          name: 'حساب بنك مصر التجاري',
+          currencyCode: 'EGP'
+        })
+      });
+    });
+
+    await page.route('**/api/v1/banking/statements/stmt-1/lines*', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            { id: 'line-1', transactionDate: '2026-11-20', description: 'إيداع نقدي', amount: 5000, direction: 'Credit', currencyCode: 'EGP' }
+          ],
+          totalCount: 1
+        })
+      });
+    });
+
+    await page.route('**/api/v1/banking/reconciliations/rec-123/suggestions*', async (route: any) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    });
+
+    await page.route('**/api/v1/banking/reconciliations/rec-123/claims*', async (route: any) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) });
+    });
+
+    await page.route('**/api/v1/payments*', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            { id: 'pay-1', paymentNumber: 'PAY-001', amount: 5000, currency: 'EGP', direction: 'Incoming', state: 'Completed' }
+          ],
+          totalCount: 1
+        })
+      });
+    });
+
+    await page.goto('/banking/reconciliations/rec-123');
+
+    // Must render the full-width page workbench
+    const workbenchPage = page.locator('[data-testid="reconciliation-workbench-page"]');
+    await expect(workbenchPage).toBeVisible({ timeout: 10000 });
+
+    // Must NOT have a modal dialog backdrop overlay covering the screen
+    await expect(page.locator('.dialog-backdrop')).not.toBeVisible();
+
+    // Finalize action button exists
+    const finalizeBtn = page.locator('[data-testid="finalize-reconciliation"]');
+    await expect(finalizeBtn).toBeVisible();
   });
 });

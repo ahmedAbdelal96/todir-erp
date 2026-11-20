@@ -37,7 +37,7 @@ import { AuthView } from "../auth/index.ts";
 import { requestCsrf, clearCsrfToken, logoutUser } from "../../core/api/auth-service.ts";
 import { changeLanguage, currentDirection, currentLanguage, i18n } from "../../core/i18n/i18n.ts";
 import { resolveNavigation, resolveEffectiveNavigation } from "../router/navigation-registry.ts";
-import { NAVIGATION_CATEGORIES, getPermittedDestinationsForModule } from "../router/destination-registry.ts";
+import { NAVIGATION_CATEGORIES, getPermittedDestinationsForModule, resolveModuleLandingPath } from "../router/destination-registry.ts";
 import type { ModuleNavigationRegistration, WorkspaceOutletContext } from "../router/route-contract.ts";
 import { PermissionSet } from "../../core/runtime/permissions.ts";
 import { fetchEffectiveAccess, type EffectiveAccess } from "../../core/runtime/effective-access.ts";
@@ -437,24 +437,56 @@ export function AppShell() {
   if (screen === "forbidden") return <AccessView direction={direction} kind="forbidden" onRetry={() => void loadSession()} />;
   if (screen === "error") return <AccessView direction={direction} kind="error" message={error ?? undefined} onRetry={() => void loadSession()} />;
 
+  type QuickItem = {
+    readonly id: string;
+    readonly path: string;
+    readonly label: string;
+    readonly icon: string;
+  };
+
+  const allPermittedDestinations = modules.flatMap(m => m.destinations ? getPermittedDestinationsForModule(m, effectiveAccess) : []);
+
+  const resolveQuickItem = (key: string): QuickItem | undefined => {
+    const mod = modules.find(item => item.id === key);
+    if (mod) {
+      return {
+        id: mod.id,
+        path: resolveModuleLandingPath(mod, effectiveAccess),
+        label: t(`navigation:${mod.navigationKey}`),
+        icon: mod.icon
+      };
+    }
+    const dest = allPermittedDestinations.find(d => d.id === key);
+    if (dest) {
+      return {
+        id: dest.id,
+        path: dest.path,
+        label: dest.fallbackLabel,
+        icon: dest.icon
+      };
+    }
+    return undefined;
+  };
+
   const favorites = navigationPreferences.snapshot.favorites
-    .map(key => modules.find(item => item.id === key))
-    .filter((item): item is ModuleNavigationRegistration => item !== undefined && item.id !== activeNavigationItem?.id);
+    .map(resolveQuickItem)
+    .filter((item): item is QuickItem => item !== undefined);
   const recentPages = navigationPreferences.snapshot.recent
-    .map(key => modules.find(item => item.id === key))
-    .filter((item): item is ModuleNavigationRegistration => item !== undefined && item.id !== activeNavigationItem?.id)
+    .map(resolveQuickItem)
+    .filter((item): item is QuickItem => item !== undefined)
     .slice(0, 5);
   const quickPopoverItems = openSidebarPanel === "favorites" ? favorites : recentPages;
   const quickPopoverTitle = t(openSidebarPanel === "favorites" ? "common:shell.favorites" : "common:shell.recentPages");
   const activeLegalEntity = legalEntities.find((item) => item.id === legalEntity);
   const renderNavigationLink = (item: ModuleNavigationRegistration, canToggleFavorite = false) => {
     const label = t(`navigation:${item.navigationKey}`);
+    const targetPath = resolveModuleLandingPath(item, effectiveAccess);
     const isFavorite = navigationPreferences.snapshot.favorites.includes(item.id);
     return (
       <div className="sidebar-entry">
         <TooltipTrigger delay={500} isDisabled={!isSidebarCollapsed}>
           <NavLink
-            to={item.path}
+            to={targetPath}
             end={item.id === "home"}
             aria-label={label}
             className={({ isActive }) => isActive ? "sidebar-link active" : "sidebar-link"}
@@ -804,7 +836,19 @@ export function AppShell() {
           >
             <div className="sidebar-quick-popover-title">{quickPopoverTitle}</div>
             <nav aria-label={quickPopoverTitle}>
-              {quickPopoverItems.map(item => <div key={item.id} onClick={() => setOpenSidebarPanel(null)}>{renderNavigationLink(item)}</div>)}
+              {quickPopoverItems.map(item => (
+                <div key={item.id} onClick={() => setOpenSidebarPanel(null)} className="sidebar-entry">
+                  <NavLink
+                    to={item.path}
+                    className={({ isActive }) => isActive ? "sidebar-link active" : "sidebar-link"}
+                  >
+                    <span className="sidebar-icon-container" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "26px", height: "26px", borderRadius: "var(--radius-sm, 0.375rem)", backgroundColor: "rgba(15, 23, 42, 0.04)" }}>
+                      {getModuleIcon(item.icon)}
+                    </span>
+                    <span className="sidebar-link-label">{item.label}</span>
+                  </NavLink>
+                </div>
+              ))}
             </nav>
           </div>,
           document.body

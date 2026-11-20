@@ -6,7 +6,8 @@ import {
   isModuleOperational,
   hasPermissionInAccess,
   hasAnyPermissionInAccess,
-  hasAllPermissionsInAccess
+  hasAllPermissionsInAccess,
+  isModuleReadOnly
 } from "../../core/runtime/effective-access.ts";
 import {
   isDestinationPermitted,
@@ -16,7 +17,8 @@ import {
   CRM_DESTINATIONS,
   ACCOUNTING_DESTINATIONS,
   INVENTORY_DESTINATIONS,
-  NAVIGATION_CATEGORIES
+  NAVIGATION_CATEGORIES,
+  resolveModuleLandingPath
 } from "../../app/router/destination-registry.ts";
 import type { ModuleNavigationRegistration } from "../../app/router/route-contract.ts";
 import { buildCommandPaletteItems } from "../../app/shell/command-palette-registry.ts";
@@ -332,5 +334,81 @@ describe("Permission-Driven Effective Access & Destination Architecture", () => 
     assert.ok(managerDestIds.includes("inventory-transfers"));
     assert.ok(managerDestIds.includes("inventory-adjustments"));
     assert.ok(managerDestIds.includes("inventory-counts"));
+  });
+
+  it("resolves module landing path deterministically to first permitted task destination when root is forbidden", () => {
+    const inventoryRegistration: ModuleNavigationRegistration = {
+      id: "inventory",
+      moduleIds: ["inventory"],
+      path: "/inventory",
+      navigationKey: "inventory",
+      category: "inventory",
+      destinations: INVENTORY_DESTINATIONS,
+      icon: "inventory"
+    };
+
+    // User with only count creation permission
+    const countClerkAccess: EffectiveAccess = {
+      ...emptyAccess,
+      entitledModules: ["inventory"],
+      permissions: ["inventory.count.create"]
+    };
+
+    // Must resolve to /inventory/counts instead of forbidden /inventory
+    const clerkLandingPath = resolveModuleLandingPath(inventoryRegistration, countClerkAccess);
+    assert.equal(clerkLandingPath, "/inventory/counts");
+
+    // Cashier with only cash counting permission
+    const cashierLandingPath = resolveModuleLandingPath(sampleBankingRegistration, cashierAccess);
+    assert.equal(cashierLandingPath, "/banking/cash");
+
+    // Full manager with overview permissions resolves to module root
+    const fullAccess: EffectiveAccess = {
+      ...emptyAccess,
+      entitledModules: ["inventory"],
+      permissions: ["inventory.stock.read"]
+    };
+    const managerLandingPath = resolveModuleLandingPath(inventoryRegistration, fullAccess);
+    assert.equal(managerLandingPath, "/inventory");
+  });
+
+  it("enforces ReadOnly and WindDown lifecycle statuses correctly", () => {
+    const readOnlyAccess: EffectiveAccess = {
+      ...emptyAccess,
+      entitledModules: ["inventory"],
+      permissions: ["inventory.stock.read", "inventory.count.create"],
+      moduleStatuses: { inventory: "ReadOnly" }
+    };
+
+    // Module is operational for historical reading (allowReadOnly = true)
+    assert.equal(isModuleOperational(readOnlyAccess, "inventory", true), true);
+
+    // Module is NOT operational for mutations (allowReadOnly = false)
+    assert.equal(isModuleOperational(readOnlyAccess, "inventory", false), false);
+
+    // Flagged as read-only
+    assert.equal(isModuleReadOnly(readOnlyAccess, "inventory"), true);
+
+    // WindDown status
+    const windDownAccess: EffectiveAccess = {
+      ...emptyAccess,
+      entitledModules: ["inventory"],
+      permissions: ["inventory.stock.read"],
+      moduleStatuses: { inventory: "WindDown" }
+    };
+    assert.equal(isModuleOperational(windDownAccess, "inventory", true), true);
+    assert.equal(isModuleOperational(windDownAccess, "inventory", false), false);
+    assert.equal(isModuleReadOnly(windDownAccess, "inventory"), true);
+
+    // Active status
+    const activeAccess: EffectiveAccess = {
+      ...emptyAccess,
+      entitledModules: ["inventory"],
+      permissions: ["inventory.stock.read"],
+      moduleStatuses: { inventory: "Active" }
+    };
+    assert.equal(isModuleOperational(activeAccess, "inventory", true), true);
+    assert.equal(isModuleOperational(activeAccess, "inventory", false), true);
+    assert.equal(isModuleReadOnly(activeAccess, "inventory"), false);
   });
 });

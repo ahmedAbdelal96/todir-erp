@@ -1,6 +1,7 @@
 import React from "react";
 import type { ModuleRouteRegistration, PermissionCondition } from "../../app/router/route-contract.ts";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
+import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { BANKING_DESTINATIONS } from "../../app/router/destination-registry.ts";
 import { BankingPage } from "./pages/banking-page.tsx";
 import { BankingAccountsPage } from "./pages/banking-accounts-page.tsx";
@@ -36,24 +37,28 @@ const bankingModulePermissions: PermissionCondition = {
   ]
 };
 
+const bankingNavigation = {
+  id: "banking" as const,
+  moduleIds: ["banking"] as const,
+  path: "/banking",
+  navigationKey: "banking" as const,
+  category: "finance" as const,
+  destinations: BANKING_DESTINATIONS,
+  permissions: bankingModulePermissions,
+  icon: "banking"
+};
+
 export const bankingRoutes: ModuleRouteRegistration = {
-  navigation: {
-    id: "banking",
-    moduleIds: ["banking"],
-    path: "/banking",
-    navigationKey: "banking",
-    category: "finance",
-    destinations: BANKING_DESTINATIONS,
-    permissions: bankingModulePermissions,
-    icon: "banking"
-  },
+  navigation: bankingNavigation,
   routes: [
     {
       path: "banking",
       element: (
-        <PermissionGuard permission={bankingModulePermissions} moduleId="banking">
-          <BankingPage />
-        </PermissionGuard>
+        <ModuleRootRoute
+          module={bankingNavigation}
+          overviewPermission={BANKING_DESTINATIONS[0]?.permission}
+          defaultElement={<BankingPage />}
+        />
       )
     },
     {
@@ -81,9 +86,17 @@ export const bankingRoutes: ModuleRouteRegistration = {
       )
     },
     {
+      path: "banking/reconciliations/:sessionId",
+      element: (
+        <PermissionGuard permission={{ anyOf: ["banking.reconciliation.read", "banking.reconciliation.match", "banking.reconciliation.finalize"] }} moduleId="banking">
+          <ReconciliationWorkbenchPage />
+        </PermissionGuard>
+      )
+    },
+    {
       path: "banking/reconciliations/:sessionId/workbench",
       element: (
-        <PermissionGuard permission={{ anyOf: ["banking.reconciliation.match", "banking.reconciliation.finalize"] }} moduleId="banking">
+        <PermissionGuard permission={{ anyOf: ["banking.reconciliation.read", "banking.reconciliation.match", "banking.reconciliation.finalize"] }} moduleId="banking">
           <ReconciliationWorkbenchPage />
         </PermissionGuard>
       )

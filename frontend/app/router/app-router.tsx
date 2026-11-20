@@ -30,6 +30,7 @@ import { settingsRoutes } from "@modules/settings/public.ts";
 import { useTranslation } from "react-i18next";
 
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
+import { ModuleRootRoute } from "./module-root-route.tsx";
 import type { ModuleRouteRegistration } from "./route-contract.ts";
 
 function protectModuleRoutes(registration: ModuleRouteRegistration): RouteObject[] {
@@ -39,8 +40,10 @@ function protectModuleRoutes(registration: ModuleRouteRegistration): RouteObject
   const permission = registration.navigation.permissions ?? registration.navigation.permission;
 
   const wrapRoute = (route: RouteObject): RouteObject => {
-    // If route element is already guarded by a specific PermissionGuard, preserve it
-    const isAlreadyGuarded = React.isValidElement(route.element) && route.element.type === PermissionGuard;
+    // If route element is already guarded by a specific PermissionGuard or ModuleRootRoute, preserve it
+    const isAlreadyGuarded = React.isValidElement(route.element) && (
+      route.element.type === PermissionGuard || route.element.type === ModuleRootRoute
+    );
 
     const wrapped: RouteObject = {
       ...route,

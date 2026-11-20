@@ -35,9 +35,9 @@ public static class InventoryModuleExtensions
     {
         var group = app.MapGroup("/api/v1/inventory").RequireAuthorization().RequireRateLimiting("api");
         group.MapGet("/legal-entities/{entityId:guid}/warehouses", async (Guid entityId, HttpContext http, InventoryService repository, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
-            await Execute(http, await AccessAsync(http, subjects, authorizer, "inventory.stock.read", entityId, ct), () => repository.ListWarehousesAsync(new TenantId(Tenant(http)), entityId, ct)));
+            await Execute(http, await AccessAnyAsync(http, subjects, authorizer, ["inventory.stock.read", "inventory.warehouse.manage", "inventory.count.create", "inventory.count.enter", "inventory.count.approve", "inventory.count.post", "inventory.transfer.create", "inventory.transfer.ship", "inventory.transfer.receive", "inventory.adjustment.create", "inventory.adjustment.approve", "inventory.adjustment.post", "inventory.traceability.manage"], entityId, ct), () => repository.ListWarehousesAsync(new TenantId(Tenant(http)), entityId, ct)));
         group.MapGet("/legal-entities/{entityId:guid}/policy", async (Guid entityId, HttpContext http, InventoryRepository repository, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
-            await Execute(http, await AccessAsync(http, subjects, authorizer, "inventory.stock.read", entityId, ct), () => repository.GetPolicyAsync(new TenantId(Tenant(http)), entityId, ct)));
+            await Execute(http, await AccessAnyAsync(http, subjects, authorizer, ["inventory.stock.read", "inventory.policy.manage", "inventory.adjustment.create", "inventory.count.create"], entityId, ct), () => repository.GetPolicyAsync(new TenantId(Tenant(http)), entityId, ct)));
         group.MapPut("/legal-entities/{entityId:guid}/policy", async (Guid entityId, UpdateInventoryPolicyRequest request, HttpContext http, InventoryRepository repository, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             await Execute(http, await AccessAsync(http, subjects, authorizer, "inventory.policy.manage", entityId, ct), () => repository.SavePolicyAsync(new TenantId(Tenant(http)), Actor(http), entityId, request, Correlation(http), ct)));
         group.MapGet("/legal-entities/{entityId:guid}/negative-stock-conditions", async (Guid entityId, string? status, DateTimeOffset? beforeOpenedAt, Guid? beforeId, int? limit, HttpContext http, InventoryService repository, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
@@ -126,9 +126,9 @@ public static class InventoryModuleExtensions
         group.MapPost("/legal-entities/{entityId:guid}/counts", async (Guid entityId, CreatePhysicalCountRequest request, HttpContext http, InventoryService repository, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             await Execute(http, await AccessAsync(http, subjects, authorizer, "inventory.count.create", entityId, ct), () => repository.CreatePhysicalCountAsync(new TenantId(Tenant(http)), Actor(http), entityId, request, Correlation(http), ct), StatusCodes.Status201Created));
         group.MapGet("/legal-entities/{entityId:guid}/counts", async (Guid entityId, Guid? warehouseId, string? status, int? page, int? pageSize, HttpContext http, InventoryService repository, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
-            await Execute(http, await AccessAsync(http, subjects, authorizer, "inventory.stock.read", entityId, ct), () => repository.GetPhysicalCountsAsync(new TenantId(Tenant(http)), entityId, warehouseId, status, page ?? 1, pageSize ?? 25, ct)));
+            await Execute(http, await AccessAnyAsync(http, subjects, authorizer, ["inventory.count.create", "inventory.count.enter", "inventory.count.approve", "inventory.count.post", "inventory.stock.read"], entityId, ct), () => repository.GetPhysicalCountsAsync(new TenantId(Tenant(http)), entityId, warehouseId, status, page ?? 1, pageSize ?? 25, ct)));
         group.MapGet("/legal-entities/{entityId:guid}/counts/{countId:guid}/lines", async (Guid entityId, Guid countId, string? search, int? page, int? pageSize, HttpContext http, InventoryService repository, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
-            await Execute(http, await AccessAsync(http, subjects, authorizer, "inventory.stock.read", entityId, ct), () => repository.GetPhysicalCountLinesAsync(new TenantId(Tenant(http)), entityId, countId, search, page ?? 1, pageSize ?? 50, ct)));
+            await Execute(http, await AccessAnyAsync(http, subjects, authorizer, ["inventory.count.create", "inventory.count.enter", "inventory.count.approve", "inventory.count.post", "inventory.stock.read"], entityId, ct), () => repository.GetPhysicalCountLinesAsync(new TenantId(Tenant(http)), entityId, countId, search, page ?? 1, pageSize ?? 50, ct)));
         group.MapPost("/legal-entities/{entityId:guid}/counts/{countId:guid}/lines", async (Guid entityId, Guid countId, AddCountLineRequest request, HttpContext http, InventoryService repository, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
             await Execute(http, await AccessAsync(http, subjects, authorizer, "inventory.count.create", entityId, ct), () => repository.AddPhysicalCountLineAsync(new TenantId(Tenant(http)), Actor(http), entityId, countId, request, Correlation(http), ct), StatusCodes.Status201Created));
         group.MapPut("/legal-entities/{entityId:guid}/counts/{countId:guid}/lines/{lineId:guid}", async (Guid entityId, Guid countId, Guid lineId, EnterCountLineRequest request, HttpContext http, InventoryService repository, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
@@ -150,6 +150,20 @@ public static class InventoryModuleExtensions
         var tenant = new TenantId(tenantId);
         var subject = await subjects.LoadAsync(tenant, membershipId, ct);
         return subject is null ? null : new(tenant, actorId, authorizer.Authorize(subject, permission, PermissionScope.ForLegalEntity(tenant, new LegalEntityId(entityId))));
+    }
+
+    private static async Task<Access?> AccessAnyAsync(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string[] permissions, Guid entityId, CancellationToken ct)
+    {
+        if (!Guid.TryParse(http.User.FindFirstValue("tenant_id"), out var tenantId)
+            || !Guid.TryParse(http.User.FindFirstValue("membership_id"), out var membershipId)
+            || !Guid.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId)) return null;
+        if (Guid.TryParse(http.User.FindFirstValue("legal_entity_id"), out var boundEntity) && boundEntity != entityId) return new(new(tenantId), actorId, false);
+        var tenant = new TenantId(tenantId);
+        var subject = await subjects.LoadAsync(tenant, membershipId, ct);
+        if (subject is null) return null;
+        var scope = PermissionScope.ForLegalEntity(tenant, new LegalEntityId(entityId));
+        var allowed = permissions.Any(p => authorizer.Authorize(subject, p, scope));
+        return new(tenant, actorId, allowed);
     }
 
     private static async Task<Access?> WarehouseAccessAsync(HttpContext http, InventoryRepository repository, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, Guid entityId, Guid warehouseId, CancellationToken ct)

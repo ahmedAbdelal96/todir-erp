@@ -1,6 +1,7 @@
 import React from "react";
 import type { ModuleRouteRegistration, PermissionCondition } from "../../app/router/route-contract.ts";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
+import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { CRM_DESTINATIONS } from "../../app/router/destination-registry.ts";
 import { CrmPage } from "./pages/crm-page.tsx";
 import { CrmLeadsPage } from "./pages/crm-leads-page.tsx";
@@ -26,24 +27,28 @@ const crmModulePermissions: PermissionCondition = {
   ]
 };
 
+const crmNavigation = {
+  id: "crm" as const,
+  moduleIds: ["crm"] as const,
+  path: "/crm",
+  navigationKey: "crm" as const,
+  category: "sales" as const,
+  destinations: CRM_DESTINATIONS,
+  permissions: crmModulePermissions,
+  icon: "crm"
+};
+
 export const crmRoutes: ModuleRouteRegistration = {
-  navigation: {
-    id: "crm",
-    moduleIds: ["crm"],
-    path: "/crm",
-    navigationKey: "crm",
-    category: "sales",
-    destinations: CRM_DESTINATIONS,
-    permissions: crmModulePermissions,
-    icon: "crm"
-  },
+  navigation: crmNavigation,
   routes: [
     {
       path: "crm",
       element: (
-        <PermissionGuard permission={crmModulePermissions} moduleId="crm">
-          <CrmPage />
-        </PermissionGuard>
+        <ModuleRootRoute
+          module={crmNavigation}
+          overviewPermission={CRM_DESTINATIONS[0]?.permission}
+          defaultElement={<CrmPage />}
+        />
       )
     },
     {

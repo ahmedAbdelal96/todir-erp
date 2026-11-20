@@ -403,3 +403,16 @@ export function getPermittedDestinationsForModule(
   if (!access) return [];
   return item.destinations.filter(d => isDestinationPermitted(d, access));
 }
+
+export function resolveModuleLandingPath(
+  item: ModuleNavigationRegistration,
+  access: EffectiveAccess | null | undefined
+): string {
+  if (!item.destinations || item.destinations.length === 0) return item.path;
+  if (!access) return item.path;
+  const permitted = getPermittedDestinationsForModule(item, access);
+  if (permitted.length === 0) return item.path;
+  const matchesRoot = permitted.some(d => d.path === item.path);
+  if (matchesRoot) return item.path;
+  return permitted[0]?.path ?? item.path;
+}

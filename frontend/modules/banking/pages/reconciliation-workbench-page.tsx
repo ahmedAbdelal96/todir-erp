@@ -40,13 +40,11 @@ export function ReconciliationWorkbenchPage(): React.JSX.Element {
   }
 
   return (
-    <div data-testid="reconciliation-workbench-page">
-      <ReconciliationWorkbenchModal
-        legalEntityId={legalEntityId}
-        reconciliation={session}
-        isOpen={true}
-        onClose={() => navigate("/banking/reconciliations")}
-      />
-    </div>
+    <ReconciliationWorkbenchModal
+      legalEntityId={legalEntityId}
+      reconciliation={session}
+      onClose={() => navigate("/banking/reconciliations")}
+      isPage={true}
+    />
   );
 }

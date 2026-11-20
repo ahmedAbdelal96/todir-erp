@@ -1,6 +1,7 @@
 import React from "react";
 import type { ModuleRouteRegistration, PermissionCondition } from "../../app/router/route-contract.ts";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
+import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { ACCOUNTING_DESTINATIONS } from "../../app/router/destination-registry.ts";
 import { AccountingPage } from "./pages/accounting-page.tsx";
 import { AccountingJournalsPage } from "./pages/accounting-journals-page.tsx";
@@ -33,27 +34,28 @@ const accountingModulePermissions: PermissionCondition = {
   ]
 };
 
+const accountingNavigation = {
+  id: "accounting" as const,
+  moduleIds: ["accounting", "ledger"] as const,
+  path: "/accounting",
+  navigationKey: "accounting" as const,
+  category: "finance" as const,
+  destinations: ACCOUNTING_DESTINATIONS,
+  permissions: accountingModulePermissions,
+  icon: "accounting"
+};
+
 export const accountingRoutes: ModuleRouteRegistration = {
-  navigation: {
-    id: "accounting",
-    moduleIds: ["accounting", "ledger"],
-    path: "/accounting",
-    navigationKey: "accounting",
-    category: "finance",
-    destinations: ACCOUNTING_DESTINATIONS,
-    permissions: accountingModulePermissions,
-    icon: "accounting"
-  },
+  navigation: accountingNavigation,
   routes: [
     {
       path: "accounting",
       element: (
-        <PermissionGuard
-          permission={{ anyOf: ["ledger.account.read", "ledger.journal.read", "accounting.home.read"] }}
-          moduleIds={["accounting", "ledger"]}
-        >
-          <AccountingPage />
-        </PermissionGuard>
+        <ModuleRootRoute
+          module={accountingNavigation}
+          overviewPermission={ACCOUNTING_DESTINATIONS[0]?.permission}
+          defaultElement={<AccountingPage />}
+        />
       )
     },
     {

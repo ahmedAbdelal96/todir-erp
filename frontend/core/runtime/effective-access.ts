@@ -11,11 +11,14 @@ export interface EffectiveAccess {
 }
 
 let effectiveAccessAbortController: AbortController | null = null;
+let effectiveAccessSequenceCounter = 0;
 
 export async function fetchEffectiveAccess(
   legalEntityId?: string | null,
   branchId?: string | null
 ): Promise<EffectiveAccess> {
+  const currentSequence = ++effectiveAccessSequenceCounter;
+
   // Cancel any in-flight request to prevent stale out-of-order resolution during rapid switching
   if (effectiveAccessAbortController) {
     effectiveAccessAbortController.abort();
@@ -42,7 +45,19 @@ export async function fetchEffectiveAccess(
   if (!response.ok) {
     throw new Error(`effective_access_failed: ${response.status}`);
   }
-  return (await response.json()) as EffectiveAccess;
+  const data = (await response.json()) as EffectiveAccess;
+
+  // Guard against sequence races: discard if a newer request was dispatched while waiting
+  if (currentSequence !== effectiveAccessSequenceCounter) {
+    throw new Error("effective_access_superseded");
+  }
+
+  // Validate response payload integrity
+  if (!data || typeof data.tenantId !== "string" || !Array.isArray(data.permissions)) {
+    throw new Error("effective_access_invalid_payload");
+  }
+
+  return data;
 }
 
 export function hasPermissionInAccess(
