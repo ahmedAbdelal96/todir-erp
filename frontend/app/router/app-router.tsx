@@ -28,6 +28,31 @@ import { bankingRoutes } from "@modules/banking/public.ts";
 import { settingsRoutes } from "@modules/settings/public.ts";
 import { useTranslation } from "react-i18next";
 
+import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
+import type { ModuleRouteRegistration } from "./route-contract.ts";
+
+function protectModuleRoutes(registration: ModuleRouteRegistration): RouteObject[] {
+  const moduleId = registration.navigation.moduleIds[0] ?? registration.navigation.id;
+  const permission = registration.navigation.permissions ?? registration.navigation.permission;
+
+  const wrapRoute = (route: RouteObject): RouteObject => {
+    const wrapped: RouteObject = {
+      ...route,
+      element: route.element ? (
+        <PermissionGuard permission={permission} moduleId={moduleId}>
+          {route.element}
+        </PermissionGuard>
+      ) : route.element
+    };
+    if (route.children) {
+      wrapped.children = route.children.map(wrapRoute);
+    }
+    return wrapped;
+  };
+
+  return registration.routes.map(wrapRoute);
+}
+
 function NotFoundRoute(): React.JSX.Element {
   const { t } = useTranslation("navigation");
   return (
@@ -66,30 +91,30 @@ const workspaceRoutes: RouteObject = {
   errorElement: <RouteErrorView />,
   children: [
     { index: true, element: <WorkspaceHomePage /> },
-    ...identityRoutes.routes,
-    ...directoryRoutes.routes,
-    ...catalogRoutes.routes,
-    ...invoicingRoutes.routes,
-    ...paymentsRoutes.routes,
-    ...accountingRoutes.routes,
-    ...migrationRoutes.routes,
-    ...finbaseRoutes.routes,
-    ...pricingRoutes.routes,
-    ...subledgerRoutes.routes,
-    ...taxRoutes.routes,
-    ...inventoryRoutes.routes,
-    ...salesRoutes.routes,
-    ...purchasingRoutes.routes,
-    ...hrRoutes.routes,
-    ...payrollRoutes.routes,
-    ...crmRoutes.routes,
-    ...posRoutes.routes,
-    ...expensesRoutes.routes,
-    ...fixedAssetsRoutes.routes,
-    ...projectsRoutes.routes,
-    ...serviceRoutes.routes,
-    ...bankingRoutes.routes,
-    ...settingsRoutes.routes,
+    ...protectModuleRoutes(identityRoutes),
+    ...protectModuleRoutes(directoryRoutes),
+    ...protectModuleRoutes(catalogRoutes),
+    ...protectModuleRoutes(invoicingRoutes),
+    ...protectModuleRoutes(paymentsRoutes),
+    ...protectModuleRoutes(accountingRoutes),
+    ...protectModuleRoutes(migrationRoutes),
+    ...protectModuleRoutes(finbaseRoutes),
+    ...protectModuleRoutes(pricingRoutes),
+    ...protectModuleRoutes(subledgerRoutes),
+    ...protectModuleRoutes(taxRoutes),
+    ...protectModuleRoutes(inventoryRoutes),
+    ...protectModuleRoutes(salesRoutes),
+    ...protectModuleRoutes(purchasingRoutes),
+    ...protectModuleRoutes(hrRoutes),
+    ...protectModuleRoutes(payrollRoutes),
+    ...protectModuleRoutes(crmRoutes),
+    ...protectModuleRoutes(posRoutes),
+    ...protectModuleRoutes(expensesRoutes),
+    ...protectModuleRoutes(fixedAssetsRoutes),
+    ...protectModuleRoutes(projectsRoutes),
+    ...protectModuleRoutes(serviceRoutes),
+    ...protectModuleRoutes(bankingRoutes),
+    ...protectModuleRoutes(settingsRoutes),
     { path: "preview", element: <PreviewPage /> },
     { path: "*", element: <NotFoundRoute /> }
   ]

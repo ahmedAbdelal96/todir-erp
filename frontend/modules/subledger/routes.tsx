@@ -70,7 +70,7 @@ export const subledgerRoutes: ModuleRouteRegistration = {
     moduleIds: ["subledger"],
     path: "/subledger",
     navigationKey: "subledger",
-    permission: "subledger.openitems.read",
+    permission: "subledger.read",
     icon: "subledger"
   },
   routes: [

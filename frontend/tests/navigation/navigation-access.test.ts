@@ -41,11 +41,11 @@ describe("Permission-Driven Effective Access & Destination Architecture", () => 
     ...emptyAccess,
     permissions: [
       "banking.accounts.read",
-      "banking.statement.read",
-      "banking.statement.import",
-      "banking.statement.validate",
+      "banking.statements.read",
+      "banking.statements.import",
+      "banking.statements.validate",
       "banking.reconciliation.read",
-      "banking.reconciliation.manage",
+      "banking.reconciliation.match",
       "banking.reconciliation.finalize"
     ]
   };
@@ -90,17 +90,24 @@ describe("Permission-Driven Effective Access & Destination Architecture", () => 
     permissions: {
       anyOf: [
         "banking.accounts.read",
-        "banking.accounts.manage",
-        "banking.statement.read",
-        "banking.statement.import",
-        "banking.statement.validate",
+        "banking.accounts.create",
+        "banking.accounts.edit",
+        "banking.statements.read",
+        "banking.statements.import",
+        "banking.statements.validate",
         "banking.reconciliation.read",
-        "banking.reconciliation.manage",
+        "banking.reconciliation.match",
         "banking.reconciliation.finalize",
+        "banking.cash.read",
         "banking.cash.count",
-        "banking.cash.transfer",
+        "banking.cash.difference.resolve",
+        "banking.transfers.read",
+        "banking.transfers.initiate",
+        "banking.cash_position.read",
+        "banking.cash_forecast.read",
         "banking.cash_forecast.manage",
-        "banking.reports.read"
+        "banking.reports.read",
+        "banking.audit.read"
       ]
     },
     icon: "banking"

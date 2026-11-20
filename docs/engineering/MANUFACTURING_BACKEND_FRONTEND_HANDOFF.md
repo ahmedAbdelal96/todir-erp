@@ -22,6 +22,8 @@ This is a backend handoff draft, not `FRONTEND COMPLETE` or `MODULE COMPLETE`. T
 
 The planning-run execution endpoint refreshes accepted Sales demand and eligible Purchasing supply through owner capabilities before calculating Manufacturing suggestions. A missing capability is treated as an empty optional source; the current development fixture still needs non-empty source-line acceptance coverage.
 
+Execution commands now validate the production order and output identity/quantity before invoking Inventory. Inventory-backed material/output facts require a tenant/legal-entity-scoped confirmed operation snapshot; a retry can recover a committed Inventory operation by the Manufacturing source key. New material/output keys are bound to a request hash and reuse with a different payload is rejected. The frontend must treat an unknown Inventory outcome as recoverable and retry with the same idempotency key; it must not create a new key automatically.
+
 All endpoints require authentication, tenant context, the relevant `manufacturing.*` permission, and the API rate limit. Backend errors expose a stable `code`; frontend copy must map it to Arabic-market terminology and never display SQL/ORM details.
 
 ## Domain safety invariants for the frontend
@@ -29,7 +31,7 @@ All endpoints require authentication, tenant context, the relevant `manufacturin
 - Display required, reserved, issued, consumed, returned, and scrapped as separate quantities.
 - A returned quantity is not a negative consumption and output receipt is not order completion.
 - A released order renders its definition snapshot; never offer an edit that silently changes the released BOM/formula/routing.
-- Show provisional output value and Inventory receipt status separately from final manufacturing cost.
+- Show the confirmed Inventory receipt status and canonical valuation separately from final manufacturing cost; client-entered provisional value is not authoritative.
 - Do not present MRP suggestions as authorized production or purchase orders until explicitly firmed.
 - Show forecast consumption and accepted sales demand in the MRP explanation; never add them blindly.
 - Use explicit retry/idempotency keys for shop-floor and material/output commands.

@@ -621,6 +621,35 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
         return new InventoryValuationSnapshot(query.ProductVariantId, reader.GetDecimal(0), reader.GetDecimal(1), reader.GetString(2), reader.GetString(3), query.AsOfDate);
     }
 
+    public Task<Shared.Contracts.Inventory.InventoryOperationSnapshot?> GetOperationSnapshotAsync(TenantId tenant, Guid entity, Guid operationId, CancellationToken ct) => ReadOperationSnapshotAsync(tenant, entity, operationId, null, null, null, ct);
+
+    public Task<Shared.Contracts.Inventory.InventoryOperationSnapshot?> FindOperationBySourceAsync(TenantId tenant, Guid entity, string sourceModule, Guid sourceDocumentId, string idempotencyKey, CancellationToken ct) => ReadOperationSnapshotAsync(tenant, entity, null, sourceModule, sourceDocumentId, idempotencyKey, ct);
+
+    private async Task<Shared.Contracts.Inventory.InventoryOperationSnapshot?> ReadOperationSnapshotAsync(TenantId tenant, Guid entity, Guid? operationId,
+        string? sourceModule, Guid? sourceDocumentId, string? idempotencyKey, CancellationToken ct)
+    {
+        await using var connection = await OpenTenantAsync(tenant, ct);
+        const string sql = """
+            select o.id,o.legal_entity_id,o.status,o.source_module,o.source_document_id,o.idempotency_key,o.idempotency_hash,
+                   coalesce(sum(m.base_quantity),0),coalesce(sum(v.value_delta),0),max(v.currency_code),o.operation_type='Reversal'
+            from business_inventory.inventory_operation o
+            left join business_inventory.stock_movement_entry m on m.tenant_id=o.tenant_id and m.legal_entity_id=o.legal_entity_id and m.operation_id=o.id
+            left join business_inventory.valuation_entry v on v.tenant_id=m.tenant_id and v.legal_entity_id=m.legal_entity_id and v.movement_id=m.id
+            where o.tenant_id=$1 and o.legal_entity_id=$2
+              and (($3::uuid is not null and o.id=$3) or ($3::uuid is null and o.source_module=$4 and o.source_document_id=$5 and o.idempotency_key=$6))
+            group by o.id,o.legal_entity_id,o.status,o.source_module,o.source_document_id,o.idempotency_key,o.idempotency_hash,o.operation_type
+            limit 1
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        Add(command, tenant.Value, entity, operationId ?? (object)DBNull.Value, sourceModule ?? (object)DBNull.Value,
+            sourceDocumentId ?? (object)DBNull.Value, idempotencyKey ?? (object)DBNull.Value);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return null;
+        return new Shared.Contracts.Inventory.InventoryOperationSnapshot(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2),
+            reader.GetString(3), NullGuid(reader, 4), reader.GetString(5), reader.GetString(6).Trim(), reader.GetDecimal(7),
+            reader.GetDecimal(8), reader.IsDBNull(9) ? null : reader.GetString(9).Trim(), reader.GetBoolean(10));
+    }
+
     public async Task<InventoryValuationTotal?> GetValuationTotalAsync(TenantId tenant, Guid entity, DateOnly asOfDate, CancellationToken ct)
     {
         await using var connection = await OpenTenantAsync(tenant, ct);

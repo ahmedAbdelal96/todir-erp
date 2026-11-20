@@ -25,7 +25,9 @@ export const invoicingRoutes: ModuleRouteRegistration = {
     moduleIds: ["invoicing"],
     path: "/invoicing",
     navigationKey: "invoicing",
-    permission: "invoicing.customer_invoice.read",
+    permissions: {
+      anyOf: ["invoicing.customer_invoice.read", "invoicing.supplier_invoice.read"]
+    },
     icon: "invoicing"
   },
   routes: [

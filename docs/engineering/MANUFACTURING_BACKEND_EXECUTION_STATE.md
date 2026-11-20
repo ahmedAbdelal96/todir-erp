@@ -20,6 +20,9 @@ The assigned scope is the backend/database/integration/development-seed delivery
 - Added owner-published Sales demand and Purchasing supply capabilities; authenticated MRP execution now refreshes those source snapshots before netting and preserves source ownership.
 - Added operation execution events with optimistic concurrency and replay-safe idempotency, capacity read-model calculation, genealogy command/read routes, and close-readiness reporting.
 - Revalidated authenticated API paths after the final fixes: production-order and planned-supply reads, MRP run, operation completion plus stale-version replay, close-readiness blocking, and capacity readiness.
+- Corrected the execution boundary: Manufacturing validates output quantity/product and executable order state before calling Inventory, recovers an Inventory operation by source key after an unknown outcome, and requires a confirmed owner snapshot before committing the Manufacturing fact. Material issue unit cost is derived from Inventory valuation evidence rather than the request body.
+- Added request-payload hashes for new material/output events, strict key-reuse conflict detection, co-/by-product output identity validation against the released formula snapshot, and an Inventory operation snapshot capability scoped by tenant and legal entity.
+- Removed silent negative-WIP clamping; close readiness reports a negative WIP reconciliation and close is fail-closed.
 
 ## Remaining executable work
 
@@ -30,8 +33,8 @@ The assigned scope is the backend/database/integration/development-seed delivery
 
 ## Last meaningful change
 
-The final source change fixed positional PostgreSQL parameter binding in Manufacturing, corrected the Sales owner capability to use the current Sales schema, and made operation idempotency replay succeed before stale-version rejection. The final local API probe then passed authenticated MRP execution and operation replay; the isolated migration/seed, architecture/security tests, formatter, and real RabbitMQ/Worker probe were rerun or freshly verified.
+The final source change added the Inventory operation evidence/recovery contract, execution prevalidation, strict request hashes, and negative-WIP fail-closed checks. The isolated migration applied 233 ordered scripts and the Manufacturing tests/build passed; the previously verified local API/MRP/operation and RabbitMQ/Worker evidence remains valid only for the earlier source revision and must be recaptured after this change.
 
 ## Next executable action
 
-Implement MF27–MF35 and MF45–MF47 gaps that are still marked PARTIAL/NOT COMPLETE, beginning with non-empty source-line fixtures, multi-level pegging, downtime/quality/resource seams, and real genealogy/output reconciliation; then rerun all affected gates before any completion claim.
+Implement MF27–MF35 and MF45–MF47 gaps that are still marked PARTIAL/NOT COMPLETE, beginning with non-empty source-line fixtures, multi-level pegging, downtime/quality/resource seams, and real genealogy/output reconciliation; then recapture authenticated runtime evidence after the current execution-boundary changes.

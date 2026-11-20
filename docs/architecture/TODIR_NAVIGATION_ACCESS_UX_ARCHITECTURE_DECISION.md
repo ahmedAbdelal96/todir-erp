@@ -45,7 +45,7 @@
 | Sales | `sales.quotation.read` | `/sales` only |
 | Service | `service.work.read` | `/service` only |
 | Settings | `platform.settings.read` | `/settings` only |
-| Subledger | `subledger.openitems.read` | `/subledger` plus distinct finance pages |
+| Subledger | `subledger.read` | `/subledger` plus distinct finance pages |
 | Tax | `tax.read` | `/tax` only |
 
 **17/24** have only one operational module route; seven already demonstrate usable multi-route patterns. Existing examples of distinct routes: Invoicing, Payments, Projects, Subledger, Catalog, Directory, Identity.

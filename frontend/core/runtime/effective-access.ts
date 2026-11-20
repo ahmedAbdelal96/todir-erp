@@ -85,21 +85,68 @@ export function evaluatePermissionCondition(
 
 export function isModuleOperational(
   access: EffectiveAccess | null | undefined,
+  moduleId: string,
+  allowReadOnly = true
+): boolean {
+  if (!access) return false;
+
+  // System surfaces are always operational
+  const normalized = moduleId.toLowerCase();
+  if (
+    normalized === "home" ||
+    normalized === "settings" ||
+    normalized === "preview" ||
+    normalized === "domain-settings" ||
+    normalized === "workspace" ||
+    normalized === "identity" ||
+    normalized === "users"
+  ) {
+    return true;
+  }
+
+  // Commercial entitlement check (fail closed: empty or missing entitledModules rejects access)
+  if (!access.entitledModules || access.entitledModules.length === 0) {
+    return false;
+  }
+  if (!access.entitledModules.some(m => m.toLowerCase() === normalized)) {
+    return false;
+  }
+
+  // Lifecycle status check
+  const rawStatus = access.moduleStatuses?.[moduleId] ?? access.moduleStatuses?.[normalized];
+  if (rawStatus) {
+    const status = rawStatus.toLowerCase();
+
+    // Inactive / unready / disabled statuses
+    if (
+      status === "requested" ||
+      status === "validating" ||
+      status === "provisioning" ||
+      status === "awaitinggolive" ||
+      status === "disabled" ||
+      status === "failed" ||
+      status === "deactivated"
+    ) {
+      return false;
+    }
+
+    // Historical read-only / wind-down statuses
+    if (status === "readonly" || status === "winddown") {
+      return allowReadOnly;
+    }
+  }
+
+  // Default for entitled modules without a disabling instance status is Active
+  return true;
+}
+
+export function isModuleReadOnly(
+  access: EffectiveAccess | null | undefined,
   moduleId: string
 ): boolean {
   if (!access) return false;
-  if (access.isSuper) return true;
-  if (moduleId === "home" || moduleId === "settings" || moduleId === "preview" || moduleId === "domain-settings") {
-    return true;
-  }
-  if (access.entitledModules && access.entitledModules.length > 0) {
-    if (!access.entitledModules.some(m => m.toLowerCase() === moduleId.toLowerCase())) {
-      return false;
-    }
-  }
-  const status = access.moduleStatuses?.[moduleId];
-  if (status && status.toLowerCase() === "deactivated") {
-    return false;
-  }
-  return true;
+  const rawStatus = access.moduleStatuses?.[moduleId] ?? access.moduleStatuses?.[moduleId.toLowerCase()];
+  if (!rawStatus) return false;
+  const status = rawStatus.toLowerCase();
+  return status === "readonly" || status === "winddown";
 }

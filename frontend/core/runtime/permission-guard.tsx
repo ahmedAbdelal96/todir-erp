@@ -21,29 +21,19 @@ export function PermissionGuard({
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const effectiveAccess = outletCtx?.effectiveAccess;
 
-  // If effectiveAccess is provided, evaluate against it
-  if (effectiveAccess) {
-    if (moduleId && !isModuleOperational(effectiveAccess, moduleId)) {
-      return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
-    }
-    if (permission && !evaluatePermissionCondition(permission, effectiveAccess)) {
-      return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
-    }
-    return <>{children}</>;
+  // Fail closed if effectiveAccess context is missing
+  if (!effectiveAccess) {
+    return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
   }
 
-  // Fallback to legacy outletCtx.permissions if effectiveAccess is not yet loaded
-  const legacyPermissions = outletCtx?.permissions;
-  if (legacyPermissions && permission) {
-    if (typeof permission === "string") {
-      if (!legacyPermissions.hasPermission(permission)) {
-        return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
-      }
-    } else if (permission.allOf && !legacyPermissions.hasAllPermissions(...permission.allOf)) {
-      return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
-    } else if (permission.anyOf && !legacyPermissions.hasAnyPermission(...permission.anyOf)) {
-      return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
-    }
+  // Enforce module operational readiness (entitlement + lifecycle activation)
+  if (moduleId && !isModuleOperational(effectiveAccess, moduleId)) {
+    return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
+  }
+
+  // Enforce specific permission condition
+  if (permission && !evaluatePermissionCondition(permission, effectiveAccess)) {
+    return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
   }
 
   return <>{children}</>;

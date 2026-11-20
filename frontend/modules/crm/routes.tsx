@@ -69,7 +69,7 @@ export const crmRoutes: ModuleRouteRegistration = {
     {
       path: "crm/management",
       element: (
-        <PermissionGuard permission={{ anyOf: ["crm.team.manage", "crm.pipeline.manage", "crm.team.read", "crm.all.view"] }} moduleId="crm">
+        <PermissionGuard permission={{ anyOf: ["crm.team.manage", "crm.pipeline.manage", "crm.team.read", "crm.pipeline.read", "crm.forecast.read"] }} moduleId="crm">
           <CrmPage initialTab="management" />
         </PermissionGuard>
       )

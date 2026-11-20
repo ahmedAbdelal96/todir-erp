@@ -3,7 +3,7 @@ import type { TFunction } from "i18next";
 import type { CommandItem } from "../../components/primitives/command-palette.tsx";
 import type { ModuleNavigationRegistration } from "../router/route-contract.ts";
 import type { EffectiveAccess } from "../../core/runtime/effective-access.ts";
-import { hasPermissionInAccess } from "../../core/runtime/effective-access.ts";
+import { hasPermissionInAccess, isModuleOperational } from "../../core/runtime/effective-access.ts";
 import { isDestinationPermitted } from "../router/destination-registry.ts";
 
 export interface BuildCommandPaletteOptions {
@@ -40,7 +40,7 @@ export function buildCommandPaletteItems({
     // If module has task-level destinations, add permitted sub-destinations to search
     if (mod.destinations && mod.destinations.length > 0) {
       for (const dest of mod.destinations) {
-        if (!effectiveAccess || isDestinationPermitted(dest, effectiveAccess)) {
+        if (effectiveAccess && isDestinationPermitted(dest, effectiveAccess)) {
           // Avoid duplicate if destination path matches module root
           if (dest.path !== mod.path) {
             items.push({
@@ -57,17 +57,16 @@ export function buildCommandPaletteItems({
     }
   }
 
-  // Helper to check permission in effectiveAccess or permitted modules fallback
-  const canPerform = (permission: string, fallbackModuleId: string): boolean => {
-    if (effectiveAccess) {
-      if (effectiveAccess.isSuper) return true;
-      return hasPermissionInAccess(effectiveAccess, permission);
-    }
-    return modules.some(m => m.id === fallbackModuleId);
+  // Fail-closed helper to check permission in effectiveAccess
+  const canPerform = (permission: string, moduleId: string): boolean => {
+    if (!effectiveAccess) return false;
+    if (!isModuleOperational(effectiveAccess, moduleId)) return false;
+    if (effectiveAccess.isSuper) return true;
+    return hasPermissionInAccess(effectiveAccess, permission);
   };
 
-  // 2. High-frequency Quick Actions guarded by effective permissions
-  if (canPerform("invoicing.customer_invoice.create", "invoicing") || canPerform("invoicing.customer_invoice.manage", "invoicing")) {
+  // 2. High-frequency Quick Actions guarded by effective permissions (no permissive fallbacks)
+  if (canPerform("invoicing.customer_invoice.create", "invoicing")) {
     items.push({
       id: "action-new-customer-invoice",
       title: t("commandPalette.actionNewCustomerInvoice", "إنشاء فاتورة مبيعات جديدة"),
@@ -79,7 +78,7 @@ export function buildCommandPaletteItems({
     });
   }
 
-  if (canPerform("invoicing.supplier_invoice.create", "invoicing") || canPerform("invoicing.supplier_invoice.manage", "invoicing")) {
+  if (canPerform("invoicing.supplier_invoice.create", "invoicing")) {
     items.push({
       id: "action-new-supplier-invoice",
       title: t("commandPalette.actionNewSupplierInvoice", "إنشاء فاتورة مشتريات جديدة"),
@@ -91,7 +90,7 @@ export function buildCommandPaletteItems({
     });
   }
 
-  if (canPerform("catalog.product.create", "catalog") || canPerform("catalog.product.manage", "catalog")) {
+  if (canPerform("catalog.product.create", "catalog")) {
     items.push({
       id: "action-new-product",
       title: t("commandPalette.actionNewProduct", "إضافة منتج جديد للكتالوج"),
@@ -108,7 +107,7 @@ export function buildCommandPaletteItems({
     });
   }
 
-  if (canPerform("directory.party.create", "directory") || canPerform("directory.party.manage", "directory")) {
+  if (canPerform("directory.party.create", "directory") || canPerform("directory.party.quick_create", "directory")) {
     items.push({
       id: "action-new-party",
       title: t("commandPalette.actionNewParty", "إضافة عميل أو مورد جديد (دليل الجهات)"),
@@ -125,7 +124,7 @@ export function buildCommandPaletteItems({
     });
   }
 
-  if (canPerform("subledger.openitems.read", "subledger")) {
+  if (canPerform("subledger.read", "subledger")) {
     items.push({
       id: "action-open-subledger",
       title: t("commandPalette.actionOpenSubledger", "تسوية البنود والمطالبات المفتوحة"),
@@ -158,7 +157,7 @@ export function buildCommandPaletteItems({
     });
   }
 
-  if (canPerform("payroll.run.read", "payroll") || canPerform("payroll.run.manage", "payroll")) {
+  if (canPerform("payroll.run.read", "payroll") || canPerform("payroll.run.create", "payroll")) {
     items.push({
       id: "action-payroll-run",
       title: t("commandPalette.actionPayrollRun", "إدارة دورات الرواتب والأجور"),

@@ -36,14 +36,14 @@ export type BankingTabId =
   | "reports";
 
 const TAB_PERMISSIONS: Record<BankingTabId, readonly string[]> = {
-  overview: ["banking.accounts.read", "banking.statement.read", "banking.reconciliation.read", "banking.reports.read"],
-  accounts: ["banking.accounts.read", "banking.accounts.manage"],
-  statements: ["banking.statement.read", "banking.statement.import", "banking.statement.validate"],
-  reconciliation: ["banking.reconciliation.read", "banking.reconciliation.manage", "banking.reconciliation.finalize"],
-  cash: ["banking.cash.count", "banking.cash.transfer"],
-  transfers: ["banking.cash.transfer", "banking.accounts.manage", "payments.read"],
-  forecast: ["banking.cash_forecast.manage", "banking.accounts.read"],
-  reports: ["banking.reports.read", "banking.accounts.read"]
+  overview: ["banking.accounts.read", "banking.statements.read", "banking.reconciliation.read", "banking.reports.read", "banking.cash_position.read"],
+  accounts: ["banking.accounts.read", "banking.accounts.create", "banking.accounts.edit"],
+  statements: ["banking.statements.read", "banking.statements.import", "banking.statements.validate"],
+  reconciliation: ["banking.reconciliation.read", "banking.reconciliation.match", "banking.reconciliation.finalize"],
+  cash: ["banking.cash.read", "banking.cash.count", "banking.cash.difference.resolve"],
+  transfers: ["banking.transfers.read", "banking.transfers.initiate"],
+  forecast: ["banking.cash_forecast.read", "banking.cash_forecast.manage"],
+  reports: ["banking.reports.read", "banking.audit.read"]
 };
 
 function isTabAllowed(tabId: BankingTabId, access?: EffectiveAccess, perms?: PermissionSet): boolean {

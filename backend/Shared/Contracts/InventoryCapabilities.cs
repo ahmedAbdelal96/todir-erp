@@ -15,6 +15,9 @@ public sealed record InventoryMovementHistoryRequest(Guid ProductVariantId, Guid
 public sealed record InventoryMovementHistoryItem(Guid Id, Guid OperationId, Guid ProductVariantId, Guid WarehouseId,
     Guid LocationId, decimal SignedBaseQuantity, DateTimeOffset EffectiveAt, long Sequence, string MovementType,
     string SourceModule, Guid? SourceDocumentId);
+public sealed record InventoryOperationSnapshot(Guid OperationId, Guid LegalEntityId, string Status, string SourceModule,
+    Guid? SourceDocumentId, string IdempotencyKey, string IdempotencyHash, decimal BaseQuantity, decimal ValuationAmount,
+    string? CurrencyCode, bool IsReversal);
 
 public interface IInventoryCapabilities
 {
@@ -26,4 +29,8 @@ public interface IInventoryCapabilities
         DateOnly operationalDate, DateOnly postingDate, string idempotencyKey, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<InventoryMovementHistoryItem>> GetMovementHistoryAsync(Guid tenantId, InventoryMovementHistoryRequest request,
         CancellationToken cancellationToken = default);
+    Task<InventoryOperationSnapshot?> GetOperationSnapshotAsync(Guid tenantId, Guid legalEntityId, Guid operationId,
+        CancellationToken cancellationToken = default);
+    Task<InventoryOperationSnapshot?> FindOperationBySourceAsync(Guid tenantId, Guid legalEntityId, string sourceModule,
+        Guid sourceDocumentId, string idempotencyKey, CancellationToken cancellationToken = default);
 }

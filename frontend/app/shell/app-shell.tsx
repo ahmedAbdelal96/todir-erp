@@ -345,33 +345,19 @@ export function AppShell() {
         setEffectiveAccess(access);
         setPermissions(new PermissionSet(access.permissions));
       } catch {
-        try {
-          const permResponse = await fetch("/api/v1/authorization/permissions", { headers: { "X-Correlation-Id": crypto.randomUUID() } });
-          if (permResponse.ok) {
-            const perms = (await permResponse.json()) as string[];
-            setPermissions(new PermissionSet(perms));
-            access = {
-              tenantId: session.tenantId,
-              membershipId: session.identityId,
-              legalEntityId: defaultEntity || null,
-              branchId: defaultBranch || null,
-              isSuper: perms.includes("*") || perms.includes("admin"),
-              permissions: perms,
-              entitledModules: [],
-              moduleStatuses: {},
-              version: `${session.tenantId}:${Date.now()}`
-            };
-            setEffectiveAccess(access);
-          } else {
-            setPermissions(new PermissionSet());
-          }
-        } catch {
-          setPermissions(new PermissionSet());
-        }
+        setEffectiveAccess(null);
+        setPermissions(new PermissionSet());
+        setModules([]);
+        setError(t("common:shell.couldNotLoadSession"));
+        setScreen("error");
+        return;
       }
       loadNavigation(access);
       setScreen("authenticated");
     } catch {
+      setEffectiveAccess(null);
+      setPermissions(new PermissionSet());
+      setModules([]);
       setError(t("common:shell.couldNotLoadSession"));
       setScreen("error");
     }
@@ -392,6 +378,11 @@ export function AppShell() {
   async function switchOrganization(nextLegalEntity: string, nextBranch: string) {
     setOperation(labels.progress);
     setContextError(undefined);
+    // Immediately invalidate previous effective-access state to prevent rendering stale cross-entity destinations
+    setEffectiveAccess(null);
+    setPermissions(new PermissionSet());
+    setModules([]);
+    permCacheRef.current = {};
     try {
       clearCsrfToken();
       const csrf = await requestCsrf();
@@ -406,21 +397,21 @@ export function AppShell() {
           window.sessionStorage.removeItem("erp.current.legalEntityId");
         }
       }
-      permCacheRef.current = {};
       setLegalEntity(nextLegalEntity);
       setBranch(nextBranch);
       await queryClient.invalidateQueries();
       queryClient.clear();
-      let nextAccess: EffectiveAccess | null = null;
-      try {
-        nextAccess = await fetchEffectiveAccess();
-        setEffectiveAccess(nextAccess);
-        setPermissions(new PermissionSet(nextAccess.permissions));
-      } catch {
-        // Fallback
-      }
+
+      // Fetch new scoped authorization; navigation restored only after verified success
+      const nextAccess = await fetchEffectiveAccess();
+      setEffectiveAccess(nextAccess);
+      setPermissions(new PermissionSet(nextAccess.permissions));
       loadNavigation(nextAccess);
     } catch {
+      // Never continue using old projection when request fails
+      setEffectiveAccess(null);
+      setPermissions(new PermissionSet());
+      setModules([]);
       setContextError(t("common:shell.couldNotUpdateScope"));
     } finally {
       setOperation(undefined);

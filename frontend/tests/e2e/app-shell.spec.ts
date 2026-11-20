@@ -56,7 +56,7 @@ test.describe('App Shell Bootstrap & Localization', () => {
           branchId: 'b1',
           isSuper: true,
           permissions: ['*'],
-          entitledModules: ['home', 'settings'],
+          entitledModules: ['home', 'settings', 'invoicing'],
           moduleStatuses: {},
           version: '1'
         }),

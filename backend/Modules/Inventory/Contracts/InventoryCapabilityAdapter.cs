@@ -39,4 +39,10 @@ public sealed class InventoryCapabilityAdapter(InventoryService service) : Share
             row.ProductVariantId, row.WarehouseId, row.LocationId, row.SignedBaseQuantity, row.EffectiveAt, row.Sequence,
             row.MovementType, row.SourceModule, row.SourceDocumentId)).ToArray();
     }
+
+    public Task<Shared.Contracts.Inventory.InventoryOperationSnapshot?> GetOperationSnapshotAsync(Guid tenantId, Guid legalEntityId, Guid operationId,
+        CancellationToken cancellationToken = default) => service.GetOperationSnapshotAsync(tenantId, legalEntityId, operationId, cancellationToken);
+
+    public Task<Shared.Contracts.Inventory.InventoryOperationSnapshot?> FindOperationBySourceAsync(Guid tenantId, Guid legalEntityId, string sourceModule,
+        Guid sourceDocumentId, string idempotencyKey, CancellationToken cancellationToken = default) => service.FindOperationBySourceAsync(tenantId, legalEntityId, sourceModule, sourceDocumentId, idempotencyKey, cancellationToken);
 }

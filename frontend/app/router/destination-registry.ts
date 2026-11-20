@@ -29,7 +29,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     labelKey: "tabs.overview",
     fallbackLabel: "نظرة عامة على السيولة",
     icon: "landmark",
-    permission: { anyOf: ["banking.accounts.read", "banking.statement.read", "banking.reconciliation.read", "banking.reports.read"] },
+    permission: { anyOf: ["banking.accounts.read", "banking.statements.read", "banking.reconciliation.read", "banking.reports.read", "banking.cash_position.read"] },
     order: 10,
     isPrimary: true,
     keywords: ["بنوك", "سيولة", "خزائن", "overview", "liquidity"]
@@ -42,7 +42,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     labelKey: "tabs.accounts",
     fallbackLabel: "الحسابات البنكية والخزائن",
     icon: "landmark",
-    permission: { anyOf: ["banking.accounts.read", "banking.accounts.manage"] },
+    permission: { anyOf: ["banking.accounts.read", "banking.accounts.create", "banking.accounts.edit"] },
     order: 20,
     keywords: ["حسابات", "بنك", "خزينة", "صندوق", "accounts", "treasury"]
   },
@@ -54,7 +54,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     labelKey: "tabs.statements",
     fallbackLabel: "كشوف الحسابات البنكية",
     icon: "statement",
-    permission: { anyOf: ["banking.statement.read", "banking.statement.import", "banking.statement.validate"] },
+    permission: { anyOf: ["banking.statements.read", "banking.statements.import", "banking.statements.validate"] },
     order: 30,
     keywords: ["كشف", "حساب", "إفادة", "statements", "feed"]
   },
@@ -66,7 +66,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     labelKey: "tabs.reconciliation",
     fallbackLabel: "مطابقة كشف الحساب البنكي",
     icon: "reconcile",
-    permission: { anyOf: ["banking.reconciliation.read", "banking.reconciliation.manage", "banking.reconciliation.finalize"] },
+    permission: { anyOf: ["banking.reconciliation.read", "banking.reconciliation.match", "banking.reconciliation.finalize"] },
     order: 40,
     keywords: ["تسوية", "مطابقة", "reconciliation", "match"]
   },
@@ -78,7 +78,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     labelKey: "tabs.cash",
     fallbackLabel: "جرد النقدية والعهد",
     icon: "vault",
-    permission: { anyOf: ["banking.cash.count", "banking.cash.transfer"] },
+    permission: { anyOf: ["banking.cash.read", "banking.cash.count", "banking.cash.difference.resolve"] },
     order: 50,
     keywords: ["جرد", "نقدية", "عهدة", "خزنة", "cash count", "custody"]
   },
@@ -90,7 +90,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     labelKey: "tabs.transfers",
     fallbackLabel: "التحويلات وتسويات بوابات الدفع",
     icon: "transfer",
-    permission: { anyOf: ["banking.cash.transfer", "banking.accounts.manage", "payments.read"] },
+    permission: { anyOf: ["banking.transfers.read", "banking.transfers.initiate"] },
     order: 60,
     keywords: ["تحويل", "تسوية", "بوابة", "transfers", "payouts"]
   },
@@ -102,7 +102,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     labelKey: "tabs.forecast",
     fallbackLabel: "توقعات السيولة النقدية",
     icon: "forecast",
-    permission: { anyOf: ["banking.cash_forecast.manage", "banking.accounts.read"] },
+    permission: { anyOf: ["banking.cash_forecast.read", "banking.cash_forecast.manage"] },
     order: 70,
     keywords: ["توقعات", "سيولة", "تدفق", "forecast", "cash flow"]
   },
@@ -114,7 +114,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     labelKey: "tabs.reports",
     fallbackLabel: "تقارير حركة النقدية والمطابقة",
     icon: "reports",
-    permission: { anyOf: ["banking.reports.read", "banking.accounts.read"] },
+    permission: { anyOf: ["banking.reports.read", "banking.audit.read"] },
     order: 80,
     keywords: ["تقارير", "كشف حركة", "reports"]
   }
@@ -178,7 +178,7 @@ export const CRM_DESTINATIONS: readonly NavDestination[] = [
     labelKey: "tabs.management",
     fallbackLabel: "إدارة المبيعات والتقارير",
     icon: "bar-chart",
-    permission: { anyOf: ["crm.team.manage", "crm.pipeline.manage", "crm.team.read", "crm.all.view"] },
+    permission: { anyOf: ["crm.team.manage", "crm.pipeline.manage", "crm.team.read", "crm.pipeline.read", "crm.forecast.read"] },
     order: 50,
     keywords: ["إدارة", "فريق", "تقارير", "management", "teams"]
   }

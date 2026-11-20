@@ -29,7 +29,7 @@ const CRM_TAB_PERMISSIONS: Record<CrmTabId, readonly string[]> = {
   leads: ["crm.lead.read", "crm.lead.create", "crm.lead.edit"],
   opportunities: ["crm.opportunity.read", "crm.opportunity.create", "crm.opportunity.edit"],
   activities: ["crm.activity.read", "crm.activity.create", "crm.activity.edit"],
-  management: ["crm.team.manage", "crm.pipeline.manage", "crm.team.read", "crm.all.view"]
+  management: ["crm.team.manage", "crm.pipeline.manage", "crm.team.read", "crm.pipeline.read", "crm.forecast.read"]
 };
 
 function isCrmTabAllowed(tabId: CrmTabId, access?: EffectiveAccess, perms?: PermissionSet): boolean {

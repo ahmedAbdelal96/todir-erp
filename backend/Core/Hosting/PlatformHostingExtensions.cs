@@ -263,7 +263,7 @@ public static class PlatformHostingExtensions
             if (isSuper) perms.Add("*");
             return Results.Ok(perms);
         }).RequireAuthorization();
-        group.MapGet("/authorization/effective-access", async (HttpContext context, IAuthorizationSubjectStore subjectStore, IPlatformAdminSurfaceStore surfaceStore, CancellationToken cancellationToken) =>
+        group.MapGet("/authorization/effective-access", async (HttpContext context, IAuthorizationSubjectStore subjectStore, IPlatformAdminSurfaceStore surfaceStore, IModuleRegistry moduleRegistry, CancellationToken cancellationToken) =>
         {
             if (!Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId) || !Guid.TryParse(context.User.FindFirstValue("membership_id"), out var membershipId)) return Results.Unauthorized();
             var subject = await subjectStore.LoadAsync(new(tenantId), membershipId, cancellationToken);
@@ -271,8 +271,12 @@ public static class PlatformHostingExtensions
 
             var legalEntityClaim = context.User.FindFirstValue("legal_entity_id");
             var branchClaim = context.User.FindFirstValue("branch_id");
-            Guid? legalEntityId = Guid.TryParse(legalEntityClaim, out var lid) ? lid : null;
-            Guid? branchId = Guid.TryParse(branchClaim, out var bid) ? bid : null;
+            Guid? legalEntityId = context.Request.Query.TryGetValue("legalEntityId", out var qLid) && Guid.TryParse(qLid, out var parsedLid)
+                ? parsedLid
+                : Guid.TryParse(legalEntityClaim, out var lid) ? lid : null;
+            Guid? branchId = context.Request.Query.TryGetValue("branchId", out var qBid) && Guid.TryParse(qBid, out var parsedBid)
+                ? parsedBid
+                : Guid.TryParse(branchClaim, out var bid) ? bid : null;
 
             var scope = branchId.HasValue && legalEntityId.HasValue
                 ? PermissionScope.ForBranch(new(tenantId), new(legalEntityId.Value), new(branchId.Value))
@@ -280,7 +284,16 @@ public static class PlatformHostingExtensions
                     ? PermissionScope.ForLegalEntity(new(tenantId), new(legalEntityId.Value))
                     : PermissionScope.ForTenant(new(tenantId));
 
-            var isSuper = subject.Roles.Any(r => r.Code is "administrator" or "admin");
+            var roleIdsInScope = subject.Assignments
+                .Where(a => a.TenantId == subject.TenantId && a.Scope.Contains(scope))
+                .Select(a => a.RoleId)
+                .ToHashSet();
+
+            var activeRolesInScope = subject.Roles
+                .Where(r => roleIdsInScope.Contains(r.Id) && r.IsActive)
+                .ToList();
+
+            var isSuper = activeRolesInScope.Any(r => r.Code is "administrator" or "admin");
 
             HashSet<string> effectivePermissions = [];
             if (isSuper)
@@ -293,27 +306,68 @@ public static class PlatformHostingExtensions
             }
             else
             {
-                var roleIds = subject.Assignments
-                    .Where(a => a.TenantId == subject.TenantId && a.Scope.Contains(scope))
-                    .Select(a => a.RoleId)
-                    .ToHashSet();
-
-                var activeRoles = subject.Roles
-                    .Where(r => roleIds.Contains(r.Id) && r.IsActive)
-                    .Select(r => r.Id)
-                    .ToHashSet();
-
-                foreach (var p in subject.Permissions.Where(p => activeRoles.Contains(p.RoleId) && p.TenantId == subject.TenantId))
+                var activeRoleIds = activeRolesInScope.Select(r => r.Id).ToHashSet();
+                foreach (var p in subject.Permissions.Where(p => activeRoleIds.Contains(p.RoleId) && p.TenantId == subject.TenantId))
                 {
                     effectivePermissions.Add(p.PermissionCode);
                 }
             }
 
             var entitlement = await surfaceStore.LoadEntitlementAsync(new(tenantId), cancellationToken);
-            var moduleInstances = await surfaceStore.ListModuleInstancesAsync(new(tenantId), 0, 100, cancellationToken);
+            var isEntitlementValid = entitlement is not null && entitlement.ValidUntil > DateTimeOffset.UtcNow;
 
-            var moduleStatuses = moduleInstances.ToDictionary(m => m.ModuleId, m => m.Status, StringComparer.OrdinalIgnoreCase);
-            var entitledModules = entitlement?.Modules ?? (IReadOnlyList<string>)moduleInstances.Select(m => m.ModuleId).Distinct().ToList();
+            var entitledModulesSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "home", "settings", "preview", "domain-settings", "users", "iam", "identity"
+            };
+
+            var allManifests = moduleRegistry?.GetAll() ?? [];
+            foreach (var manifest in allManifests)
+            {
+                if (!manifest.Purchasable)
+                {
+                    entitledModulesSet.Add(manifest.Id);
+                }
+                else if (isEntitlementValid && entitlement!.Modules.Contains(manifest.Id, StringComparer.OrdinalIgnoreCase))
+                {
+                    entitledModulesSet.Add(manifest.Id);
+                }
+            }
+
+            var moduleInstances = await surfaceStore.ListModuleInstancesAsync(new(tenantId), 0, 100, cancellationToken);
+            var moduleStatuses = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var manifest in allManifests)
+            {
+                var matchingInstances = moduleInstances
+                    .Where(m => string.Equals(m.ModuleId, manifest.Id, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                var scopedInstance = legalEntityId.HasValue
+                    ? matchingInstances.FirstOrDefault(m => string.Equals(m.ScopeType, "legal_entity", StringComparison.OrdinalIgnoreCase) && m.ScopeId == legalEntityId.Value)
+                      ?? matchingInstances.FirstOrDefault(m => string.Equals(m.ScopeType, "tenant", StringComparison.OrdinalIgnoreCase))
+                    : matchingInstances.FirstOrDefault(m => string.Equals(m.ScopeType, "tenant", StringComparison.OrdinalIgnoreCase));
+
+                if (scopedInstance is not null)
+                {
+                    moduleStatuses[manifest.Id] = scopedInstance.Status;
+                }
+                else
+                {
+                    if (!manifest.Purchasable)
+                    {
+                        moduleStatuses[manifest.Id] = "Active";
+                    }
+                    else if (entitledModulesSet.Contains(manifest.Id))
+                    {
+                        moduleStatuses[manifest.Id] = "Active";
+                    }
+                    else
+                    {
+                        moduleStatuses[manifest.Id] = "Disabled";
+                    }
+                }
+            }
 
             var version = $"{tenantId:N}:{membershipId:N}:{legalEntityClaim ?? "none"}:{branchClaim ?? "none"}:{subject.Version}";
 
@@ -325,7 +379,7 @@ public static class PlatformHostingExtensions
                 branchId,
                 isSuper,
                 permissions = effectivePermissions.ToList(),
-                entitledModules,
+                entitledModules = entitledModulesSet.ToList(),
                 moduleStatuses,
                 version
             });
