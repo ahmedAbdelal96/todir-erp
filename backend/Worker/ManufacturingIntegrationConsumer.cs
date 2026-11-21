@@ -9,7 +9,7 @@ namespace Worker;
 public sealed class ManufacturingIntegrationConsumer(NpgsqlDataSource dataSource, IInboxStore inboxStore) : IConsumer<OutboxPublishedMessage>
 {
     public const string EndpointName = "manufacturing-integration";
-    private static readonly HashSet<string> Supported = ["ProductionOrderCreatedV1", "ProductionOrderReleasedV1", "ProductionOrderStartedV1", "MaterialConsumedForProductionV1", "ProductionOutputReportedV1", "ProductionScrapReportedV1", "ProductionOrderClosedV1"];
+    private static readonly HashSet<string> Supported = ["ProductionOrderCreatedV1", "ProductionOrderReleasedV1", "ProductionOrderStartedV1", "MaterialConsumedForProductionV1", "ProductionOutputReportedV1", "ProductionScrapReportedV1", "ProductionCostFactRecordedV1", "ProductionOrderClosedV1"];
 
     public async Task Consume(ConsumeContext<OutboxPublishedMessage> context)
     {

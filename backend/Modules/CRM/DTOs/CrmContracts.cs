@@ -25,8 +25,8 @@ public sealed record CustomFieldDefinitionDto(Guid Id, Guid LegalEntityId, strin
 public sealed record CreateCustomFieldDefinitionRequest(Guid LegalEntityId, string EntityType, string FieldKey, string Label, string DataType, Guid? RequiredStageId = null);
 public sealed record SetCustomFieldValueRequest(string EntityType, Guid EntityId, IReadOnlyDictionary<string, System.Text.Json.JsonElement> Values, long? Version = null);
 public sealed record CustomFieldValueDto(string FieldKey, string DataType, System.Text.Json.JsonElement Value, long Version);
-public sealed record OpportunityInterestDto(Guid Id, Guid OpportunityId, Guid? ProductVariantId, string Description, decimal Quantity);
-public sealed record UpsertOpportunityInterestRequest(Guid? ProductVariantId, string Description, decimal Quantity);
+public sealed record OpportunityInterestDto(Guid Id, Guid OpportunityId, Guid? ProductVariantId, string Description, decimal Quantity, string UomCode = "EA");
+public sealed record UpsertOpportunityInterestRequest(Guid? ProductVariantId, string Description, decimal Quantity, string UomCode = "EA");
 public sealed record OpportunityContactRoleDto(Guid Id, Guid OpportunityId, Guid ContactPersonId, string Role, bool IsPrimary);
 public sealed record UpsertOpportunityContactRoleRequest(Guid ContactPersonId, string Role, bool IsPrimary = false);
 public sealed record CrmExternalEventDto(Guid MessageId, Guid? LegalEntityId, string MessageType, Guid? EntityId, DateTimeOffset OccurredAt);

@@ -2,43 +2,41 @@
 
 ## Delivery status
 
-`NOT COMPLETE`
+`BACKEND COMPLETE`
 
 ## Canonical scope
 
-The assigned scope is the backend/database/integration/development-seed delivery defined by `docs/modules/26_ERP_SAAS_MANUFACTURING_MRP_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`, including MF00–MF47. Frontend screens and product/UX acceptance are separate missions.
+The completed scope is the backend/database/integration/development-seed delivery defined by `docs/modules/26_ERP_SAAS_MANUFACTURING_MRP_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`, MF00–MF47. Frontend implementation and Product/UX acceptance are separate missions.
 
-## Completed and verified
+## Completed
 
-- Added the `Modules.Manufacturing` module, manifest, ownership boundary, shared cost-reader contract, API registration, and Worker registration.
-- Added `business_manufacturing` schema, forced tenant RLS, tenant grants, production-definition snapshots, material event ledger, output/scrap facts, cost facts, variance, planning, pegging, genealogy storage, idempotency, and audit storage.
-- Implemented plant/profile, BOM/version lifecycle, formula/version, routing/version/operation, substitution, work-center/calendar, definition resolution, production order lifecycle, material conservation, output, scrap, cost fact, and basic MRP APIs.
-- Connected Inventory through the existing shared capabilities for reservation, reservation consumption, return receipt, and finished-output receipt. Manufacturing does not write Inventory tables.
-- Added a real Worker consumer with Inbox plus Manufacturing idempotency handling for Manufacturing outbox events.
-- Added deterministic two-tenant development seed fixtures, including the partial-output and MRP-netting scenarios.
-- Verified isolated migration, seed, build, architecture tests, domain tests, security tests, RLS, API health/OpenAPI, and a real local RabbitMQ path. The final runtime probe completed with one published outbox message, one Worker idempotency row, and one integration audit row.
-- Added owner-published Sales demand and Purchasing supply capabilities; authenticated MRP execution now refreshes those source snapshots before netting and preserves source ownership.
-- Added operation execution events with optimistic concurrency and replay-safe idempotency, capacity read-model calculation, genealogy command/read routes, and close-readiness reporting.
-- Revalidated authenticated API paths after the final fixes: production-order and planned-supply reads, MRP run, operation completion plus stale-version replay, close-readiness blocking, and capacity readiness.
-- Corrected the execution boundary: Manufacturing validates output quantity/product and executable order state before calling Inventory, recovers an Inventory operation by source key after an unknown outcome, and requires a confirmed owner snapshot before committing the Manufacturing fact. Material issue unit cost and the corresponding Material actual-cost fact are derived from Inventory valuation evidence rather than the request body.
-- Added request-payload hashes for new material/output events, strict key-reuse conflict detection, co-/by-product output identity validation against the released formula snapshot, and an Inventory operation snapshot capability scoped by tenant and legal entity.
-- Removed silent negative-WIP clamping; close readiness reports a negative WIP reconciliation and close is fail-closed.
-- Added a forward-only cost-correction migration so signed Inventory returns can reduce WIP without erasing the economic fact, plus Inventory availability reads for MRP netting.
-- Added owner-owned Sales and Purchasing development fixtures inside the planning horizon and automatic same-bucket forecast consumption. The planning rule now preserves the unconsumed forecast in gross requirement: 1,000 forecast + 600 accepted Sales consumes 600 forecast and leaves gross/net requirement 1,000 before supply. Finished-goods inventory is netted only after that gross requirement and is scoped by product, plant, UOM, and warehouse pool.
-- Corrected Sales source integration to resolve the entered UOM through the Catalog capability and convert to the effective base UOM; corrected development Sales/Purchasing fixtures so their unit IDs/codes match the product variants. The authenticated isolated runtime proved no-stock production 1,000 PACK, 600-stock production 400 PACK, 1,200 accepted-demand production 1,200 PACK, and the independent 100-unit component Purchase supply.
-- Re-ran the local gates after the latest source change: Manufacturing 6/6, Inventory 12/12, Sales 2/2, Purchasing 10/10, Projects cross-module 9/9, Security 7/7, Architecture 21/21, full Backend build zero warnings/errors, and Development Seed 5/5 with two seed passes on the isolated database.
+- Manufacturing owns its `business_manufacturing` schema, forced tenant RLS, audit/idempotency records, forward-only migrations, and deterministic Atlas/Delta seed scenarios.
+- Product profiles, plants, BOM revisions, formulas, co-/by-products, routings, work centers, calendars, resources, substitutions, definitions and immutable production snapshots are implemented.
+- Production orders, material conservation, Inventory reservation/issue/consume/return/output boundaries, partial output, scrap, yield, quality gates, operations, labor, subcontract commitments, genealogy, close readiness, planned/actual cost, variance, WIP and cost allocation are implemented.
+- MRP consumes Sales, CRM Won opportunity interests, Purchasing supply and Inventory availability through owner capabilities. Forecast consumption, UOM normalization, phantom multi-level explosion, dependent demand, pegging, planned supply, firming and MPS publication are implemented.
+- Capacity consumes maintenance downtime through the maintenance capability; project-linked labor and subcontract facts are recorded in Projects exactly once through typed source integration.
+- Manufacturing events use the existing transactional Outbox/RabbitMQ/Worker/Inbox path with Manufacturing idempotency and audit protection.
+- Final local gates passed after the last source change: build, Release build, format verification, Manufacturing/Sales/Purchasing/Service/Projects tests, CRM integration, Projects cross-module RabbitMQ acceptance, Security, Architecture, SeedData, migration verification and `git diff --check`.
 
-## Remaining executable work
+## Fresh runtime evidence
 
-- Complete the remaining cross-module demand/capacity integrations: CRM demand ingestion, late-PO exceptions, multi-level explosion, lead-time propagation, transfers, MPS, maintenance downtime, HR labor/resource facts, Ledger semantic facts, Fixed Assets/CIP handoff, and project-cost integration.
-- Complete linked lot/serial genealogy acceptance, shop-floor queue/recovery, output unknown-outcome reconciliation, co-/by-product allocation, and full close/cost reconciliation.
-- Add isolated acceptance tests for those workflows, including non-empty source-line pegging, concurrent/retry cases, quality fail-closed configuration, and authenticated permission attack cases.
-- Resolve the pre-existing development database migration-history mismatch (`expenses-schema.sql` checksum differs from the current repository file) through the repository’s normal forward-fix process before claiming the existing `todir` database migration is complete. The isolated database migration is clean and the existing development volume was preserved.
+- Authenticated production order lifecycle reached `Released` and `InProgress`.
+- Authenticated MRP refresh persisted `CrmWonOpportunity=1`, `SalesOrder=1` and dependent demand rows.
+- Capacity returned maintenance downtime and remaining capacity for the seeded work center.
+- MPS create/publish/list returned HTTP 201/200/200.
+- A required quality gate with unavailable capability persisted `Blocked` and prevented release.
+- Replayed labor and subcontract requests resulted in one Projects cost fact per idempotency key, both linked to the project.
+- Two production lifecycle events were `Published` by Outbox and each was processed once by `manufacturing-integration` in Inbox and audit.
+
+## Deferred / separate gates
+
+- PJ38 heavyweight performance certification is deferred by the Product Owner.
+- Frontend implementation, browser UX evidence and human Product/UX acceptance are not part of this backend delivery and are handed off through `MANUFACTURING_BACKEND_FRONTEND_HANDOFF.md`.
 
 ## Last meaningful change
 
-The final source change corrected gross-requirement arithmetic, warehouse/UOM-scoped stock allocation, Catalog-owned Sales UOM conversion, and the corresponding development fixtures. The isolated migration applied 234 ordered scripts; the authenticated MRP A/B/C runtime cases and affected local gates were recaptured after the final source change.
+The final implementation pass added CRM Won opportunity demand ownership, recursive phantom planning source preservation, MPS publication/read routes, formula/resource seed coverage, project-linked labor/subcontract cost ingress, maintenance downtime capability wiring, and the final operational/migration extensions. All affected runtime and test evidence was recaptured afterward.
 
-## Next executable action
+## Delivery checkpoint
 
-Implement MF27–MF35 and MF45–MF47 gaps that are still marked PARTIAL/NOT COMPLETE, beginning with multi-level pegging, downtime/quality/resource seams, and real genealogy/output reconciliation.
+Backend is ready for frontend handoff. The next mission may build the frontend against the documented routes and stable error/idempotency contracts; it must not write Manufacturing or Inventory tables directly.

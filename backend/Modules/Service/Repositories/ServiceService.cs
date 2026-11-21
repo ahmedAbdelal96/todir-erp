@@ -9,6 +9,7 @@ using Shared.Contracts.Inventory;
 using Shared.Contracts.Invoicing;
 using Shared.Contracts.Projects;
 using Shared.Contracts.Platform;
+using Shared.Contracts.Maintenance;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Service.Services;
@@ -19,7 +20,7 @@ public sealed class ServiceService(
     IInvoicingSourceCapabilities? invoicing = null,
     IServiceInvoiceReadCapability? invoiceReader = null,
     IProjectSourceIntegrationCapabilities? projects = null,
-    IPlatformFileReferenceCapability? fileReferences = null)
+    IPlatformFileReferenceCapability? fileReferences = null) : IMaintenanceDowntimeCapabilities
 {
     private static readonly JsonSerializerOptions OfflineJsonOptions = new(JsonSerializerDefaults.Web);
     public Task<Guid?> GetWorkOrderLegalEntityAsync(TenantId tenant, Guid workOrderId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) => await ScalarAsync<Guid?>(context, "select legal_entity_id from business_service.work_order where tenant_id=$1 and id=$2", token, tenant.Value, workOrderId), ct);
@@ -1029,6 +1030,16 @@ public sealed class ServiceService(
         while (await r.ReadAsync(token)) result.Add(new(r.GetGuid(0), r.GetGuid(1), r.IsDBNull(2) ? null : r.GetGuid(2), r.GetString(3), r.GetFieldValue<DateTimeOffset>(4), r.IsDBNull(5) ? null : r.GetFieldValue<DateTimeOffset>(5), r.IsDBNull(6) ? null : r.GetString(6)));
         return (IReadOnlyList<DowntimeView>)result;
     }, ct);
+
+    public Task<IReadOnlyList<MaintenanceDowntimeInterval>> ListDowntimeAsync(TenantId tenantId, Guid legalEntityId, IReadOnlyList<Guid> subjectIds, DateOnly from, DateOnly to, CancellationToken cancellationToken = default) => coordinator.ExecuteAsync(tenantId, async (context, token) =>
+    {
+        if (subjectIds.Count == 0 || from > to) return (IReadOnlyList<MaintenanceDowntimeInterval>)[];
+        var result = new List<MaintenanceDowntimeInterval>();
+        await using var command = Command(context, "select d.subject_id,d.started_at,d.ended_at from business_service.asset_downtime d left join business_service.work_order w on w.tenant_id=d.tenant_id and w.id=d.work_order_id left join business_service.installed_base_item i on i.tenant_id=d.tenant_id and i.id=d.subject_id where d.tenant_id=$1 and coalesce(w.legal_entity_id,i.legal_entity_id)=$2 and d.subject_id=any($3::uuid[]) and d.started_at < ($5::date + interval '1 day') and coalesce(d.ended_at,now()) >= $4::date order by d.started_at", tenantId.Value, legalEntityId, subjectIds.ToArray(), from, to);
+        await using var reader = await command.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token)) result.Add(new(reader.GetGuid(0), reader.GetFieldValue<DateTimeOffset>(1), reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2)));
+        return (IReadOnlyList<MaintenanceDowntimeInterval>)result;
+    }, cancellationToken);
     public Task<VisitView?> GetVisitAsync(TenantId tenant, Guid visitId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, (context, token) => ReadVisitAsync(context, tenant.Value, visitId, token), ct);
     public Task<IReadOnlyList<AssignmentView>> ListAssignmentsAsync(TenantId tenant, Guid visitId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {

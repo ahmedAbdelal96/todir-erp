@@ -16,9 +16,11 @@ namespace Modules.Manufacturing.Repositories;
 public sealed partial class ManufacturingRepository(
     ITransactionCoordinator coordinator,
     ITransactionalSequenceAllocator sequences,
-    IManufacturingDemandCapabilities? demandCapabilities = null,
+    IEnumerable<IManufacturingDemandCapabilities>? demandCapabilities = null,
     IManufacturingSupplyCapabilities? supplyCapabilities = null,
-    Shared.Contracts.Inventory.IInventoryCapabilities? inventoryCapabilities = null) : IManufacturingCostReader
+    Shared.Contracts.Inventory.IInventoryCapabilities? inventoryCapabilities = null,
+    Shared.Contracts.Maintenance.IMaintenanceDowntimeCapabilities? maintenanceDowntime = null) : IManufacturingCostReader
+
 {
     public Task<PlantResponse> CreatePlantAsync(TenantId tenant, Guid actor, CreatePlantRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
@@ -48,6 +50,7 @@ public sealed partial class ManufacturingRepository(
     {
         ManufacturingRules.ValidateBomLines(request.Lines);
         var product = await ScalarAsync<Guid?>(context, "select product_variant_id from business_manufacturing.bom where tenant_id=$1 and id=$2", token, tenant.Value, bomId) ?? throw new ManufacturingException("manufacturing.bom_not_found");
+        if (await HasBomCycleAsync(context, tenant.Value, product, request.Lines, token)) throw new ManufacturingException("manufacturing.bom_cycle_detected");
         var revision = Convert.ToInt32(await ScalarAsync(context, "select coalesce(max(revision),0)+1 from business_manufacturing.bom_version where tenant_id=$1 and bom_id=$2", token, tenant.Value, bomId), CultureInfo.InvariantCulture);
         var id = Guid.CreateVersion7();
         await ExecuteAsync(context, "insert into business_manufacturing.bom_version(tenant_id,id,bom_id,revision,valid_from,valid_to,base_output_qty,output_uom_code,expected_yield,expected_scrap,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", token, tenant.Value, id, bomId, revision, request.ValidFrom, Db(request.ValidTo), request.BaseOutputQty, request.OutputUomCode, request.ExpectedYield, request.ExpectedScrap, actor);
@@ -175,6 +178,7 @@ public sealed partial class ManufacturingRepository(
         var order = await ReadOrderAsync(context, tenant.Value, orderId, token) ?? throw new ManufacturingException("manufacturing.production_order_not_found");
         if (action == "close" && order.State == "Closed" && await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_close_reconciliation where tenant_id=$1 and production_order_id=$2 and state='Closed')", token, tenant.Value, orderId)) return order;
         if (order.RowVersion != expectedVersion) throw new ManufacturingException("manufacturing.concurrency_conflict");
+        if (action == "release" && order.QualityState is "Blocked" or "Pending") throw new ManufacturingException("manufacturing.quality_gate_pending");
         if (action == "close")
         {
             if (order.CompletedQty < order.OrderedQty || await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_material_requirement where tenant_id=$1 and production_order_id=$2 and consumed_qty+returned_qty+scrapped_qty < issued_qty)", token, tenant.Value, orderId)) throw new ManufacturingException("manufacturing.close_blocked");
@@ -249,7 +253,14 @@ public sealed partial class ManufacturingRepository(
             return await ReadMaterialAsync(context, tenant.Value, request.RequirementId, token) ?? throw new ManufacturingException("manufacturing.material_requirement_not_found");
         }
         if (request.EventType is "Issued" or "Returned" && inventoryEvidence is { ValuationAmount: not 0, CurrencyCode: not null, OperationId: var inventoryOperationId })
-            await ExecuteAsync(context, "insert into business_manufacturing.production_actual_cost_fact(tenant_id,id,production_order_id,source_type,source_id,cost_category,amount,currency_code,quantity,source_date,idempotency_key) values($1,$2,$3,'InventoryOperation',$4,'Material',$5,$6,$7,current_date,$8) on conflict (tenant_id,idempotency_key) do nothing", token, tenant.Value, Guid.CreateVersion7(), orderId, inventoryOperationId.ToString("D"), request.EventType == "Returned" ? -Math.Abs(inventoryEvidence.ValuationAmount) : Math.Abs(inventoryEvidence.ValuationAmount), inventoryEvidence.CurrencyCode, inventoryEvidence.BaseQuantity, $"inventory-material:{inventoryOperationId:D}");
+        {
+            var costFactId = Guid.CreateVersion7();
+            var amount = request.EventType == "Returned" ? -Math.Abs(inventoryEvidence.ValuationAmount) : Math.Abs(inventoryEvidence.ValuationAmount);
+            var insertedCostFact = await ExecuteCountAsync(context, "insert into business_manufacturing.production_actual_cost_fact(tenant_id,id,production_order_id,source_type,source_id,cost_category,amount,currency_code,quantity,source_date,idempotency_key) values($1,$2,$3,'InventoryOperation',$4,'Material',$5,$6,$7,current_date,$8) on conflict (tenant_id,idempotency_key) do nothing", token, tenant.Value, costFactId, orderId, inventoryOperationId.ToString("D"), amount, inventoryEvidence.CurrencyCode, inventoryEvidence.BaseQuantity, $"inventory-material:{inventoryOperationId:D}");
+            if (insertedCostFact == 1)
+                context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "ProductionCostFactRecordedV1", JsonSerializer.Serialize(new { productionOrderId = orderId, costFactId, costCategory = "Material", amount, currencyCode = inventoryEvidence.CurrencyCode }), tenant, DateTimeOffset.UtcNow, correlationId, orderId, "manufacturing"));
+            await RefreshVarianceAsync(context, tenant.Value, orderId, token);
+        }
         var column = request.EventType switch { "Reserved" => "reserved_qty", "Issued" => "issued_qty", "Consumed" => "consumed_qty", "Returned" => "returned_qty", "Scrapped" => "scrapped_qty", _ => throw new ManufacturingException("manufacturing.material_event_invalid") };
         var issued = request.EventType == "Issued" ? material.IssuedQty + request.Quantity : material.IssuedQty; var consumed = request.EventType == "Consumed" ? material.ConsumedQty + request.Quantity : material.ConsumedQty; var returned = request.EventType == "Returned" ? material.ReturnedQty + request.Quantity : material.ReturnedQty; var scrapped = request.EventType == "Scrapped" ? material.ScrappedQty + request.Quantity : material.ScrappedQty;
         ManufacturingRules.ValidateMaterialConservation(issued, consumed, returned, scrapped);
@@ -286,7 +297,7 @@ public sealed partial class ManufacturingRepository(
             return existing.Value.Response;
         }
         var order = await ReadOrderAsync(context, tenant.Value, orderId, token) ?? throw new ManufacturingException("manufacturing.production_order_not_found");
-        ManufacturingRules.ValidateOutput(order.OrderedQty, order.CompletedQty, request.Quantity);
+        if (request.OutputType == "Good") ManufacturingRules.ValidateOutput(order.OrderedQty, order.CompletedQty, request.Quantity);
         var outputProductVariantId = request.ProductVariantId ?? order.ProductVariantId;
         if (inventoryEvidence is null || inventoryEvidence.OperationId != request.InventoryOperationId || !string.Equals(inventoryEvidence.Status, "Confirmed", StringComparison.Ordinal)
             || inventoryEvidence.LegalEntityId != order.LegalEntityId || !string.Equals(inventoryEvidence.SourceModule, "manufacturing", StringComparison.OrdinalIgnoreCase)
@@ -318,7 +329,8 @@ public sealed partial class ManufacturingRepository(
         _ = await coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
             var order = await ReadOrderAsync(context, tenant.Value, orderId, token) ?? throw new ManufacturingException("manufacturing.production_order_not_found");
-            ManufacturingRules.ValidateOutput(order.OrderedQty, order.CompletedQty, quantity);
+            if (outputType == "Good") ManufacturingRules.ValidateOutput(order.OrderedQty, order.CompletedQty, quantity);
+            if (outputType == "Good" && order.QualityState is "Blocked" or "Pending") throw new ManufacturingException("manufacturing.quality_gate_pending");
             if (outputType is not ("Good" or "CoProduct" or "ByProduct")) throw new ManufacturingException("manufacturing.output_type_invalid");
             if (!await ScalarAsync<bool>(context, "select ($4='Good' and exists(select 1 from business_manufacturing.production_order where tenant_id=$1 and id=$2 and product_variant_id=$3)) or exists(select 1 from business_manufacturing.production_definition_snapshot s join business_manufacturing.formula_output_line o on o.tenant_id=s.tenant_id and o.formula_version_id=s.formula_version_id where s.tenant_id=$1 and s.production_order_id=$2 and o.product_variant_id=$3 and o.output_type=$4)", token, tenant.Value, orderId, productVariantId, outputType)) throw new ManufacturingException("manufacturing.output_product_not_allowed");
             return true;
@@ -349,7 +361,11 @@ public sealed partial class ManufacturingRepository(
         await ExecuteAsync(context, "delete from business_manufacturing.mrp_pegging_link where tenant_id=$1 and planned_supply_id in (select id from business_manufacturing.planned_supply where tenant_id=$1 and planning_run_id=$2 and state='Suggested')", token, tenant.Value, runId);
         await ExecuteAsync(context, "delete from business_manufacturing.planned_supply where tenant_id=$1 and planning_run_id=$2 and state='Suggested'", token, tenant.Value, runId);
         await ExecuteAsync(context, "delete from business_manufacturing.planning_exception where tenant_id=$1 and planning_run_id=$2", token, tenant.Value, runId);
-        await using var demandCommand = Command(context, "select id,product_variant_id,plant_id,need_date,quantity,uom_code,source_type,consumed_forecast_qty from business_manufacturing.planning_demand where tenant_id=$1 and planning_run_id=$2 order by need_date,id", tenant.Value, runId); await using var reader = await demandCommand.ExecuteReaderAsync(token); var demands = new List<(Guid Id, Guid ProductVariantId, Guid? PlantId, DateOnly NeedDate, decimal Quantity, string UomCode, string SourceType, decimal ConsumedForecastQty)>(); while (await reader.ReadAsync(token)) demands.Add((reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetFieldValue<DateOnly>(3), reader.GetDecimal(4), reader.GetString(5), reader.GetString(6), reader.GetDecimal(7))); await reader.DisposeAsync();
+        await ExecuteAsync(context, "delete from business_manufacturing.mrp_pegging_link where tenant_id=$1 and planning_run_id=$2 and demand_id in (select id from business_manufacturing.planning_demand where tenant_id=$1 and planning_run_id=$2 and parent_demand_id is not null)", token, tenant.Value, runId);
+        await ExecuteAsync(context, "delete from business_manufacturing.planning_demand where tenant_id=$1 and planning_run_id=$2 and parent_demand_id is not null", token, tenant.Value, runId);
+        var demands = await ReadPlanningDemandsAsync(context, tenant.Value, runId, token);
+        await ExpandDependentDemandsAsync(context, tenant.Value, run, token);
+        demands = await ReadPlanningDemandsAsync(context, tenant.Value, runId, token);
         var firmedSupplies = new List<(Guid Id, Guid ProductVariantId, Guid? PlantId, DateOnly NeedDate, decimal Quantity, string UomCode)>();
         await using (var firmedCommand = Command(context, "select id,product_variant_id,plant_id,need_date,quantity,uom_code from business_manufacturing.planned_supply where tenant_id=$1 and state='Firmed' order by need_date,id", tenant.Value))
         await using (var firmedReader = await firmedCommand.ExecuteReaderAsync(token))
@@ -388,11 +404,17 @@ public sealed partial class ManufacturingRepository(
             // erase the unconsumed forecast. Therefore forecast 1,000 + accepted
             // sales 600 produces a gross requirement of 1,000, not 400.
             var grossRequirement = acceptedDemand + remainingForecast;
+            var policy = await ReadPlanningPolicyAsync(context, tenant.Value, run.LegalEntityId, demandGroup.Key.ProductVariantId, token);
+            var planningRequirement = grossRequirement + policy.SafetyStock;
+            if (forecast > 0 && acceptedDemand > 0 && consumedForecast > 0)
+                await ExecuteAsync(context, "insert into business_manufacturing.planning_exception(tenant_id,id,planning_run_id,product_variant_id,exception_type,severity,need_date,quantity,message) select $1,$2,$3,$4,'ForecastOverlap','Info',$5,$6,'Accepted demand consumed a same-bucket forecast quantity; gross requirement was preserved.' where not exists(select 1 from business_manufacturing.planning_exception where tenant_id=$1 and planning_run_id=$3 and product_variant_id=$4 and exception_type='ForecastOverlap' and need_date=$5)", token, tenant.Value, Guid.CreateVersion7(), runId, demandGroup.Key.ProductVariantId, demandGroup.Key.NeedDate, consumedForecast);
+            var warehouseScope = await ReadPlantWarehouseScopeAsync(context, tenant.Value, demandGroup.Key.PlantId, token);
             var availability = inventoryCapabilities is null
                 ? []
                 : await inventoryCapabilities.GetAvailabilityAsync(tenant.Value, run.LegalEntityId, demandGroup.Key.ProductVariantId, true, token);
             var stockPools = availability
                 .Where(row => string.Equals(row.BaseUnitCode, demandGroup.Key.UomCode, StringComparison.OrdinalIgnoreCase))
+                .Where(row => !warehouseScope.HasScope || warehouseScope.WarehouseIds.Contains(row.WarehouseId))
                 .Select(row =>
                 {
                     var key = (demandGroup.Key.ProductVariantId, demandGroup.Key.PlantId, demandGroup.Key.UomCode, row.WarehouseId);
@@ -406,7 +428,7 @@ public sealed partial class ManufacturingRepository(
             {
                 var remaining = firmedRemaining[supply.Id];
                 if (remaining <= 0) continue;
-                var allocation = Math.Min(remaining, Math.Max(0m, grossRequirement - committedSupply));
+                var allocation = Math.Min(remaining, Math.Max(0m, planningRequirement - committedSupply));
                 if (allocation <= 0) break;
                 firmedRemaining[supply.Id] = remaining - allocation;
                 committedSupply += allocation;
@@ -415,17 +437,27 @@ public sealed partial class ManufacturingRepository(
             var stockAllocation = 0m;
             foreach (var pool in stockPools)
             {
-                var allocation = Math.Min(pool.available, Math.Max(0m, grossRequirement - committedSupply - stockAllocation));
+                var allocation = Math.Min(pool.available, Math.Max(0m, planningRequirement - committedSupply - stockAllocation));
                 stockRemaining[pool.key] = pool.available - allocation;
                 stockAllocation += allocation;
-                if (stockAllocation >= grossRequirement - committedSupply) break;
+                if (stockAllocation >= planningRequirement - committedSupply) break;
             }
-            var residual = Math.Max(0m, grossRequirement - committedSupply - stockAllocation);
+            var residual = Math.Max(0m, planningRequirement - committedSupply - stockAllocation);
             var demand = demandGroup.FirstOrDefault(item => string.Equals(item.SourceType, "Forecast", StringComparison.OrdinalIgnoreCase)) is var selectedForecastDemand && selectedForecastDemand.Id != Guid.Empty ? selectedForecastDemand : demandGroup.First();
+            foreach (var lateSupply in firmedSupplies.Where(row => row.ProductVariantId == demandGroup.Key.ProductVariantId && row.PlantId == demandGroup.Key.PlantId && row.UomCode == demandGroup.Key.UomCode && row.NeedDate > demandGroup.Key.NeedDate && firmedRemaining[row.Id] > 0))
+                await ExecuteAsync(context, "insert into business_manufacturing.planning_exception(tenant_id,id,planning_run_id,product_variant_id,exception_type,severity,need_date,quantity,message) select $1,$2,$3,$4,'LateSupply','Warning',$5,$6,$7 where not exists(select 1 from business_manufacturing.planning_exception where tenant_id=$1 and planning_run_id=$3 and product_variant_id=$4 and exception_type='LateSupply' and need_date=$5 and message=$7)", token, tenant.Value, Guid.CreateVersion7(), runId, demandGroup.Key.ProductVariantId, lateSupply.NeedDate, lateSupply.Quantity, $"Firmed supply {lateSupply.Id:D} arrives after the demand date.");
             foreach (var allocation in supplyAllocations)
                 await ExecuteAsync(context, "insert into business_manufacturing.mrp_pegging_link(tenant_id,id,planning_run_id,demand_id,planned_supply_id,allocated_qty) values($1,$2,$3,$4,$5,$6)", token, tenant.Value, Guid.CreateVersion7(), runId, demand.Id, allocation.Id, allocation.Quantity);
             if (residual <= 0) continue;
-            var supplyId = Guid.CreateVersion7(); var start = demandGroup.Key.NeedDate.AddDays(-1); await ExecuteAsync(context, "insert into business_manufacturing.planned_supply(tenant_id,id,planning_run_id,product_variant_id,plant_id,supply_type,source_ref,need_date,suggested_start,quantity,uom_code,source_watermark) values($1,$2,$3,$4,$5,'Production',$6,$7,$8,$9,$10,jsonb_build_object('demandId',$2::text,'forecast',$11,'acceptedDemand',$12,'consumedForecast',$13,'remainingForecast',$14,'grossRequirement',$15,'firmedSupply',$16,'stock',$17))", token, tenant.Value, supplyId, runId, demandGroup.Key.ProductVariantId, Db(demandGroup.Key.PlantId), $"Demand:{demand.Id:D}", demandGroup.Key.NeedDate, start, residual, demandGroup.Key.UomCode, forecast, acceptedDemand, consumedForecast, remainingForecast, grossRequirement, committedSupply, stockAllocation);
+            var otherPlantWarehouses = warehouseScope.HasScope ? await ReadOtherPlantWarehousesAsync(context, tenant.Value, demandGroup.Key.PlantId, token) : [];
+            var transferWarehouse = availability.Where(row => otherPlantWarehouses.Contains(row.WarehouseId) && string.Equals(row.BaseUnitCode, demandGroup.Key.UomCode, StringComparison.OrdinalIgnoreCase) && row.Available > 0).OrderByDescending(row => row.Available).Select(row => (Guid?)row.WarehouseId).FirstOrDefault();
+            var supplyType = transferWarehouse is not null ? "Transfer" : await ResolvePlanningSupplyTypeAsync(context, tenant.Value, run.LegalEntityId, demandGroup.Key.ProductVariantId, demandGroup.Key.NeedDate, residual, token);
+            var leadTime = supplyType == "Purchase" ? policy.PurchaseLead : supplyType == "Production" ? policy.ManufacturingLead : 0;
+            var plannedQuantity = ApplyLotSizing(residual, 0, policy.MinimumOrder, policy.Multiple, policy.MaximumOrder, policy.LotPolicy);
+            var start = demandGroup.Key.NeedDate.AddDays(-leadTime);
+            var supplyId = Guid.CreateVersion7();
+            var sourceRef = transferWarehouse is { } warehouseId ? $"TransferFromWarehouse:{warehouseId:D}:Demand:{demand.Id:D}" : $"Demand:{demand.Id:D}";
+            await ExecuteAsync(context, "insert into business_manufacturing.planned_supply(tenant_id,id,planning_run_id,product_variant_id,plant_id,supply_type,source_ref,parent_demand_id,need_date,suggested_start,source_supply_date,quantity,uom_code,lead_time_days,source_policy,source_watermark) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,jsonb_build_object('demandId',$2::text,'forecast',$16,'acceptedDemand',$17,'consumedForecast',$18,'remainingForecast',$19,'grossRequirement',$20,'planningRequirement',$21,'firmedSupply',$22,'stock',$23,'supplyType',$6,'leadTimeDays',$14,'policy',$15,'transferFromWarehouse',$24::text))", token, tenant.Value, supplyId, runId, demandGroup.Key.ProductVariantId, Db(demandGroup.Key.PlantId), supplyType, sourceRef, Db(demand.ParentDemandId), demandGroup.Key.NeedDate, start, demandGroup.Key.NeedDate, plannedQuantity, demandGroup.Key.UomCode, leadTime, policy.Policy, forecast, acceptedDemand, consumedForecast, remainingForecast, grossRequirement, planningRequirement, committedSupply, stockAllocation, Db(transferWarehouse));
             await ExecuteAsync(context, "insert into business_manufacturing.mrp_pegging_link(tenant_id,id,planning_run_id,demand_id,planned_supply_id,allocated_qty) values($1,$2,$3,$4,$5,$6)", token, tenant.Value, Guid.CreateVersion7(), runId, demand.Id, supplyId, residual);
         }
         await ExecuteAsync(context, "update business_manufacturing.planning_run set state='Completed',completed_at=now() where tenant_id=$1 and id=$2", token, tenant.Value, runId); return await ReadPlanningRunAsync(context, tenant.Value, runId, token) ?? throw new ManufacturingException("manufacturing.planning_run_not_found");
@@ -437,8 +469,9 @@ public sealed partial class ManufacturingRepository(
             await ReadPlanningRunAsync(context, tenant.Value, runId, token) ?? throw new ManufacturingException("manufacturing.planning_run_not_found"), ct);
         if (run.State is not ("Draft" or "Completed")) throw new ManufacturingException("manufacturing.planning_run_not_runnable");
 
-        if (demandCapabilities is null || supplyCapabilities is null) throw new ManufacturingException("manufacturing.planning_source_provider_unavailable");
-        var demands = await demandCapabilities.ListAcceptedDemandAsync(tenant, run.LegalEntityId, run.HorizonStart, run.HorizonEnd, ct);
+        if (demandCapabilities is null || !demandCapabilities.Any() || supplyCapabilities is null) throw new ManufacturingException("manufacturing.planning_source_provider_unavailable");
+        var demandBatches = await Task.WhenAll(demandCapabilities.Select(provider => provider.ListAcceptedDemandAsync(tenant, run.LegalEntityId, run.HorizonStart, run.HorizonEnd, ct)));
+        var demands = demandBatches.SelectMany(batch => batch).ToArray();
         var supplies = await supplyCapabilities.ListEligibleSupplyAsync(tenant, run.LegalEntityId, run.HorizonStart, run.HorizonEnd, ct);
 
         await coordinator.ExecuteAsync(tenant, async (context, token) =>
@@ -447,16 +480,18 @@ public sealed partial class ManufacturingRepository(
             if (current.State is not ("Draft" or "Completed")) throw new ManufacturingException("manufacturing.planning_run_not_runnable");
             await ExecuteAsync(context, "delete from business_manufacturing.mrp_pegging_link where tenant_id=$1 and planned_supply_id in (select id from business_manufacturing.planned_supply where tenant_id=$1 and planning_run_id=$2 and supply_type='Purchase' and source_ref like 'PurchaseOrder:%') and not exists (select 1 from business_manufacturing.planned_supply ps where ps.tenant_id=$1 and ps.id=mrp_pegging_link.planned_supply_id and ps.firmed_order_id is not null)", token, tenant.Value, runId);
             await ExecuteAsync(context, "delete from business_manufacturing.planned_supply ps where ps.tenant_id=$1 and ps.planning_run_id=$2 and ps.supply_type='Purchase' and ps.source_ref like 'PurchaseOrder:%' and ps.firmed_order_id is null and not exists (select 1 from business_manufacturing.mrp_pegging_link l where l.tenant_id=$1 and l.planned_supply_id=ps.id)", token, tenant.Value, runId);
-            await ExecuteAsync(context, "delete from business_manufacturing.planning_demand d where d.tenant_id=$1 and d.planning_run_id=$2 and d.source_type='SalesOrder' and d.source_ref like 'SalesOrder:%' and not exists (select 1 from business_manufacturing.mrp_pegging_link l where l.tenant_id=$1 and l.demand_id=d.id)", token, tenant.Value, runId);
+            await ExecuteAsync(context, "delete from business_manufacturing.planning_demand d where d.tenant_id=$1 and d.planning_run_id=$2 and d.source_type in ('SalesOrder','CrmWonOpportunity') and not exists (select 1 from business_manufacturing.mrp_pegging_link l where l.tenant_id=$1 and l.demand_id=d.id)", token, tenant.Value, runId);
 
             foreach (var demand in demands)
             {
-                var sourceRef = $"SalesOrder:{demand.SourceDocumentId:D}:{demand.SourceLineId:D}";
-                var demandId = await ScalarAsync<Guid?>(context, "select id from business_manufacturing.planning_demand where tenant_id=$1 and planning_run_id=$2 and source_type='SalesOrder' and source_ref=$3", token, tenant.Value, runId, sourceRef);
+                var sourceType = demand.DemandType.Trim();
+                var sourceRef = sourceType == "SalesOrder" ? $"SalesOrder:{demand.SourceDocumentId:D}:{demand.SourceLineId:D}" : demand.SourceReference.Trim();
+                if (string.IsNullOrWhiteSpace(sourceRef)) throw new ManufacturingException("manufacturing.planning_source_reference_missing");
+                var demandId = await ScalarAsync<Guid?>(context, "select id from business_manufacturing.planning_demand where tenant_id=$1 and planning_run_id=$2 and source_type=$3 and source_ref=$4", token, tenant.Value, runId, sourceType, sourceRef);
                 if (demandId is { } existingDemandId)
                     await ExecuteAsync(context, "update business_manufacturing.planning_demand set product_variant_id=$1,plant_id=$2,need_date=$3,quantity=$4,uom_code=$5 where tenant_id=$6 and id=$7", token, demand.ProductVariantId, Db(run.PlantId), demand.NeedDate, demand.RemainingQuantity, demand.UomCode, tenant.Value, existingDemandId);
                 else
-                    await ExecuteAsync(context, "insert into business_manufacturing.planning_demand(tenant_id,id,planning_run_id,product_variant_id,plant_id,source_type,source_ref,need_date,quantity,uom_code,consumed_forecast_qty) values($1,$2,$3,$4,$5,'SalesOrder',$6,$7,$8,$9,0)", token, tenant.Value, Guid.CreateVersion7(), runId, demand.ProductVariantId, Db(run.PlantId), sourceRef, demand.NeedDate, demand.RemainingQuantity, demand.UomCode);
+                    await ExecuteAsync(context, "insert into business_manufacturing.planning_demand(tenant_id,id,planning_run_id,product_variant_id,plant_id,source_type,source_ref,need_date,quantity,uom_code,consumed_forecast_qty) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0)", token, tenant.Value, Guid.CreateVersion7(), runId, demand.ProductVariantId, Db(run.PlantId), sourceType, sourceRef, demand.NeedDate, demand.RemainingQuantity, demand.UomCode);
             }
 
             foreach (var supply in supplies)
@@ -469,7 +504,7 @@ public sealed partial class ManufacturingRepository(
                     await ExecuteAsync(context, "insert into business_manufacturing.planned_supply(tenant_id,id,planning_run_id,product_variant_id,plant_id,supply_type,source_ref,need_date,suggested_start,quantity,uom_code,state,source_watermark,firming_key) values($1,$2,$3,$4,$5,'Purchase',$6,$7,$7,$8,$9,'Firmed',jsonb_build_object('sourceDocumentId',$10::text,'sourceLineId',$11::text,'sourceState',$12),$13)", token, tenant.Value, Guid.CreateVersion7(), runId, supply.ProductVariantId, Db(run.PlantId), sourceRef, supply.ExpectedDate, supply.RemainingQuantity, supply.UomCode, supply.SourceDocumentId, supply.SourceLineId, supply.State, $"external-purchase:{runId:D}:{supply.SourceLineId:D}");
             }
 
-            await ExecuteAsync(context, "update business_manufacturing.planning_run set source_watermark=jsonb_build_object('refreshedAt',now(),'salesDemandCount',$3,'purchaseSupplyCount',$4) where tenant_id=$1 and id=$2", token, tenant.Value, runId, demands.Count, supplies.Count);
+            await ExecuteAsync(context, "update business_manufacturing.planning_run set source_watermark=jsonb_build_object('refreshedAt',now(),'salesDemandCount',$3,'purchaseSupplyCount',$4) where tenant_id=$1 and id=$2", token, tenant.Value, runId, demands.Length, supplies.Count);
             return true;
         }, ct);
 
@@ -487,6 +522,12 @@ public sealed partial class ManufacturingRepository(
         if (supply.State == "Firmed" && supply.FirmedOrderId is { } existingOrderId)
             return await ReadOrderAsync(context, tenant.Value, existingOrderId, token) ?? throw new ManufacturingException("manufacturing.planned_supply_firmed_order_missing");
         if (supply.State != "Suggested") throw new ManufacturingException("manufacturing.planned_supply_stale");
+        if (!await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.mrp_pegging_link l join business_manufacturing.planning_demand d on d.tenant_id=l.tenant_id and d.id=l.demand_id where l.tenant_id=$1 and l.planned_supply_id=$2 and d.quantity > 0)", token, tenant.Value, plannedSupplyId))
+        {
+            await ExecuteAsync(context, "update business_manufacturing.planned_supply set state='Stale' where tenant_id=$1 and id=$2 and state='Suggested'", token, tenant.Value, plannedSupplyId);
+            await ExecuteAsync(context, "insert into business_manufacturing.planning_exception(tenant_id,id,planning_run_id,product_variant_id,exception_type,severity,need_date,quantity,message) select $1,$2,planning_run_id,product_variant_id,'StalePlan','Error',need_date,quantity,'The recommendation no longer has an eligible demand source.' from business_manufacturing.planned_supply where tenant_id=$1 and id=$3", token, tenant.Value, Guid.CreateVersion7(), plannedSupplyId);
+            throw new ManufacturingException("manufacturing.planned_supply_stale");
+        }
         var updated = await ExecuteCountAsync(context, "update business_manufacturing.planned_supply set state='Firmed',firming_key=coalesce(firming_key,$3) where tenant_id=$1 and id=$2 and state='Suggested'", token, tenant.Value, plannedSupplyId, $"production:{plannedSupplyId:D}");
         if (updated != 1) throw new ManufacturingException("manufacturing.planned_supply_stale");
         var order = await CreateProductionOrderInContextAsync(context, tenant, actor, new CreateProductionOrderRequest(legalEntityId, plantId, supply.ProductVariantId, supply.Quantity, supply.UomCode, supply.NeedDate, supply.SuggestedStart, supply.NeedDate, "MRP", plannedSupplyId.ToString("D")), correlationId, token);
@@ -510,7 +551,13 @@ public sealed partial class ManufacturingRepository(
         if (request.Amount < 0 || string.IsNullOrWhiteSpace(request.IdempotencyKey)) throw new ManufacturingException("manufacturing.cost_fact_invalid");
         _ = await ReadOrderAsync(context, tenant.Value, orderId, token) ?? throw new ManufacturingException("manufacturing.production_order_not_found");
         var existing = await ScalarAsync<Guid?>(context, "select id from business_manufacturing.production_actual_cost_fact where tenant_id=$1 and idempotency_key=$2", token, tenant.Value, request.IdempotencyKey);
-        if (existing is null) await ExecuteAsync(context, "insert into business_manufacturing.production_actual_cost_fact(tenant_id,id,production_order_id,source_type,source_id,cost_category,amount,currency_code,quantity,source_date,idempotency_key) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", token, tenant.Value, Guid.CreateVersion7(), orderId, request.SourceType, request.SourceId, request.CostCategory, request.Amount, request.CurrencyCode, Db(request.Quantity), request.SourceDate, request.IdempotencyKey);
+        if (existing is null)
+        {
+            var costFactId = Guid.CreateVersion7();
+            await ExecuteAsync(context, "insert into business_manufacturing.production_actual_cost_fact(tenant_id,id,production_order_id,source_type,source_id,cost_category,amount,currency_code,quantity,source_date,idempotency_key) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", token, tenant.Value, costFactId, orderId, request.SourceType, request.SourceId, request.CostCategory, request.Amount, request.CurrencyCode.Trim().ToUpperInvariant(), Db(request.Quantity), request.SourceDate, request.IdempotencyKey);
+            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "ProductionCostFactRecordedV1", JsonSerializer.Serialize(new { productionOrderId = orderId, costFactId, costCategory = request.CostCategory, amount = request.Amount, currencyCode = request.CurrencyCode.Trim().ToUpperInvariant() }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), orderId, "manufacturing"));
+        }
+        await RefreshVarianceAsync(context, tenant.Value, orderId, token);
         await ExecuteAsync(context, "update business_manufacturing.production_order set cost_state='Accumulating',updated_at=now(),row_version=row_version+1 where tenant_id=$1 and id=$2", token, tenant.Value, orderId);
         return await GetProductionCostInContextAsync(context, tenant.Value, orderId, token);
     }, ct);
@@ -538,19 +585,27 @@ public sealed partial class ManufacturingRepository(
             : await ResolveDefinitionInternalAsync(context, tenant.Value, request.LegalEntityId, request.PlantId, request.ProductVariantId, request.OrderedQty, request.NeedDate, token);
         if (definition is null) throw new ManufacturingException("manufacturing.definition_missing");
         var orderId = Guid.CreateVersion7(); var number = await sequences.AllocateAsync(context, new SequenceDefinition("manufacturing.production-order", tenant, request.LegalEntityId, null, null, null, "MO-", 8, 1), token);
-        await ExecuteAsync(context, "insert into business_manufacturing.production_order(tenant_id,id,number,legal_entity_id,plant_id,product_variant_id,ordered_qty,uom_code,need_date,planned_start,planned_end,source_type,source_ref,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)", token, tenant.Value, orderId, number, request.LegalEntityId, request.PlantId, request.ProductVariantId, request.OrderedQty, request.UomCode, request.NeedDate, Db(request.PlannedStart), Db(request.PlannedEnd), request.SourceType, Db(request.SourceRef), actor);
+        await ExecuteAsync(context, "insert into business_manufacturing.production_order(tenant_id,id,number,legal_entity_id,plant_id,product_variant_id,ordered_qty,uom_code,need_date,planned_start,planned_end,source_type,source_ref,project_id,project_task_id,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)", token, tenant.Value, orderId, number, request.LegalEntityId, request.PlantId, request.ProductVariantId, request.OrderedQty, request.UomCode, request.NeedDate, Db(request.PlannedStart), Db(request.PlannedEnd), request.SourceType, Db(request.SourceRef), Db(request.ProjectId), Db(request.ProjectTaskId), actor);
         var snapshot = new { definition.Id, definition.BomVersionId, definition.FormulaVersionId, definition.RoutingVersionId }; await ExecuteAsync(context, "insert into business_manufacturing.production_definition_snapshot(tenant_id,id,production_order_id,production_definition_id,bom_version_id,formula_version_id,routing_version_id,snapshot,source_hash) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)", token, tenant.Value, Guid.CreateVersion7(), orderId, definition.Id, Db(definition.BomVersionId), Db(definition.FormulaVersionId), Db(definition.RoutingVersionId), JsonSerializer.Serialize(snapshot), Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(snapshot))).ToLowerInvariant());
         if (definition.BomVersionId is { } bomVersionId)
         {
-            await using var lines = Command(context, "select l.id,l.component_product_variant_id,l.required_qty,l.uom_code,l.substitute_group_id,v.base_output_qty from business_manufacturing.bom_component_line l join business_manufacturing.bom_version v on v.tenant_id=l.tenant_id and v.id=l.bom_version_id where l.tenant_id=$1 and l.bom_version_id=$2 order by l.line_no", tenant.Value, bomVersionId);
-            await using var reader = await lines.ExecuteReaderAsync(token);
-            var requirements = new List<(Guid LineId, Guid ProductVariantId, decimal RequiredQty, string UomCode, Guid? SubstituteGroupId, decimal BaseOutputQty)>();
-            while (await reader.ReadAsync(token)) requirements.Add((reader.GetGuid(0), reader.GetGuid(1), reader.GetDecimal(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetGuid(4), reader.GetDecimal(5)));
-            await reader.DisposeAsync();
+            var requirements = await ExpandExecutionBomAsync(context, tenant.Value, bomVersionId, request.OrderedQty, token);
             foreach (var line in requirements)
             {
-                var requiredQty = line.RequiredQty * request.OrderedQty / line.BaseOutputQty;
-                await ExecuteAsync(context, "insert into business_manufacturing.production_material_requirement(tenant_id,id,production_order_id,line_ref,product_variant_id,required_qty,uom_code,need_by,preferred_product_variant_id,substitute_group_id) values($1,$2,$3,$4,$5,$6,$7,$8,$5,$9)", token, tenant.Value, Guid.CreateVersion7(), orderId, line.LineId, line.ProductVariantId, requiredQty, line.UomCode, request.NeedDate, Db(line.SubstituteGroupId));
+                await ExecuteAsync(context, "insert into business_manufacturing.production_material_requirement(tenant_id,id,production_order_id,line_ref,product_variant_id,required_qty,uom_code,need_by,preferred_product_variant_id,substitute_group_id) values($1,$2,$3,$4,$5,$6,$7,$8,$5,$9)", token, tenant.Value, Guid.CreateVersion7(), orderId, line.LineId, line.ProductVariantId, line.RequiredQty, line.UomCode, request.NeedDate, Db(line.SubstituteGroupId));
+            }
+        }
+        else if (definition.FormulaVersionId is { } formulaVersionId)
+        {
+            await using var ingredients = Command(context, "select product_variant_id,quantity,uom_code,fixed_quantity,base_batch_qty,expected_yield from business_manufacturing.formula_ingredient_line l join business_manufacturing.formula_version v on v.tenant_id=l.tenant_id and v.id=l.formula_version_id where l.tenant_id=$1 and l.formula_version_id=$2 order by l.line_no", tenant.Value, formulaVersionId);
+            await using var ingredientReader = await ingredients.ExecuteReaderAsync(token);
+            var formulaLines = new List<(Guid ProductVariantId, decimal Quantity, string UomCode, bool Fixed, decimal BaseBatch, decimal Yield)>();
+            while (await ingredientReader.ReadAsync(token)) formulaLines.Add((ingredientReader.GetGuid(0), ingredientReader.GetDecimal(1), ingredientReader.GetString(2), ingredientReader.GetBoolean(3), ingredientReader.GetDecimal(4), ingredientReader.GetDecimal(5)));
+            await ingredientReader.DisposeAsync();
+            foreach (var line in formulaLines)
+            {
+                var requiredQty = line.Fixed ? line.Quantity : line.Quantity * request.OrderedQty / line.BaseBatch / line.Yield;
+                await ExecuteAsync(context, "insert into business_manufacturing.production_material_requirement(tenant_id,id,production_order_id,product_variant_id,required_qty,uom_code,need_by,preferred_product_variant_id) values($1,$2,$3,$4,$5,$6,$7,$4)", token, tenant.Value, Guid.CreateVersion7(), orderId, line.ProductVariantId, requiredQty, line.UomCode, request.NeedDate);
             }
         }
         if (definition.RoutingVersionId is { } routingVersionId)

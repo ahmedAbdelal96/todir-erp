@@ -20,6 +20,7 @@ public static class ServiceModuleExtensions
     {
         services.AddSingleton<IModuleManifestProvider, ServiceModuleManifestProvider>();
         services.AddSingleton<ServiceService>();
+        services.AddSingleton<Shared.Contracts.Maintenance.IMaintenanceDowntimeCapabilities>(provider => provider.GetRequiredService<ServiceService>());
         services.AddSingleton<ServiceScheduledWorkRepository>();
         return services;
     }
