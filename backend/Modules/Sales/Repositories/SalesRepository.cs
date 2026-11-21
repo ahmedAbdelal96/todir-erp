@@ -94,24 +94,14 @@ public sealed partial class SalesRepository(NpgsqlDataSource dataSource, ITransa
     {
         page = Math.Clamp(page, 1, 100000); pageSize = Math.Clamp(pageSize, 1, 200);
         await using var connection = await OpenAsync(tenant, ct);
-        var filter = string.IsNullOrWhiteSpace(state) ? "" : " and q.state=$3";
-        var party = partyId is null ? "" : string.IsNullOrWhiteSpace(state) ? " and q.party_id=$3" : " and q.party_id=$4";
-        var searchParameter = (string.IsNullOrWhiteSpace(state) ? 3 : 4) + (partyId is null ? 0 : 1);
-        var searchFilter = string.IsNullOrWhiteSpace(search) ? "" : $" and (q.number ilike ${searchParameter} || '%' or q.party_id::text ilike ${searchParameter} || '%')";
-        var limitParameter = searchParameter + (string.IsNullOrWhiteSpace(search) ? 0 : 1);
-        var offsetParameter = limitParameter + 1;
-        var countSql = $"select count(*) from business_sales.quotation q join business_sales.quotation_revision r on r.tenant_id=q.tenant_id and r.quotation_id=q.id and r.revision_number=q.current_revision_number where q.tenant_id=$1 and q.legal_entity_id=$2{filter}{party}{searchFilter}";
-        await using var countCommand = new NpgsqlCommand(countSql, connection); Add(countCommand, tenant.Value, legalEntityId); var countIndex = 3;
-        if (!string.IsNullOrWhiteSpace(state)) { countCommand.Parameters.AddWithValue(countIndex.ToString(CultureInfo.InvariantCulture), state!); countIndex++; }
-        if (partyId is { } countParty) { countCommand.Parameters.AddWithValue(countIndex.ToString(CultureInfo.InvariantCulture), countParty); countIndex++; }
-        if (!string.IsNullOrWhiteSpace(search)) { countCommand.Parameters.AddWithValue(countIndex.ToString(CultureInfo.InvariantCulture), search.Trim()); }
+        var countSql = "select count(*) from business_sales.quotation q join business_sales.quotation_revision r on r.tenant_id=q.tenant_id and r.quotation_id=q.id and r.revision_number=q.current_revision_number where q.tenant_id=$1 and q.legal_entity_id=$2 and ($3 is null or q.state=$3) and ($4::uuid is null or q.party_id=$4) and ($5 is null or q.number ilike '%' || $5 || '%' or q.party_id::text ilike '%' || $5 || '%')";
+        await using var countCommand = new NpgsqlCommand(countSql, connection);
+        Add(countCommand, tenant.Value, legalEntityId, Text(state), partyId ?? (object)DBNull.Value, Text(search));
         var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
-        var sql = $"select q.id,q.branch_id,q.number,q.party_id,q.quote_date,q.valid_until,q.state,q.current_revision_number,q.currency_code,q.version,r.gross_total from business_sales.quotation q join business_sales.quotation_revision r on r.tenant_id=q.tenant_id and r.quotation_id=q.id and r.revision_number=q.current_revision_number where q.tenant_id=$1 and q.legal_entity_id=$2{filter}{party}{searchFilter} order by q.updated_at desc,q.id limit ${limitParameter} offset ${offsetParameter}";
-        await using var command = new NpgsqlCommand(sql, connection); Add(command, tenant.Value, legalEntityId); var index = 3;
-        if (!string.IsNullOrWhiteSpace(state)) { command.Parameters.AddWithValue(index.ToString(CultureInfo.InvariantCulture), state!); index++; }
-        if (partyId is { } p) { command.Parameters.AddWithValue(index.ToString(CultureInfo.InvariantCulture), p); index++; }
-        if (!string.IsNullOrWhiteSpace(search)) { command.Parameters.AddWithValue(index.ToString(CultureInfo.InvariantCulture), search.Trim()); index++; }
-        command.Parameters.AddWithValue(index.ToString(CultureInfo.InvariantCulture), pageSize); index++; command.Parameters.AddWithValue(index.ToString(CultureInfo.InvariantCulture), (page - 1) * pageSize);
+
+        var sql = "select q.id,q.branch_id,q.number,q.party_id,q.quote_date,q.valid_until,q.state,q.current_revision_number,q.currency_code,q.version,r.gross_total from business_sales.quotation q join business_sales.quotation_revision r on r.tenant_id=q.tenant_id and r.quotation_id=q.id and r.revision_number=q.current_revision_number where q.tenant_id=$1 and q.legal_entity_id=$2 and ($3 is null or q.state=$3) and ($4::uuid is null or q.party_id=$4) and ($5 is null or q.number ilike '%' || $5 || '%' or q.party_id::text ilike '%' || $5 || '%') order by q.updated_at desc,q.id limit $6 offset $7";
+        await using var command = new NpgsqlCommand(sql, connection);
+        Add(command, tenant.Value, legalEntityId, Text(state), partyId ?? (object)DBNull.Value, Text(search), pageSize, (page - 1) * pageSize);
         var items = new List<QuotationListItem>();
         await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) items.Add(new(reader.GetGuid(0), legalEntityId, reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.GetString(2), reader.GetGuid(3), reader.GetFieldValue<DateOnly>(4), reader.IsDBNull(5) ? null : reader.GetFieldValue<DateOnly>(5), reader.GetString(6), reader.GetInt32(7), reader.GetDecimal(10), reader.GetString(8), reader.GetInt64(9)));

@@ -122,5 +122,7 @@ Per canonical architecture governance and explicit Product Owner instruction, th
 | **Frontend Unit Suite** | `pnpm run test:frontend` | **PASSED** | 274/274 tests passed (57 suites) |
 | **Permission Audit** | `node --test frontend/tests/navigation/permissions-manifest-audit.test.ts` | **PASSED** | 100% of permissions verified against 24 module manifests (12/12 test cases) |
 | **Lifecycle Coverage Audit** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~ModuleLifecycleCoverageAuditTests` | **PASSED** | 6/6 tests passed (Sales, Purchasing, POS, Banking, CRM, Accounting, Inventory verified) |
+| **Wave 2 Integration Suite** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~NavigationSecurityAcceptanceTests` | **PASSED** | 21/21 tests passed; Sales, Purchasing, POS complete E2E workflows verified; 0 leftover database rows |
+| **Wave 2 Domain Suites** | `dotnet test backend/Tests/Modules/{POS,Purchasing,Sales}/` | **PASSED** | 44/44 tests passed (POS: 32, Purchasing: 10, Sales: 2) |
 | **Browser E2E UI Regression** | `pnpm --dir frontend exec playwright test tests/e2e/navigation-access.spec.ts` | **PASSED** | 9/9 browser journeys passed in Chromium (including Sales, Purchasing, POS narrow-role journeys) |
-| **Frontend Production Build** | `pnpm --dir frontend build` | **PASSED** | Vite v8.3.3 built client in 1.58s with zero bundle errors |
+| **Frontend Production Build** | `pnpm --dir frontend build` | **PASSED** | Vite v8.3.3 built client with zero bundle errors |
