@@ -260,4 +260,68 @@ test.describe('TODIR ERP — Real-Stack Navigation & Authorization Acceptance Su
     const accessRestored = await accessRestoredRes.json();
     expect(accessRestored.moduleStatuses.inventory).toBe('Active');
   });
+
+  test('P3 Wave 2 Real-Stack: POS Cashier fast-lane vs Manager report administration', async ({ page }) => {
+    // 1. Login as POS Cashier
+    await loginUser(page, 'pos-cashier@atlas.com');
+    await page.goto('/pos');
+    await page.waitForLoadState('networkidle');
+
+    // POS Cashier has fast-lane cart access
+    const mainView = page.locator('main, [role="main"]').first();
+    await expect(mainView).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('body')).not.toContainText('غير مصرح لك بالوصول');
+
+    // Direct navigation to administrative reports route must be blocked
+    await page.goto('/pos/reports');
+    await page.waitForLoadState('networkidle');
+
+    const deniedView = page.locator('[data-testid="permission-denied-view"]');
+    await expect(deniedView).toBeVisible({ timeout: 10000 });
+    await expect(deniedView).toContainText('غير مصرح لك بالوصول');
+
+    // 2. Login as POS Manager
+    await loginUser(page, 'pos-manager@atlas.com');
+    await page.goto('/pos/reports');
+    await page.waitForLoadState('networkidle');
+
+    // Reports page is accessible for POS Manager
+    await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
+    await expect(mainView).toBeVisible({ timeout: 10000 });
+  });
+
+  test('P3 Wave 2 Real-Stack: Administrator full task-driven access across Sales and Purchasing', async ({ page }) => {
+    await loginUser(page, 'admin@atlas.com');
+
+    // 1. Sales task routes
+    await page.goto('/sales/quotations');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
+    await expect(page.locator('main, [role="main"]').first()).toBeVisible({ timeout: 10000 });
+
+    await page.goto('/sales/orders');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
+
+    await page.goto('/sales/settings');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
+
+    // 2. Purchasing task routes
+    await page.goto('/purchasing/orders');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
+
+    await page.goto('/purchasing/receipts');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
+
+    await page.goto('/purchasing/matching');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
+
+    await page.goto('/purchasing/settings');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
+  });
 });

@@ -431,6 +431,203 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         Assert.Equal(HttpStatusCode.OK, readRes.StatusCode);
     }
 
+    [Fact]
+    public async Task Sales_ActiveToReadOnly_BlocksMutationAndPreservesReads()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync();
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        var party1 = Guid.CreateVersion7();
+        // 1. In Active state: save customer profile succeeds
+        var profile1Res = await fixture.PutAsync(client, $"/api/v1/sales/legal-entities/{fixture.EntityA}/customer-profiles/{party1}", new
+        {
+            legalEntityId = fixture.EntityA,
+            partyId = party1,
+            customerPoRequired = false
+        });
+        Assert.Equal(HttpStatusCode.OK, profile1Res.StatusCode);
+
+        // Verify committed DB state
+        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await adminConn.OpenAsync();
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_sales.sales_customer_profile where tenant_id = '{fixture.Tenant.Value}' and party_id = '{party1}'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(1L, count);
+        }
+
+        // 2. Transition Sales to ReadOnly
+        var setReadOnlySql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+            update platform.module_instance set status = 'ReadOnly' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'sales';
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setReadOnlySql);
+
+        // 3. Exact same user, permission, and valid payload for party2: rejected with HTTP 403 module.lifecycle_readonly
+        var party2 = Guid.CreateVersion7();
+        var profile2Res = await fixture.PutAsync(client, $"/api/v1/sales/legal-entities/{fixture.EntityA}/customer-profiles/{party2}", new
+        {
+            legalEntityId = fixture.EntityA,
+            partyId = party2,
+            customerPoRequired = true
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, profile2Res.StatusCode);
+        var errDoc = await profile2Res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("module.lifecycle_readonly", errDoc.GetProperty("code").GetString());
+
+        // 4. Verify DB state unchanged
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_sales.sales_customer_profile where tenant_id = '{fixture.Tenant.Value}' and party_id = '{party2}'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(0L, count);
+        }
+
+        // 5. Permitted historical reads succeed
+        var readRes = await client.GetAsync($"/api/v1/sales/legal-entities/{fixture.EntityA}/orders");
+        Assert.Equal(HttpStatusCode.OK, readRes.StatusCode);
+    }
+
+    [Fact]
+    public async Task Purchasing_ActiveToReadOnly_BlocksMutationAndPreservesReads()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync();
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        // 1. In Active state: save purchase settings succeeds
+        var set1Res = await fixture.PutAsync(client, $"/api/v1/purchasing/legal-entities/{fixture.EntityA}/settings", new
+        {
+            legalEntityId = fixture.EntityA,
+            approvalRequired = true,
+            approvalThreshold = 50000m,
+            overReceiptPolicy = "Disallow",
+            overReceiptTolerance = 0m,
+            invoiceWithoutReceipt = false,
+            threeWayMatching = true,
+            buyerApproverSeparation = true,
+            quantityTolerance = 0.05m,
+            priceAbsoluteTolerance = 10m,
+            pricePercentageTolerance = 0.02m,
+            taxTolerance = 1m,
+            invoiceEligibilityBasis = "Receipt"
+        });
+        Assert.Equal(HttpStatusCode.OK, set1Res.StatusCode);
+
+        // Verify committed DB state
+        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await adminConn.OpenAsync();
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_purchasing.purchase_settings where tenant_id = '{fixture.Tenant.Value}' and legal_entity_id = '{fixture.EntityA}'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(1L, count);
+        }
+
+        // 2. Transition Purchasing to ReadOnly
+        var setReadOnlySql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+            update platform.module_instance set status = 'ReadOnly' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'purchasing';
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setReadOnlySql);
+
+        // 3. Exact same user, permission, and valid payload: rejected with HTTP 403 module.lifecycle_readonly
+        var set2Res = await fixture.PutAsync(client, $"/api/v1/purchasing/legal-entities/{fixture.EntityA}/settings", new
+        {
+            legalEntityId = fixture.EntityA,
+            approvalRequired = false,
+            approvalThreshold = (decimal?)null,
+            overReceiptPolicy = "Allow",
+            overReceiptTolerance = 0m,
+            invoiceWithoutReceipt = true,
+            threeWayMatching = false,
+            buyerApproverSeparation = false,
+            quantityTolerance = 0m,
+            priceAbsoluteTolerance = 0m,
+            pricePercentageTolerance = 0m,
+            taxTolerance = 0m,
+            invoiceEligibilityBasis = "PO"
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, set2Res.StatusCode);
+        var errDoc = await set2Res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("module.lifecycle_readonly", errDoc.GetProperty("code").GetString());
+
+        // 4. Permitted historical reads succeed
+        var readRes = await client.GetAsync($"/api/v1/purchasing/legal-entities/{fixture.EntityA}/settings");
+        Assert.Equal(HttpStatusCode.OK, readRes.StatusCode);
+        var poReadRes = await client.GetAsync($"/api/v1/purchasing/legal-entities/{fixture.EntityA}/purchase-orders");
+        Assert.Equal(HttpStatusCode.OK, poReadRes.StatusCode);
+    }
+
+    [Fact]
+    public async Task POS_ActiveToReadOnly_BlocksMutationAndPreservesReads()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync();
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        // 1. In Active state: create register succeeds
+        var reg1Res = await fixture.PostAsync(client, "/api/v1/pos/registers", new
+        {
+            legalEntityId = fixture.EntityA,
+            branchId = fixture.BranchA1,
+            code = "REG_SEC_01",
+            name = "Security Register 1",
+            currencyCode = "EGP",
+            offlineEnabled = false
+        });
+        Assert.Equal(HttpStatusCode.Created, reg1Res.StatusCode);
+
+        // Verify committed DB state
+        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await adminConn.OpenAsync();
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_pos.pos_register where tenant_id = '{fixture.Tenant.Value}' and code = 'REG_SEC_01'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(1L, count);
+        }
+
+        // 2. Transition POS to ReadOnly
+        var setReadOnlySql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+            update platform.module_instance set status = 'ReadOnly' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'pos';
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setReadOnlySql);
+
+        // 3. Exact same user, permission, and valid payload for REG_SEC_02: rejected with HTTP 403 module.lifecycle_readonly
+        var reg2Res = await fixture.PostAsync(client, "/api/v1/pos/registers", new
+        {
+            legalEntityId = fixture.EntityA,
+            branchId = fixture.BranchA1,
+            code = "REG_SEC_02",
+            name = "Security Register 2",
+            currencyCode = "EGP",
+            offlineEnabled = false
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, reg2Res.StatusCode);
+        var errDoc = await reg2Res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("module.lifecycle_readonly", errDoc.GetProperty("code").GetString());
+
+        // 4. Verify DB state unchanged
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_pos.pos_register where tenant_id = '{fixture.Tenant.Value}' and code = 'REG_SEC_02'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(0L, count);
+        }
+
+        // 5. Permitted historical reads succeed
+        var readRes = await client.GetAsync($"/api/v1/pos/registers?legalEntityId={fixture.EntityA}");
+        Assert.Equal(HttpStatusCode.OK, readRes.StatusCode);
+    }
+
     // -------------------------------------------------------------------------
     // SEPARATE NEGATIVE SECURITY CASES: RBAC, Entitlement, Scope, and Lifecycle
     // -------------------------------------------------------------------------
@@ -825,6 +1022,13 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'banking.accounts.read'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'accounting.statement.manage'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'accounting.statement.read'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'sales.customer_profile.manage'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'sales.quotation.read'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'sales.order.read'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'purchasing.settings.manage'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'purchasing.po.read'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'pos.register.manage'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'pos.register.read'),
                     ('{fixture.Tenant.Value}', '{roleBranchA1Only}', 'inventory.stock.read');
 
                 insert into platform.membership_role_assignment (tenant_id, membership_id, role_id, scope_type, scope_id)
@@ -833,7 +1037,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                     ('{fixture.Tenant.Value}', '{fixture.MembershipId.Value}', '{roleBranchA1Only}', 'Branch', '{fixture.BranchA1}');
 
                 insert into platform.entitlement_snapshot (tenant_id, snapshot_version, issued_at, valid_until, key_id, modules, features, limits, scopes, signature)
-                values ('{fixture.Tenant.Value}', 1, now(), now() + interval '30 days', 'test_key', '[""banking"", ""crm"", ""inventory"", ""accounting""]'::jsonb, '[]'::jsonb, '{{}}'::jsonb, '[]'::jsonb, 'test_sig');
+                values ('{fixture.Tenant.Value}', 1, now(), now() + interval '30 days', 'test_key', '[""banking"", ""crm"", ""inventory"", ""accounting"", ""sales"", ""purchasing"", ""pos""]'::jsonb, '[]'::jsonb, '{{}}'::jsonb, '[]'::jsonb, 'test_sig');
 
                 insert into platform.module_instance (id, tenant_id, module_id, scope_type, scope_id, status, manifest_version, version)
                 values
@@ -841,7 +1045,10 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'crm', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'inventory', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'accounting', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
-                    ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'ledger', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1);
+                    ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'ledger', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
+                    ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'sales', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
+                    ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'purchasing', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
+                    ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'pos', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1);
 
                 reset app.tenant_id;
                 reset role;
