@@ -28,6 +28,7 @@ export interface AdjustmentItemView {
 export interface AdjustmentsTabProps {
   readonly legalEntityId: string;
   readonly warehouses: readonly Warehouse[];
+  readonly canCreate?: boolean;
   readonly canApprove?: boolean;
   readonly canPost?: boolean;
   readonly canManageProfile?: boolean;
@@ -36,6 +37,7 @@ export interface AdjustmentsTabProps {
 export function AdjustmentsTab({
   legalEntityId,
   warehouses,
+  canCreate = true,
   canApprove = true,
   canPost = true,
   canManageProfile = false
@@ -217,9 +219,11 @@ export function AdjustmentsTab({
             {t("adjustments.title")}
           </h3>
         </div>
-        <Button variant="primary" onPress={() => setIsNewAdjustmentOpen(true)}>
-          + {t("adjustments.newAdjustment")}
-        </Button>
+        {canCreate && (
+          <Button variant="primary" onPress={() => setIsNewAdjustmentOpen(true)}>
+            + {t("adjustments.newAdjustment")}
+          </Button>
+        )}
       </div>
 
       {/* Adjustments Table */}

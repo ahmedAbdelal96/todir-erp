@@ -54,7 +54,7 @@ export const crmRoutes: ModuleRouteRegistration = {
     {
       path: "crm/leads",
       element: (
-        <PermissionGuard permission={{ anyOf: ["crm.lead.read", "crm.lead.create", "crm.lead.edit"] }} moduleId="crm">
+        <PermissionGuard permission={{ anyOf: ["crm.lead.read", "crm.lead.create", "crm.lead.edit"] }} moduleId="crm" mode="mixed">
           <CrmLeadsPage />
         </PermissionGuard>
       )
@@ -62,7 +62,7 @@ export const crmRoutes: ModuleRouteRegistration = {
     {
       path: "crm/opportunities",
       element: (
-        <PermissionGuard permission={{ anyOf: ["crm.opportunity.read", "crm.opportunity.create", "crm.opportunity.edit"] }} moduleId="crm">
+        <PermissionGuard permission={{ anyOf: ["crm.opportunity.read", "crm.opportunity.create", "crm.opportunity.edit"] }} moduleId="crm" mode="mixed">
           <CrmOpportunitiesPage />
         </PermissionGuard>
       )
@@ -70,7 +70,7 @@ export const crmRoutes: ModuleRouteRegistration = {
     {
       path: "crm/activities",
       element: (
-        <PermissionGuard permission={{ anyOf: ["crm.activity.read", "crm.activity.create", "crm.activity.edit"] }} moduleId="crm">
+        <PermissionGuard permission={{ anyOf: ["crm.activity.read", "crm.activity.create", "crm.activity.edit"] }} moduleId="crm" mode="mixed">
           <CrmActivitiesPage />
         </PermissionGuard>
       )
@@ -78,7 +78,7 @@ export const crmRoutes: ModuleRouteRegistration = {
     {
       path: "crm/management",
       element: (
-        <PermissionGuard permission={{ anyOf: ["crm.team.manage", "crm.pipeline.manage", "crm.team.read", "crm.pipeline.read", "crm.forecast.read"] }} moduleId="crm">
+        <PermissionGuard permission={{ anyOf: ["crm.team.manage", "crm.pipeline.manage", "crm.team.read", "crm.pipeline.read", "crm.forecast.read"] }} moduleId="crm" mode="mixed">
           <CrmManagementPage />
         </PermissionGuard>
       )

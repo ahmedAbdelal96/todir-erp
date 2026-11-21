@@ -155,6 +155,9 @@ function formatBranchLabel(code: string, name: string, entityName?: string, isAr
   return `${cleanName || name} (${code})`;
 }
 
+let orgSwitchSequenceCounter = 0;
+let orgSwitchAbortController: AbortController | null = null;
+
 export function AppShell() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -167,6 +170,7 @@ export function AppShell() {
   const [userEmail, setUserEmail] = useState(() => window.sessionStorage.getItem("erp.session.email") ?? "—");
   const [activeTenantId, setActiveTenantId] = useState("");
   const [activeIdentityId, setActiveIdentityId] = useState("");
+  const [activeMembershipId, setActiveMembershipId] = useState("");
   const [legalEntities, setLegalEntities] = useState<Session["context"]["legalEntities"]>([]);
   const [branches, setBranches] = useState<Session["context"]["branches"]>([]);
   const [legalEntity, setLegalEntity] = useState("");
@@ -195,11 +199,20 @@ export function AppShell() {
     .filter(item => item.path === "/" ? location.pathname === "/" : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`))
     .sort((left, right) => right.path.length - left.path.length)[0];
 
+  const allPermittedDestinations = modules.flatMap(m => m.destinations ? getPermittedDestinationsForModule(m, effectiveAccess) : []);
+
+  const activeTaskDestination = allPermittedDestinations
+    .filter(d => location.pathname === d.path || (d.path !== "/" && location.pathname.startsWith(`${d.path}/`)))
+    .sort((left, right) => right.path.length - left.path.length)[0];
+
   useEffect(() => {
-    if (screen === "authenticated" && activeNavigationItem) {
-      navigationPreferences.recordRecent(activeNavigationItem.id);
+    if (screen === "authenticated") {
+      const activeKey = activeTaskDestination?.id ?? activeNavigationItem?.id;
+      if (activeKey) {
+        navigationPreferences.recordRecent(activeKey);
+      }
     }
-  }, [screen, activeNavigationItem?.id, navigationPreferences.recordRecent]);
+  }, [screen, activeTaskDestination?.id, activeNavigationItem?.id, navigationPreferences.recordRecent]);
 
   useEffect(() => {
     function handleGlobalKeyDown(e: KeyboardEvent) {
@@ -320,8 +333,10 @@ export function AppShell() {
       if (!response.ok) throw new Error("session.load_failed");
       const session = await response.json() as Session;
       const identityId = session.identityId || session.memberships?.[0]?.id || "";
+      const membershipId = session.memberships?.[0]?.id || "";
       setActiveTenantId(session.tenantId);
       setActiveIdentityId(identityId);
+      setActiveMembershipId(membershipId);
       setCompanyName(session.context.displayName || session.memberships?.[0]?.displayName || "شركة الأفق للتجارة");
       setLegalEntities(session.context.legalEntities);
       setBranches(session.context.branches);
@@ -341,7 +356,12 @@ export function AppShell() {
       setBranch(defaultBranch);
       let access: EffectiveAccess | null = null;
       try {
-        access = await fetchEffectiveAccess(defaultEntity, defaultBranch);
+        access = await fetchEffectiveAccess(defaultEntity, defaultBranch, {
+          tenantId: session.tenantId,
+          membershipId,
+          legalEntityId: defaultEntity,
+          branchId: defaultBranch
+        });
         setEffectiveAccess(access);
         setPermissions(new PermissionSet(access.permissions));
       } catch {
@@ -376,6 +396,13 @@ export function AppShell() {
   useEffect(() => { void loadSession(); }, []);
 
   async function switchOrganization(nextLegalEntity: string, nextBranch: string) {
+    const currentSeq = ++orgSwitchSequenceCounter;
+    if (orgSwitchAbortController) {
+      orgSwitchAbortController.abort();
+    }
+    orgSwitchAbortController = new AbortController();
+    const { signal } = orgSwitchAbortController;
+
     setOperation(labels.progress);
     setContextError(undefined);
     // Immediately invalidate previous effective-access state to prevent rendering stale cross-entity destinations
@@ -386,7 +413,23 @@ export function AppShell() {
     try {
       clearCsrfToken();
       const csrf = await requestCsrf();
-      const response = await fetch("/api/v1/context/organization", { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrf, "X-Correlation-Id": crypto.randomUUID() }, body: JSON.stringify({ legalEntityId: nextLegalEntity || null, branchId: nextBranch || null }) });
+      if (signal.aborted || currentSeq !== orgSwitchSequenceCounter) return;
+
+      const response = await fetch("/api/v1/context/organization", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-TOKEN": csrf,
+          "X-Correlation-Id": crypto.randomUUID()
+        },
+        body: JSON.stringify({
+          legalEntityId: nextLegalEntity || null,
+          branchId: nextBranch || null
+        }),
+        signal
+      });
+      if (signal.aborted || currentSeq !== orgSwitchSequenceCounter) return;
+
       if (response.status === 401) { setScreen("signed-out"); return; }
       if (response.status === 403) { setScreen("forbidden"); return; }
       if (!response.ok) throw new Error("context.organization_update_failed");
@@ -399,22 +442,33 @@ export function AppShell() {
       }
       setLegalEntity(nextLegalEntity);
       setBranch(nextBranch);
-      await queryClient.invalidateQueries();
       queryClient.clear();
 
       // Fetch new scoped authorization; navigation restored only after verified success
-      const nextAccess = await fetchEffectiveAccess(nextLegalEntity, nextBranch);
+      const nextAccess = await fetchEffectiveAccess(nextLegalEntity, nextBranch, {
+        tenantId: activeTenantId,
+        membershipId: activeMembershipId,
+        legalEntityId: nextLegalEntity,
+        branchId: nextBranch
+      });
+      if (signal.aborted || currentSeq !== orgSwitchSequenceCounter) return;
+
       setEffectiveAccess(nextAccess);
       setPermissions(new PermissionSet(nextAccess.permissions));
       loadNavigation(nextAccess);
-    } catch {
+    } catch (err: any) {
+      if (err?.name === "AbortError" || currentSeq !== orgSwitchSequenceCounter) {
+        return;
+      }
       // Never continue using old projection when request fails
       setEffectiveAccess(null);
       setPermissions(new PermissionSet());
       setModules([]);
       setContextError(t("common:shell.couldNotUpdateScope"));
     } finally {
-      setOperation(undefined);
+      if (currentSeq === orgSwitchSequenceCounter) {
+        setOperation(undefined);
+      }
     }
   }
 
@@ -443,8 +497,6 @@ export function AppShell() {
     readonly label: string;
     readonly icon: string;
   };
-
-  const allPermittedDestinations = modules.flatMap(m => m.destinations ? getPermittedDestinationsForModule(m, effectiveAccess) : []);
 
   const resolveQuickItem = (key: string): QuickItem | undefined => {
     const mod = modules.find(item => item.id === key);
@@ -743,27 +795,65 @@ export function AppShell() {
                             >
                               {taskDestinations.map(dest => {
                                 const isDestActive = location.pathname === dest.path || (dest.path === item.path && location.pathname === item.path);
+                                const isDestFavorite = navigationPreferences.snapshot.favorites.includes(dest.id);
                                 return (
-                                  <NavLink
+                                  <div
                                     key={dest.id}
-                                    to={dest.path}
-                                    end={dest.path === item.path}
-                                    className={`sidebar-sub-link${isDestActive ? " active" : ""}`}
                                     style={{
                                       display: "flex",
                                       alignItems: "center",
-                                      padding: "0.25rem 0.5rem",
-                                      fontSize: "0.78125rem",
-                                      fontWeight: isDestActive ? 600 : 500,
-                                      color: isDestActive ? "var(--color-brand-primary, #102a43)" : "var(--color-content-muted, #64748b)",
+                                      justifyContent: "space-between",
+                                      gap: "0.25rem",
                                       backgroundColor: isDestActive ? "rgba(16, 42, 67, 0.08)" : "transparent",
-                                      borderRadius: "var(--radius-sm, 0.25rem)",
-                                      textDecoration: "none",
-                                      transition: "all 0.12s ease"
+                                      borderRadius: "var(--radius-sm, 0.25rem)"
                                     }}
                                   >
-                                    <span>{dest.fallbackLabel}</span>
-                                  </NavLink>
+                                    <NavLink
+                                      to={dest.path}
+                                      end={dest.path === item.path}
+                                      className={`sidebar-sub-link${isDestActive ? " active" : ""}`}
+                                      style={{
+                                        flex: 1,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        padding: "0.25rem 0.5rem",
+                                        fontSize: "0.78125rem",
+                                        fontWeight: isDestActive ? 600 : 500,
+                                        color: isDestActive ? "var(--color-brand-primary, #102a43)" : "var(--color-content-muted, #64748b)",
+                                        textDecoration: "none",
+                                        transition: "all 0.12s ease"
+                                      }}
+                                    >
+                                      <span>{dest.fallbackLabel}</span>
+                                    </NavLink>
+                                    <button
+                                      type="button"
+                                      aria-label={t(isDestFavorite ? "common:shell.removeFavorite" : "common:shell.addFavorite", { name: dest.fallbackLabel })}
+                                      title={t(isDestFavorite ? "common:shell.removeFavorite" : "common:shell.addFavorite", { name: dest.fallbackLabel })}
+                                      className={`sidebar-favorite-toggle ${isDestFavorite ? "is-favorite" : ""}`}
+                                      aria-pressed={isDestFavorite}
+                                      disabled={navigationPreferences.isSavingFavorite}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        navigationPreferences.setFavorite(dest.id, !isDestFavorite);
+                                      }}
+                                      style={{
+                                        background: "none",
+                                        border: "none",
+                                        cursor: "pointer",
+                                        padding: "0.25rem 0.375rem",
+                                        color: isDestFavorite ? "var(--color-brand-warning, #f59e0b)" : "var(--color-content-subtle, #94a3b8)",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        justifyContent: "center"
+                                      }}
+                                    >
+                                      <svg width="15" height="15" viewBox="0 0 24 24" fill={isDestFavorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                        <path d="m12 3 2.75 5.58 6.16.9-4.46 4.35 1.05 6.14L12 17.07l-5.5 2.9 1.05-6.14L3.1 9.48l6.16-.9L12 3Z" />
+                                      </svg>
+                                    </button>
+                                  </div>
                                 );
                               })}
                             </div>

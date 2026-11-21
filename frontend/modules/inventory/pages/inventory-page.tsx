@@ -235,6 +235,9 @@ export function InventoryPage(): React.JSX.Element {
           <TransfersTab
             legalEntityId={legalEntityId}
             warehouses={warehouses}
+            canCreate={permissions.canCreateTransfer}
+            canShip={permissions.canShipTransfer}
+            canReceive={permissions.canReceiveTransfer}
           />
         )}
 
@@ -255,6 +258,9 @@ export function InventoryPage(): React.JSX.Element {
           <CountsTab
             legalEntityId={legalEntityId}
             warehouses={warehouses}
+            canCreate={permissions.canCreateCount}
+            canEnter={permissions.canEnterCount}
+            canPost={permissions.canPostCount}
           />
         )}
 
@@ -262,6 +268,7 @@ export function InventoryPage(): React.JSX.Element {
           <AdjustmentsTab
             legalEntityId={legalEntityId}
             warehouses={warehouses}
+            canCreate={permissions.canCreateAdjustment}
             canApprove={permissions.canApproveAdjustment}
             canPost={permissions.canPostAdjustment}
             canManageProfile={permissions.canManageProfiles}

@@ -8,7 +8,7 @@ import { EmptyState } from "../../../../components/primitives/empty-state.tsx";
 import { CreateCountModal } from "./create-count-modal.tsx";
 import { CountDetailModal } from "./count-detail-modal.tsx";
 import { toQty } from "../../utils.ts";
-import { usePhysicalCounts } from "../../hooks/use-inventory-queries.ts";
+import { usePhysicalCounts, useInventoryPermissions } from "../../hooks/use-inventory-queries.ts";
 import type { PhysicalCountListItem, Warehouse } from "../../types.ts";
 
 export type PhysicalCountItem = PhysicalCountListItem;
@@ -16,10 +16,23 @@ export type PhysicalCountItem = PhysicalCountListItem;
 export interface CountsTabProps {
   readonly legalEntityId: string;
   readonly warehouses: readonly Warehouse[];
+  readonly canCreate?: boolean;
+  readonly canEnter?: boolean;
+  readonly canPost?: boolean;
 }
 
-export function CountsTab({ legalEntityId, warehouses }: CountsTabProps): React.JSX.Element {
+export function CountsTab({
+  legalEntityId,
+  warehouses,
+  canCreate: propCanCreate,
+  canEnter: propCanEnter,
+  canPost: propCanPost
+}: CountsTabProps): React.JSX.Element {
   const { t } = useTranslation("inventory");
+  const permissions = useInventoryPermissions();
+  const canCreate = propCanCreate ?? permissions.canCreateCount;
+  const canEnter = propCanEnter ?? permissions.canEnterCount;
+  const canPost = propCanPost ?? permissions.canPostCount;
 
   const [isNewCountOpen, setIsNewCountOpen] = useState(false);
   const [selectedCount, setSelectedCount] = useState<PhysicalCountItem | null>(null);
@@ -51,9 +64,11 @@ export function CountsTab({ legalEntityId, warehouses }: CountsTabProps): React.
             {t("counts.title")}
           </h3>
         </div>
-        <Button variant="primary" onPress={() => setIsNewCountOpen(true)}>
-          + {t("counts.newCount")}
-        </Button>
+        {canCreate && (
+          <Button variant="primary" onPress={() => setIsNewCountOpen(true)}>
+            + {t("counts.newCount")}
+          </Button>
+        )}
       </div>
 
       {/* Counts Table */}
@@ -99,7 +114,7 @@ export function CountsTab({ legalEntityId, warehouses }: CountsTabProps): React.
                 </td>
                 <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>
                   <Button variant="secondary" onPress={() => setSelectedCount(cnt)}>
-                    {t("counts.enterCount")}
+                    {canEnter ? t("counts.enterCount") : t("common.details")}
                   </Button>
                 </td>
               </tr>
@@ -130,6 +145,8 @@ export function CountsTab({ legalEntityId, warehouses }: CountsTabProps): React.
           countStatus={selectedCount.status}
           totalLines={selectedCount.lines}
           countedLines={selectedCount.countedLines}
+          canPost={canPost}
+          canEnter={canEnter}
           onCountPosted={() => void refetch()}
         />
       )}

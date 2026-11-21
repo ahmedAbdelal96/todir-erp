@@ -2,13 +2,14 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useOutletContext } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
-import { useInventoryScope, useWarehouses } from "../hooks/use-inventory-queries.ts";
+import { useInventoryScope, useWarehouses, useInventoryPermissions } from "../hooks/use-inventory-queries.ts";
 import { TransfersTab } from "../features/transfers/transfers-tab.tsx";
 
 export function InventoryTransfersPage(): React.JSX.Element {
   const { t } = useTranslation("inventory");
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const { legalEntityId } = useInventoryScope({ legalEntityId: outletCtx?.legalEntityId });
+  const permissions = useInventoryPermissions();
   const { data: warehouses = [] } = useWarehouses(legalEntityId);
 
   return (
@@ -51,6 +52,9 @@ export function InventoryTransfersPage(): React.JSX.Element {
         <TransfersTab
           legalEntityId={legalEntityId}
           warehouses={warehouses}
+          canCreate={permissions.canCreateTransfer}
+          canShip={permissions.canShipTransfer}
+          canReceive={permissions.canReceiveTransfer}
         />
       </main>
     </div>

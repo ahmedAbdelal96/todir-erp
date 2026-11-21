@@ -64,7 +64,7 @@ export const bankingRoutes: ModuleRouteRegistration = {
     {
       path: "banking/accounts",
       element: (
-        <PermissionGuard permission={{ anyOf: ["banking.accounts.read", "banking.accounts.create", "banking.accounts.edit"] }} moduleId="banking">
+        <PermissionGuard permission={{ anyOf: ["banking.accounts.read", "banking.accounts.create", "banking.accounts.edit"] }} moduleId="banking" mode="mixed">
           <BankingAccountsPage />
         </PermissionGuard>
       )
@@ -72,7 +72,7 @@ export const bankingRoutes: ModuleRouteRegistration = {
     {
       path: "banking/statements",
       element: (
-        <PermissionGuard permission={{ anyOf: ["banking.statements.read", "banking.statements.import", "banking.statements.validate"] }} moduleId="banking">
+        <PermissionGuard permission={{ anyOf: ["banking.statements.read", "banking.statements.import", "banking.statements.validate"] }} moduleId="banking" mode="mixed">
           <BankingStatementsPage />
         </PermissionGuard>
       )
@@ -80,7 +80,7 @@ export const bankingRoutes: ModuleRouteRegistration = {
     {
       path: "banking/reconciliations",
       element: (
-        <PermissionGuard permission={{ anyOf: ["banking.reconciliation.read", "banking.reconciliation.match", "banking.reconciliation.finalize"] }} moduleId="banking">
+        <PermissionGuard permission={{ anyOf: ["banking.reconciliation.read", "banking.reconciliation.match", "banking.reconciliation.finalize"] }} moduleId="banking" mode="mixed">
           <BankingReconciliationsPage />
         </PermissionGuard>
       )
@@ -88,7 +88,7 @@ export const bankingRoutes: ModuleRouteRegistration = {
     {
       path: "banking/reconciliations/:sessionId",
       element: (
-        <PermissionGuard permission={{ anyOf: ["banking.reconciliation.read", "banking.reconciliation.match", "banking.reconciliation.finalize"] }} moduleId="banking">
+        <PermissionGuard permission={{ anyOf: ["banking.reconciliation.read", "banking.reconciliation.match", "banking.reconciliation.finalize"] }} moduleId="banking" mode="mixed">
           <ReconciliationWorkbenchPage />
         </PermissionGuard>
       )
@@ -96,7 +96,7 @@ export const bankingRoutes: ModuleRouteRegistration = {
     {
       path: "banking/reconciliations/:sessionId/workbench",
       element: (
-        <PermissionGuard permission={{ anyOf: ["banking.reconciliation.read", "banking.reconciliation.match", "banking.reconciliation.finalize"] }} moduleId="banking">
+        <PermissionGuard permission={{ anyOf: ["banking.reconciliation.read", "banking.reconciliation.match", "banking.reconciliation.finalize"] }} moduleId="banking" mode="mixed">
           <ReconciliationWorkbenchPage />
         </PermissionGuard>
       )
@@ -104,7 +104,7 @@ export const bankingRoutes: ModuleRouteRegistration = {
     {
       path: "banking/cash",
       element: (
-        <PermissionGuard permission={{ anyOf: ["banking.cash.read", "banking.cash.count", "banking.cash.difference.resolve"] }} moduleId="banking">
+        <PermissionGuard permission={{ anyOf: ["banking.cash.read", "banking.cash.count", "banking.cash.difference.resolve"] }} moduleId="banking" mode="mixed">
           <BankingCashPage />
         </PermissionGuard>
       )
@@ -112,7 +112,7 @@ export const bankingRoutes: ModuleRouteRegistration = {
     {
       path: "banking/cash-counts",
       element: (
-        <PermissionGuard permission={{ anyOf: ["banking.cash.read", "banking.cash.count", "banking.cash.difference.resolve"] }} moduleId="banking">
+        <PermissionGuard permission={{ anyOf: ["banking.cash.read", "banking.cash.count", "banking.cash.difference.resolve"] }} moduleId="banking" mode="mixed">
           <BankingCashPage />
         </PermissionGuard>
       )
@@ -120,7 +120,7 @@ export const bankingRoutes: ModuleRouteRegistration = {
     {
       path: "banking/transfers",
       element: (
-        <PermissionGuard permission={{ anyOf: ["banking.transfers.read", "banking.transfers.initiate"] }} moduleId="banking">
+        <PermissionGuard permission={{ anyOf: ["banking.transfers.read", "banking.transfers.initiate"] }} moduleId="banking" mode="mixed">
           <BankingTransfersPage />
         </PermissionGuard>
       )
@@ -128,7 +128,7 @@ export const bankingRoutes: ModuleRouteRegistration = {
     {
       path: "banking/forecast",
       element: (
-        <PermissionGuard permission={{ anyOf: ["banking.cash_forecast.read", "banking.cash_forecast.manage"] }} moduleId="banking">
+        <PermissionGuard permission={{ anyOf: ["banking.cash_forecast.read", "banking.cash_forecast.manage"] }} moduleId="banking" mode="read">
           <BankingForecastPage />
         </PermissionGuard>
       )
@@ -136,7 +136,7 @@ export const bankingRoutes: ModuleRouteRegistration = {
     {
       path: "banking/reports",
       element: (
-        <PermissionGuard permission={{ anyOf: ["banking.reports.read", "banking.audit.read"] }} moduleId="banking">
+        <PermissionGuard permission={{ anyOf: ["banking.reports.read", "banking.audit.read"] }} moduleId="banking" mode="read">
           <BankingReportsPage />
         </PermissionGuard>
       )

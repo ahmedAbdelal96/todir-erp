@@ -3,6 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 import { useOptionalPermissions, useLegalEntityContext } from "../../../core/runtime/runtime-provider.tsx";
 import { PermissionSet } from "../../../core/runtime/permissions.ts";
+import { isPermissionEffective, canPerformAction } from "../../../core/runtime/effective-access.ts";
 import { loadSessionContext } from "../../../core/api/auth-service.ts";
 import { ledgerApi } from "../services/ledger-api.ts";
 import type {
@@ -88,6 +89,14 @@ export const ledgerQueryKeys = {
 };
 
 export function useLedgerPermissions() {
+  let effectiveAccess: import("../../../core/runtime/effective-access.ts").EffectiveAccess | undefined;
+  try {
+    const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
+    effectiveAccess = outletCtx?.effectiveAccess;
+  } catch {
+    // outside router
+  }
+
   const permissions = useOptionalPermissions();
   const sessionQuery = useQuery({
     queryKey: ["session", "context"],
@@ -97,6 +106,38 @@ export function useLedgerPermissions() {
 
   const sessionPerms = (sessionQuery.data as { permissions?: readonly string[] } | undefined)?.permissions;
   const permSet = permissions ?? (sessionPerms ? new PermissionSet(sessionPerms) : undefined);
+
+  if (effectiveAccess) {
+    return {
+      canReadAccounts: isPermissionEffective(effectiveAccess, "ledger.account.read", true),
+      canManageAccounts: canPerformAction(effectiveAccess, "ledger.account.manage", "ledger"),
+      canReadJournals: isPermissionEffective(effectiveAccess, "ledger.journal.read", true),
+      canManageJournals: canPerformAction(effectiveAccess, "ledger.journal.manage", "ledger"),
+      canReadPeriods: isPermissionEffective(effectiveAccess, "ledger.period.read", true),
+      canManagePeriods: canPerformAction(effectiveAccess, "ledger.period.manage", "ledger"),
+      canSoftClosePeriod: canPerformAction(effectiveAccess, "ledger.period.soft_close", "ledger"),
+      canClosePeriod: canPerformAction(effectiveAccess, "ledger.period.close", "ledger") || canPerformAction(effectiveAccess, "accounting.close.execute", "accounting"),
+      canReopenPeriod: canPerformAction(effectiveAccess, "ledger.period.reopen", "ledger"),
+      canReadLocks: isPermissionEffective(effectiveAccess, "ledger.lock.read", true),
+      canManageLocks: canPerformAction(effectiveAccess, "ledger.lock.manage", "ledger"),
+      canReadEntries: isPermissionEffective(effectiveAccess, "ledger.entry.read", true),
+      canReverseEntries: canPerformAction(effectiveAccess, "ledger.entry.reverse", "ledger"),
+      canExplainEntries: isPermissionEffective(effectiveAccess, "ledger.entry.explain", true),
+      canCreateGeneralJournal: canPerformAction(effectiveAccess, "ledger.general_journal.create", "ledger"),
+      canEditGeneralJournal: canPerformAction(effectiveAccess, "ledger.general_journal.edit", "ledger"),
+      canSubmitGeneralJournal: canPerformAction(effectiveAccess, "ledger.general_journal.submit", "ledger"),
+      canApproveGeneralJournal: canPerformAction(effectiveAccess, "ledger.general_journal.approve", "ledger"),
+      canPostGeneralJournal: canPerformAction(effectiveAccess, "ledger.general_journal.post", "ledger"),
+      canReadDimensions: isPermissionEffective(effectiveAccess, "ledger.dimension.read", true),
+      canManageDimensions: canPerformAction(effectiveAccess, "ledger.dimension.manage", "ledger"),
+      canReadOpening: isPermissionEffective(effectiveAccess, "ledger.opening.read", true),
+      canManageOpening: canPerformAction(effectiveAccess, "ledger.opening.manage", "ledger"),
+      canPostOpening: canPerformAction(effectiveAccess, "ledger.opening.post", "ledger"),
+      canReadReports: isPermissionEffective(effectiveAccess, "ledger.reports.read", true),
+      canReadConfig: isPermissionEffective(effectiveAccess, "ledger.configuration.read", true),
+      canManageConfig: canPerformAction(effectiveAccess, "ledger.configuration.manage", "ledger")
+    };
+  }
 
   return {
     canReadAccounts: permSet ? permSet.hasPermission("ledger.account.read") : true,

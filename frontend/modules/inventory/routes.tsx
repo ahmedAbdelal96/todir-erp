@@ -59,7 +59,7 @@ export const inventoryRoutes: ModuleRouteRegistration = {
     {
       path: "inventory/balances",
       element: (
-        <PermissionGuard permission="inventory.stock.read" moduleId="inventory">
+        <PermissionGuard permission="inventory.stock.read" moduleId="inventory" mode="read">
           <InventoryBalancesPage />
         </PermissionGuard>
       )
@@ -67,7 +67,7 @@ export const inventoryRoutes: ModuleRouteRegistration = {
     {
       path: "inventory/movements",
       element: (
-        <PermissionGuard permission="inventory.history.read" moduleId="inventory">
+        <PermissionGuard permission="inventory.history.read" moduleId="inventory" mode="read">
           <InventoryMovementsPage />
         </PermissionGuard>
       )
@@ -78,6 +78,7 @@ export const inventoryRoutes: ModuleRouteRegistration = {
         <PermissionGuard
           permission={{ anyOf: ["inventory.transfer.create", "inventory.transfer.ship", "inventory.transfer.receive"] }}
           moduleId="inventory"
+          mode="mixed"
         >
           <InventoryTransfersPage />
         </PermissionGuard>
@@ -89,6 +90,7 @@ export const inventoryRoutes: ModuleRouteRegistration = {
         <PermissionGuard
           permission={{ anyOf: ["inventory.count.create", "inventory.count.enter", "inventory.count.approve", "inventory.count.post"] }}
           moduleId="inventory"
+          mode="mixed"
         >
           <InventoryCountsPage />
         </PermissionGuard>
@@ -100,6 +102,7 @@ export const inventoryRoutes: ModuleRouteRegistration = {
         <PermissionGuard
           permission={{ anyOf: ["inventory.adjustment.create", "inventory.adjustment.approve", "inventory.adjustment.post"] }}
           moduleId="inventory"
+          mode="mixed"
         >
           <InventoryAdjustmentsPage />
         </PermissionGuard>
@@ -111,6 +114,7 @@ export const inventoryRoutes: ModuleRouteRegistration = {
         <PermissionGuard
           permission={{ anyOf: ["inventory.warehouse.manage", "inventory.location.manage"] }}
           moduleId="inventory"
+          mode="mixed"
         >
           <InventoryWarehousesPage />
         </PermissionGuard>
@@ -122,6 +126,7 @@ export const inventoryRoutes: ModuleRouteRegistration = {
         <PermissionGuard
           permission="inventory.traceability.manage"
           moduleId="inventory"
+          mode="read"
         >
           <InventoryTraceabilityPage />
         </PermissionGuard>

@@ -147,6 +147,7 @@ When implementing or reviewing a specific domain in TODIR, read its dedicated ve
 - Arabic RTL & Formatting: `references/arabic-rtl-i18n.md`
 - Domain Safety & Invariants: `references/erp-domain-safety.md`
 - Quality Gates & Testing: `references/quality-gates.md`
+- Navigation, Entitlements & Lifecycle Architecture: `docs/architecture/TODIR_NAVIGATION_ACCESS_UX_ARCHITECTURE_DECISION.md`
 
 ---
 

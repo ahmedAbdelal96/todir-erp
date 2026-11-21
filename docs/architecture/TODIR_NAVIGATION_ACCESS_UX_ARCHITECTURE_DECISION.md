@@ -187,3 +187,14 @@ Accounting and Inventory (highest tab pressure), then Payroll/HR, Sales/Purchasi
 - No direct modifications to populated `todir` database, migration checksums, or destructive test fixtures.
 
 **Decision:** Implement an existing-contract-aligned **permission-safe navigation foundation first**, then shallow task pages and contextual tabs; run a Banking + CRM pilot before broad migration. This is a product-level architecture upgrade, not a screen redesign.
+
+---
+
+## 9. Implementation & Acceptance Verification (P0 / P2 / P3 Wave 1 Complete)
+
+- **Foundation (P0)**: Scoped Effective Access API with legal entity and branch evaluation, 7 shallow categories, `<PermissionGuard>` route wrapper, out-of-order race protection, org-switch mutex, query cache flushing, task-level favorites and recents.
+- **Pilot Closure (P2)**: Banking (8 destinations, cashier role isolation, reconciliation full-page workbench) and CRM (5 destinations, sales rep vs manager isolation, team management guards).
+- **Expansion (P3 Wave 1)**: Accounting/Ledger (8 destinations, journal clerk isolation, multi-module commercial entitlement isolation for period closing) and Inventory (7 destinations, physical count clerk isolation, operational tab mutation guards).
+- **Lifecycle & Mutation Gate**: Every destination declares explicit `mode` (`read` | `mutation` | `mixed`). In `ReadOnly` and `WindDown` states, mutation destinations are hidden and backend endpoints enforce `IModuleLifecycleEnforcer` returning 403 `module.lifecycle_readonly`.
+- **Backend & Browser Acceptance**: Verified across 20 real-stack scenarios against live PostgreSQL database (`todir_nav_acceptance`) and 6 browser journeys via Playwright.
+- **Explicit Hold**: P3 Wave 2 (Sales, Purchasing, Fixed Assets, HR) is strictly deferred per Product Owner instruction and remains untouched.

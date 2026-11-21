@@ -13,6 +13,8 @@ export type NavigationCategory =
   | "hr"
   | "admin";
 
+export type DestinationMode = "read" | "mutation" | "mixed";
+
 export type NavDestination = Readonly<{
   id: string;
   category: NavigationCategory;
@@ -25,6 +27,7 @@ export type NavDestination = Readonly<{
   order: number;
   isPrimary?: boolean;
   keywords?: readonly string[];
+  mode?: DestinationMode;
 }>;
 
 export type ModuleNavigationRegistration = Readonly<{

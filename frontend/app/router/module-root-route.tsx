@@ -1,7 +1,7 @@
 import React from "react";
 import { Navigate, useOutletContext } from "react-router-dom";
 import type { WorkspaceOutletContext, ModuleNavigationRegistration, PermissionCondition } from "./route-contract.ts";
-import { evaluatePermissionCondition, isModuleOperational } from "../../core/runtime/effective-access.ts";
+import { evaluateEffectivePermissionCondition, isModuleOperational } from "../../core/runtime/effective-access.ts";
 import { getPermittedDestinationsForModule } from "./destination-registry.ts";
 import { DefaultAccessDeniedView } from "../../core/runtime/permission-guard.tsx";
 
@@ -33,7 +33,7 @@ export function ModuleRootRoute({
 
   // If user has permission for overview, render defaultElement
   const hasOverview = overviewPermission
-    ? evaluatePermissionCondition(overviewPermission, effectiveAccess)
+    ? evaluateEffectivePermissionCondition(overviewPermission, effectiveAccess, allowReadOnly)
     : true;
 
   if (hasOverview) {

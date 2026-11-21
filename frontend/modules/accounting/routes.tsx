@@ -64,6 +64,7 @@ export const accountingRoutes: ModuleRouteRegistration = {
         <PermissionGuard
           permission={{ anyOf: ["ledger.journal.read", "ledger.journal.manage", "ledger.general_journal.post"] }}
           moduleId="ledger"
+          mode="mixed"
         >
           <AccountingJournalsPage />
         </PermissionGuard>
@@ -75,6 +76,7 @@ export const accountingRoutes: ModuleRouteRegistration = {
         <PermissionGuard
           permission="ledger.reports.read"
           moduleId="ledger"
+          mode="read"
         >
           <AccountingLedgerPage />
         </PermissionGuard>
@@ -86,6 +88,7 @@ export const accountingRoutes: ModuleRouteRegistration = {
         <PermissionGuard
           permission="ledger.reports.read"
           moduleId="ledger"
+          mode="read"
         >
           <AccountingTrialBalancePage />
         </PermissionGuard>
@@ -97,6 +100,7 @@ export const accountingRoutes: ModuleRouteRegistration = {
         <PermissionGuard
           permission={{ anyOf: ["accounting.statement.read", "accounting.statement.manage"] }}
           moduleId="accounting"
+          mode="mixed"
         >
           <AccountingStatementsPage />
         </PermissionGuard>
@@ -107,7 +111,8 @@ export const accountingRoutes: ModuleRouteRegistration = {
       element: (
         <PermissionGuard
           permission={{ anyOf: ["ledger.period.read", "ledger.period.manage", "accounting.close.execute"] }}
-          moduleIds={["accounting", "ledger"]}
+          moduleId="ledger"
+          mode="mixed"
         >
           <AccountingPeriodsPage />
         </PermissionGuard>
@@ -119,6 +124,7 @@ export const accountingRoutes: ModuleRouteRegistration = {
         <PermissionGuard
           permission={{ anyOf: ["accounting.reconciliation.read", "accounting.reconciliation.run"] }}
           moduleId="accounting"
+          mode="mixed"
         >
           <AccountingReconciliationPage />
         </PermissionGuard>
@@ -130,6 +136,7 @@ export const accountingRoutes: ModuleRouteRegistration = {
         <PermissionGuard
           permission={{ anyOf: ["accounting.fx-revaluation.read", "accounting.fx-revaluation.post"] }}
           moduleId="accounting"
+          mode="mixed"
         >
           <AccountingRevaluationPage />
         </PermissionGuard>

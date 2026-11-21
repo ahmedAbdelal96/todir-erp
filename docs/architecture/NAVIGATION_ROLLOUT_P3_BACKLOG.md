@@ -1,124 +1,79 @@
-# TODIR ERP — Navigation & Task Destinations P3 Progressive Rollout Backlog
+# TODIR ERP — Navigation Architecture & Rollout Backlog (P0 / P2 / P3 Wave 1)
 
-Following the successful implementation of P0 (Authorization & Security Foundation), P1 (Shared Grouped Navigation & Destination Architecture), and P2 (Pilots for Banking & CRM), this document defines the phased migration backlog for the remaining modules across TODIR ERP SaaS.
-
----
-
-## 1. Governance & Prerequisites for Migration
-
-Each module migrated in P3 must adhere to the contract established in:
-- `docs/architecture/TODIR_NAVIGATION_ACCESS_UX_ARCHITECTURE_DECISION.md`
-- `frontend/AGENTS.md` (Section 0.3)
-- `.agents/skills/erp-frontend-architect/SKILL.md` (Step 3, Rule 6)
-
-### Mandatory Invariants for Every Migrated Module:
-1. **Destination Registration**: Declare explicit task sub-destinations in `destination-registry.ts` and module `routes.tsx` via `destinations: [...]`.
-2. **Zero Single-Permission Module Gate**: Use composite `PermissionCondition` (`anyOf: [...]`) covering all sub-capabilities.
-3. **Independent Routes & Deep Links**: Provide discrete path routes (e.g. `/accounting/journals`, `/accounting/trial-balance`) while supporting legacy query strings (`/accounting?tab=journals`).
-4. **Deterministic Root Route Landing**: The root route of each module must never fail closed with Access Denied when a user possesses any permitted sub-destination; it renders the overview if permitted, or deterministically redirects (`<Navigate to={firstPermitted.path} replace />`) to the user's first permitted task destination.
-5. **Fail-Closed Protection**: Direct navigation to forbidden task routes renders `<DefaultAccessDeniedView>` with status 403.
-6. **Command Palette Integration**: Add Arabic and English search keywords so tasks are discoverable via Ctrl+K spotlight search.
-7. **ReadOnly / WindDown Enforcement**: When a module lifecycle status is `ReadOnly` or `WindDown`, mutation routes and actions must be disabled/forbidden while historical reading remains operational.
+**Status:** P0 Complete / P2 Complete / P3 Wave 1 Complete  
+**Governance:** `docs/architecture/TODIR_NAVIGATION_ACCESS_UX_ARCHITECTURE_DECISION.md`, `frontend/AGENTS.md`, `backend/AGENTS.md`  
+**Current Release Branch:** `dev`  
 
 ---
 
-## 2. Progressive Rollout Waves
+## 1. Executive Summary & Architecture Governance
 
-### Wave 1: High Tab-Pressure Modules (Delivered & Verified)
+This backlog tracks the phased transition of TODIR ERP SaaS from coarse single-permission module gates into a task-oriented, permission-safe, and lifecycle-aware enterprise navigation system.
 
-#### 1. Accounting (`accounting` & `ledger`) — Category: `finance`
-- **Current State**: Dedicated task routes for Overview, Journals, Ledger, Trial Balance, Statements, Periods, Reconciliation, and Revaluation.
-- **Target Destinations**:
-  - `accounting-overview`: `/accounting` — Chart of Accounts & Balances / دليل الحسابات والأرصدة (`ledger.account.read`, `ledger.account.manage`)
-  - `accounting-journals`: `/accounting/journals` — Journal Entries & Posting / قيود اليومية والترحيل (`ledger.journal.read`, `ledger.journal.manage`, `ledger.general_journal.post`)
-  - `accounting-ledger`: `/accounting/ledger` — General Ledger / دفتر الأستاذ العام (`ledger.reports.read`)
-  - `accounting-trial-balance`: `/accounting/trial-balance` — Trial Balance / ميزان المراجعة (`ledger.reports.read`, `accounting.statement.read`)
-  - `accounting-statements`: `/accounting/statements` — Financial Statements / القوائم المالية والختامية (`accounting.statement.read`, `accounting.statement.manage`)
-  - `accounting-periods`: `/accounting/periods` — Fiscal Years & Periods / الفترات المالية والإقفال (`ledger.period.read`, `ledger.period.manage`, `accounting.close.execute`)
-  - `accounting-reconciliation`: `/accounting/reconciliation` — Control Account Reconciliation / مطابقة حسابات المراقبة (`accounting.reconciliation.read`, `accounting.reconciliation.run`)
-  - `accounting-revaluation`: `/accounting/revaluation` — FX Currency Revaluation / تقييم فروق العملة (`accounting.fx-revaluation.read`, `accounting.fx-revaluation.post`)
-
-#### 2. Inventory & Stock Operations (`inventory`) — Category: `inventory`
-- **Current State**: Dedicated task routes for Overview, Balances, Movements, Transfers, Counts, Adjustments, Warehouses, and Traceability.
-- **Target Destinations**:
-  - `inventory-overview`: `/inventory` — Stock Position & Balances / أرصدة ومواقع المخزون (`inventory.stock.read`)
-  - `inventory-movements`: `/inventory/movements` — Stock Movement History / سجل حركة الأصناف المخزنية (`inventory.history.read`)
-  - `inventory-transfers`: `/inventory/transfers` — Inter-Warehouse Transfers / أوامر التحويل بين المستودعات (`inventory.transfer.create`, `inventory.transfer.ship`, `inventory.transfer.receive`)
-  - `inventory-counts`: `/inventory/counts` — Physical Stock Count Orders / محاضر الجرد الفعلي للمخزون (`inventory.count.create`, `inventory.count.enter`, `inventory.count.approve`, `inventory.count.post`)
-  - `inventory-adjustments`: `/inventory/adjustments` — Stock Adjustments / أذون التسوية المخزنية (`inventory.adjustment.create`, `inventory.adjustment.approve`, `inventory.adjustment.post`)
-  - `inventory-warehouses`: `/inventory/warehouses` — Warehouses & Storage Locations / المستودعات ومواقع التخزين (`inventory.warehouse.manage`, `inventory.location.manage`)
-  - `inventory-traceability`: `/inventory/traceability` — Batch, Lot & Serial Traceability / تتبع التشغيلات والأرقام التسلسلية (`inventory.traceability.manage`)
+### Key Architecture Pillars (Codified & Verified):
+1. **Shallow 7-Category Information Architecture**: Modules are organized into 7 functional categories (`workspace`, `sales`, `purchasing`, `inventory`, `finance`, `hr`, `admin`), avoiding 24-link flat clutter.
+2. **Deterministic Route Landing**: Users with any valid sub-capability never encounter an unexpected 403 when clicking a module entry. The root redirects automatically to their first permitted task destination.
+3. **Multi-Module Commercial Entitlement Isolation**: Composite permission conditions (e.g. `/accounting/periods` combining Ledger and Accounting) require both the specific permission and its manifest-owning module's entitlement/operational status to be satisfied. Unentitled modules cannot be bypassed via secondary permission codes.
+4. **Lifecycle & Mutation Gate**: Every destination declares an explicit `mode` (`read` | `mutation` | `mixed`). In `ReadOnly` or `WindDown` states, mutation destinations are hidden and backend endpoints return `403 Forbidden` (`module.lifecycle_readonly`).
+5. **Real-Stack Verification**: No simulated or mock-only claims. Verified end-to-end against live PostgreSQL (`todir_nav_acceptance`) and Playwright E2E browser journeys.
 
 ---
 
-### Wave 2: Commercial & Operational Modules
+## 2. Completed Milestones (P0 / P2 / P3 Wave 1)
 
-#### 3. Sales (`sales`) — Category: `sales`
-- **Current State**: `/sales` with orders, quotations, customer returns, price lists.
-- **Target Destinations**:
-  - `sales-orders`: `/sales` or `/sales/orders` — Sales Orders / أوامر البيع (`sales.order.read`, `sales.order.create`, `sales.order.confirm`)
-  - `sales-quotations`: `/sales/quotations` — Quotations / عروض الأسعار (`sales.quotation.read`, `sales.quotation.create`, `sales.quotation.open`, `sales.quotation.accept`)
-  - `sales-returns`: `/sales/returns` — Customer Returns / مرتجعات المبيعات (`sales.return.create`, `sales.return.approve`, `sales.return.execute`)
-  - `sales-deliveries`: `/sales/deliveries` — Shipping & Dispatch / الشحن والتسليم (`sales.order.fulfill`)
+### Milestone P0: Permission-Safe Foundation & Shell Architecture (COMPLETED)
+- [x] Effective Access API (`/api/v1/authorization/effective-access`) with legal entity and branch scoping.
+- [x] Destination Registry (`frontend/app/router/destination-registry.ts`) with 7 shallow categories.
+- [x] `<PermissionGuard>` fail-closed wrapper on all routes.
+- [x] Command Palette filter (`buildCommandPaletteItems`) surfacing only authorized quick actions and destinations.
+- [x] Context race protection with sequence correlation counters and abort controllers.
+- [x] Org-switch POST mutex guard and TanStack query cache flush on switch and logout.
+- [x] Task-level canonical favorites and recents in `AppShell` and sidebar star toggles.
 
-#### 4. Purchasing (`purchasing`) — Category: `purchasing`
-- **Current State**: `/purchasing` with POs, requisitions, vendor returns.
-- **Target Destinations**:
-  - `purchasing-orders`: `/purchasing` or `/purchasing/orders` — Purchase Orders / أوامر الشراء (`purchasing.po.read`, `purchasing.po.create`, `purchasing.po.approve`)
-  - `purchasing-requisitions`: `/purchasing/requisitions` — Purchase Requisitions / طلبات الشراء الداخلية (`purchasing.po.read`, `purchasing.po.create`)
-  - `purchasing-returns`: `/purchasing/returns` — Vendor Returns / مرتجعات المشتريات (`purchasing.po.edit`, `purchasing.po.cancel`)
-  - `purchasing-receipts`: `/purchasing/receipts` — Goods Receipts / استلامات المشتريات (`purchasing.receipt.view`, `purchasing.receipt.request`)
+### Milestone P2: Pilot Delivery (Banking & CRM) (COMPLETED)
+- [x] **Banking Module**:
+  - Registered 8 discrete task destinations (`overview`, `accounts`, `statements`, `reconciliations`, `cash`, `transfers`, `forecast`, `reports`).
+  - Cashier role isolation (`banking.cash.count`): only sees cash counts; accounts and transfers hidden; direct URL access denied; lands deterministically on `/banking/cash`.
+  - Cash management and transfer operational pages guarded: mutation buttons (`newTransfer`, `newCount`, `transferCustody`, `resolveDifference`, `submitCount`, `approveCount`, `finalizeCount`) check `canPerformAction`.
+  - Bank statement reconciliation workbench rendered as full-width page without modal collisions.
+- [x] **CRM Module**:
+  - Registered 5 task destinations (`home`, `leads`, `opportunities`, `activities`, `management`).
+  - Sales rep vs Manager isolation: management dashboard and pipeline inspection hidden for sales reps; lands on `/crm/leads`.
+  - Mutation actions guarded with `crm.team.manage`.
 
-#### 5. POS & Retail (`pos`) — Category: `inventory`
-- **Current State**: Cashier workspace, sessions, registers.
-- **Target Destinations**:
-  - `pos-register`: `/pos` — Active Register & Cashier Terminal / نقطة البيع (`pos.register.read`, `pos.cart.manage`, `pos.checkout.create`)
-  - `pos-sessions`: `/pos/sessions` — Cashier Shift Sessions & Cash Drops / جلسات الورديات (`pos.session.open`, `pos.session.close`, `pos.cash.manage`)
-  - `pos-orders`: `/pos/orders` — POS Receipts & Returns / إيصالات البيع والمرتجعات (`pos.return.create`, `pos.exchange.create`, `pos.report.read`)
-
----
-
-### Wave 3: Workforce & Human Capital
-
-#### 6. Human Resources (`hr`) — Category: `hr`
-- **Current State**: Employees, contracts, attendance, leaves.
-- **Target Destinations**:
-  - `hr-employees`: `/hr` or `/hr/employees` — Employee Directory / دليل الموظفين (`hr.employee.read_basic`, `hr.employee.create`, `hr.employee.manage`)
-  - `hr-contracts`: `/hr/contracts` — Employment Contracts / عقود العمل (`hr.employee.manage`, `hr.employee.import`)
-  - `hr-leaves`: `/hr/leaves` — Leave Requests & Balances / الإجازات والمغادرات (`hr.employee.manage`)
-  - `hr-attendance`: `/hr/attendance` — Attendance & Timesheets / الحضور والانصراف (`hr.employee.manage`)
-
-#### 7. Payroll (`payroll`) — Category: `hr`
-- **Current State**: Payroll runs, payslips, deductions.
-- **Target Destinations**:
-  - `payroll-runs`: `/payroll` — Monthly Payroll Runs / مسيرات الرواتب (`payroll.run.read`, `payroll.run.create`, `payroll.run.approve`, `payroll.run.finalize`)
-  - `payroll-payslips`: `/payroll/payslips` — Employee Payslips / قسائم الرواتب (`payroll.payslip.read`, `payroll.payslip.read_self`, `payroll.payslip.export`)
-  - `payroll-adjustments`: `/payroll/adjustments` — Allowances & Deductions / البدلات والاستقطاعات (`payroll.input.read`, `payroll.input.create`, `payroll.input.approve`, `payroll.structure.manage`)
+### Milestone P3 Wave 1: Accounting & Inventory Task Routes (COMPLETED)
+- [x] **Accounting / Ledger Module**:
+  - Registered 8 task destinations (`overview`, `journals`, `ledger`, `trial-balance`, `statements`, `periods`, `reconciliation`, `revaluation`).
+  - Core non-purchasable Ledger vs commercial Accounting distinction: non-purchasable Ledger destinations remain accessible to authorized users; `/accounting/periods` close action fails closed if commercial `accounting` is unentitled.
+  - Journal clerk isolation (`ledger.general_journal.create`): lands on `/accounting/journals`; root redirects without 403.
+  - Periods and Closing view guarded: soft-close and close actions check `canPerformAction`.
+- [x] **Inventory Module**:
+  - Registered 7 task destinations (`overview`, `movements`, `transfers`, `counts`, `adjustments`, `warehouses`, `traceability`).
+  - Physical count clerk isolation (`inventory.count.create`, `inventory.count.enter`): lands on `/inventory/counts`; root redirects without 403; cannot post adjustments.
+  - Operational tabs (`CountsTab`, `CountDetailModal`, `AdjustmentsTab`, `TransfersTab`) guarded against unauthorized mutation and ReadOnly/WindDown lifecycle.
+  - Backend mutation endpoints in Inventory, Ledger, and Accounting enforce `IModuleLifecycleEnforcer`.
 
 ---
 
-### Wave 4: Specialized Financial Modules
+## 3. Explicit Hold: P3 Wave 2 (Deferred Scope)
 
-#### 8. Fixed Assets (`fixed-assets`) — Category: `finance`
-- **Target Destinations**:
-  - `fixed-assets-register`: `/fixed-assets` — Asset Register / سجل الأصول الثابتة (`assets.read`, `assets.create`, `assets.edit`)
-  - `fixed-assets-depreciation`: `/fixed-assets/depreciation` — Depreciation Schedules / مسيرات الإهلاك (`assets.depreciation.prepare`, `assets.depreciation.post`, `assets.depreciation.reverse`)
-  - `fixed-assets-disposals`: `/fixed-assets/disposals` — Disposals & Revaluations / استبعاد وإعادة تقييم الأصول (`assets.disposal.manage`, `assets.impair`, `assets.revalue`)
-
-#### 9. Tax & Compliance (`tax`) — Category: `finance`
-- **Target Destinations**:
-  - `tax-returns`: `/tax` — Tax Returns & Declarations / الإقرارات الضريبية (`tax.read`, `tax.simulate`, `tax.export`)
-  - `tax-withholding`: `/tax/withholding` — Withholding Tax / ضريبة الاستقطاع (`tax.read`, `tax.policy.read`, `tax.policy.manage`)
-  - `tax-settings`: `/tax/settings` — Tax Rates & Categories / فئات وقواعد الضرائب (`tax.registration.read`, `tax.registration.manage`, `tax.rule.read`, `tax.rule.manage`)
+Per explicit Product Owner instruction, **P3 Wave 2 must remain untouched** during this release.
+Do not proceed to P3 Wave 2 until authorized:
+- [ ] Sales & Commercial Task Destinations (Wave 2)
+- [ ] Purchasing & Supplier Task Destinations (Wave 2)
+- [ ] Fixed Assets & Depreciation Task Destinations (Wave 2)
+- [ ] HR & Payroll Task Destinations (Wave 2)
 
 ---
 
-## 3. Rollout Acceptance Checklist
+## 4. Quality Gates & Verification Evidence
 
-For each migrated module:
-- [x] Registered in `destination-registry.ts` with explicit `NavDestination` array and keywords.
-- [x] Updated module `routes.tsx` with dedicated path-based sub-routes wrapped in `<PermissionGuard>`.
-- [x] Module page component accepts `initialTab` and updates URL route on tab click.
-- [x] Deterministic root route landing via `ModuleRootRoute` prevents 403 on parent links for narrow roles.
-- [x] Automated regression test (`permissions-manifest-audit.test.ts`) verifies 100% manifest parity.
-- [x] Direct navigation to forbidden route fails closed with `<DefaultAccessDeniedView>`.
+| Quality Gate | Tool / Command | Status | Evidence |
+|---|---|---|---|
+| **TypeScript Typecheck** | `pnpm run typecheck` | **PASSED** | 0 errors across root and frontend tsconfig |
+| **Frontend Architecture** | `pnpm run architecture:frontend` | **PASSED** | Module boundaries, fixtures, and rules 100% clean |
+| **Localization Verification** | `pnpm run localization:verify` | **PASSED** | Zero missing keys, full Arabic/English parity |
+| **Frontend Unit Suite** | `pnpm run test:frontend` | **PASSED** | 259/259 tests passed (55 suites) |
+| **Permission Audit** | `node --test frontend/tests/navigation/permissions-manifest-audit.test.ts` | **PASSED** | 100% of permissions verified against 24 module manifests |
+| **Real-Stack Backend Integration** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~NavigationSecurityAcceptanceTests` | **PASSED** | 1/1 suite (20 scenarios) passed against live PostgreSQL (`todir_nav_acceptance`) |
+| **Browser E2E Acceptance** | `pnpm --dir frontend exec playwright test tests/e2e/navigation-access.spec.ts` | **PASSED** | 6/6 browser journeys passed |

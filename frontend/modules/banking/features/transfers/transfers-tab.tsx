@@ -1,5 +1,8 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useOutletContext } from "react-router-dom";
+import type { WorkspaceOutletContext } from "../../../../app/router/route-contract.ts";
+import { canPerformAction } from "../../../../core/runtime/effective-access.ts";
 import {
   useTransferReconciliations,
   useProviderSettlements,
@@ -23,6 +26,11 @@ interface Props {
 
 export function TransfersTab({ legalEntityId }: Props): React.JSX.Element {
   const { t } = useTranslation("banking");
+  const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
+  const effectiveAccess = outletCtx?.effectiveAccess;
+  const canInitiate = effectiveAccess ? canPerformAction(effectiveAccess, "banking.transfers.initiate", "banking") : true;
+  const canReconcile = effectiveAccess ? canPerformAction(effectiveAccess, "banking.reconciliation.match", "banking") : true;
+
   const [activeSubTab, setActiveSubTab] = useState<"transfers" | "providers" | "cheques">("transfers");
 
   // Modals state
@@ -43,7 +51,7 @@ export function TransfersTab({ legalEntityId }: Props): React.JSX.Element {
           <h2 style={{ margin: 0, fontSize: "1.25rem", color: "var(--color-brand-primary)" }}>{t("transfers.title")}</h2>
           <p style={{ margin: "0.25rem 0 0", fontSize: "0.875rem", color: "var(--color-content-muted)" }}>{t("transfers.subtitle")}</p>
         </div>
-        {activeSubTab === "transfers" && (
+        {activeSubTab === "transfers" && canInitiate && (
           <Button variant="primary" data-testid="new-internal-transfer" onClick={() => setIsNewTransferOpen(true)}>
             {t("transfers.newTransferButton")}
           </Button>
@@ -132,7 +140,7 @@ export function TransfersTab({ legalEntityId }: Props): React.JSX.Element {
                       />
                     </TableCell>
                     <TableCell align="end">
-                      {item.state !== "Matched" && (
+                      {item.state !== "Matched" && canReconcile && (
                         <Button
                           size="compact"
                           variant="secondary"
@@ -188,7 +196,7 @@ export function TransfersTab({ legalEntityId }: Props): React.JSX.Element {
                       />
                     </TableCell>
                     <TableCell align="end">
-                      {settlement.status !== "Matched" && (
+                      {settlement.status !== "Matched" && canReconcile && (
                         <Button
                           size="compact"
                           variant="secondary"

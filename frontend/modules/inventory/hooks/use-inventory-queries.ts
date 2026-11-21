@@ -1,6 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOptionalPermissions, useLegalEntityContext } from "../../../core/runtime/runtime-provider.tsx";
 import { PermissionSet } from "../../../core/runtime/permissions.ts";
+import { isPermissionEffective, canPerformAction } from "../../../core/runtime/effective-access.ts";
+import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import { useOutletContext } from "react-router-dom";
 import { loadSessionContext } from "../../../core/api/auth-service.ts";
 import { inventoryApi } from "../services/inventory-api.ts";
 import type {
@@ -46,6 +49,14 @@ export function useInventoryScope(options?: InventoryScopeOptions) {
 }
 
 export function useInventoryPermissions() {
+  let effectiveAccess: import("../../../core/runtime/effective-access.ts").EffectiveAccess | undefined;
+  try {
+    const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
+    effectiveAccess = outletCtx?.effectiveAccess;
+  } catch {
+    // outside Router context
+  }
+
   const permissions = useOptionalPermissions();
   const sessionQuery = useQuery({
     queryKey: ["session", "context"],
@@ -55,6 +66,38 @@ export function useInventoryPermissions() {
 
   const sessionPerms = (sessionQuery.data as { permissions?: readonly string[] } | undefined)?.permissions;
   const permSet = permissions ?? (sessionPerms ? new PermissionSet(sessionPerms) : undefined);
+
+  if (effectiveAccess) {
+    return {
+      canReadStock: isPermissionEffective(effectiveAccess, "inventory.stock.read", true),
+      canReadHistory: isPermissionEffective(effectiveAccess, "inventory.history.read", true),
+      canReadCost: isPermissionEffective(effectiveAccess, "inventory.cost.read", true),
+      canReadValuation: isPermissionEffective(effectiveAccess, "inventory.valuation.read", true),
+      canReadReconciliation: isPermissionEffective(effectiveAccess, "inventory.reconciliation.read", true),
+      canConfirmReceipt: canPerformAction(effectiveAccess, "inventory.receipt.confirm", "inventory"),
+      canConfirmIssue: canPerformAction(effectiveAccess, "inventory.issue.confirm", "inventory"),
+      canCreateTransfer: canPerformAction(effectiveAccess, "inventory.transfer.create", "inventory"),
+      canShipTransfer: canPerformAction(effectiveAccess, "inventory.transfer.ship", "inventory"),
+      canReceiveTransfer: canPerformAction(effectiveAccess, "inventory.transfer.receive", "inventory"),
+      canCreateReservation: canPerformAction(effectiveAccess, "inventory.reservation.create", "inventory"),
+      canReleaseReservation: canPerformAction(effectiveAccess, "inventory.reservation.release", "inventory"),
+      canCreateCount: canPerformAction(effectiveAccess, "inventory.count.create", "inventory"),
+      canEnterCount: canPerformAction(effectiveAccess, "inventory.count.enter", "inventory"),
+      canPostCount: canPerformAction(effectiveAccess, "inventory.count.post", "inventory"),
+      canCreateAdjustment: canPerformAction(effectiveAccess, "inventory.adjustment.create", "inventory"),
+      canApproveAdjustment: canPerformAction(effectiveAccess, "inventory.adjustment.approve", "inventory"),
+      canPostAdjustment: canPerformAction(effectiveAccess, "inventory.adjustment.post", "inventory"),
+      canManageWarehouses: canPerformAction(effectiveAccess, "inventory.warehouse.manage", "inventory"),
+      canManageLocations: canPerformAction(effectiveAccess, "inventory.location.manage", "inventory"),
+      canManageProfiles: canPerformAction(effectiveAccess, "inventory.profile.manage", "inventory"),
+      canManagePolicy: canPerformAction(effectiveAccess, "inventory.policy.manage", "inventory"),
+      canManageTraceability: canPerformAction(effectiveAccess, "inventory.traceability.manage", "inventory"),
+      canPostOpening: canPerformAction(effectiveAccess, "inventory.opening.post", "inventory"),
+      canChangeStockStatus: canPerformAction(effectiveAccess, "inventory.stock.status.change", "inventory"),
+      canReverseOperation: canPerformAction(effectiveAccess, "inventory.operation.reverse", "inventory"),
+      canOverrideNegative: canPerformAction(effectiveAccess, "inventory.stock.negative.override", "inventory")
+    };
+  }
 
   return {
     canReadStock: permSet ? permSet.hasPermission("inventory.stock.read") : true,

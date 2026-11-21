@@ -10,12 +10,20 @@ export interface EffectiveAccess {
   readonly version: string;
 }
 
+export interface ExpectedSessionContext {
+  readonly tenantId?: string;
+  readonly membershipId?: string;
+  readonly legalEntityId?: string | null;
+  readonly branchId?: string | null;
+}
+
 let effectiveAccessAbortController: AbortController | null = null;
 let effectiveAccessSequenceCounter = 0;
 
 export async function fetchEffectiveAccess(
   legalEntityId?: string | null,
-  branchId?: string | null
+  branchId?: string | null,
+  expectedContext?: ExpectedSessionContext
 ): Promise<EffectiveAccess> {
   const currentSequence = ++effectiveAccessSequenceCounter;
 
@@ -53,8 +61,39 @@ export async function fetchEffectiveAccess(
   }
 
   // Validate response payload integrity
-  if (!data || typeof data.tenantId !== "string" || !Array.isArray(data.permissions)) {
+  if (
+    !data ||
+    typeof data !== "object" ||
+    typeof data.tenantId !== "string" ||
+    typeof data.membershipId !== "string" ||
+    typeof data.isSuper !== "boolean" ||
+    typeof data.version !== "string" ||
+    !Array.isArray(data.permissions) ||
+    !Array.isArray(data.entitledModules) ||
+    typeof data.moduleStatuses !== "object" ||
+    data.moduleStatuses === null
+  ) {
     throw new Error("effective_access_invalid_payload");
+  }
+
+  // Validate context agreement if expected context is provided
+  if (expectedContext) {
+    if (expectedContext.tenantId && data.tenantId !== expectedContext.tenantId) {
+      throw new Error("effective_access_tenant_mismatch");
+    }
+    if (expectedContext.membershipId && data.membershipId !== expectedContext.membershipId) {
+      throw new Error("effective_access_membership_mismatch");
+    }
+    const normExpectedLid = expectedContext.legalEntityId || null;
+    const normDataLid = data.legalEntityId || null;
+    if (normExpectedLid !== normDataLid) {
+      throw new Error("effective_access_legal_entity_mismatch");
+    }
+    const normExpectedBid = expectedContext.branchId || null;
+    const normDataBid = data.branchId || null;
+    if (normExpectedBid !== normDataBid) {
+      throw new Error("effective_access_branch_mismatch");
+    }
   }
 
   return data;
@@ -94,6 +133,44 @@ export function hasAllPermissionsInAccess(
   return permissions.every(p => hasPermissionInAccess(access, p));
 }
 
+export function getOwningModuleForPermission(permission: string): string {
+  const dotIndex = permission.indexOf(".");
+  if (dotIndex <= 0) return permission.toLowerCase();
+  const prefix = permission.slice(0, dotIndex).toLowerCase();
+  if (prefix === "assets") return "fixed-assets";
+  return prefix;
+}
+
+export function isMutationPermission(permission: string): boolean {
+  const dotIndex = permission.lastIndexOf(".");
+  const action = dotIndex >= 0 ? permission.slice(dotIndex + 1).toLowerCase() : permission.toLowerCase();
+  if (
+    action === "read" ||
+    action === "view" ||
+    action === "search" ||
+    action === "explain" ||
+    permission.endsWith(".read_basic")
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function isPermissionEffective(
+  access: EffectiveAccess | null | undefined,
+  permission: string,
+  allowReadOnly = true
+): boolean {
+  if (!access) return false;
+  if (!hasPermissionInAccess(access, permission)) return false;
+
+  const owningModule = getOwningModuleForPermission(permission);
+  const isMutation = isMutationPermission(permission);
+  const effectiveAllowReadOnly = allowReadOnly && !isMutation;
+
+  return isModuleOperational(access, owningModule, effectiveAllowReadOnly);
+}
+
 export type PermissionCondition =
   | string
   | {
@@ -116,6 +193,25 @@ export function evaluatePermissionCondition(
   }
   if (condition.anyOf && condition.anyOf.length > 0) {
     if (!hasAnyPermissionInAccess(access, ...condition.anyOf)) return false;
+  }
+  return true;
+}
+
+export function evaluateEffectivePermissionCondition(
+  condition: PermissionCondition | undefined,
+  access: EffectiveAccess | null | undefined,
+  allowReadOnly = true
+): boolean {
+  if (!condition) return true;
+  if (!access) return false;
+  if (typeof condition === "string") {
+    return isPermissionEffective(access, condition, allowReadOnly);
+  }
+  if (condition.allOf && condition.allOf.length > 0) {
+    if (!condition.allOf.every(p => isPermissionEffective(access, p, allowReadOnly))) return false;
+  }
+  if (condition.anyOf && condition.anyOf.length > 0) {
+    if (!condition.anyOf.some(p => isPermissionEffective(access, p, allowReadOnly))) return false;
   }
   return true;
 }
@@ -186,4 +282,15 @@ export function isModuleReadOnly(
   if (!rawStatus) return false;
   const status = rawStatus.toLowerCase();
   return status === "readonly" || status === "winddown";
+}
+
+export function canPerformAction(
+  access: EffectiveAccess | null | undefined,
+  permission: string,
+  moduleId?: string
+): boolean {
+  if (!access) return false;
+  const targetModule = moduleId ?? getOwningModuleForPermission(permission);
+  if (isModuleReadOnly(access, targetModule)) return false;
+  return isPermissionEffective(access, permission, false);
 }

@@ -1,14 +1,16 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { useOutletContext, Link } from "react-router-dom";
-import type { WorkspaceOutletContext, PermissionCondition } from "../../app/router/route-contract.ts";
-import { evaluatePermissionCondition, isModuleOperational } from "../runtime/effective-access.ts";
+import type { WorkspaceOutletContext, PermissionCondition, DestinationMode } from "../../app/router/route-contract.ts";
+import { evaluateEffectivePermissionCondition, isModuleOperational, isModuleReadOnly } from "../runtime/effective-access.ts";
+import { ModuleLifecycleBanner } from "./module-lifecycle-banner.tsx";
 
 export interface PermissionGuardProps {
   readonly permission?: PermissionCondition | undefined;
   readonly moduleId?: string | undefined;
   readonly moduleIds?: readonly string[] | undefined;
   readonly allowReadOnly?: boolean | undefined;
+  readonly mode?: DestinationMode | undefined;
   readonly children: React.ReactNode;
   readonly fallback?: React.ReactNode | undefined;
 }
@@ -18,6 +20,7 @@ export function PermissionGuard({
   moduleId,
   moduleIds,
   allowReadOnly = true,
+  mode,
   children,
   fallback
 }: PermissionGuardProps): React.JSX.Element {
@@ -30,6 +33,12 @@ export function PermissionGuard({
     return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
   }
 
+  // Check lifecycle mutation restrictions
+  const isReadOnly = moduleId ? isModuleReadOnly(effectiveAccess, moduleId) : false;
+  if (isReadOnly && (mode === "mutation" || !allowReadOnly)) {
+    return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
+  }
+
   // Enforce module operational readiness (entitlement + lifecycle activation)
   if (moduleId && !isModuleOperational(effectiveAccess, moduleId, allowReadOnly)) {
     return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
@@ -39,12 +48,17 @@ export function PermissionGuard({
     return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
   }
 
-  // Enforce specific permission condition
-  if (permission && !evaluatePermissionCondition(permission, effectiveAccess)) {
+  // Enforce specific permission condition with owning-module entitlement coupling
+  if (permission && !evaluateEffectivePermissionCondition(permission, effectiveAccess, allowReadOnly)) {
     return fallback ? <>{fallback}</> : <DefaultAccessDeniedView />;
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {moduleId && isReadOnly ? <ModuleLifecycleBanner moduleId={moduleId} /> : null}
+      {children}
+    </>
+  );
 }
 
 export function DefaultAccessDeniedView(): React.JSX.Element {

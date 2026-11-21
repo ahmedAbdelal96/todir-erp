@@ -1,6 +1,11 @@
 import type { NavigationCategory, NavDestination, ModuleNavigationRegistration } from "./route-contract.ts";
 import type { EffectiveAccess } from "../../core/runtime/effective-access.ts";
-import { evaluatePermissionCondition, isModuleOperational } from "../../core/runtime/effective-access.ts";
+import {
+  evaluatePermissionCondition,
+  evaluateEffectivePermissionCondition,
+  isModuleOperational,
+  isModuleReadOnly
+} from "../../core/runtime/effective-access.ts";
 
 export interface NavigationCategoryGroup {
   readonly id: NavigationCategory;
@@ -32,6 +37,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     permission: { anyOf: ["banking.accounts.read", "banking.statements.read", "banking.reconciliation.read", "banking.reports.read", "banking.cash_position.read"] },
     order: 10,
     isPrimary: true,
+    mode: "read",
     keywords: ["بنوك", "سيولة", "خزائن", "overview", "liquidity"]
   },
   {
@@ -44,6 +50,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     icon: "landmark",
     permission: { anyOf: ["banking.accounts.read", "banking.accounts.create", "banking.accounts.edit"] },
     order: 20,
+    mode: "mixed",
     keywords: ["حسابات", "بنك", "خزينة", "صندوق", "accounts", "treasury"]
   },
   {
@@ -56,6 +63,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     icon: "statement",
     permission: { anyOf: ["banking.statements.read", "banking.statements.import", "banking.statements.validate"] },
     order: 30,
+    mode: "mixed",
     keywords: ["كشف", "حساب", "إفادة", "statements", "feed"]
   },
   {
@@ -68,6 +76,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     icon: "reconcile",
     permission: { anyOf: ["banking.reconciliation.read", "banking.reconciliation.match", "banking.reconciliation.finalize"] },
     order: 40,
+    mode: "mixed",
     keywords: ["تسوية", "مطابقة", "reconciliation", "match"]
   },
   {
@@ -80,6 +89,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     icon: "vault",
     permission: { anyOf: ["banking.cash.read", "banking.cash.count", "banking.cash.difference.resolve"] },
     order: 50,
+    mode: "mixed",
     keywords: ["جرد", "نقدية", "عهدة", "خزنة", "cash count", "custody"]
   },
   {
@@ -92,6 +102,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     icon: "transfer",
     permission: { anyOf: ["banking.transfers.read", "banking.transfers.initiate"] },
     order: 60,
+    mode: "mixed",
     keywords: ["تحويل", "تسوية", "بوابة", "transfers", "payouts"]
   },
   {
@@ -104,6 +115,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     icon: "forecast",
     permission: { anyOf: ["banking.cash_forecast.read", "banking.cash_forecast.manage"] },
     order: 70,
+    mode: "read",
     keywords: ["توقعات", "سيولة", "تدفق", "forecast", "cash flow"]
   },
   {
@@ -116,6 +128,7 @@ export const BANKING_DESTINATIONS: readonly NavDestination[] = [
     icon: "reports",
     permission: { anyOf: ["banking.reports.read", "banking.audit.read"] },
     order: 80,
+    mode: "read",
     keywords: ["تقارير", "كشف حركة", "reports"]
   }
 ];
@@ -132,6 +145,7 @@ export const CRM_DESTINATIONS: readonly NavDestination[] = [
     permission: { anyOf: ["crm.home.read", "crm.lead.read", "crm.opportunity.read", "crm.activity.read"] },
     order: 10,
     isPrimary: true,
+    mode: "read",
     keywords: ["مبيعات", "مهام", "اليوم", "my work"]
   },
   {
@@ -144,6 +158,7 @@ export const CRM_DESTINATIONS: readonly NavDestination[] = [
     icon: "users",
     permission: { anyOf: ["crm.lead.read", "crm.lead.create", "crm.lead.edit"] },
     order: 20,
+    mode: "mixed",
     keywords: ["عميل محتمل", "عملاء", "leads"]
   },
   {
@@ -156,6 +171,7 @@ export const CRM_DESTINATIONS: readonly NavDestination[] = [
     icon: "kanban",
     permission: { anyOf: ["crm.opportunity.read", "crm.opportunity.create", "crm.opportunity.edit"] },
     order: 30,
+    mode: "mixed",
     keywords: ["فرص", "صفقات", "مسار بيعي", "pipeline", "deals"]
   },
   {
@@ -168,6 +184,7 @@ export const CRM_DESTINATIONS: readonly NavDestination[] = [
     icon: "check-square",
     permission: { anyOf: ["crm.activity.read", "crm.activity.create", "crm.activity.edit"] },
     order: 40,
+    mode: "mixed",
     keywords: ["أنشطة", "متابعات", "مكالمات", "activities", "tasks"]
   },
   {
@@ -180,6 +197,7 @@ export const CRM_DESTINATIONS: readonly NavDestination[] = [
     icon: "bar-chart",
     permission: { anyOf: ["crm.team.manage", "crm.pipeline.manage", "crm.team.read", "crm.pipeline.read", "crm.forecast.read"] },
     order: 50,
+    mode: "mixed",
     keywords: ["إدارة", "فريق", "تقارير", "management", "teams"]
   }
 ];
@@ -196,6 +214,7 @@ export const ACCOUNTING_DESTINATIONS: readonly NavDestination[] = [
     permission: { anyOf: ["ledger.account.read", "ledger.account.manage"] },
     order: 10,
     isPrimary: true,
+    mode: "read",
     keywords: ["حسابات", "دليل", "أرصدة", "شجرة الحسابات", "chart of accounts", "coa"]
   },
   {
@@ -208,6 +227,7 @@ export const ACCOUNTING_DESTINATIONS: readonly NavDestination[] = [
     icon: "statement",
     permission: { anyOf: ["ledger.journal.read", "ledger.journal.manage", "ledger.general_journal.post"] },
     order: 20,
+    mode: "mixed",
     keywords: ["قيد", "يومية", "ترحيل", "سند قيد", "journals", "entries"]
   },
   {
@@ -220,6 +240,7 @@ export const ACCOUNTING_DESTINATIONS: readonly NavDestination[] = [
     icon: "reports",
     permission: "ledger.reports.read",
     order: 30,
+    mode: "read",
     keywords: ["أستاذ", "دفتر الأستاذ", "كشف حساب", "general ledger", "gl"]
   },
   {
@@ -232,6 +253,7 @@ export const ACCOUNTING_DESTINATIONS: readonly NavDestination[] = [
     icon: "reports",
     permission: "ledger.reports.read",
     order: 40,
+    mode: "read",
     keywords: ["ميزان", "مراجعة", "أرصدة", "trial balance", "tb"]
   },
   {
@@ -244,6 +266,7 @@ export const ACCOUNTING_DESTINATIONS: readonly NavDestination[] = [
     icon: "forecast",
     permission: { anyOf: ["accounting.statement.read", "accounting.statement.manage"] },
     order: 50,
+    mode: "mixed",
     keywords: ["قوائم مالية", "ميزانية", "أرباح وخسائر", "تدفقات", "financial statements", "balance sheet", "p&l"]
   },
   {
@@ -256,6 +279,7 @@ export const ACCOUNTING_DESTINATIONS: readonly NavDestination[] = [
     icon: "vault",
     permission: { anyOf: ["ledger.period.read", "ledger.period.manage", "accounting.close.execute"] },
     order: 60,
+    mode: "mixed",
     keywords: ["فترة مالية", "سنة مالية", "إقفال", "periods", "fiscal year", "close"]
   },
   {
@@ -268,6 +292,7 @@ export const ACCOUNTING_DESTINATIONS: readonly NavDestination[] = [
     icon: "reconcile",
     permission: { anyOf: ["accounting.reconciliation.read", "accounting.reconciliation.run"] },
     order: 70,
+    mode: "mixed",
     keywords: ["مطابقة", "مراقبة", "subledger", "reconciliation"]
   },
   {
@@ -280,6 +305,7 @@ export const ACCOUNTING_DESTINATIONS: readonly NavDestination[] = [
     icon: "transfer",
     permission: { anyOf: ["accounting.fx-revaluation.read", "accounting.fx-revaluation.post"] },
     order: 80,
+    mode: "mixed",
     keywords: ["عملات", "فروق عملة", "تقييم", "fx", "revaluation"]
   }
 ];
@@ -296,6 +322,7 @@ export const INVENTORY_DESTINATIONS: readonly NavDestination[] = [
     permission: "inventory.stock.read",
     order: 10,
     isPrimary: true,
+    mode: "read",
     keywords: ["مخزون", "أرصدة", "بضاعة", "مستودع", "stock", "balances", "inventory"]
   },
   {
@@ -308,6 +335,7 @@ export const INVENTORY_DESTINATIONS: readonly NavDestination[] = [
     icon: "statement",
     permission: "inventory.history.read",
     order: 20,
+    mode: "read",
     keywords: ["حركة", "وارد", "منصرف", "سجل", "movements", "transactions"]
   },
   {
@@ -320,6 +348,7 @@ export const INVENTORY_DESTINATIONS: readonly NavDestination[] = [
     icon: "transfer",
     permission: { anyOf: ["inventory.transfer.create", "inventory.transfer.ship", "inventory.transfer.receive"] },
     order: 30,
+    mode: "mixed",
     keywords: ["تحويل مخزني", "نقل بضاعة", "مستودعات", "transfers"]
   },
   {
@@ -332,6 +361,7 @@ export const INVENTORY_DESTINATIONS: readonly NavDestination[] = [
     icon: "vault",
     permission: { anyOf: ["inventory.count.create", "inventory.count.enter", "inventory.count.approve", "inventory.count.post"] },
     order: 40,
+    mode: "mixed",
     keywords: ["جرد", "جرد دوري", "مطابقة فعلية", "stock count", "physical inventory"]
   },
   {
@@ -344,6 +374,7 @@ export const INVENTORY_DESTINATIONS: readonly NavDestination[] = [
     icon: "reconcile",
     permission: { anyOf: ["inventory.adjustment.create", "inventory.adjustment.approve", "inventory.adjustment.post"] },
     order: 50,
+    mode: "mixed",
     keywords: ["تسوية", "تعديل كميات", "عجز", "زيادة", "adjustments"]
   },
   {
@@ -356,6 +387,7 @@ export const INVENTORY_DESTINATIONS: readonly NavDestination[] = [
     icon: "landmark",
     permission: { anyOf: ["inventory.warehouse.manage", "inventory.location.manage"] },
     order: 60,
+    mode: "mixed",
     keywords: ["مستودع", "موقع تخزين", "مخازن", "رفوف", "warehouses", "locations"]
   },
   {
@@ -368,6 +400,7 @@ export const INVENTORY_DESTINATIONS: readonly NavDestination[] = [
     icon: "reports",
     permission: "inventory.traceability.manage",
     order: 70,
+    mode: "read",
     keywords: ["تشغيلة", "رقم تسلسلي", "صلاحية", "batch", "lot", "serial", "traceability"]
   }
 ];
@@ -377,8 +410,14 @@ export function isDestinationPermitted(
   access: EffectiveAccess | null | undefined
 ): boolean {
   if (!access) return false;
-  if (!isModuleOperational(access, dest.moduleId)) return false;
-  return evaluatePermissionCondition(dest.permission, access);
+  if (!isModuleOperational(access, dest.moduleId, true)) return false;
+
+  const isReadOnly = isModuleReadOnly(access, dest.moduleId);
+  if (isReadOnly && dest.mode === "mutation") {
+    return false;
+  }
+
+  return evaluateEffectivePermissionCondition(dest.permission, access, true);
 }
 
 export function isModulePermitted(
@@ -391,8 +430,8 @@ export function isModulePermitted(
     return item.destinations.some(d => isDestinationPermitted(d, access));
   }
   const moduleIds = item.moduleIds && item.moduleIds.length > 0 ? item.moduleIds : [item.id];
-  if (!moduleIds.some(m => isModuleOperational(access, m))) return false;
-  return evaluatePermissionCondition(item.permissions ?? item.permission, access);
+  if (!moduleIds.some(m => isModuleOperational(access, m, true))) return false;
+  return evaluateEffectivePermissionCondition(item.permissions ?? item.permission, access, true);
 }
 
 export function getPermittedDestinationsForModule(

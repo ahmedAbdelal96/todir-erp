@@ -119,6 +119,7 @@ public static class PlatformHostingExtensions
         services.AddSingleton<ICapabilityResolver, CapabilityResolver>();
         services.AddSingleton<IPermissionAuthorizer, PermissionAuthorizer>();
         services.AddSingleton<IAuthorizationSubjectStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlAuthorizationSubjectStore(dataSource) : new NullAuthorizationSubjectStore());
+        services.AddSingleton<IModuleLifecycleEnforcer>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlModuleLifecycleEnforcer(dataSource, provider.GetService<IModuleRegistry>()) : new NullModuleLifecycleEnforcer());
         var fileSigningSecret = configuration["TODIR_FILE_SIGNING_SECRET"];
         if (!string.IsNullOrWhiteSpace(fileSigningSecret)) services.AddSingleton<IFileAccessSigner>(_ => new HmacFileAccessSigner(fileSigningSecret));
         services.AddSingleton<IAuditWriter>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlAuditWriter(dataSource) : new InMemoryAuditWriter());

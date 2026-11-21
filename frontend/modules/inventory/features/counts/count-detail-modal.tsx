@@ -25,6 +25,8 @@ export interface CountDetailModalProps {
   readonly countStatus: string;
   readonly totalLines: number;
   readonly countedLines: number;
+  readonly canPost?: boolean;
+  readonly canEnter?: boolean;
   readonly onCountPosted?: () => void;
 }
 
@@ -38,6 +40,8 @@ export function CountDetailModal({
   countStatus,
   totalLines,
   countedLines,
+  canPost = true,
+  canEnter = true,
   onCountPosted
 }: CountDetailModalProps): React.JSX.Element | null {
   const { t } = useTranslation("inventory");
@@ -63,11 +67,11 @@ export function CountDetailModal({
   const totalPages = Math.max(1, Math.ceil((data?.totalCount ?? 0) / pageSize));
   const remainingLines = Math.max(0, progress.totalLines - progress.countedLines);
   const isPosted = progress.status === "Posted";
-  const canPost = !isPosted && progress.totalLines > 0 && remainingLines === 0;
+  const isReadyToPost = canPost && !isPosted && progress.totalLines > 0 && remainingLines === 0;
 
   const handlePost = async () => {
     setErrorMessage(null);
-    if (!canPost) {
+    if (!isReadyToPost) {
       setErrorMessage(t("counts.enterAllLinesBeforePosting"));
       return;
     }
@@ -121,11 +125,11 @@ export function CountDetailModal({
             <InventoryStatusBadge status={progress.status} type="count" />
           </div>
 
-          {!isPosted && (
+          {!isPosted && canPost && (
             <Button
               variant="primary"
               onPress={handlePost}
-              isDisabled={!canPost}
+              isDisabled={!isReadyToPost}
               isLoading={postPhysicalCount.isPending}
             >
               {postPhysicalCount.isPending ? t("common.posting") : t("counts.postCount")}
@@ -187,7 +191,7 @@ export function CountDetailModal({
                 {!isBlind && (
                   <th style={{ padding: "0.625rem 0.75rem", textAlign: "end" }}>{t("counts.differenceQty")}</th>
                 )}
-                {!isPosted && (
+                {!isPosted && canEnter && (
                   <th style={{ padding: "0.625rem 0.75rem", textAlign: "center" }}>{t("stock.actions")}</th>
                 )}
               </tr>
@@ -221,7 +225,7 @@ export function CountDetailModal({
                           {diff !== null ? <QuantityDisplay value={toQty(diff, ln.baseUomCode ?? "EA")} /> : "—"}
                         </td>
                       )}
-                      {!isPosted && (
+                      {!isPosted && canEnter && (
                         <td style={{ padding: "0.625rem 0.75rem", textAlign: "center" }}>
                           <Button variant="secondary" onPress={() => setEditingLineId(ln.id)}>{t("counts.enterCount")}</Button>
                         </td>

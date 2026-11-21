@@ -128,11 +128,12 @@ test.describe('TODIR ERP — Permission-Driven Navigation & Task Architecture (P
     await page.goto('/crm');
 
     // In CRM page, Leads and Opportunities button tabs are visible
-    await expect(page.getByRole('button', { name: 'العملاء المحتملين' })).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('button', { name: 'الفرص والمسار البيعي' })).toBeVisible({ timeout: 10000 });
+    const crmPage = page.getByTestId('crm-page');
+    await expect(crmPage.getByRole('button', { name: 'العملاء المحتملين', exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(crmPage.getByRole('button', { name: 'الفرص والمسار البيعي', exact: true })).toBeVisible({ timeout: 10000 });
 
     // Management tab is completely hidden
-    await expect(page.getByRole('button', { name: 'إدارة المبيعات والتقارير' })).not.toBeVisible();
+    await expect(crmPage.getByRole('button', { name: 'إدارة المبيعات والتقارير', exact: true })).not.toBeVisible();
 
     // Direct navigation to /crm/management should be denied
     await page.goto('/crm/management');

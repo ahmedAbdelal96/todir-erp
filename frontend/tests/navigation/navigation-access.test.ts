@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { EffectiveAccess } from "../../core/runtime/effective-access.ts";
 import {
   evaluatePermissionCondition,
+  evaluateEffectivePermissionCondition,
   isModuleOperational,
   hasPermissionInAccess,
   hasAnyPermissionInAccess,
@@ -410,5 +411,61 @@ describe("Permission-Driven Effective Access & Destination Architecture", () => 
     assert.equal(isModuleOperational(activeAccess, "inventory", true), true);
     assert.equal(isModuleOperational(activeAccess, "inventory", false), true);
     assert.equal(isModuleReadOnly(activeAccess, "inventory"), false);
+  });
+
+  it("filters destinations based on mode in ReadOnly and WindDown states", () => {
+    const readOnlyAccess: EffectiveAccess = {
+      ...emptyAccess,
+      entitledModules: ["inventory"],
+      permissions: [
+        "inventory.stock.read",
+        "inventory.history.read",
+        "inventory.count.create",
+        "inventory.adjustment.create"
+      ],
+      moduleStatuses: { inventory: "ReadOnly" }
+    };
+
+    // INVENTORY_DESTINATIONS:
+    // Movements is "read" mode -> permitted
+    const movementsDest = INVENTORY_DESTINATIONS.find(d => d.id === "inventory-movements")!;
+    assert.equal(isDestinationPermitted(movementsDest, readOnlyAccess), true);
+
+    // Adjustments is "mutation" mode -> NOT permitted in ReadOnly
+    const adjustmentsDest = INVENTORY_DESTINATIONS.find(d => d.id === "inventory-adjustments")!;
+    assert.equal(isDestinationPermitted(adjustmentsDest, readOnlyAccess), false);
+
+    // When module becomes Active, mutation destination is permitted
+    const activeAccess: EffectiveAccess = {
+      ...readOnlyAccess,
+      moduleStatuses: { inventory: "Active" }
+    };
+    assert.equal(isDestinationPermitted(adjustmentsDest, activeAccess), true);
+  });
+
+  it("enforces multi-module commercial entitlement isolation without cross-module bypass", () => {
+    // User has permission 'accounting.close.execute' from Accounting module,
+    // but the tenant is only entitled to 'ledger' (not 'accounting').
+    const unentitledAccountingAccess: EffectiveAccess = {
+      ...emptyAccess,
+      entitledModules: ["ledger"], // accounting is missing!
+      permissions: ["accounting.close.execute"],
+      moduleStatuses: { ledger: "Active" }
+    };
+
+    const compositeCondition = {
+      anyOf: ["ledger.period.read", "ledger.period.manage", "accounting.close.execute"]
+    };
+
+    // Condition must FAIL because owning module 'accounting' is unentitled
+    assert.equal(evaluateEffectivePermissionCondition(compositeCondition, unentitledAccountingAccess, false), false);
+
+    // If tenant purchases and activates 'accounting', condition PASSES
+    const entitledAccountingAccess: EffectiveAccess = {
+      ...unentitledAccountingAccess,
+      entitledModules: ["ledger", "accounting"],
+      moduleStatuses: { ledger: "Active", accounting: "Active" }
+    };
+    assert.equal(evaluateEffectivePermissionCondition(compositeCondition, entitledAccountingAccess, false), true);
   });
 });

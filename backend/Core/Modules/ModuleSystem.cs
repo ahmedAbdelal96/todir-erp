@@ -70,6 +70,22 @@ public enum ModuleInstanceStatus { Requested, Validating, Provisioning, Awaiting
 public sealed record ModuleInstance(string Id, string TenantId, string ModuleId, string ScopeType, string? ScopeId, ModuleInstanceStatus Status, long Version);
 public sealed record ModuleImpactReport(IReadOnlyList<string> HardDependents, IReadOnlyList<string> OptionalCapabilitiesLost, IReadOnlyList<string> OpenOperations, bool RequiresGoLive);
 
+public sealed record ModuleAccessDecision(bool Allowed, bool IsReadOnly, string Status, string? DeniedReason);
+
+public interface IModuleLifecycleEnforcer
+{
+    Task<ModuleAccessDecision> EvaluateAccessAsync(Shared.Primitives.Identifiers.TenantId tenantId, string moduleId, Guid? legalEntityId = null, bool isMutation = false, CancellationToken cancellationToken = default);
+    Task<bool> CanMutateAsync(Shared.Primitives.Identifiers.TenantId tenantId, string moduleId, Guid? legalEntityId = null, CancellationToken cancellationToken = default);
+    Task<string> GetStatusAsync(Shared.Primitives.Identifiers.TenantId tenantId, string moduleId, Guid? legalEntityId = null, CancellationToken cancellationToken = default);
+}
+
+public sealed class NullModuleLifecycleEnforcer : IModuleLifecycleEnforcer
+{
+    public Task<ModuleAccessDecision> EvaluateAccessAsync(Shared.Primitives.Identifiers.TenantId tenantId, string moduleId, Guid? legalEntityId = null, bool isMutation = false, CancellationToken cancellationToken = default) => Task.FromResult(new ModuleAccessDecision(true, false, "Active", null));
+    public Task<bool> CanMutateAsync(Shared.Primitives.Identifiers.TenantId tenantId, string moduleId, Guid? legalEntityId = null, CancellationToken cancellationToken = default) => Task.FromResult(true);
+    public Task<string> GetStatusAsync(Shared.Primitives.Identifiers.TenantId tenantId, string moduleId, Guid? legalEntityId = null, CancellationToken cancellationToken = default) => Task.FromResult("Active");
+}
+
 public interface IModuleLifecycleContributor
 {
     string ModuleId { get; }

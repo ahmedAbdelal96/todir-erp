@@ -28,9 +28,18 @@ export interface TransferItemView {
 export interface TransfersTabProps {
   readonly legalEntityId: string;
   readonly warehouses: readonly Warehouse[];
+  readonly canCreate?: boolean;
+  readonly canShip?: boolean;
+  readonly canReceive?: boolean;
 }
 
-export function TransfersTab({ legalEntityId, warehouses }: TransfersTabProps): React.JSX.Element {
+export function TransfersTab({
+  legalEntityId,
+  warehouses,
+  canCreate = true,
+  canShip = true,
+  canReceive = true
+}: TransfersTabProps): React.JSX.Element {
   const { t } = useTranslation("inventory");
 
   const [isNewTransferOpen, setIsNewTransferOpen] = useState(false);
@@ -95,9 +104,11 @@ export function TransfersTab({ legalEntityId, warehouses }: TransfersTabProps): 
             {t("transfers.modes.InTransit")}
           </span>
         </div>
-        <Button variant="primary" onPress={() => setIsNewTransferOpen(true)}>
-          + {t("transfers.newTransfer")}
-        </Button>
+        {canCreate && (
+          <Button variant="primary" onPress={() => setIsNewTransferOpen(true)}>
+            + {t("transfers.newTransfer")}
+          </Button>
+        )}
       </div>
 
       {/* Transfers Data Table */}
@@ -143,12 +154,12 @@ export function TransfersTab({ legalEntityId, warehouses }: TransfersTabProps): 
                   </td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>
                     <div style={{ display: "flex", gap: "0.375rem", justifyContent: "center" }}>
-                      {tr.status === "Draft" && (
+                      {tr.status === "Draft" && canShip && (
                         <Button variant="primary" onPress={() => handleShip(tr.id)}>
                           {t("transfers.shipAction")}
                         </Button>
                       )}
-                      {(tr.status === "Shipped" || tr.status === "PartiallyReceived") && remaining > 0 && (
+                      {(tr.status === "Shipped" || tr.status === "PartiallyReceived") && remaining > 0 && canReceive && (
                         <Button
                           variant="secondary"
                           onPress={() => setReceivingTransfer({ id: tr.id, remaining })}

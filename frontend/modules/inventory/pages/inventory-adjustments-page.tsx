@@ -52,6 +52,7 @@ export function InventoryAdjustmentsPage(): React.JSX.Element {
         <AdjustmentsTab
           legalEntityId={legalEntityId}
           warehouses={warehouses}
+          canCreate={permissions.canCreateAdjustment}
           canApprove={permissions.canApproveAdjustment}
           canPost={permissions.canPostAdjustment}
           canManageProfile={permissions.canManageProfiles}

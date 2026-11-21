@@ -1,5 +1,8 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useOutletContext } from "react-router-dom";
+import type { WorkspaceOutletContext } from "../../../../app/router/route-contract.ts";
+import { canPerformAction } from "../../../../core/runtime/effective-access.ts";
 import {
   useTreasuryAccounts,
   useCashPosition,
@@ -30,6 +33,12 @@ interface Props {
 
 export function CashManagementTab({ legalEntityId }: Props): React.JSX.Element {
   const { t } = useTranslation("banking");
+  const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
+  const effectiveAccess = outletCtx?.effectiveAccess;
+  const canCount = effectiveAccess ? canPerformAction(effectiveAccess, "banking.cash.count", "banking") : true;
+  const canTransfer = effectiveAccess ? canPerformAction(effectiveAccess, "banking.transfers.initiate", "banking") : true;
+  const canResolve = effectiveAccess ? canPerformAction(effectiveAccess, "banking.cash.difference.resolve", "banking") : true;
+
   const [activeSubTab, setActiveSubTab] = useState<"counts" | "pos">("counts");
 
   // Fetch only Cash and PettyCash accounts
@@ -113,12 +122,16 @@ export function CashManagementTab({ legalEntityId }: Props): React.JSX.Element {
         <div style={{ display: "flex", gap: "0.5rem" }}>
           {activeSubTab === "counts" && (
             <>
-              <Button variant="secondary" onClick={() => setIsCustodyOpen(true)} isDisabled={!activeAccountId}>
-                {t("cash.transferCustodyButton")}
-              </Button>
-              <Button variant="primary" data-testid="new-cash-count" onClick={() => setIsCountOpen(true)} isDisabled={!activeAccountId}>
-                {t("cash.newCountButton")}
-              </Button>
+              {canTransfer && (
+                <Button variant="secondary" onClick={() => setIsCustodyOpen(true)} isDisabled={!activeAccountId}>
+                  {t("cash.transferCustodyButton")}
+                </Button>
+              )}
+              {canCount && (
+                <Button variant="primary" data-testid="new-cash-count" onClick={() => setIsCountOpen(true)} isDisabled={!activeAccountId}>
+                  {t("cash.newCountButton")}
+                </Button>
+              )}
             </>
           )}
         </div>
@@ -176,9 +189,11 @@ export function CashManagementTab({ legalEntityId }: Props): React.JSX.Element {
             <div style={{ padding: "3rem", textAlign: "center" }}>
               <h3 style={{ margin: "0 0 0.5rem", color: "var(--color-brand-primary)" }}>{t("cash.emptyTitle")}</h3>
               <p style={{ color: "var(--color-content-muted)", margin: "0 0 1.5rem" }}>{t("cash.emptyDescription")}</p>
-              <Button variant="primary" onClick={() => setIsCountOpen(true)} isDisabled={!activeAccountId}>
-                {t("cash.newCountButton")}
-              </Button>
+              {canCount && (
+                <Button variant="primary" onClick={() => setIsCountOpen(true)} isDisabled={!activeAccountId}>
+                  {t("cash.newCountButton")}
+                </Button>
+              )}
             </div>
           ) : (
             <Table>
@@ -225,7 +240,7 @@ export function CashManagementTab({ legalEntityId }: Props): React.JSX.Element {
                       </TableCell>
                       <TableCell align="end">
                         <div style={{ display: "flex", gap: "0.375rem", justifyContent: "flex-end" }}>
-                          {count.state === "Draft" && (
+                          {count.state === "Draft" && canCount && (
                             <Button
                               size="compact"
                               variant="secondary"
@@ -235,7 +250,7 @@ export function CashManagementTab({ legalEntityId }: Props): React.JSX.Element {
                               {t("cash.submitCount")}
                             </Button>
                           )}
-                          {count.state === "Submitted" && (
+                          {count.state === "Submitted" && canCount && (
                             <Button
                               size="compact"
                               variant="primary"
@@ -245,7 +260,7 @@ export function CashManagementTab({ legalEntityId }: Props): React.JSX.Element {
                               {t("cash.approveCount")}
                             </Button>
                           )}
-                          {count.state === "Approved" && (
+                          {count.state === "Approved" && canCount && (
                             <Button
                               size="compact"
                               variant="primary"
@@ -255,7 +270,7 @@ export function CashManagementTab({ legalEntityId }: Props): React.JSX.Element {
                               {t("cash.finalizeCount")}
                             </Button>
                           )}
-                          {count.difference !== 0 && count.state !== "Finalized" && (
+                          {count.difference !== 0 && count.state !== "Finalized" && canResolve && (
                             <Button
                               size="compact"
                               variant="ghost"

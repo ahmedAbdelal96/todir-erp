@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Link, useOutletContext } from "react-router-dom";
 import { useOptionalLegalEntityContext, useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
-import { hasPermissionInAccess } from "../../../core/runtime/effective-access.ts";
+import { hasPermissionInAccess, canPerformAction } from "../../../core/runtime/effective-access.ts";
 import { CrmLeadsTab } from "../features/leads/crm-leads-tab.tsx";
 
 export function CrmLeadsPage(): React.JSX.Element {
@@ -14,9 +14,9 @@ export function CrmLeadsPage(): React.JSX.Element {
   const permissions = useOptionalPermissions() || outletCtx?.permissions;
   const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || "";
 
-  const canManage = effectiveAccess?.isSuper ||
-    hasPermissionInAccess(effectiveAccess, "crm.team.manage") ||
-    permissions?.hasPermission("crm.team.manage") || false;
+  const canManage = effectiveAccess
+    ? canPerformAction(effectiveAccess, "crm.team.manage", "crm")
+    : (permissions?.hasPermission("crm.team.manage") || false);
 
   return (
     <div
