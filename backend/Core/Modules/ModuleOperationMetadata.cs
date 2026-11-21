@@ -39,9 +39,25 @@ public sealed class ModuleLifecycleEndpointFilter : IEndpointFilter
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var http = context.HttpContext;
-        var metadata = http.GetEndpoint()?.Metadata.GetMetadata<ModuleOperationMetadata>();
+        var endpoint = http.GetEndpoint();
+        var metadata = endpoint?.Metadata.GetMetadata<ModuleOperationMetadata>();
         if (metadata is null)
         {
+            var path = http.Request.Path.Value ?? string.Empty;
+            if (path.StartsWith("/api/v1/inventory", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("/api/v1/ledger", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("/api/v1/accounting", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("/api/v1/banking", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("/api/v1/crm", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!path.EndsWith("/target", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Results.Problem(
+                        statusCode: StatusCodes.Status403Forbidden,
+                        title: "module.missing_metadata",
+                        extensions: new Dictionary<string, object?> { ["code"] = "module.missing_metadata" });
+                }
+            }
             return await next(context);
         }
 
@@ -50,40 +66,69 @@ public sealed class ModuleLifecycleEndpointFilter : IEndpointFilter
             return Results.Unauthorized();
         }
 
-        Guid? legalEntityId = null;
-        if (http.GetRouteValue("entityId") is string eStr && Guid.TryParse(eStr, out var eGuid))
+        Guid? routeEntityId = null;
+        if (http.GetRouteValue("entityId") is string eStr && Guid.TryParse(eStr, out var eGuid) && eGuid != Guid.Empty)
         {
-            legalEntityId = eGuid;
+            routeEntityId = eGuid;
         }
-        else if (http.GetRouteValue("legalEntityId") is string leStr && Guid.TryParse(leStr, out var leGuid))
+        else if (http.GetRouteValue("legalEntityId") is string leStr && Guid.TryParse(leStr, out var leGuid) && leGuid != Guid.Empty)
         {
-            legalEntityId = leGuid;
-        }
-        else if (http.Request.Query.TryGetValue("legalEntityId", out var qVal) && Guid.TryParse(qVal, out var qGuid))
-        {
-            legalEntityId = qGuid;
-        }
-        else if (http.Request.Headers.TryGetValue("X-Legal-Entity-Id", out var hVal) && Guid.TryParse(hVal, out var hGuid))
-        {
-            legalEntityId = hGuid;
+            routeEntityId = leGuid;
         }
 
-        if (legalEntityId is null)
+        Guid? queryEntityId = null;
+        if (http.Request.Query.TryGetValue("legalEntityId", out var qVal) && Guid.TryParse(qVal, out var qGuid) && qGuid != Guid.Empty)
         {
-            foreach (var arg in context.Arguments)
+            queryEntityId = qGuid;
+        }
+
+        Guid? headerEntityId = null;
+        if (http.Request.Headers.TryGetValue("X-Legal-Entity-Id", out var hVal) && Guid.TryParse(hVal, out var hGuid) && hGuid != Guid.Empty)
+        {
+            headerEntityId = hGuid;
+        }
+
+        Guid? dtoEntityId = null;
+        foreach (var arg in context.Arguments)
+        {
+            if (arg is null) continue;
+            var prop = arg.GetType().GetProperty("LegalEntityId");
+            if (prop is not null && prop.PropertyType == typeof(Guid))
             {
-                if (arg is null) continue;
-                var prop = arg.GetType().GetProperty("LegalEntityId");
-                if (prop is not null && prop.PropertyType == typeof(Guid))
+                var val = (Guid?)prop.GetValue(arg);
+                if (val.HasValue && val.Value != Guid.Empty)
                 {
-                    var val = (Guid?)prop.GetValue(arg);
-                    if (val.HasValue && val.Value != Guid.Empty)
-                    {
-                        legalEntityId = val.Value;
-                        break;
-                    }
+                    dtoEntityId = val.Value;
+                    break;
                 }
             }
+        }
+
+        var detectedIds = new HashSet<Guid>();
+        if (routeEntityId.HasValue) detectedIds.Add(routeEntityId.Value);
+        if (queryEntityId.HasValue) detectedIds.Add(queryEntityId.Value);
+        if (headerEntityId.HasValue) detectedIds.Add(headerEntityId.Value);
+        if (dtoEntityId.HasValue) detectedIds.Add(dtoEntityId.Value);
+
+        if (detectedIds.Count > 1)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "scope.conflict",
+                extensions: new Dictionary<string, object?> { ["code"] = "scope.conflict" });
+        }
+
+        var legalEntityId = detectedIds.Count == 1 ? (Guid?)detectedIds.First() : null;
+
+        var routePattern = (endpoint as RouteEndpoint)?.RoutePattern.RawText ?? string.Empty;
+        var expectsEntity = routePattern.Contains("{entityId", StringComparison.OrdinalIgnoreCase) ||
+                            routePattern.Contains("{legalEntityId", StringComparison.OrdinalIgnoreCase);
+        if (expectsEntity && legalEntityId is null)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "scope.missing_required_entity",
+                extensions: new Dictionary<string, object?> { ["code"] = "scope.missing_required_entity" });
         }
 
         var lifecycle = http.RequestServices.GetRequiredService<IModuleLifecycleEnforcer>();

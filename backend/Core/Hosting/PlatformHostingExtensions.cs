@@ -359,12 +359,9 @@ public static class PlatformHostingExtensions
                     {
                         moduleStatuses[manifest.Id] = "Active";
                     }
-                    else if (entitledModulesSet.Contains(manifest.Id))
-                    {
-                        moduleStatuses[manifest.Id] = "Active";
-                    }
                     else
                     {
+                        // Purchasable modules require explicit operational activation; absent instance is Disabled
                         moduleStatuses[manifest.Id] = "Disabled";
                     }
                 }

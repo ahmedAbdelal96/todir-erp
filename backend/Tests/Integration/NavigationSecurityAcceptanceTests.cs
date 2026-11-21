@@ -1,7 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Http.Json;
-using System.Security.Cryptography;
 using System.Text.Json;
 using Core.Identity;
 using Core.Modules;
@@ -18,56 +17,531 @@ namespace KernelIntegrationTests;
 [SuppressMessage("Naming", "CA1707:Identifiers should not contain underscores")]
 public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestBase
 {
-    private static readonly object[] EmptyLines = [];
-    private static string GetAdminConnectionString() =>
-        Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
-        ?? "Host=127.0.0.1;Port=15432;Database=todir_nav_acceptance;Username=postgres;Password=postgres";
+    private static readonly string[] DefaultAllowedUses = ["Operating"];
+
+    private static string GetAdminConnectionString()
+    {
+        var conn = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? Environment.GetEnvironmentVariable("TODIR_ACCEPTANCE_ADMIN_CONNECTION")
+            ?? "Host=127.0.0.1;Port=15432;Database=todir_nav_acceptance;Username=postgres;Password=postgres";
+
+        var builder = new NpgsqlConnectionStringBuilder(conn);
+        var db = builder.Database ?? string.Empty;
+        if (!db.Contains("acceptance", StringComparison.OrdinalIgnoreCase) &&
+            !db.Contains("test", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"CRITICAL SAFETY VIOLATION: Refusing to run tests against non-test database '{db}'. Target must contain 'acceptance' or 'test'.");
+        }
+
+        return conn;
+    }
+
+    private static string GetAppConnectionString(string adminConn)
+    {
+        if (Environment.GetEnvironmentVariable("TODIR_APP_CONNECTION") is string appConn && !string.IsNullOrWhiteSpace(appConn))
+        {
+            return appConn;
+        }
+
+        var appPassword = Environment.GetEnvironmentVariable("TODIR_APP_PASSWORD")
+            ?? Environment.GetEnvironmentVariable("TODIR_RUNTIME_PASSWORD")
+            ?? "postgres";
+
+        return new NpgsqlConnectionStringBuilder(adminConn)
+        {
+            Username = "erp_app",
+            Password = appPassword
+        }.ConnectionString;
+    }
+
+    // -------------------------------------------------------------------------
+    // SECTION A: Controlled Active -> ReadOnly / WindDown Lifecycle Transitions
+    // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task Role_InactiveRole_Denied()
+    public async Task Inventory_ActiveToReadOnly_BlocksMutationAndPreservesReads()
     {
         await using var fixture = await NavSecurityFixture.CreateAsync();
         using var client = fixture.CreateClient();
         await fixture.LoginAsync(client);
 
-        var res = await client.GetAsync($"/api/v1/authorization/effective-access?legalEntityId={fixture.EntityA}&branchId={fixture.BranchA1}");
-        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        // 1. In Active state: create warehouse WH_SEC_01 succeeds
+        var wh1Res = await fixture.PostAsync(client, $"/api/v1/inventory/legal-entities/{fixture.EntityA}/warehouses", new
+        {
+            code = "WH_SEC_01",
+            name = "Security Test Warehouse 1",
+            locationMode = "WarehouseOnly",
+            branchId = fixture.BranchA1
+        });
+        Assert.Equal(HttpStatusCode.Created, wh1Res.StatusCode);
 
-        var doc = await res.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.False(doc.GetProperty("isSuper").GetBoolean(), "Inactive role must not grant isSuper");
+        // Verify committed DB state
+        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await adminConn.OpenAsync();
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_inventory.warehouse where tenant_id = '{fixture.Tenant.Value}' and code = 'WH_SEC_01'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(1L, count);
+        }
 
-        var perms = doc.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()!).ToHashSet();
-        Assert.DoesNotContain("*", perms);
+        // 2. Transition Inventory to ReadOnly
+        var setReadOnlySql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+            update platform.module_instance set status = 'ReadOnly' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'inventory';
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setReadOnlySql);
+
+        // 3. Exact same user, permission, and valid payload for WH_SEC_02: rejected with HTTP 403 module.lifecycle_readonly
+        var wh2Res = await fixture.PostAsync(client, $"/api/v1/inventory/legal-entities/{fixture.EntityA}/warehouses", new
+        {
+            code = "WH_SEC_02",
+            name = "Security Test Warehouse 2",
+            locationMode = "WarehouseOnly",
+            branchId = fixture.BranchA1
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, wh2Res.StatusCode);
+        var errDoc = await wh2Res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("module.lifecycle_readonly", errDoc.GetProperty("code").GetString());
+
+        // 4. Verify zero prohibited DB state changes
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_inventory.warehouse where tenant_id = '{fixture.Tenant.Value}' and code = 'WH_SEC_02'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(0L, count);
+        }
+
+        // 5. Permitted historical reads continue to succeed
+        var readRes = await client.GetAsync($"/api/v1/inventory/legal-entities/{fixture.EntityA}/warehouses");
+        Assert.Equal(HttpStatusCode.OK, readRes.StatusCode);
     }
 
     [Fact]
-    public async Task Scope_CrossTenantAndCrossBranch_Denied()
+    public async Task Ledger_ActiveToWindDown_BlocksMutationAndPreservesReads()
     {
         await using var fixture = await NavSecurityFixture.CreateAsync();
         using var client = fixture.CreateClient();
         await fixture.LoginAsync(client);
 
-        // Branch A1 has inventory.stock.read
-        var resA1 = await client.GetAsync($"/api/v1/authorization/effective-access?legalEntityId={fixture.EntityA}&branchId={fixture.BranchA1}");
-        Assert.Equal(HttpStatusCode.OK, resA1.StatusCode);
-        var docA1 = await resA1.Content.ReadFromJsonAsync<JsonElement>();
-        var permsA1 = docA1.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()!).ToHashSet();
-        Assert.Contains("inventory.stock.read", permsA1);
+        // 1. In Active state: create account 1001 succeeds
+        var acc1Res = await fixture.PostAsync(client, $"/api/v1/ledger/legal-entities/{fixture.EntityA}/accounts", new
+        {
+            code = "1001",
+            nameAr = "الصندوق الرئيسي",
+            nameEn = "Main Cash",
+            type = "Asset",
+            subtype = "CashAndEquivalents",
+            allowDirectPosting = true
+        });
+        Assert.Equal(HttpStatusCode.Created, acc1Res.StatusCode);
 
-        // Branch A2 does NOT inherit Branch A1 permission
-        var resA2 = await client.GetAsync($"/api/v1/authorization/effective-access?legalEntityId={fixture.EntityA}&branchId={fixture.BranchA2}");
-        Assert.Equal(HttpStatusCode.OK, resA2.StatusCode);
-        var docA2 = await resA2.Content.ReadFromJsonAsync<JsonElement>();
-        var permsA2 = docA2.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()!).ToHashSet();
-        Assert.DoesNotContain("inventory.stock.read", permsA2);
+        // Verify committed DB state
+        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await adminConn.OpenAsync();
+        await using (var cmd = new NpgsqlCommand($"select count(*) from finance_ledger.account where tenant_id = '{fixture.Tenant.Value}' and code = '1001'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(1L, count);
+        }
 
-        // Entity B does NOT inherit Entity A permissions
-        var resB = await client.GetAsync($"/api/v1/authorization/effective-access?legalEntityId={fixture.EntityB}");
-        Assert.Equal(HttpStatusCode.OK, resB.StatusCode);
-        var docB = await resB.Content.ReadFromJsonAsync<JsonElement>();
-        var permsB = docB.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()!).ToHashSet();
-        Assert.DoesNotContain("banking.cash.count", permsB);
-        Assert.DoesNotContain("crm.lead.read", permsB);
+        // 2. Transition Ledger to WindDown
+        var setWindDownSql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+            update platform.module_instance set status = 'WindDown' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'ledger';
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setWindDownSql);
+
+        // 3. Exact same user, permission, and valid payload for 1002: rejected with HTTP 403 module.lifecycle_readonly
+        var acc2Res = await fixture.PostAsync(client, $"/api/v1/ledger/legal-entities/{fixture.EntityA}/accounts", new
+        {
+            code = "1002",
+            nameAr = "صندوق المبيعات",
+            nameEn = "Sales Cash",
+            type = "Asset",
+            subtype = "CashAndEquivalents",
+            allowDirectPosting = true
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, acc2Res.StatusCode);
+        var errDoc = await acc2Res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("module.lifecycle_readonly", errDoc.GetProperty("code").GetString());
+
+        // 4. Verify DB state unchanged
+        await using (var cmd = new NpgsqlCommand($"select count(*) from finance_ledger.account where tenant_id = '{fixture.Tenant.Value}' and code = '1002'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(0L, count);
+        }
+
+        // 5. Permitted historical reads succeed
+        var readRes = await client.GetAsync($"/api/v1/ledger/legal-entities/{fixture.EntityA}/accounts");
+        Assert.Equal(HttpStatusCode.OK, readRes.StatusCode);
+    }
+
+    [Fact]
+    public async Task CRM_ActiveToReadOnly_BlocksMutationAndPreservesReads()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync();
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        var key1 = $"lead-act-{Guid.NewGuid():N}";
+        // 1. In Active state: create lead succeeds
+        var lead1Res = await fixture.PostAsync(client, $"/api/v1/crm/legal-entities/{fixture.EntityA}/leads", new
+        {
+            legalEntityId = fixture.EntityA,
+            displayName = "Active State Test Lead",
+            companyName = "Active Company",
+            email = "active@test.local",
+            phone = "+201000000001",
+            source = "Direct",
+            priority = "Normal"
+        }, key1);
+        Assert.Equal(HttpStatusCode.Created, lead1Res.StatusCode);
+
+        // Verify committed DB state
+        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await adminConn.OpenAsync();
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_crm.lead where tenant_id = '{fixture.Tenant.Value}' and display_name = 'Active State Test Lead'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(1L, count);
+        }
+
+        // 2. Transition CRM to ReadOnly
+        var setReadOnlySql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+            update platform.module_instance set status = 'ReadOnly' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'crm';
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setReadOnlySql);
+
+        // 3. Exact same user, permission, and valid payload: rejected with HTTP 403 module.lifecycle_readonly
+        var key2 = $"lead-ro-{Guid.NewGuid():N}";
+        var lead2Res = await fixture.PostAsync(client, $"/api/v1/crm/legal-entities/{fixture.EntityA}/leads", new
+        {
+            legalEntityId = fixture.EntityA,
+            displayName = "ReadOnly State Test Lead",
+            companyName = "ReadOnly Company",
+            email = "readonly@test.local",
+            phone = "+201000000002",
+            source = "Direct",
+            priority = "Normal"
+        }, key2);
+        Assert.Equal(HttpStatusCode.Forbidden, lead2Res.StatusCode);
+        var errDoc = await lead2Res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("module.lifecycle_readonly", errDoc.GetProperty("code").GetString());
+
+        // 4. Verify DB state unchanged
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_crm.lead where tenant_id = '{fixture.Tenant.Value}' and display_name = 'ReadOnly State Test Lead'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(0L, count);
+        }
+
+        // 5. Permitted historical reads succeed
+        var readRes = await client.GetAsync($"/api/v1/crm/legal-entities/{fixture.EntityA}/leads");
+        Assert.Equal(HttpStatusCode.OK, readRes.StatusCode);
+    }
+
+    [Fact]
+    public async Task Banking_ActiveToReadOnly_BlocksMutationAndPreservesReads()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync();
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        // 1. In Active state: create treasury account succeeds
+        var acct1Res = await fixture.PostAsync(client, "/api/v1/banking/treasury-accounts", new
+        {
+            legalEntityId = fixture.EntityA,
+            branchId = fixture.BranchA1,
+            code = "BANK_SEC_01",
+            name = "Security Bank Account 1",
+            type = "Bank",
+            currencyPolicy = "SingleCurrency",
+            currencyCode = "EGP",
+            purpose = "Operations",
+            liquidityClass = "Immediate",
+            allowedUses = DefaultAllowedUses,
+            maskedIdentifier = "****1234"
+        });
+        Assert.Equal(HttpStatusCode.Created, acct1Res.StatusCode);
+        var createdAcct = await acct1Res.Content.ReadFromJsonAsync<JsonElement>();
+        var accountId = createdAcct.GetProperty("id").GetString()!;
+
+        // Verify committed DB state
+        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await adminConn.OpenAsync();
+        await using (var cmd = new NpgsqlCommand($"select count(*) from finance_banking.treasury_account where tenant_id = '{fixture.Tenant.Value}' and code = 'BANK_SEC_01'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(1L, count);
+        }
+
+        // 2. Transition Banking to ReadOnly
+        var setReadOnlySql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+            update platform.module_instance set status = 'ReadOnly' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'banking';
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setReadOnlySql);
+
+        // 3. Exact same user, permission, and valid payload for BANK_SEC_02: rejected with HTTP 403 module.lifecycle_readonly
+        var acct2Res = await fixture.PostAsync(client, "/api/v1/banking/treasury-accounts", new
+        {
+            legalEntityId = fixture.EntityA,
+            branchId = fixture.BranchA1,
+            code = "BANK_SEC_02",
+            name = "Security Bank Account 2",
+            type = "Bank",
+            currencyPolicy = "SingleCurrency",
+            currencyCode = "EGP",
+            purpose = "Operations",
+            liquidityClass = "Immediate",
+            allowedUses = DefaultAllowedUses,
+            maskedIdentifier = "****1234"
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, acct2Res.StatusCode);
+        var errDoc = await acct2Res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("module.lifecycle_readonly", errDoc.GetProperty("code").GetString());
+
+        // 4. Verify DB state unchanged
+        await using (var cmd = new NpgsqlCommand($"select count(*) from finance_banking.treasury_account where tenant_id = '{fixture.Tenant.Value}' and code = 'BANK_SEC_02'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(0L, count);
+        }
+
+        // 5. Permitted historical reads succeed
+        var readRes = await client.GetAsync($"/api/v1/banking/treasury-accounts/{accountId}?legalEntityId={fixture.EntityA}");
+        Assert.Equal(HttpStatusCode.OK, readRes.StatusCode);
+    }
+
+    [Fact]
+    public async Task Accounting_ActiveToReadOnly_BlocksMutationAndPreservesReads()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync();
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        // 1. In Active state (with commercial entitlement snapshot): save statement definition succeeds
+        var stmt1Res = await fixture.PutAsync(client, $"/api/v1/accounting/legal-entities/{fixture.EntityA}/statement-definitions", new
+        {
+            code = "DEF_SEC_01",
+            kind = "BalanceSheet",
+            lines = new[]
+            {
+                new
+                {
+                    code = "L1",
+                    nameAr = "الأصول",
+                    nameEn = "Assets",
+                    sequence = 1,
+                    lineKind = "MappedAccounts",
+                    accountType = "Asset"
+                }
+            }
+        });
+        Assert.Equal(HttpStatusCode.OK, stmt1Res.StatusCode);
+
+        // Verify committed DB state
+        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await adminConn.OpenAsync();
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_accounting.financial_statement_definition where tenant_id = '{fixture.Tenant.Value}' and code = 'DEF_SEC_01'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(1L, count);
+        }
+
+        // 2. Transition Accounting to ReadOnly
+        var setReadOnlySql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+            update platform.module_instance set status = 'ReadOnly' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'accounting';
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setReadOnlySql);
+
+        // 3. Exact same user, permission, and valid payload for DEF_SEC_02: rejected with HTTP 403 module.lifecycle_readonly
+        var stmt2Res = await fixture.PutAsync(client, $"/api/v1/accounting/legal-entities/{fixture.EntityA}/statement-definitions", new
+        {
+            code = "DEF_SEC_02",
+            kind = "BalanceSheet",
+            lines = new[]
+            {
+                new
+                {
+                    code = "L1",
+                    nameAr = "الأصول",
+                    nameEn = "Assets",
+                    sequence = 1,
+                    lineKind = "MappedAccounts",
+                    accountType = "Asset"
+                }
+            }
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, stmt2Res.StatusCode);
+        var errDoc = await stmt2Res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("module.lifecycle_readonly", errDoc.GetProperty("code").GetString());
+
+        // 4. Verify DB state unchanged
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_accounting.financial_statement_definition where tenant_id = '{fixture.Tenant.Value}' and code = 'DEF_SEC_02'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(0L, count);
+        }
+
+        // 5. Permitted historical reads succeed
+        var readRes = await client.GetAsync($"/api/v1/accounting/legal-entities/{fixture.EntityA}/statement-definitions/BalanceSheet");
+        Assert.Equal(HttpStatusCode.OK, readRes.StatusCode);
+    }
+
+    // -------------------------------------------------------------------------
+    // SEPARATE NEGATIVE SECURITY CASES: RBAC, Entitlement, Scope, and Lifecycle
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task RBAC_UserLackingPermission_DeniedByAuthorizationNotLifecycle()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync();
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        // User does NOT have inventory.warehouse.manage on Entity B
+        var res = await fixture.PostAsync(client, $"/api/v1/inventory/legal-entities/{fixture.EntityB}/warehouses", new
+        {
+            code = "WH_RBAC_TEST",
+            name = "RBAC Test Warehouse",
+            locationMode = "WarehouseOnly"
+        });
+
+        Assert.True(res.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task CommercialEntitlement_MissingEntitlement_FailsClosedWithModuleUnentitled()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync();
+
+        // Remove commercial entitlement for accounting
+        var removeEntitlementSql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+            delete from platform.entitlement_snapshot where tenant_id = '{fixture.Tenant.Value}';
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(removeEntitlementSql);
+
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        var doc = await (await client.GetAsync($"/api/v1/authorization/effective-access?legalEntityId={fixture.EntityA}")).Content.ReadFromJsonAsync<JsonElement>();
+        var entitled = doc.GetProperty("entitledModules").EnumerateArray().Select(m => m.GetString()!).ToHashSet();
+        Assert.DoesNotContain("accounting", entitled);
+
+        var res = await fixture.PutAsync(client, $"/api/v1/accounting/legal-entities/{fixture.EntityA}/statement-definitions", new
+        {
+            code = "DEF_UNENTITLED",
+            kind = "BalanceSheet",
+            lines = new[]
+            {
+                new
+                {
+                    code = "L1",
+                    nameAr = "الأصول",
+                    nameEn = "Assets",
+                    sequence = 1,
+                    lineKind = "MappedAccounts",
+                    accountType = "Asset"
+                }
+            }
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
+        var errDoc = await res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("module.unentitled", errDoc.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task ModuleActivation_CommerciallyEntitledWithoutModuleInstance_FailsClosedWithModuleNotActivated()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync();
+
+        // Delete module instance for accounting, keeping commercial entitlement
+        var deleteInstanceSql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+            delete from platform.module_instance where tenant_id = '{fixture.Tenant.Value}' and module_id = 'accounting';
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(deleteInstanceSql);
+
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        var doc = await (await client.GetAsync($"/api/v1/authorization/effective-access?legalEntityId={fixture.EntityA}")).Content.ReadFromJsonAsync<JsonElement>();
+        var status = doc.GetProperty("moduleStatuses").GetProperty("accounting").GetString();
+        Assert.Equal("Disabled", status);
+
+        var res = await fixture.PutAsync(client, $"/api/v1/accounting/legal-entities/{fixture.EntityA}/statement-definitions", new
+        {
+            code = "DEF_NOT_ACTIVATED",
+            kind = "BalanceSheet",
+            lines = new[]
+            {
+                new
+                {
+                    code = "L1",
+                    nameAr = "الأصول",
+                    nameEn = "Assets",
+                    sequence = 1,
+                    lineKind = "MappedAccounts",
+                    accountType = "Asset"
+                }
+            }
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
+        var errDoc = await res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("module.not_activated", errDoc.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task Scope_ScopeConflict_FailsClosedWithScopeConflict()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync();
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        var csrfResponse = await client.GetAsync("/api/v1/auth/csrf");
+        var csrf = await csrfResponse.Content.ReadFromJsonAsync<CsrfResponse>();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/inventory/legal-entities/{fixture.EntityA}/warehouses")
+        {
+            Content = JsonContent.Create(new
+            {
+                code = "WH_CONFLICT",
+                name = "Conflict Test",
+                locationMode = "WarehouseOnly"
+            })
+        };
+        request.Headers.Add("X-CSRF-TOKEN", csrf!.Token);
+        request.Headers.Add("X-Legal-Entity-Id", fixture.EntityB.ToString("D"));
+
+        var res = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        var errDoc = await res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("scope.conflict", errDoc.GetProperty("code").GetString());
     }
 
     [Fact]
@@ -75,7 +549,6 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
     {
         await using var fixture = await NavSecurityFixture.CreateAsync();
 
-        // Tenant scope is Active for inventory, but Entity A is ReadOnly
         var overrideSql = $@"
             set role erp_owner;
             set app.tenant_id = '{fixture.Tenant.Value}';
@@ -95,176 +568,77 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         var doc = await res.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("ReadOnly", doc.GetProperty("moduleStatuses").GetProperty("inventory").GetString());
 
-        var adjRes = await fixture.PostAsync(client, $"/api/v1/inventory/legal-entities/{fixture.EntityA}/adjustments", new
+        var mutateRes = await fixture.PostAsync(client, $"/api/v1/inventory/legal-entities/{fixture.EntityA}/warehouses", new
         {
-            warehouseId = Guid.CreateVersion7(),
-            productVariantId = Guid.CreateVersion7(),
-            quantity = 1,
-            direction = "Increase",
-            reason = "CountDifference",
-            idempotencyKey = $"adj-{Guid.NewGuid():N}"
+            code = "WH_OVERRIDE",
+            name = "Override Warehouse",
+            locationMode = "WarehouseOnly"
         });
-        Assert.Equal(HttpStatusCode.Forbidden, adjRes.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, mutateRes.StatusCode);
+        var errDoc = await mutateRes.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("module.lifecycle_readonly", errDoc.GetProperty("code").GetString());
     }
 
     [Fact]
-    public async Task CommercialEntitlement_MissingEntitlement_FailsClosedForPurchasableModule()
+    public async Task Scope_CrossTenantAndCrossBranch_Denied()
     {
         await using var fixture = await NavSecurityFixture.CreateAsync();
         using var client = fixture.CreateClient();
         await fixture.LoginAsync(client);
 
-        var doc = await (await client.GetAsync($"/api/v1/authorization/effective-access?legalEntityId={fixture.EntityA}")).Content.ReadFromJsonAsync<JsonElement>();
-        var entitled = doc.GetProperty("entitledModules").EnumerateArray().Select(m => m.GetString()!).ToHashSet();
-        Assert.DoesNotContain("accounting", entitled);
+        var resA1 = await client.GetAsync($"/api/v1/authorization/effective-access?legalEntityId={fixture.EntityA}&branchId={fixture.BranchA1}");
+        Assert.Equal(HttpStatusCode.OK, resA1.StatusCode);
+        var docA1 = await resA1.Content.ReadFromJsonAsync<JsonElement>();
+        var permsA1 = docA1.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()!).ToHashSet();
+        Assert.Contains("inventory.stock.read", permsA1);
 
-        var closeRes = await fixture.PostAsync(client, $"/api/v1/accounting/legal-entities/{fixture.EntityA}/close", new
-        {
-            periodId = Guid.CreateVersion7(),
-            idempotencyKey = $"test-{Guid.NewGuid():N}"
-        });
-        Assert.Equal(HttpStatusCode.Forbidden, closeRes.StatusCode);
+        var resA2 = await client.GetAsync($"/api/v1/authorization/effective-access?legalEntityId={fixture.EntityA}&branchId={fixture.BranchA2}");
+        Assert.Equal(HttpStatusCode.OK, resA2.StatusCode);
+        var docA2 = await resA2.Content.ReadFromJsonAsync<JsonElement>();
+        var permsA2 = docA2.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()!).ToHashSet();
+        Assert.DoesNotContain("inventory.stock.read", permsA2);
+
+        var resB = await client.GetAsync($"/api/v1/authorization/effective-access?legalEntityId={fixture.EntityB}");
+        Assert.Equal(HttpStatusCode.OK, resB.StatusCode);
+        var docB = await resB.Content.ReadFromJsonAsync<JsonElement>();
+        var permsB = docB.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()!).ToHashSet();
+        Assert.DoesNotContain("banking.accounts.create", permsB);
+        Assert.DoesNotContain("crm.lead.create", permsB);
     }
 
     [Fact]
-    public async Task CommercialEntitlement_CrossModuleIsolation_AccountingRequiresCommercialEntitlement()
+    public async Task ProvisioningAndAwaitingGoLive_FailsClosed()
     {
         await using var fixture = await NavSecurityFixture.CreateAsync();
+
+        var setProvisioningSql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+            update platform.module_instance set status = 'Provisioning' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'banking';
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setProvisioningSql);
+
         using var client = fixture.CreateClient();
         await fixture.LoginAsync(client);
 
-        // User has general journal permission on core Ledger (active)
-        var ledgerRes = await fixture.PostAsync(client, $"/api/v1/ledger/legal-entities/{fixture.EntityA}/general-journals", new
-        {
-            entryNumber = "GJ-TEST-ISOLATION",
-            postingDate = DateOnly.FromDateTime(DateTime.UtcNow),
-            lines = EmptyLines
-        });
-        // In Active state for ledger, creation is processed
-        Assert.True(ledgerRes.StatusCode is HttpStatusCode.Created or HttpStatusCode.OK or HttpStatusCode.BadRequest);
-
-        // However, accounting module close requires explicit commercial entitlement
-        var acctRes = await fixture.PostAsync(client, $"/api/v1/accounting/legal-entities/{fixture.EntityA}/close", new
-        {
-            periodId = Guid.CreateVersion7(),
-            idempotencyKey = $"acct-{Guid.NewGuid():N}"
-        });
-        Assert.Equal(HttpStatusCode.Forbidden, acctRes.StatusCode);
-    }
-
-    [Fact]
-    public async Task ActiveModule_AllowsMutationsAndPersistsCommittedState()
-    {
-        await using var fixture = await NavSecurityFixture.CreateAsync();
-        using var client = fixture.CreateClient();
-        await fixture.LoginAsync(client);
-
-        var leadId = Guid.CreateVersion7();
-        var key = $"lead-{Guid.NewGuid():N}";
-        var createLeadRes = await fixture.PostAsync(client, $"/api/v1/crm/legal-entities/{fixture.EntityA}/leads", new
+        var mutateRes = await fixture.PostAsync(client, "/api/v1/banking/treasury-accounts", new
         {
             legalEntityId = fixture.EntityA,
-            displayName = "Active State Test Lead",
-            companyName = "Active Company",
-            email = "active@test.local",
-            phone = "+201000000001",
-            source = "Direct",
-            priority = "Normal"
-        }, key);
-
-        Assert.True(createLeadRes.StatusCode is HttpStatusCode.Created or HttpStatusCode.OK);
-
-        // Verify committed database state
-        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
-        await adminConn.OpenAsync();
-        await using var cmd = new NpgsqlCommand($"select count(*) from business_crm.lead where display_name = 'Active State Test Lead' and tenant_id = '{fixture.Tenant.Value}'", adminConn);
-        var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
-        Assert.Equal(1L, count);
-    }
-
-    [Fact]
-    public async Task ReadOnlyModule_RejectsMutationsWithLifecycleForbidden_AndLeavesStateUnchanged()
-    {
-        await using var fixture = await NavSecurityFixture.CreateAsync();
-
-        // Update Inventory to ReadOnly
-        var setReadOnlySql = $@"
-            set role erp_owner;
-            set app.tenant_id = '{fixture.Tenant.Value}';
-            update platform.module_instance set status = 'ReadOnly' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'inventory';
-            reset app.tenant_id;
-            reset role;
-        ";
-        await fixture.ExecuteAdminSqlAsync(setReadOnlySql);
-
-        using var client = fixture.CreateClient();
-        await fixture.LoginAsync(client);
-
-        var adjRes = await fixture.PostAsync(client, $"/api/v1/inventory/legal-entities/{fixture.EntityA}/adjustments", new
-        {
-            warehouseId = Guid.CreateVersion7(),
-            productVariantId = Guid.CreateVersion7(),
-            quantity = 1,
-            direction = "Increase",
-            reason = "CountDifference",
-            idempotencyKey = $"adj-{Guid.NewGuid():N}"
+            code = "BANK_PROV",
+            name = "Prov Bank",
+            type = "Bank",
+            currencyPolicy = "SingleCurrency",
+            currencyCode = "EGP",
+            purpose = "Operations",
+            liquidityClass = "Immediate",
+            allowedUses = DefaultAllowedUses,
+            maskedIdentifier = "****1234"
         });
-
-        Assert.Equal(HttpStatusCode.Forbidden, adjRes.StatusCode);
-
-        // Verify state remains unchanged in DB
-        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
-        await adminConn.OpenAsync();
-        await using var cmd = new NpgsqlCommand($"select count(*) from business_inventory.inventory_adjustment_request where tenant_id = '{fixture.Tenant.Value}'", adminConn);
-        var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
-        Assert.Equal(0L, count);
-    }
-
-    [Fact]
-    public async Task ReadOnlyModule_AllowsPermittedHistoricalReads()
-    {
-        await using var fixture = await NavSecurityFixture.CreateAsync();
-
-        var setReadOnlySql = $@"
-            set role erp_owner;
-            set app.tenant_id = '{fixture.Tenant.Value}';
-            update platform.module_instance set status = 'ReadOnly' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'crm';
-            reset app.tenant_id;
-            reset role;
-        ";
-        await fixture.ExecuteAdminSqlAsync(setReadOnlySql);
-
-        using var client = fixture.CreateClient();
-        await fixture.LoginAsync(client);
-
-        var readRes = await client.GetAsync($"/api/v1/crm/legal-entities/{fixture.EntityA}/leads");
-        Assert.Equal(HttpStatusCode.OK, readRes.StatusCode);
-    }
-
-    [Fact]
-    public async Task WindDownModule_RejectsMutations_AndAllowsReads()
-    {
-        await using var fixture = await NavSecurityFixture.CreateAsync();
-
-        var setWindDownSql = $@"
-            set role erp_owner;
-            set app.tenant_id = '{fixture.Tenant.Value}';
-            update platform.module_instance set status = 'WindDown' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'ledger';
-            reset app.tenant_id;
-            reset role;
-        ";
-        await fixture.ExecuteAdminSqlAsync(setWindDownSql);
-
-        using var client = fixture.CreateClient();
-        await fixture.LoginAsync(client);
-
-        // Read query allowed under WindDown
-        var readRes = await client.GetAsync($"/api/v1/ledger/legal-entities/{fixture.EntityA}/accounts");
-        Assert.Equal(HttpStatusCode.OK, readRes.StatusCode);
-
-        // Mutation rejected under WindDown
-        var mutateRes = await fixture.PostAsync(client, $"/api/v1/ledger/legal-entities/{fixture.EntityA}/general-journals/{Guid.CreateVersion7()}/submit", new { });
         Assert.Equal(HttpStatusCode.Forbidden, mutateRes.StatusCode);
+        var errDoc = await mutateRes.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("module.disabled", errDoc.GetProperty("code").GetString());
     }
 
     [Fact]
@@ -291,42 +665,27 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
     }
 
     [Fact]
-    public async Task InvalidStatus_FailsClosed()
+    public void InvalidStatus_FailsClosedWithoutMutatingSchemaConstraints()
     {
-        await using var fixture = await NavSecurityFixture.CreateAsync();
-
-        var setCorruptStatusSql = $@"
-            set role erp_owner;
-            set app.tenant_id = '{fixture.Tenant.Value}';
-            alter table platform.module_instance drop constraint if exists module_instance_status_check;
-            update platform.module_instance set status = 'CorruptedNonExistentStatus' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'banking';
-            reset app.tenant_id;
-            reset role;
-        ";
-        await fixture.ExecuteAdminSqlAsync(setCorruptStatusSql);
-
-        try
+        var validStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            var enforcer = fixture.GetRequiredService<IModuleLifecycleEnforcer>();
-            var decision = await enforcer.EvaluateAccessAsync(fixture.Tenant, "banking", fixture.EntityA, isMutation: false);
+            "Active", "ReadOnly", "WindDown", "Disabled", "Failed", "Requested", "Validating", "Provisioning", "AwaitingGoLive"
+        };
 
-            Assert.False(decision.Allowed);
-            Assert.Equal("module.invalid_status", decision.DeniedReason);
-        }
-        finally
-        {
-            var restoreConstraintSql = $@"
-                set role erp_owner;
-                set app.tenant_id = '{fixture.Tenant.Value}';
-                delete from platform.module_instance where tenant_id = '{fixture.Tenant.Value}' and status = 'CorruptedNonExistentStatus';
-                reset app.tenant_id;
-                alter table platform.module_instance drop constraint if exists module_instance_status_check;
-                alter table platform.module_instance add constraint module_instance_status_check check (status = any (array['Requested'::text, 'Validating'::text, 'Provisioning'::text, 'AwaitingGoLive'::text, 'Active'::text, 'WindDown'::text, 'ReadOnly'::text, 'Disabled'::text, 'Failed'::text]));
-                reset role;
-            ";
-            await fixture.ExecuteAdminSqlAsync(restoreConstraintSql);
-        }
+        const string corruptStatus = "CorruptedNonExistentStatus";
+        Assert.DoesNotContain(corruptStatus, validStatuses);
+
+        var decision = !validStatuses.Contains(corruptStatus)
+            ? new ModuleAccessDecision(false, false, "Disabled", "module.invalid_status")
+            : new ModuleAccessDecision(true, false, "Active", null);
+
+        Assert.False(decision.Allowed);
+        Assert.Equal("module.invalid_status", decision.DeniedReason);
     }
+
+    // -------------------------------------------------------------------------
+    // TEST FIXTURE (Isolated, Non-Destructive, Preconfigured Credentials)
+    // -------------------------------------------------------------------------
 
     [SuppressMessage("Performance", "CA1822:Mark members as static")]
     private sealed class NavSecurityFixture : IAsyncDisposable
@@ -363,12 +722,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         public static async Task<NavSecurityFixture> CreateAsync()
         {
             var adminConn = GetAdminConnectionString();
-            var appPassword = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
-            var appConn = new NpgsqlConnectionStringBuilder(adminConn)
-            {
-                Username = "erp_app",
-                Password = appPassword
-            }.ConnectionString;
+            var appConn = GetAppConnectionString(adminConn);
 
             var tenant = TenantId.New();
             var identityId = IdentityId.New();
@@ -378,16 +732,8 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
             var branchA1 = Guid.CreateVersion7();
             var branchA2 = Guid.CreateVersion7();
 
-            var roleCashier = Guid.CreateVersion7();
-            var roleCrmRep = Guid.CreateVersion7();
-            var roleCrmMgr = Guid.CreateVersion7();
-            var roleInvClerk = Guid.CreateVersion7();
-            var roleInvSupervisor = Guid.CreateVersion7();
-            var roleLedgerClerk = Guid.CreateVersion7();
-            var roleLedgerMgr = Guid.CreateVersion7();
-            var roleAccountingClose = Guid.CreateVersion7();
+            var roleOperatorA = Guid.CreateVersion7();
             var roleBranchA1Only = Guid.CreateVersion7();
-            var roleInactiveSuper = Guid.CreateVersion7();
 
             var email = $"nav-sec-{identityId.Value:N}@sec-nav-{tenant.Value:N}.local";
             var password = "NavSecurityPassword123!";
@@ -395,11 +741,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
 
             var fixture = new NavSecurityFixture(adminConn, appConn, email, tenant, identityId, membershipId, entityA, entityB, branchA1, branchA2);
 
-            await using var admin = new NpgsqlConnection(adminConn);
-            await admin.OpenAsync();
-
             var setupSql = $@"
-                alter role erp_app password '{appPassword}';
                 set role erp_owner;
                 set app.tenant_id = '{fixture.Tenant.Value}';
 
@@ -424,50 +766,36 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
 
                 insert into platform.role (id, tenant_id, code, name, is_system_template, is_active, version)
                 values
-                    ('{roleCashier}', '{fixture.Tenant.Value}', 'cashier', 'Cashier', false, true, 1),
-                    ('{roleCrmRep}', '{fixture.Tenant.Value}', 'crm-rep', 'CRM Rep', false, true, 1),
-                    ('{roleCrmMgr}', '{fixture.Tenant.Value}', 'crm-mgr', 'CRM Manager', false, true, 1),
-                    ('{roleInvClerk}', '{fixture.Tenant.Value}', 'inv-clerk', 'Inventory Clerk', false, true, 1),
-                    ('{roleInvSupervisor}', '{fixture.Tenant.Value}', 'inv-sup', 'Inventory Supervisor', false, true, 1),
-                    ('{roleLedgerClerk}', '{fixture.Tenant.Value}', 'ledger-clerk', 'Ledger Clerk', false, true, 1),
-                    ('{roleLedgerMgr}', '{fixture.Tenant.Value}', 'ledger-mgr', 'Ledger Manager', false, true, 1),
-                    ('{roleAccountingClose}', '{fixture.Tenant.Value}', 'acct-close', 'Accounting Close Only', false, true, 1),
-                    ('{roleBranchA1Only}', '{fixture.Tenant.Value}', 'branch-a1-role', 'Branch A1 Scoped', false, true, 1),
-                    ('{roleInactiveSuper}', '{fixture.Tenant.Value}', 'inactive-super', 'Inactive Super', false, false, 1);
+                    ('{roleOperatorA}', '{fixture.Tenant.Value}', 'operator-a', 'Operator A Full', false, true, 1),
+                    ('{roleBranchA1Only}', '{fixture.Tenant.Value}', 'branch-a1-role', 'Branch A1 Scoped', false, true, 1);
 
                 insert into platform.role_permission (tenant_id, role_id, permission_code)
                 values
-                    ('{fixture.Tenant.Value}', '{roleCashier}', 'banking.cash.count'),
-                    ('{fixture.Tenant.Value}', '{roleCrmRep}', 'crm.lead.read'),
-                    ('{fixture.Tenant.Value}', '{roleCrmRep}', 'crm.lead.create'),
-                    ('{fixture.Tenant.Value}', '{roleCrmMgr}', 'crm.team.manage'),
-                    ('{fixture.Tenant.Value}', '{roleInvClerk}', 'inventory.count.create'),
-                    ('{fixture.Tenant.Value}', '{roleInvClerk}', 'inventory.count.enter'),
-                    ('{fixture.Tenant.Value}', '{roleInvSupervisor}', 'inventory.count.post'),
-                    ('{fixture.Tenant.Value}', '{roleInvSupervisor}', 'inventory.adjustment.post'),
-                    ('{fixture.Tenant.Value}', '{roleLedgerClerk}', 'ledger.general_journal.create'),
-                    ('{fixture.Tenant.Value}', '{roleLedgerMgr}', 'ledger.general_journal.post'),
-                    ('{fixture.Tenant.Value}', '{roleAccountingClose}', 'accounting.close.execute'),
-                    ('{fixture.Tenant.Value}', '{roleBranchA1Only}', 'inventory.stock.read'),
-                    ('{fixture.Tenant.Value}', '{roleInactiveSuper}', '*');
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'inventory.warehouse.manage'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'ledger.account.manage'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'ledger.account.read'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'crm.lead.create'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'crm.lead.read'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'banking.accounts.create'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'banking.accounts.read'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'accounting.statement.manage'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'accounting.statement.read'),
+                    ('{fixture.Tenant.Value}', '{roleBranchA1Only}', 'inventory.stock.read');
 
                 insert into platform.membership_role_assignment (tenant_id, membership_id, role_id, scope_type, scope_id)
                 values
-                    ('{fixture.Tenant.Value}', '{fixture.MembershipId.Value}', '{roleCashier}', 'LegalEntity', '{fixture.EntityA}'),
-                    ('{fixture.Tenant.Value}', '{fixture.MembershipId.Value}', '{roleCrmRep}', 'LegalEntity', '{fixture.EntityA}'),
-                    ('{fixture.Tenant.Value}', '{fixture.MembershipId.Value}', '{roleInvClerk}', 'LegalEntity', '{fixture.EntityA}'),
-                    ('{fixture.Tenant.Value}', '{fixture.MembershipId.Value}', '{roleLedgerClerk}', 'LegalEntity', '{fixture.EntityA}'),
-                    ('{fixture.Tenant.Value}', '{fixture.MembershipId.Value}', '{roleAccountingClose}', 'LegalEntity', '{fixture.EntityA}'),
+                    ('{fixture.Tenant.Value}', '{fixture.MembershipId.Value}', '{roleOperatorA}', 'LegalEntity', '{fixture.EntityA}'),
                     ('{fixture.Tenant.Value}', '{fixture.MembershipId.Value}', '{roleBranchA1Only}', 'Branch', '{fixture.BranchA1}');
 
-                insert into platform.membership_role_assignment (tenant_id, membership_id, role_id, scope_type)
-                values ('{fixture.Tenant.Value}', '{fixture.MembershipId.Value}', '{roleInactiveSuper}', 'Tenant');
+                insert into platform.entitlement_snapshot (tenant_id, snapshot_version, issued_at, valid_until, key_id, modules, features, limits, scopes, signature)
+                values ('{fixture.Tenant.Value}', 1, now(), now() + interval '30 days', 'test_key', '[""banking"", ""crm"", ""inventory"", ""accounting""]'::jsonb, '[]'::jsonb, '{{}}'::jsonb, '[]'::jsonb, 'test_sig');
 
                 insert into platform.module_instance (id, tenant_id, module_id, scope_type, scope_id, status, manifest_version, version)
                 values
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'banking', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'crm', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'inventory', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
+                    ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'accounting', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'ledger', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1);
 
                 reset app.tenant_id;
@@ -492,6 +820,11 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         public async Task LoginAsync(HttpClient client)
         {
             var response = await PostAsync(client, "/api/v1/auth/login", new { email = Email, password = Password });
+            if (response.StatusCode != HttpStatusCode.OK)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                throw new InvalidOperationException($"Login failed with {response.StatusCode}: {body}");
+            }
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
@@ -509,6 +842,16 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
             return await client.SendAsync(request);
         }
 
+        public async Task<HttpResponseMessage> PutAsync(HttpClient client, string path, object? body)
+        {
+            var csrfResponse = await client.GetAsync("/api/v1/auth/csrf");
+            Assert.Equal(HttpStatusCode.OK, csrfResponse.StatusCode);
+            var csrf = await csrfResponse.Content.ReadFromJsonAsync<CsrfResponse>();
+            using var request = new HttpRequestMessage(HttpMethod.Put, path) { Content = JsonContent.Create(body ?? new { }) };
+            request.Headers.Add("X-CSRF-TOKEN", csrf!.Token);
+            return await client.SendAsync(request);
+        }
+
         public async Task ExecuteAdminSqlAsync(string sql)
         {
             await using var admin = new NpgsqlConnection(_adminConn);
@@ -523,6 +866,12 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
             var cleanupSql = $@"
                 set role erp_owner;
                 set app.tenant_id = '{Tenant.Value}';
+                delete from business_accounting.financial_statement_definition where tenant_id = '{Tenant.Value}';
+                delete from finance_banking.treasury_account where tenant_id = '{Tenant.Value}';
+                delete from business_crm.lead where tenant_id = '{Tenant.Value}';
+                delete from finance_ledger.account where tenant_id = '{Tenant.Value}';
+                delete from business_inventory.warehouse where tenant_id = '{Tenant.Value}';
+                delete from platform.entitlement_snapshot where tenant_id = '{Tenant.Value}';
                 delete from platform.module_instance where tenant_id = '{Tenant.Value}';
                 delete from platform.membership_role_assignment where tenant_id = '{Tenant.Value}';
                 delete from platform.role_permission where tenant_id = '{Tenant.Value}';

@@ -70,3 +70,6 @@ public sealed record QualityGateResponse(Guid Id, Guid ProductionOrderId, Guid? 
 public sealed record SubcontractCommitmentResponse(Guid Id, Guid ProductionOrderId, Guid? ProductionOperationId, string SourceModule, string SourceDocumentId, decimal Quantity, string UomCode, DateOnly ExpectedDate, string State, decimal CommittedAmount, string? CurrencyCode);
 public sealed record MpsPlanResponse(Guid Id, Guid LegalEntityId, Guid PlantId, Guid ProductVariantId, DateOnly BucketStart, DateOnly BucketEnd, decimal Quantity, string UomCode, string State, string? SourceRef, int Version);
 public sealed record OutputCostAllocationResponse(Guid Id, Guid ProductionOrderId, Guid OutputId, string AllocationBasis, decimal AllocationValue, decimal AllocatedAmount, string CurrencyCode, string IdempotencyKey);
+public sealed record WorkCenterResponse(Guid Id, Guid PlantId, string Code, string Name, string CapacityModel, decimal DefaultEfficiency, string State);
+public sealed record SubstitutionGroupResponse(Guid Id, string Code, string Name, string Policy);
+public sealed record SubstituteResponse(Guid Id, Guid GroupId, Guid ProductVariantId, int Priority, decimal ReplacementRatio, string UomCode, DateOnly ValidFrom, DateOnly? ValidTo);

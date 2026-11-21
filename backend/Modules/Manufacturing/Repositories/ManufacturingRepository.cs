@@ -154,6 +154,126 @@ public sealed partial class ManufacturingRepository(
         return rows.FirstOrDefault();
     }, ct);
 
+    public Task<IReadOnlyList<PlantResponse>> ListPlantsAsync(TenantId tenant, Guid legalEntityId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        await using var command = Command(context, "select id,legal_entity_id,code,name,time_zone,state from business_manufacturing.plant where tenant_id=$1 and legal_entity_id=$2 and state='Active' order by code", tenant.Value, legalEntityId);
+        await using var reader = await command.ExecuteReaderAsync(token);
+        var list = new List<PlantResponse>();
+        while (await reader.ReadAsync(token))
+            list.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5)));
+        return (IReadOnlyList<PlantResponse>)list;
+    }, ct);
+
+    public Task<IReadOnlyList<ManufacturingProfileResponse>> ListProfilesAsync(TenantId tenant, Guid legalEntityId, Guid? productVariantId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        await using var command = Command(context, "select id,legal_entity_id,product_variant_id,default_mode,make_buy_policy,default_plant_id from business_manufacturing.manufacturing_product_profile where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or product_variant_id=$3) order by id", tenant.Value, legalEntityId, Db(productVariantId));
+        await using var reader = await command.ExecuteReaderAsync(token);
+        var list = new List<ManufacturingProfileResponse>();
+        while (await reader.ReadAsync(token))
+            list.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), true, reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetGuid(5)));
+        return (IReadOnlyList<ManufacturingProfileResponse>)list;
+    }, ct);
+
+    public Task<IReadOnlyList<BomResponse>> ListBomsAsync(TenantId tenant, Guid? productVariantId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        await using var command = Command(context, "select id,product_variant_id,code,name,state from business_manufacturing.bom where tenant_id=$1 and ($2::uuid is null or product_variant_id=$2) order by code", tenant.Value, Db(productVariantId));
+        await using var reader = await command.ExecuteReaderAsync(token);
+        var list = new List<BomResponse>();
+        while (await reader.ReadAsync(token))
+            list.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4)));
+        return (IReadOnlyList<BomResponse>)list;
+    }, ct);
+
+    public Task<IReadOnlyList<BomVersionResponse>> ListBomVersionsAsync(TenantId tenant, Guid bomId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        await using var command = Command(context, "select id,revision,state,valid_from,valid_to,base_output_qty,output_uom_code from business_manufacturing.bom_version where tenant_id=$1 and bom_id=$2 order by revision desc", tenant.Value, bomId);
+        await using var reader = await command.ExecuteReaderAsync(token);
+        var list = new List<BomVersionResponse>();
+        while (await reader.ReadAsync(token))
+            list.Add(new(reader.GetGuid(0), bomId, reader.GetInt32(1), reader.GetString(2), reader.GetFieldValue<DateOnly>(3), reader.IsDBNull(4) ? null : reader.GetFieldValue<DateOnly>(4), reader.GetDecimal(5), reader.GetString(6), []));
+        return (IReadOnlyList<BomVersionResponse>)list;
+    }, ct);
+
+    public Task<IReadOnlyList<FormulaResponse>> ListFormulasAsync(TenantId tenant, Guid? productVariantId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        await using var command = Command(context, "select id,product_variant_id,code,name,state from business_manufacturing.formula where tenant_id=$1 and ($2::uuid is null or product_variant_id=$2) order by code", tenant.Value, Db(productVariantId));
+        await using var reader = await command.ExecuteReaderAsync(token);
+        var list = new List<FormulaResponse>();
+        while (await reader.ReadAsync(token))
+            list.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4)));
+        return (IReadOnlyList<FormulaResponse>)list;
+    }, ct);
+
+    public Task<IReadOnlyList<FormulaVersionResponse>> ListFormulaVersionsAsync(TenantId tenant, Guid formulaId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        await using var command = Command(context, "select id,revision,state,valid_from,valid_to,base_batch_qty,output_uom_code,expected_yield from business_manufacturing.formula_version where tenant_id=$1 and formula_id=$2 order by revision desc", tenant.Value, formulaId);
+        await using var reader = await command.ExecuteReaderAsync(token);
+        var list = new List<FormulaVersionResponse>();
+        while (await reader.ReadAsync(token))
+            list.Add(new(reader.GetGuid(0), formulaId, reader.GetInt32(1), reader.GetString(2), reader.GetFieldValue<DateOnly>(3), reader.IsDBNull(4) ? null : reader.GetFieldValue<DateOnly>(4), reader.GetDecimal(5), reader.GetString(6), reader.GetDecimal(7), [], []));
+        return (IReadOnlyList<FormulaVersionResponse>)list;
+    }, ct);
+
+    public Task<IReadOnlyList<RoutingResponse>> ListRoutingsAsync(TenantId tenant, Guid? productVariantId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        await using var command = Command(context, "select id,product_variant_id,code,name,state from business_manufacturing.routing where tenant_id=$1 and ($2::uuid is null or product_variant_id=$2) order by code", tenant.Value, Db(productVariantId));
+        await using var reader = await command.ExecuteReaderAsync(token);
+        var list = new List<RoutingResponse>();
+        while (await reader.ReadAsync(token))
+            list.Add(new(reader.GetGuid(0), reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4)));
+        return (IReadOnlyList<RoutingResponse>)list;
+    }, ct);
+
+    public Task<IReadOnlyList<RoutingVersionResponse>> ListRoutingVersionsAsync(TenantId tenant, Guid routingId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        await using var command = Command(context, "select id,revision,state,valid_from,valid_to from business_manufacturing.routing_version where tenant_id=$1 and routing_id=$2 order by revision desc", tenant.Value, routingId);
+        await using var reader = await command.ExecuteReaderAsync(token);
+        var list = new List<RoutingVersionResponse>();
+        while (await reader.ReadAsync(token))
+            list.Add(new(reader.GetGuid(0), routingId, reader.GetInt32(1), reader.GetString(2), reader.GetFieldValue<DateOnly>(3), reader.IsDBNull(4) ? null : reader.GetFieldValue<DateOnly>(4), []));
+        return (IReadOnlyList<RoutingVersionResponse>)list;
+    }, ct);
+
+    public Task<IReadOnlyList<WorkCenterResponse>> ListWorkCentersAsync(TenantId tenant, Guid? plantId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        await using var command = Command(context, "select id,plant_id,code,name,capacity_model,default_efficiency,state from business_manufacturing.work_center where tenant_id=$1 and ($2::uuid is null or plant_id=$2) and state='Active' order by code", tenant.Value, Db(plantId));
+        await using var reader = await command.ExecuteReaderAsync(token);
+        var list = new List<WorkCenterResponse>();
+        while (await reader.ReadAsync(token))
+            list.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetDecimal(5), reader.GetString(6)));
+        return (IReadOnlyList<WorkCenterResponse>)list;
+    }, ct);
+
+    public Task<IReadOnlyList<ProductionDefinitionResponse>> ListDefinitionsAsync(TenantId tenant, Guid legalEntityId, Guid? plantId, Guid? productVariantId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        await using var command = Command(context, "select id,legal_entity_id,plant_id,product_variant_id,manufacturing_mode,bom_version_id,formula_version_id,routing_version_id,valid_from,valid_to,min_qty,max_qty,priority,state from business_manufacturing.production_definition where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or plant_id=$3) and ($4::uuid is null or product_variant_id=$4) order by priority asc, valid_from desc, id asc", tenant.Value, legalEntityId, Db(plantId), Db(productVariantId));
+        await using var reader = await command.ExecuteReaderAsync(token);
+        var list = new List<ProductionDefinitionResponse>();
+        while (await reader.ReadAsync(token))
+            list.Add(ReadDefinition(reader));
+        return (IReadOnlyList<ProductionDefinitionResponse>)list;
+    }, ct);
+
+    public Task<IReadOnlyList<SubstitutionGroupResponse>> ListSubstitutionGroupsAsync(TenantId tenant, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        await using var command = Command(context, "select id,code,name,policy from business_manufacturing.material_substitution_group where tenant_id=$1 order by code", tenant.Value);
+        await using var reader = await command.ExecuteReaderAsync(token);
+        var list = new List<SubstitutionGroupResponse>();
+        while (await reader.ReadAsync(token))
+            list.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)));
+        return (IReadOnlyList<SubstitutionGroupResponse>)list;
+    }, ct);
+
+    public Task<IReadOnlyList<PlanningRunResponse>> ListPlanningRunsAsync(TenantId tenant, Guid legalEntityId, int limit, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        await using var command = Command(context, "select id,legal_entity_id,plant_id,horizon_start,horizon_end,state,(select count(*) from business_manufacturing.planning_demand where tenant_id=$1 and planning_run_id=r.id),(select count(*) from business_manufacturing.planned_supply where tenant_id=$1 and planning_run_id=r.id),(select count(*) from business_manufacturing.planning_exception where tenant_id=$1 and planning_run_id=r.id) from business_manufacturing.planning_run r where r.tenant_id=$1 and r.legal_entity_id=$2 order by r.created_at desc limit $3", tenant.Value, legalEntityId, Math.Clamp(limit, 1, 200));
+        await using var reader = await command.ExecuteReaderAsync(token);
+        var list = new List<PlanningRunResponse>();
+        while (await reader.ReadAsync(token))
+            list.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetFieldValue<DateOnly>(3), reader.GetFieldValue<DateOnly>(4), reader.GetString(5), reader.GetInt32(6), reader.GetInt32(7), reader.GetInt32(8)));
+        return (IReadOnlyList<PlanningRunResponse>)list;
+    }, ct);
+
     public Task<SubstitutionGroupResponse> CreateSubstitutionGroupAsync(TenantId tenant, Guid actor, CreateSubstitutionGroupRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
         var id = Guid.CreateVersion7(); await ExecuteAsync(context, "insert into business_manufacturing.material_substitution_group(tenant_id,id,code,name,policy) values($1,$2,$3,$4,$5)", token, tenant.Value, id, request.Code.Trim(), request.Name.Trim(), request.Policy); return new SubstitutionGroupResponse(id, request.Code.Trim(), request.Name.Trim(), request.Policy);
@@ -719,7 +839,3 @@ public sealed partial class ManufacturingRepository(
     private static object Db(object? value) => value ?? DBNull.Value;
     private static async Task AuditAsync(ITransactionContext context, Guid tenant, string entityType, Guid entityId, string action, Guid actor, object? before, object? after, CancellationToken token) => await ExecuteAsync(context, "insert into business_manufacturing.manufacturing_audit_event(tenant_id,id,entity_type,entity_id,action,actor_id,before_json,after_json) values($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb)", token, tenant, Guid.CreateVersion7(), entityType, entityId, action, actor, Db(before is null ? null : JsonSerializer.Serialize(before)), Db(after is null ? null : JsonSerializer.Serialize(after)));
 }
-
-public sealed record SubstitutionGroupResponse(Guid Id, string Code, string Name, string Policy);
-public sealed record SubstituteResponse(Guid Id, Guid GroupId, Guid ProductVariantId, int Priority, decimal ReplacementRatio, string UomCode, DateOnly ValidFrom, DateOnly? ValidTo);
-public sealed record WorkCenterResponse(Guid Id, Guid PlantId, string Code, string Name, string CapacityModel, decimal DefaultEfficiency, string State);

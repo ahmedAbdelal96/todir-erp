@@ -98,8 +98,15 @@ public sealed class NpgsqlModuleLifecycleEnforcer(NpgsqlDataSource dataSource, I
         {
             // Missing module instance:
             // Core/non-purchasable modules default to Active.
-            // Purchasable modules with active entitlement default to Active.
-            status = "Active";
+            // Purchasable modules require explicit operational activation; fail closed if absent.
+            if (!manifest.Purchasable)
+            {
+                status = "Active";
+            }
+            else
+            {
+                return new ModuleAccessDecision(false, false, "Disabled", "module.not_activated");
+            }
         }
 
         var normStatus = status.ToLowerInvariant();

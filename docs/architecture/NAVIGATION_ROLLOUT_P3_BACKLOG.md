@@ -52,11 +52,14 @@ This backlog tracks the phased transition of TODIR ERP SaaS from coarse single-p
   - Physical count clerk isolation (`inventory.count.create`, `inventory.count.enter`): lands on `/inventory/counts`; root redirects without 403; cannot post adjustments.
   - Operational tabs (`CountsTab`, `CountDetailModal`, `AdjustmentsTab`, `TransfersTab`) guarded against unauthorized mutation and ReadOnly/WindDown lifecycle.
   - Backend mutation endpoints in Inventory, Ledger, Accounting, Banking, and CRM enforce `IModuleLifecycleEnforcer`.
-- [x] **Backend & Frontend Authorization Hardening (Final Closure)**:
+- [x] **Backend & Frontend Authorization Hardening & Release Gate (COMPLETED)**:
   - 100% of mutation endpoints in Inventory, Ledger, Accounting, Banking, and CRM enforce lifecycle via `IModuleLifecycleEnforcer` and `ModuleLifecycleEndpointFilter`, verified via automated test `ModuleLifecycleCoverageAuditTests`.
-  - Zero fail-open behavior in production DI: `UnavailableModuleLifecycleEnforcer` fails closed with `infrastructure.unavailable`.
-  - Removed string-based mutation heuristic in frontend `effective-access.ts`: read destinations like `inventory.traceability.manage` remain accessible in ReadOnly while mutation actions within are guarded by `canPerformAction`.
-  - Discrete 12-test backend security acceptance matrix in `NavigationSecurityAcceptanceTests.cs` verified against isolated PostgreSQL container.
+  - Non-purchasable core modules default to Active, while purchasable modules fail closed with `Disabled` / `module.not_activated` if an operational instance is missing.
+  - Multi-input scope resolution in `ModuleLifecycleEndpointFilter` detects conflicts across route, query, header, and DTO inputs and fails closed with `400 Bad Request` (`scope.conflict`).
+  - Missing metadata on governed module routes fails closed with `403 Forbidden` (`module.missing_metadata`).
+  - Zero cluster-global `ALTER ROLE` commands or schema constraint alterations in tests. Test harness checks database safety before execution (`acceptance` or `test` naming required).
+  - 15/15 backend security acceptance tests in `NavigationSecurityAcceptanceTests.cs` verified using controlled Active-to-ReadOnly / Active-to-WindDown transitions.
+  - Real-stack Playwright browser acceptance suite (`navigation-real-stack.spec.ts`) passing 4/4 against live ASP.NET Core API (`http://127.0.0.1:5080`) and PostgreSQL (`todir_nav_acceptance`).
 
 ---
 
@@ -75,10 +78,12 @@ Do not proceed to P3 Wave 2 until authorized:
 
 | Quality Gate | Tool / Command | Status | Evidence |
 |---|---|---|---|
-| **TypeScript Typecheck** | `pnpm run typecheck` | **PASSED** | 0 errors across root and frontend tsconfig |
+| **TypeScript Typecheck** | `pnpm --dir frontend run typecheck` | **PASSED** | 0 errors across root and frontend tsconfig |
 | **Frontend Architecture** | `pnpm run architecture:frontend` | **PASSED** | Module boundaries, fixtures, and rules 100% clean |
 | **Localization Verification** | `pnpm run localization:verify` | **PASSED** | Zero missing keys, full Arabic/English parity |
-| **Frontend Unit Suite** | `pnpm run test:frontend` | **PASSED** | 259/259 tests passed (55 suites) |
+| **Frontend Unit Suite** | `pnpm run test:frontend` | **PASSED** | 260/260 tests passed (55 suites) |
 | **Permission Audit** | `node --test frontend/tests/navigation/permissions-manifest-audit.test.ts` | **PASSED** | 100% of permissions verified against 24 module manifests |
-| **Real-Stack Backend Integration** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~NavigationSecurityAcceptanceTests` | **PASSED** | 1/1 suite (20 scenarios) passed against live PostgreSQL (`todir_nav_acceptance`) |
-| **Browser E2E Acceptance** | `pnpm --dir frontend exec playwright test tests/e2e/navigation-access.spec.ts` | **PASSED** | 6/6 browser journeys passed |
+| **Lifecycle Coverage Audit** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~ModuleLifecycleCoverageAuditTests` | **PASSED** | 2/2 tests passed (route coverage, reviewed exceptions catalog, fail-closed missing metadata) |
+| **Lifecycle Security Acceptance** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~NavigationSecurityAcceptanceTests` | **PASSED** | 15/15 tests passed with controlled Active -> ReadOnly transitions against live PostgreSQL (`todir_nav_acceptance`) |
+| **Browser E2E UI Regression** | `pnpm --dir frontend exec playwright test tests/e2e/navigation-access.spec.ts` | **PASSED** | 6/6 mock-based browser journeys passed |
+| **Browser Real-Stack Acceptance** | `pnpm --dir frontend exec playwright test tests/e2e/navigation-real-stack.spec.ts` | **PASSED** | 4/4 real-stack browser journeys passed against live ASP.NET Core API and PostgreSQL |
