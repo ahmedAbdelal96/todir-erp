@@ -61,37 +61,58 @@ public sealed partial class ManufacturingRepository
         }
     }
 
-    private static async Task<List<(Guid Id, Guid ProductVariantId, Guid? PlantId, DateOnly NeedDate, decimal Quantity, string UomCode, string SourceType, decimal ConsumedForecastQty, Guid? ParentDemandId)>> ReadPlanningDemandsAsync(ITransactionContext context, Guid tenant, Guid runId, CancellationToken token)
+    private static async Task<List<(Guid Id, Guid ProductVariantId, Guid? PlantId, DateOnly NeedDate, decimal Quantity, string UomCode, string SourceType, decimal ConsumedForecastQty, Guid? ParentDemandId, decimal StockAllocatedQty, decimal UncoveredQty)>> ReadPlanningDemandsAsync(ITransactionContext context, Guid tenant, Guid runId, CancellationToken token)
     {
-        var demands = new List<(Guid, Guid, Guid?, DateOnly, decimal, string, string, decimal, Guid?)>();
-        await using var command = Command(context, "select id,product_variant_id,plant_id,need_date,quantity,uom_code,source_type,consumed_forecast_qty,parent_demand_id from business_manufacturing.planning_demand where tenant_id=$1 and planning_run_id=$2 order by need_date,demand_level,id", tenant, runId);
+        var demands = new List<(Guid, Guid, Guid?, DateOnly, decimal, string, string, decimal, Guid?, decimal, decimal)>();
+        await using var command = Command(context, "select id,product_variant_id,plant_id,need_date,quantity,uom_code,source_type,consumed_forecast_qty,parent_demand_id,stock_allocated_qty,uncovered_qty from business_manufacturing.planning_demand where tenant_id=$1 and planning_run_id=$2 order by need_date,demand_level,id", tenant, runId);
         await using var reader = await command.ExecuteReaderAsync(token);
-        while (await reader.ReadAsync(token)) demands.Add((reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetFieldValue<DateOnly>(3), reader.GetDecimal(4), reader.GetString(5), reader.GetString(6), reader.GetDecimal(7), reader.IsDBNull(8) ? null : reader.GetGuid(8)));
+        while (await reader.ReadAsync(token)) demands.Add((reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetFieldValue<DateOnly>(3), reader.GetDecimal(4), reader.GetString(5), reader.GetString(6), reader.GetDecimal(7), reader.IsDBNull(8) ? null : reader.GetGuid(8), reader.GetDecimal(9), reader.GetDecimal(10)));
         return demands;
     }
 
     private async Task ExpandDependentDemandsAsync(ITransactionContext context, Guid tenant, PlanningRunResponse run, CancellationToken token)
     {
-        var roots = new List<(Guid Id, Guid ProductVariantId, Guid? PlantId, DateOnly NeedDate, decimal Quantity, string UomCode)>();
-        await using (var command = Command(context, "select id,product_variant_id,plant_id,need_date,quantity,uom_code from business_manufacturing.planning_demand where tenant_id=$1 and planning_run_id=$2 and parent_demand_id is null order by need_date,id", tenant, run.Id))
+        var roots = new List<(Guid Id, Guid ProductVariantId, Guid? PlantId, DateOnly NeedDate, decimal Quantity, string UomCode, string SourceType, decimal ConsumedForecastQty)>();
+        await using (var command = Command(context, "select id,product_variant_id,plant_id,need_date,quantity,uom_code,source_type,consumed_forecast_qty from business_manufacturing.planning_demand where tenant_id=$1 and planning_run_id=$2 and parent_demand_id is null order by need_date,id", tenant, run.Id))
         await using (var reader = await command.ExecuteReaderAsync(token))
         {
             while (await reader.ReadAsync(token))
-                roots.Add((reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetFieldValue<DateOnly>(3), reader.GetDecimal(4), reader.GetString(5)));
+                roots.Add((reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetFieldValue<DateOnly>(3), reader.GetDecimal(4), reader.GetString(5), reader.GetString(6), reader.GetDecimal(7)));
         }
 
-        foreach (var root in roots)
+        var stockRemaining = new Dictionary<(Guid ProductVariantId, Guid? PlantId, string UomCode, Guid WarehouseId), decimal>();
+        foreach (var group in roots.GroupBy(root => new { root.ProductVariantId, root.PlantId, root.NeedDate, root.UomCode }).OrderBy(group => group.Key.NeedDate))
         {
-            var available = await GetPlanningAvailableAsync(context, tenant, run.LegalEntityId, root.ProductVariantId, root.PlantId, root.UomCode, token);
-            var netRootQuantity = Math.Max(0m, root.Quantity - available);
-            if (netRootQuantity > 0m)
-                await ExpandNodeAsync(context, tenant, run, root.Id, root.ProductVariantId, root.PlantId, root.NeedDate, netRootQuantity, root.UomCode, 0, new HashSet<Guid>(), token);
+            var forecast = group.Where(root => string.Equals(root.SourceType, "Forecast", StringComparison.OrdinalIgnoreCase)).Sum(root => root.Quantity);
+            var accepted = group.Where(root => !string.Equals(root.SourceType, "Forecast", StringComparison.OrdinalIgnoreCase)).Sum(root => root.Quantity);
+            var explicitConsumed = group.Where(root => string.Equals(root.SourceType, "Forecast", StringComparison.OrdinalIgnoreCase)).Sum(root => root.ConsumedForecastQty);
+            var consumed = Math.Min(forecast, Math.Max(explicitConsumed, accepted));
+            var remainingForecast = Math.Max(0m, forecast - consumed);
+            var gross = accepted + remainingForecast;
+            var allocatedStock = (await AllocatePlanningStockAsync(context, tenant, run.LegalEntityId, group.Key.ProductVariantId, group.Key.PlantId, group.Key.UomCode, gross, stockRemaining, token)).Stock;
+            var uncovered = Math.Max(0m, gross - allocatedStock);
+            var remainingGross = gross;
+            var remainingStock = allocatedStock;
+            var remainingConsumed = consumed;
+            foreach (var root in group.OrderBy(root => string.Equals(root.SourceType, "Forecast", StringComparison.OrdinalIgnoreCase) ? 1 : 0).ThenBy(root => root.Id))
+            {
+                var rowGross = Math.Min(root.Quantity, remainingGross);
+                var rowStock = Math.Min(rowGross, remainingStock);
+                var rowUncovered = Math.Max(0m, rowGross - rowStock);
+                var rowConsumed = string.Equals(root.SourceType, "Forecast", StringComparison.OrdinalIgnoreCase) ? Math.Min(root.Quantity, remainingConsumed) : root.ConsumedForecastQty;
+                await ExecuteAsync(context, "update business_manufacturing.planning_demand set consumed_forecast_qty=$1,stock_allocated_qty=$2,uncovered_qty=$3 where tenant_id=$4 and id=$5", token, rowConsumed, rowStock, rowUncovered, tenant, root.Id);
+                remainingGross -= rowGross;
+                remainingStock -= rowStock;
+                remainingConsumed -= rowConsumed;
+                if (rowUncovered > 0m)
+                    await ExpandNodeAsync(context, tenant, run, root.Id, root.ProductVariantId, root.PlantId, root.NeedDate, rowUncovered, root.UomCode, 0, new HashSet<Guid>(), stockRemaining, token);
+            }
         }
     }
 
     private async Task ExpandNodeAsync(ITransactionContext context, Guid tenant, PlanningRunResponse run, Guid parentDemandId,
         Guid productVariantId, Guid? plantId, DateOnly needDate, decimal quantity, string parentUom, int level,
-        HashSet<Guid> path, CancellationToken token)
+        HashSet<Guid> path, Dictionary<(Guid ProductVariantId, Guid? PlantId, string UomCode, Guid WarehouseId), decimal> stockRemaining, CancellationToken token)
     {
         if (level >= 20) throw new ManufacturingException("manufacturing.bom_depth_exceeded");
         if (path.Contains(productVariantId))
@@ -99,10 +120,6 @@ public sealed partial class ManufacturingRepository
             await ExecuteAsync(context, "insert into business_manufacturing.planning_exception(tenant_id,id,planning_run_id,product_variant_id,exception_type,severity,need_date,quantity,message) values($1,$2,$3,$4,'BomCycle','Error',$5,$6,$7)", token, tenant, Guid.CreateVersion7(), run.Id, productVariantId, needDate, quantity, "The active BOM/formula graph contains a cycle.");
             throw new ManufacturingException("manufacturing.bom_cycle_detected");
         }
-
-        var available = await GetPlanningAvailableAsync(context, tenant, run.LegalEntityId, productVariantId, plantId, parentUom, token);
-        quantity = Math.Max(0m, quantity - available);
-        if (quantity <= 0m) return;
 
         var definition = await ReadPlanningDefinitionAsync(context, tenant, run, productVariantId, plantId, needDate, quantity, token);
         if (definition is null) return;
@@ -114,14 +131,17 @@ public sealed partial class ManufacturingRepository
             {
                 var childQuantity = quantity * line.RequiredQty / bom.BaseOutputQty * (1m + line.ScrapFactor) / bom.ExpectedYield / definition.ExpectedYield;
                 if (childQuantity <= 0) continue;
+                var childAllocation = await AllocatePlanningStockAsync(context, tenant, run.LegalEntityId, line.ComponentProductVariantId, plantId, line.UomCode, childQuantity, stockRemaining, token);
+                if (childAllocation.Uncovered <= 0m) continue;
                 if (line.Phantom)
                 {
-                    await ExpandNodeAsync(context, tenant, run, parentDemandId, line.ComponentProductVariantId, plantId, needDate, childQuantity, line.UomCode, level + 1, nextPath, token);
+                    await ExpandNodeAsync(context, tenant, run, parentDemandId, line.ComponentProductVariantId, plantId, needDate, childAllocation.Uncovered, line.UomCode, level + 1, nextPath, stockRemaining, token);
                     continue;
                 }
 
                 var childId = await EnsureDependentDemandAsync(context, tenant, run.Id, parentDemandId, line.ComponentProductVariantId, plantId, needDate, childQuantity, line.UomCode, level + 1, $"Dependent:{parentDemandId:D}:BOM:{line.ComponentProductVariantId:D}", token);
-                await ExpandNodeAsync(context, tenant, run, childId, line.ComponentProductVariantId, plantId, needDate, childQuantity, line.UomCode, level + 1, nextPath, token);
+                await ExecuteAsync(context, "update business_manufacturing.planning_demand set stock_allocated_qty=$1,uncovered_qty=$2 where tenant_id=$3 and id=$4", token, childAllocation.Stock, childAllocation.Uncovered, tenant, childId);
+                await ExpandNodeAsync(context, tenant, run, childId, line.ComponentProductVariantId, plantId, needDate, childAllocation.Uncovered, line.UomCode, level + 1, nextPath, stockRemaining, token);
             }
         }
         else if (definition.FormulaVersionId is { } formulaVersionId)
@@ -131,10 +151,37 @@ public sealed partial class ManufacturingRepository
             {
                 var childQuantity = line.FixedQuantity ? line.Quantity : line.Quantity * quantity / formula.BaseBatchQty / formula.ExpectedYield;
                 if (childQuantity <= 0) continue;
+                var childAllocation = await AllocatePlanningStockAsync(context, tenant, run.LegalEntityId, line.ProductVariantId, plantId, line.UomCode, childQuantity, stockRemaining, token);
+                if (childAllocation.Uncovered <= 0m) continue;
                 var childId = await EnsureDependentDemandAsync(context, tenant, run.Id, parentDemandId, line.ProductVariantId, plantId, needDate, childQuantity, line.UomCode, level + 1, $"Dependent:{parentDemandId:D}:FORMULA:{line.ProductVariantId:D}", token);
-                await ExpandNodeAsync(context, tenant, run, childId, line.ProductVariantId, plantId, needDate, childQuantity, line.UomCode, level + 1, nextPath, token);
+                await ExecuteAsync(context, "update business_manufacturing.planning_demand set stock_allocated_qty=$1,uncovered_qty=$2 where tenant_id=$3 and id=$4", token, childAllocation.Stock, childAllocation.Uncovered, tenant, childId);
+                await ExpandNodeAsync(context, tenant, run, childId, line.ProductVariantId, plantId, needDate, childAllocation.Uncovered, line.UomCode, level + 1, nextPath, stockRemaining, token);
             }
         }
+    }
+
+    private async Task<(decimal Stock, decimal Uncovered)> AllocatePlanningStockAsync(ITransactionContext context, Guid tenant, Guid legalEntityId,
+        Guid productVariantId, Guid? plantId, string uomCode, decimal quantity, Dictionary<(Guid ProductVariantId, Guid? PlantId, string UomCode, Guid WarehouseId), decimal> stockRemaining, CancellationToken token)
+    {
+        if (quantity <= 0m || inventoryCapabilities is null) return (0m, Math.Max(0m, quantity));
+        var scope = await ReadPlantWarehouseScopeAsync(context, tenant, plantId, token);
+        var availability = await inventoryCapabilities.GetAvailabilityAsync(tenant, legalEntityId, productVariantId, true, token);
+        var allowedUoms = catalogCapabilities is null ? [] : await catalogCapabilities.GetAllowedUomsAsync(new Shared.Primitives.Identifiers.TenantId(tenant), productVariantId, DateTimeOffset.UtcNow, legalEntityId, token);
+        var allocated = 0m;
+        foreach (var row in availability.Where(row => !scope.HasScope || scope.WarehouseIds.Contains(row.WarehouseId)))
+        {
+            var factorToBase = string.Equals(row.BaseUnitCode, uomCode, StringComparison.OrdinalIgnoreCase)
+                ? 1m
+                : allowedUoms.FirstOrDefault(item => string.Equals(item.UnitCode, uomCode, StringComparison.OrdinalIgnoreCase))?.FactorToBase ?? 0m;
+            if (factorToBase <= 0m) continue;
+            var key = (productVariantId, plantId, uomCode, row.WarehouseId);
+            if (!stockRemaining.TryGetValue(key, out var remaining)) remaining = Math.Max(0m, row.Available / factorToBase);
+            var take = Math.Min(remaining, Math.Max(0m, quantity - allocated));
+            stockRemaining[key] = remaining - take;
+            allocated += take;
+            if (allocated >= quantity) break;
+        }
+        return (allocated, Math.Max(0m, quantity - allocated));
     }
 
     private static async Task<Guid> EnsureDependentDemandAsync(ITransactionContext context, Guid tenant, Guid runId, Guid parentDemandId,

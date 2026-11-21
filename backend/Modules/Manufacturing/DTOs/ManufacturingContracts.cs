@@ -35,6 +35,7 @@ public sealed record CapacityQueryRequest(Guid PlantId, DateOnly From, DateOnly 
 public sealed record AssignOperationResourceRequest(Guid ResourceId, decimal RequiredQuantity = 1);
 public sealed record RecordLaborFactRequest(Guid? ProductionOperationId, Guid? ResourceId, Guid? EmployeeId, DateOnly WorkDate, int Minutes, decimal RateAmount, string CurrencyCode, string SourceRef, string IdempotencyKey);
 public sealed record QualityGateDecisionRequest(Guid? ProductionOperationId, bool Required, bool CapabilityAvailable, string DecisionState, string? SourceRef = null);
+public sealed record QualityGatePolicyRequest(Guid? ProductionOperationId, bool Required, string Reason);
 public sealed record CreateSubcontractCommitmentRequest(Guid? ProductionOperationId, string SourceModule, string SourceDocumentId, Guid? SupplierPartyId, decimal Quantity, string UomCode, DateOnly ExpectedDate, decimal CommittedAmount, string? CurrencyCode, string IdempotencyKey);
 public sealed record CreateMpsPlanRequest(Guid LegalEntityId, Guid PlantId, Guid ProductVariantId, DateOnly BucketStart, DateOnly BucketEnd, decimal Quantity, string UomCode, string? SourceRef = null);
 public sealed record AllocateOutputCostRequest(Guid OutputId, string AllocationBasis, decimal AllocationValue, decimal AllocatedAmount, string CurrencyCode, string IdempotencyKey);

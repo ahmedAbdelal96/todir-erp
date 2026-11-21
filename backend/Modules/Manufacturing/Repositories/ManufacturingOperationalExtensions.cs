@@ -80,6 +80,11 @@ public sealed partial class ManufacturingRepository
             if (request.DecisionState is not ("Pending" or "Passed" or "Failed" or "Blocked")) throw new ManufacturingException("manufacturing.quality_gate_invalid");
             var legalEntityId = await ScalarAsync<Guid?>(context, "select legal_entity_id from business_manufacturing.production_order where tenant_id=$1 and id=$2", token, tenant.Value, orderId) ?? throw new ManufacturingException("manufacturing.production_order_not_found");
             if (request.ProductionOperationId is { } operationId && !await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_operation where tenant_id=$1 and id=$2 and production_order_id=$3)", token, tenant.Value, operationId, orderId)) throw new ManufacturingException("manufacturing.operation_not_found");
+            var existingGateId = await ScalarAsync<Guid?>(context, "select id from business_manufacturing.production_quality_gate where tenant_id=$1 and production_order_id=$2 and production_operation_id is not distinct from $3::uuid", token, tenant.Value, orderId, Db(request.ProductionOperationId));
+            var existingRequired = existingGateId is not null && await ScalarAsync<bool>(context, "select required from business_manufacturing.production_quality_gate where tenant_id=$1 and id=$2", token, tenant.Value, existingGateId.Value);
+            var operationRequired = request.ProductionOperationId is { } && await ScalarAsync<bool>(context, "select quality_gate_required from business_manufacturing.production_operation where tenant_id=$1 and id=$2 and production_order_id=$3", token, tenant.Value, request.ProductionOperationId.Value, orderId);
+            var authoritativeRequired = existingRequired || operationRequired;
+            if (request.Required != authoritativeRequired) throw new ManufacturingException("manufacturing.quality_gate_policy_change_forbidden");
             var capabilityAvailable = false; var decisionState = request.DecisionState; var evidence = request.SourceRef;
             if (request.DecisionState is "Passed" or "Failed")
             {
@@ -93,10 +98,25 @@ public sealed partial class ManufacturingRepository
                 if (request.Required && qualityDecisions is null) capabilityAvailable = false;
                 else capabilityAvailable = request.CapabilityAvailable;
             }
-            var gateId = await ScalarAsync<Guid?>(context, "select id from business_manufacturing.production_quality_gate where tenant_id=$1 and production_order_id=$2 and production_operation_id is not distinct from $3::uuid", token, tenant.Value, orderId, Db(request.ProductionOperationId)) ?? Guid.CreateVersion7();
-            await ExecuteAsync(context, "insert into business_manufacturing.production_quality_gate(tenant_id,id,production_order_id,production_operation_id,required,capability_available,decision_state,source_ref,decided_at) values($1,$2,$3,$4,$5,$6,$7,$8,case when $7 in ('Passed','Failed') then now() else null end) on conflict (tenant_id,id) do update set required=excluded.required,capability_available=excluded.capability_available,decision_state=excluded.decision_state,source_ref=excluded.source_ref,decided_at=excluded.decided_at", token, tenant.Value, gateId, orderId, Db(request.ProductionOperationId), request.Required, capabilityAvailable, decisionState, Db(evidence));
+            var gateId = existingGateId ?? Guid.CreateVersion7();
+            await ExecuteAsync(context, "insert into business_manufacturing.production_quality_gate(tenant_id,id,production_order_id,production_operation_id,required,capability_available,decision_state,source_ref,decided_at) values($1,$2,$3,$4,$5,$6,$7,$8,case when $7 in ('Passed','Failed') then now() else null end) on conflict (tenant_id,id) do update set capability_available=excluded.capability_available,decision_state=excluded.decision_state,source_ref=excluded.source_ref,decided_at=excluded.decided_at", token, tenant.Value, gateId, orderId, Db(request.ProductionOperationId), authoritativeRequired, capabilityAvailable, decisionState, Db(evidence));
             await ExecuteAsync(context, "update business_manufacturing.production_order set quality_state=case when exists(select 1 from business_manufacturing.production_quality_gate g where g.tenant_id=$1 and g.production_order_id=$2 and g.required and (g.decision_state in ('Failed','Blocked') or not g.capability_available)) then 'Blocked' when exists(select 1 from business_manufacturing.production_quality_gate g where g.tenant_id=$1 and g.production_order_id=$2 and g.required and g.decision_state='Pending') then 'Pending' when exists(select 1 from business_manufacturing.production_quality_gate g where g.tenant_id=$1 and g.production_order_id=$2 and g.required) then 'Passed' else 'NotRequired' end,updated_at=now(),row_version=row_version+1 where tenant_id=$1 and id=$2", token, tenant.Value, orderId);
             await AuditAsync(context, tenant.Value, "ProductionQualityGate", gateId, "decision_recorded", actor, null, request, token);
+            return await ReadQualityGateAsync(context, tenant.Value, gateId, token) ?? throw new ManufacturingException("manufacturing.quality_gate_not_found");
+        }, ct);
+
+    public Task<QualityGateResponse> UpdateQualityGatePolicyAsync(TenantId tenant, Guid actor, Guid orderId, QualityGatePolicyRequest request, CancellationToken ct) =>
+        coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Reason)) throw new ManufacturingException("manufacturing.quality_gate_policy_reason_required");
+            var state = await ScalarAsync<string?>(context, "select state from business_manufacturing.production_order where tenant_id=$1 and id=$2", token, tenant.Value, orderId) ?? throw new ManufacturingException("manufacturing.production_order_not_found");
+            if (state != "Draft") throw new ManufacturingException("manufacturing.quality_gate_policy_locked");
+            if (request.ProductionOperationId is { } operationId && !await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_operation where tenant_id=$1 and id=$2 and production_order_id=$3)", token, tenant.Value, operationId, orderId)) throw new ManufacturingException("manufacturing.operation_not_found");
+            if (request.ProductionOperationId is { } operation)
+                await ExecuteAsync(context, "update business_manufacturing.production_operation set quality_gate_required=$1,row_version=row_version+1 where tenant_id=$2 and id=$3", token, request.Required, tenant.Value, operation);
+            var gateId = await ScalarAsync<Guid?>(context, "select id from business_manufacturing.production_quality_gate where tenant_id=$1 and production_order_id=$2 and production_operation_id is not distinct from $3::uuid", token, tenant.Value, orderId, Db(request.ProductionOperationId)) ?? Guid.CreateVersion7();
+            await ExecuteAsync(context, "insert into business_manufacturing.production_quality_gate(tenant_id,id,production_order_id,production_operation_id,required,capability_available,decision_state,source_ref) values($1,$2,$3,$4,$5,false,'Pending',$6) on conflict (tenant_id,id) do update set required=excluded.required,source_ref=excluded.source_ref", token, tenant.Value, gateId, orderId, Db(request.ProductionOperationId), request.Required, $"policy:{request.Reason.Trim()}");
+            await AuditAsync(context, tenant.Value, "ProductionQualityGate", gateId, "policy_changed", actor, null, request, token);
             return await ReadQualityGateAsync(context, tenant.Value, gateId, token) ?? throw new ManufacturingException("manufacturing.quality_gate_not_found");
         }, ct);
 

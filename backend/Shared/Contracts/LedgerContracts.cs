@@ -16,6 +16,15 @@ public interface ILedgerTreasuryBalanceRead
         Guid treasuryAccountId, string currencyCode, DateOnly asOfDate, CancellationToken cancellationToken = default);
 }
 
+public sealed record ManufacturingLedgerFactSnapshot(Guid FactId, string SourceReference, string CostCategory, decimal Amount,
+    string CurrencyCode, string Status, Guid? JournalEntryId, decimal DebitTotal, decimal CreditTotal);
+
+public interface IManufacturingLedgerCloseRead
+{
+    Task<IReadOnlyList<ManufacturingLedgerFactSnapshot>> GetManufacturingFactsAsync(TenantId tenantId, LegalEntityId legalEntityId,
+        Guid productionOrderId, CancellationToken cancellationToken = default);
+}
+
 public static class AccountingFactTypes
 {
     public const string CustomerInvoicePosted = "CustomerInvoicePosted";

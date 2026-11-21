@@ -135,6 +135,7 @@ create table if not exists business_manufacturing.planning_run (
 create table if not exists business_manufacturing.planning_demand (
   tenant_id uuid not null, id uuid not null, planning_run_id uuid not null, product_variant_id uuid not null, plant_id uuid, source_type text not null,
   source_ref text not null, need_date date not null, quantity numeric(28,10) not null, uom_code text not null, consumed_forecast_qty numeric(28,10) not null default 0,
+  stock_allocated_qty numeric(28,10) not null default 0, uncovered_qty numeric(28,10) not null default 0,
   primary key (tenant_id,id), foreign key (tenant_id,planning_run_id) references business_manufacturing.planning_run(tenant_id,id), check (quantity > 0), check (consumed_forecast_qty >= 0 and consumed_forecast_qty <= quantity)
 );
 create table if not exists business_manufacturing.planned_supply (

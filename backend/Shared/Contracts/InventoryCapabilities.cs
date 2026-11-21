@@ -20,6 +20,7 @@ public sealed record InventoryOperationSnapshot(Guid OperationId, Guid LegalEnti
     string? CurrencyCode, bool IsReversal, Guid? ProductVariantId = null, Guid? WarehouseId = null,
     Guid? LocationId = null, Guid? EnteredUomId = null, decimal? ConversionFactorSnapshot = null,
     Guid? LotId = null, Guid? SerialId = null);
+public sealed record InventoryLotSnapshot(Guid LotId, Guid ProductVariantId, Guid LegalEntityId, string Status);
 public sealed record InventoryAvailabilitySnapshot(Guid ProductVariantId, Guid WarehouseId, decimal OnHand,
     decimal Reserved, decimal Available, decimal InTransit, string BaseUnitCode);
 
@@ -39,4 +40,5 @@ public interface IInventoryCapabilities
         CancellationToken cancellationToken = default);
     Task<InventoryOperationSnapshot?> FindOperationBySourceAsync(Guid tenantId, Guid legalEntityId, string sourceModule,
         Guid sourceDocumentId, string idempotencyKey, CancellationToken cancellationToken = default);
+    Task<InventoryLotSnapshot?> GetLotSnapshotAsync(Guid tenantId, Guid legalEntityId, Guid lotId, CancellationToken cancellationToken = default);
 }

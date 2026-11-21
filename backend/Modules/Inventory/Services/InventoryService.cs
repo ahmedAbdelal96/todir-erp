@@ -167,6 +167,8 @@ public sealed class InventoryService(InventoryRepository repository, ILedgerPost
     public Task<InventoryOperationResult> ReceiveAsync(TenantId tenant, Guid actor, Guid entity, ConfirmStockMovementRequest request, Guid correlationId, string? traceParent, CancellationToken ct) => repository.ReceiveAsync(tenant, actor, entity, request, correlationId, traceParent, ct);
     public Task<Shared.Contracts.Inventory.InventoryOperationSnapshot?> GetOperationSnapshotAsync(Guid tenantId, Guid legalEntityId, Guid operationId, CancellationToken ct = default) => repository.GetOperationSnapshotAsync(new TenantId(tenantId), legalEntityId, operationId, ct);
     public Task<Shared.Contracts.Inventory.InventoryOperationSnapshot?> FindOperationBySourceAsync(Guid tenantId, Guid legalEntityId, string sourceModule, Guid sourceDocumentId, string idempotencyKey, CancellationToken ct = default) => repository.FindOperationBySourceAsync(new TenantId(tenantId), legalEntityId, sourceModule, sourceDocumentId, idempotencyKey, ct);
+
+    public Task<Shared.Contracts.Inventory.InventoryLotSnapshot?> GetLotSnapshotAsync(Guid tenantId, Guid legalEntityId, Guid lotId, CancellationToken ct = default) => repository.GetLotSnapshotAsync(new TenantId(tenantId), legalEntityId, lotId, ct);
     public async Task<Guid> ReceiveAsync(Guid tenantId, Guid actorId, Shared.Contracts.Inventory.InventoryMovementRequest receipt, CancellationToken cancellationToken = default)
     {
         var result = await repository.ReceiveAsync(new TenantId(tenantId), actorId, receipt.LegalEntityId,

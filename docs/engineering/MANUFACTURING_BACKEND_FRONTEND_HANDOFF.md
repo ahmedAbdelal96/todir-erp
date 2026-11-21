@@ -4,6 +4,8 @@ Canonical pack: `docs/modules/26_ERP_SAAS_MANUFACTURING_MRP_REQUIREMENTS_AND_TEC
 
 Status: `BACKEND COMPLETE + DEVELOPMENT SEED READY — FRONTEND HANDOFF`.
 
+The P0 acceptance correction is complete locally: MRP stock netting is authoritative across the recursive explosion, Quality required state is server-controlled and fail-closed, close requires reconciled WIP/Ledger facts, and genealogy accepts only Inventory-owned lot identities. The frontend must treat these states as authoritative and must not offer a client-side bypass.
+
 The frontend consumes the public API and shared capabilities. It must not write Manufacturing, Inventory, CRM, Purchasing, Maintenance, Fixed Assets or Projects tables directly.
 
 ## Available API surface
@@ -26,6 +28,9 @@ Every endpoint requires authentication, tenant context, the relevant `manufactur
 - Explain forecast, accepted Sales demand and CRM Won demand separately; never double-count owner sources.
 - Reuse the same idempotency key after an unknown material, output, labor, subcontract or shop-floor result.
 - Quality `Blocked`/`Pending` states are visibly non-executable until the Quality owner returns a verified decision. The client cannot mark a decision as provider-verified.
+- MRP displays allocated stock and uncovered requirement separately; forecast and accepted Sales demand must not be added twice, and a planning rerun must not duplicate dependent demand or pegging.
+- Close actions must surface the exact WIP/Ledger reconciliation blocker; a client cannot force close with positive unexplained WIP, unposted facts, missing journal linkage or an unbalanced journal.
+- Genealogy lot selectors must use Inventory-owned confirmed lots for the exact product; never accept a user-entered lot ID as proof of identity.
 - Labor rate is the explicit Manufacturing rate until an approved HR payroll-rate capability is available.
 
 ## Seed scenarios available for UI evaluation

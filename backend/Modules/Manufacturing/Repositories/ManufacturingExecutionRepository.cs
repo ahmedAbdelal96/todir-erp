@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Core.Messaging;
 using Core.Transactions;
@@ -64,16 +66,40 @@ public sealed partial class ManufacturingRepository
             if (request.InputQuantity <= 0 || request.OutputQuantity <= 0 || string.IsNullOrWhiteSpace(request.IdempotencyKey)) throw new ManufacturingException("manufacturing.genealogy_invalid");
             if (request.Certainty is not ("Exact" or "Commingled" or "Possible")) throw new ManufacturingException("manufacturing.genealogy_invalid");
             var existing = await ReadGenealogyByKeyAsync(context, tenant.Value, request.IdempotencyKey, token);
-            if (existing is not null) return existing;
+            var requestHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request)))).ToLowerInvariant();
+            if (existing is not null)
+            {
+                var storedHash = await ScalarAsync<string?>(context, "select request_hash from business_manufacturing.manufacturing_idempotency where tenant_id=$1 and operation='genealogy' and idempotency_key=$2", token, tenant.Value, request.IdempotencyKey);
+                if (storedHash is not null && !string.Equals(storedHash, requestHash, StringComparison.Ordinal)) throw new ManufacturingException("manufacturing.idempotency_conflict");
+                return existing;
+            }
             var output = await ScalarAsync<Guid?>(context, "select production_order_id from business_manufacturing.production_output where tenant_id=$1 and id=$2", token, tenant.Value, request.OutputId);
             var inputOrder = await ScalarAsync<Guid?>(context, "select r.production_order_id from business_manufacturing.production_material_event e join business_manufacturing.production_material_requirement r on r.tenant_id=e.tenant_id and r.id=e.requirement_id where e.tenant_id=$1 and e.id=$2", token, tenant.Value, request.InputEventId);
             if (output != orderId || inputOrder != orderId) throw new ManufacturingException("manufacturing.genealogy_order_mismatch");
+            var outputIdentity = await ReadIdentityAsync(context, tenant.Value, "select product_variant_id,inventory_operation_id,lot_id from business_manufacturing.production_output where tenant_id=$1 and id=$2", request.OutputId, token);
+            var inputIdentity = await ReadIdentityAsync(context, tenant.Value, "select product_variant_id,inventory_operation_id,null::uuid from business_manufacturing.production_material_event where tenant_id=$1 and id=$2", request.InputEventId, token);
+            if (request.OutputLotId is { } outputLot)
+            {
+                if (outputIdentity is null || outputIdentity.Value.LotId != outputLot || outputIdentity.Value.InventoryOperationId is not { } outputOperation || inventoryCapabilities is null)
+                    throw new ManufacturingException("manufacturing.genealogy_output_lot_unverified");
+                var snapshot = await inventoryCapabilities.GetOperationSnapshotAsync(tenant.Value, await ScalarAsync<Guid>(context, "select legal_entity_id from business_manufacturing.production_order where tenant_id=$1 and id=$2", token, tenant.Value, orderId), outputOperation, token);
+                if (snapshot is null || snapshot.Status != "Confirmed" || snapshot.LotId != outputLot || snapshot.ProductVariantId != outputIdentity.Value.ProductVariantId) throw new ManufacturingException("manufacturing.genealogy_output_lot_unverified");
+            }
+            if (request.InputLotId is { } inputLot)
+            {
+                if (inputIdentity is null || inventoryCapabilities is null) throw new ManufacturingException("manufacturing.genealogy_input_lot_unverified");
+                var legalEntityId = await ScalarAsync<Guid>(context, "select legal_entity_id from business_manufacturing.production_order where tenant_id=$1 and id=$2", token, tenant.Value, orderId);
+                var inputOperation = inputIdentity.Value.InventoryOperationId is { } operationId ? await inventoryCapabilities.GetOperationSnapshotAsync(tenant.Value, legalEntityId, operationId, token) : null;
+                var lot = await inventoryCapabilities.GetLotSnapshotAsync(tenant.Value, legalEntityId, inputLot, token);
+                if (lot is null || lot.ProductVariantId != inputIdentity.Value.ProductVariantId || lot.Status == "Archived" || inputOperation is null || inputOperation.Status != "Confirmed" || inputOperation.LotId != inputLot || inputOperation.ProductVariantId != inputIdentity.Value.ProductVariantId)
+                    throw new ManufacturingException("manufacturing.genealogy_input_lot_unverified");
+            }
             var allocatedInput = await ScalarAsync<decimal>(context, "select coalesce(sum(input_quantity),0) from business_manufacturing.production_genealogy where tenant_id=$1 and input_event_id=$2", token, tenant.Value, request.InputEventId);
             var eventQuantity = await ScalarAsync<decimal>(context, "select quantity from business_manufacturing.production_material_event where tenant_id=$1 and id=$2", token, tenant.Value, request.InputEventId);
             if (allocatedInput + request.InputQuantity > eventQuantity) throw new ManufacturingException("manufacturing.genealogy_input_overallocated");
             var id = Guid.CreateVersion7();
             await ExecuteAsync(context, "insert into business_manufacturing.production_genealogy(tenant_id,id,production_order_id,output_id,input_event_id,input_lot_id,output_lot_id,input_quantity,output_quantity,certainty) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", token, tenant.Value, id, orderId, request.OutputId, request.InputEventId, Db(request.InputLotId), Db(request.OutputLotId), request.InputQuantity, request.OutputQuantity, request.Certainty);
-            await ExecuteAsync(context, "insert into business_manufacturing.manufacturing_idempotency(tenant_id,id,operation,idempotency_key,request_hash,response_json) values($1,$2,'genealogy',$3,$4,$5::jsonb)", token, tenant.Value, Guid.CreateVersion7(), request.IdempotencyKey, request.IdempotencyKey, JsonSerializer.Serialize(new { genealogyId = id }));
+            await ExecuteAsync(context, "insert into business_manufacturing.manufacturing_idempotency(tenant_id,id,operation,idempotency_key,request_hash,response_json) values($1,$2,'genealogy',$3,$4,$5::jsonb)", token, tenant.Value, Guid.CreateVersion7(), request.IdempotencyKey, requestHash, JsonSerializer.Serialize(new { genealogyId = id }));
             await AuditAsync(context, tenant.Value, "ProductionGenealogy", id, "linked", actor, null, request, token);
             return new GenealogyResponse(id, orderId, request.OutputId, request.InputEventId, request.InputLotId, request.OutputLotId, request.InputQuantity, request.OutputQuantity, request.Certainty);
         }, ct);
@@ -92,7 +118,18 @@ public sealed partial class ManufacturingRepository
             var operationsComplete = !await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_operation where tenant_id=$1 and production_order_id=$2 and state <> 'Complete')", token, tenant.Value, orderId);
             var outputUnreconciled = await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_output where tenant_id=$1 and production_order_id=$2 and inventory_receipt_status <> 'Committed')", token, tenant.Value, orderId);
             var wip = await ScalarAsync<decimal>(context, "select coalesce((select sum(amount) from business_manufacturing.production_actual_cost_fact where tenant_id=$1 and production_order_id=$2),0)-coalesce((select sum(final_value) from business_manufacturing.production_output where tenant_id=$1 and production_order_id=$2 and inventory_receipt_status='Committed'),0)", token, tenant.Value, orderId);
-            var reason = order.CompletedQty < order.OrderedQty ? "manufacturing.output_incomplete" : material.Issued > material.Accounted ? "manufacturing.material_unaccounted" : !operationsComplete ? "manufacturing.operations_incomplete" : outputUnreconciled ? "manufacturing.output_unreconciled" : wip < 0 ? "manufacturing.wip_negative" : order.QualityState is "Pending" or "Blocked" ? "manufacturing.quality_unreconciled" : order.CostState is "Uncosted" or "Accumulating" ? "manufacturing.cost_unreconciled" : null;
+            var ledgerFactCount = await ScalarAsync<int>(context, "select count(*) from business_manufacturing.production_actual_cost_fact where tenant_id=$1 and production_order_id=$2 and cost_category <> 'Material' and amount > 0", token, tenant.Value, orderId);
+            var ledgerReady = true;
+            if (ledgerFactCount > 0)
+            {
+                if (ledgerCloseRead is null) ledgerReady = false;
+                else
+                {
+                    var facts = await ledgerCloseRead.GetManufacturingFactsAsync(tenant, new Shared.Primitives.Identifiers.LegalEntityId(order.LegalEntityId), orderId, token);
+                    ledgerReady = facts.Count == ledgerFactCount && facts.All(fact => fact.Status == "Posted" && fact.JournalEntryId is not null && Math.Abs(fact.DebitTotal - fact.Amount) <= 0.000001m && Math.Abs(fact.CreditTotal - fact.Amount) <= 0.000001m);
+                }
+            }
+            var reason = order.CompletedQty < order.OrderedQty ? "manufacturing.output_incomplete" : material.Issued > material.Accounted ? "manufacturing.material_unaccounted" : !operationsComplete ? "manufacturing.operations_incomplete" : outputUnreconciled ? "manufacturing.output_unreconciled" : wip < 0 ? "manufacturing.wip_negative" : Math.Abs(wip) > 0.000001m ? "manufacturing.wip_unreconciled" : !ledgerReady ? "manufacturing.ledger_unposted" : order.QualityState is "Pending" or "Blocked" ? "manufacturing.quality_unreconciled" : order.CostState is "Uncosted" or "Accumulating" ? "manufacturing.cost_unreconciled" : null;
             return new ProductionCloseReadinessResponse(orderId, reason is null ? "Ready" : "Blocked", material.Issued, material.Accounted, order.CompletedQty, order.ScrapQty, operationsComplete, order.QualityState, order.CostState, wip, reason);
         }, ct);
 
@@ -119,6 +156,12 @@ public sealed partial class ManufacturingRepository
         await using var reader = await command.ExecuteReaderAsync(token); while (await reader.ReadAsync(token)) result.Add(ReadGenealogy(reader)); return result;
     }
     private static GenealogyResponse ReadGenealogy(NpgsqlDataReader reader) => new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3), reader.IsDBNull(4) ? null : reader.GetGuid(4), reader.IsDBNull(5) ? null : reader.GetGuid(5), reader.GetDecimal(6), reader.GetDecimal(7), reader.GetString(8));
+    private static async Task<(Guid ProductVariantId, Guid? InventoryOperationId, Guid? LotId)?> ReadIdentityAsync(ITransactionContext context, Guid tenant, string sql, Guid id, CancellationToken token)
+    {
+        await using var command = Command(context, sql, tenant, id);
+        await using var reader = await command.ExecuteReaderAsync(token);
+        return await reader.ReadAsync(token) ? (reader.GetGuid(0), reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetGuid(2)) : null;
+    }
     private static async Task<(decimal Issued, decimal Accounted)> ReadMaterialTotalsAsync(ITransactionContext context, Guid tenant, Guid orderId, CancellationToken token)
     {
         await using var command = Command(context, "select coalesce(sum(issued_qty),0),coalesce(sum(consumed_qty+returned_qty+scrapped_qty),0) from business_manufacturing.production_material_requirement where tenant_id=$1 and production_order_id=$2", tenant, orderId);

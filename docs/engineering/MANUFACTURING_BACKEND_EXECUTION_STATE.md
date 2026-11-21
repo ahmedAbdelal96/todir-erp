@@ -18,13 +18,20 @@ The delivered scope is the backend, database, integration, Worker, security, mig
 - The existing transactional Outbox/RabbitMQ/Worker/Inbox path was verified locally. New labor and subcontract events produced one Inbox record and one balanced Ledger journal per cost fact, with no duplicate financial outcome.
 - Authorization checks object legal entity before permission evaluation for orders, plants, operations, work centers, planning runs, MPS plans, outputs and material events. List limits are bounded.
 
+## Final P0 correction evidence
+
+- MRP uses a shared stock-allocation map across roots and recursive children, persists allocated versus uncovered quantities, protects forecast/Sales overlap, and safely rebuilds dependent demands and pegging on rerun. `ManufacturingP0PostgresAcceptanceTests` passed 2/2 against isolated PostgreSQL.
+- Quality gate required state is server-authoritative. Execution users cannot downgrade a required gate; only the separate audited policy endpoint can change a Draft-order policy with a non-empty reason, and Passed/Failed remains fail-closed without verified Quality evidence.
+- Close transitions reject non-zero unexplained WIP and any missing/unposted/unbalanced Manufacturing Ledger fact. The Ledger read contract is legal-entity scoped and checks the posted journal totals before close.
+- Genealogy verifies input/output lots through the Inventory capability and rejects forged, archived, mismatched or unconfirmed lots. Replaying a different request under the same idempotency key returns a conflict.
+
 ## Fresh local evidence
 
-- Isolated database: `todir_module26_audit_20261121`; local PostgreSQL, RabbitMQ, API and Worker only.
-- DbMigrator rerun: 239 ordered scripts applied or verified; Development Seed rerun twice, with Atlas and Delta each reporting 2 legal entities, 74 Ledger accounts, 24 periods and invoice rule ready.
+- Isolated database: `todir_module26_p0_20261121`; local PostgreSQL, RabbitMQ, API and Worker only.
+- DbMigrator applied or verified 240 ordered scripts; Development Seed completed on the isolated database and the disposable Development Seed regression reran it twice successfully.
 - Authenticated runtime: labor, subcontract, quality fail-closed, MRP netting, capacity, close-readiness and genealogy forward/reverse routes.
-- Manufacturing 6/6; Sales 2/2; Purchasing 10/10; Service 5/5; Projects 22/22; Security 7/7; Architecture 21/21; SeedData 5/5.
-- API, Worker and DbMigrator builds passed with 0 warnings/errors. Release build, OpenAPI/health, formatter and `git diff --check` are final gates.
+- Manufacturing 6/6; Manufacturing P0 PostgreSQL acceptance 2/2; Security 7/7; Architecture 21/21; SeedData 5/5.
+- API and Worker Release builds passed with 0 warnings/errors; the live isolated API returned OpenAPI (1,067 paths, 59 Manufacturing paths) and health HTTP 200. The broader API composition test project is currently blocked by unrelated Navigation/lifecycle test edits in the working tree that are syntactically invalid; those files are preserved and not changed by this Manufacturing correction. Formatter and `git diff --check` remain final delivery gates.
 
 ## Deferred / separate gates
 

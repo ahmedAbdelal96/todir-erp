@@ -38,6 +38,7 @@ public static class LedgerModuleExtensions
         services.AddSingleton<ILedgerPostingEngine>(provider => provider.GetRequiredService<LedgerService>());
         services.AddSingleton<ILedgerControlBalanceRead>(provider => provider.GetRequiredService<LedgerService>());
         services.AddSingleton<ILedgerTreasuryBalanceRead>(provider => provider.GetRequiredService<LedgerService>());
+        services.AddSingleton<IManufacturingLedgerCloseRead>(provider => provider.GetRequiredService<LedgerService>());
         services.AddSingleton<ILedgerAccountingWorkspaceCapabilities>(provider => provider.GetRequiredService<LedgerService>());
         return services;
     }

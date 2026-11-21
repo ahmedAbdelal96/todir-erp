@@ -625,6 +625,15 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
 
     public Task<Shared.Contracts.Inventory.InventoryOperationSnapshot?> FindOperationBySourceAsync(TenantId tenant, Guid entity, string sourceModule, Guid sourceDocumentId, string idempotencyKey, CancellationToken ct) => ReadOperationSnapshotAsync(tenant, entity, null, sourceModule, sourceDocumentId, idempotencyKey, ct);
 
+    public async Task<Shared.Contracts.Inventory.InventoryLotSnapshot?> GetLotSnapshotAsync(TenantId tenant, Guid entity, Guid lotId, CancellationToken ct)
+    {
+        await using var connection = await OpenTenantAsync(tenant, ct);
+        await using var command = new NpgsqlCommand("select id,product_variant_id,legal_entity_id,status from business_inventory.lot where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection);
+        Add(command, tenant.Value, entity, lotId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct) ? new Shared.Contracts.Inventory.InventoryLotSnapshot(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3)) : null;
+    }
+
     private async Task<Shared.Contracts.Inventory.InventoryOperationSnapshot?> ReadOperationSnapshotAsync(TenantId tenant, Guid entity, Guid? operationId,
         string? sourceModule, Guid? sourceDocumentId, string? idempotencyKey, CancellationToken ct)
     {

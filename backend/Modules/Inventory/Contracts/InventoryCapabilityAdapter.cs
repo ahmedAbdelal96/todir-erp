@@ -55,4 +55,7 @@ public sealed class InventoryCapabilityAdapter(InventoryService service) : Share
 
     public Task<Shared.Contracts.Inventory.InventoryOperationSnapshot?> FindOperationBySourceAsync(Guid tenantId, Guid legalEntityId, string sourceModule,
         Guid sourceDocumentId, string idempotencyKey, CancellationToken cancellationToken = default) => service.FindOperationBySourceAsync(tenantId, legalEntityId, sourceModule, sourceDocumentId, idempotencyKey, cancellationToken);
+
+    public Task<Shared.Contracts.Inventory.InventoryLotSnapshot?> GetLotSnapshotAsync(Guid tenantId, Guid legalEntityId, Guid lotId, CancellationToken cancellationToken = default) =>
+        service.GetLotSnapshotAsync(tenantId, legalEntityId, lotId, cancellationToken);
 }
