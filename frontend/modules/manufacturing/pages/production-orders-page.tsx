@@ -1,46 +1,63 @@
 import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useOutletContext } from "react-router-dom";
-import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import { useNavigate } from "react-router-dom";
 import { ManufacturingHeader } from "../components/manufacturing-header.tsx";
 import { ManufacturingStatusBadge } from "../components/manufacturing-status-badge.tsx";
+import { NoLegalEntityPrompt } from "../components/no-legal-entity-prompt.tsx";
+import { useManufacturingScope } from "../hooks/use-manufacturing-scope.ts";
 import { CreateOrderDialog } from "../features/orders/create-order-dialog.tsx";
 import { OrderActionDialog } from "../features/orders/order-action-dialog.tsx";
 import { ProductionOrderDetailDrawer } from "../features/orders/production-order-detail-drawer.tsx";
-import { useOrdersQuery, usePlantsQuery } from "../hooks/use-manufacturing.ts";
+import { useOrdersQuery, useOrdersCountQuery, usePlantsQuery } from "../hooks/use-manufacturing.ts";
 import { Button } from "../../../components/primitives/button.tsx";
+import { Pagination } from "../../../components/primitives/pagination.tsx";
 import type { ProductionOrder } from "../types.ts";
 
 export function ProductionOrdersPage(): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
   const navigate = useNavigate();
-  const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
-  const legalEntityId = outletCtx?.legalEntityId ?? "00000000-0000-0000-0000-000000000001";
+  const { legalEntityId, isReady } = useManufacturingScope();
 
   const [selectedState, setSelectedState] = useState<string>("ALL");
   const [selectedPlantId, setSelectedPlantId] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedOrderForDrawer, setSelectedOrderForDrawer] = useState<ProductionOrder | null>(null);
   const [orderForAction, setOrderForAction] = useState<{ order: ProductionOrder; action: "release" | "start" | "hold" | "resume" | "complete" | "close" | "cancel" } | null>(null);
 
-  const { data: orders = [], isLoading } = useOrdersQuery(legalEntityId);
+  const offset = (page - 1) * pageSize;
+  const stateFilter = selectedState !== "ALL" ? selectedState : undefined;
+
+  const { data: totalCount = 0 } = useOrdersCountQuery(legalEntityId, stateFilter ? { state: stateFilter } : undefined);
+  const { data: orders = [], isLoading } = useOrdersQuery(legalEntityId, {
+    ...(stateFilter ? { state: stateFilter } : {}),
+    limit: pageSize,
+    offset
+  });
   const { data: plants = [] } = usePlantsQuery(legalEntityId);
+
+  const totalPages = Math.ceil(totalCount / pageSize) || 1;
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      if (selectedState !== "ALL" && order.state !== selectedState) return false;
       if (selectedPlantId !== "ALL" && order.plantId !== selectedPlantId) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const matchNumber = order.orderNumber.toLowerCase().includes(q);
+        const orderNum = order.orderNumber ?? order.number ?? "";
+        const matchNumber = orderNum.toLowerCase().includes(q);
         const matchProduct = order.productVariantId.toLowerCase().includes(q);
         if (!matchNumber && !matchProduct) return false;
       }
       return true;
     });
-  }, [orders, selectedState, selectedPlantId, searchQuery]);
+  }, [orders, selectedPlantId, searchQuery]);
+
+  if (!isReady) {
+    return <NoLegalEntityPrompt />;
+  }
 
   return (
     <div
@@ -192,7 +209,7 @@ export function ProductionOrdersPage(): React.JSX.Element {
                       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                     >
                       <td style={{ padding: "12px 16px", fontWeight: 700, color: "#0284c7" }}>
-                        {order.orderNumber}
+                        {order.orderNumber ?? order.number}
                       </td>
                       <td style={{ padding: "12px 16px", color: "#334155" }}>
                         {plant ? `${plant.code} - ${plant.name}` : order.plantId.slice(0, 8)}
@@ -245,12 +262,28 @@ export function ProductionOrdersPage(): React.JSX.Element {
             </tbody>
           </table>
         </div>
+
+        {totalCount > 0 && (
+          <div style={{ marginTop: "1rem", display: "flex", justifyContent: "center" }}>
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              totalItems={totalCount}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setPage(1);
+              }}
+            />
+          </div>
+        )}
       </div>
 
       <CreateOrderDialog
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
-        legalEntityId={legalEntityId}
+        legalEntityId={legalEntityId ?? ""}
       />
 
       <ProductionOrderDetailDrawer

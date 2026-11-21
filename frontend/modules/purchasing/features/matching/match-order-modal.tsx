@@ -16,7 +16,7 @@ export interface MatchOrderModalProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly order: PurchaseOrderView;
-  readonly onMatched?: () => void;
+  readonly onMatched?: (() => void) | undefined;
   readonly hasMatchOverridePermission?: boolean | undefined;
 }
 

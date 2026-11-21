@@ -1,22 +1,38 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext } from "react-router-dom";
-import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 import { ManufacturingHeader } from "../components/manufacturing-header.tsx";
 import { ManufacturingStatusBadge } from "../components/manufacturing-status-badge.tsx";
+import { NoLegalEntityPrompt } from "../components/no-legal-entity-prompt.tsx";
 import { MaterialActionDialog } from "../features/orders/material-action-dialog.tsx";
-import { useOrdersQuery } from "../hooks/use-manufacturing.ts";
+import { useManufacturingScope } from "../hooks/use-manufacturing-scope.ts";
+import { useOrdersQuery, useOrderMaterialsQuery } from "../hooks/use-manufacturing.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 
 export function MaterialsPage(): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
-  const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
-  const legalEntityId = outletCtx?.legalEntityId ?? "00000000-0000-0000-0000-000000000001";
+  const { legalEntityId, isReady } = useManufacturingScope();
 
   const { data: orders = [] } = useOrdersQuery(legalEntityId);
-  const activeOrders = orders.filter((o) => o.state === "Released" || o.state === "InProgress");
+  const activeOrders = orders.filter((o) => o.state === "Released" || o.state === "InProgress" || o.state === "Draft");
 
-  const [selectedAction, setSelectedAction] = useState<{ orderId: string; requirementId: string; action: "Reserved" | "Issued" | "Consumed" | "Returned"; uomCode: string } | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string>("");
+  const effectiveOrderId = selectedOrderId || activeOrders[0]?.id || "";
+
+  const { data: materials = [], isLoading: materialsLoading } = useOrderMaterialsQuery(effectiveOrderId);
+
+  const [selectedAction, setSelectedAction] = useState<{
+    orderId: string;
+    requirementId: string;
+    action: "Reserved" | "Issued" | "Consumed" | "Returned";
+    uomCode: string;
+    initialQty?: number;
+  } | null>(null);
+
+  if (!isReady) {
+    return <NoLegalEntityPrompt />;
+  }
+
+  const currentOrder = orders.find((o) => o.id === effectiveOrderId);
 
   return (
     <div
@@ -34,6 +50,53 @@ export function MaterialsPage(): React.JSX.Element {
         subtitle={t("materials.subtitle")}
       />
 
+      {/* Order Selector */}
+      <div
+        style={{
+          display: "flex",
+          gap: "12px",
+          alignItems: "center",
+          background: "#ffffff",
+          border: "1px solid #cbd5e1",
+          borderRadius: "8px",
+          padding: "12px 16px",
+          marginBottom: "16px"
+        }}
+      >
+        <label style={{ fontSize: "13px", fontWeight: 600, color: "#475569" }}>
+          {t("materials.orderMaterialsTitle")}:
+        </label>
+        <select
+          value={effectiveOrderId}
+          onChange={(e) => setSelectedOrderId(e.target.value)}
+          style={{
+            padding: "8px 12px",
+            borderRadius: "6px",
+            border: "1px solid #cbd5e1",
+            fontSize: "14px",
+            background: "#ffffff",
+            minWidth: "300px"
+          }}
+        >
+          {activeOrders.length === 0 ? (
+            <option value="">{t("orders.noActiveMaterials")}</option>
+          ) : (
+            activeOrders.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.orderNumber} ({t(`status.${o.state}`)}) - {o.orderedQty} {o.uomCode}
+              </option>
+            ))
+          )}
+        </select>
+        {currentOrder && (
+          <div style={{ display: "flex", gap: "8px", alignItems: "center", marginInlineStart: "auto" }}>
+            <span style={{ fontSize: "13px", color: "#64748b" }}>{t("orders.materialStatus")}:</span>
+            <ManufacturingStatusBadge state={currentOrder.materialStatus} />
+          </div>
+        )}
+      </div>
+
+      {/* Materials Requirements Table */}
       <div
         style={{
           background: "#ffffff",
@@ -44,57 +107,132 @@ export function MaterialsPage(): React.JSX.Element {
         }}
       >
         <h3 style={{ margin: "0 0 12px", fontSize: "16px", fontWeight: 700, color: "#102a43" }}>
-          {t("orders.activeMaterialsOrders")} ({activeOrders.length})
+          {t("materials.orderMaterialsTitle")} ({materials.length})
         </h3>
 
-        {activeOrders.length === 0 ? (
+        {!effectiveOrderId ? (
           <div style={{ padding: "32px 0", textAlign: "center", color: "#64748b" }}>
-            {t("orders.noActiveMaterials")}
+            {t("materials.selectOrderPrompt")}
+          </div>
+        ) : materialsLoading ? (
+          <div style={{ padding: "32px 0", textAlign: "center", color: "#64748b" }}>
+            {t("common.loading")}
+          </div>
+        ) : materials.length === 0 ? (
+          <div style={{ padding: "32px 0", textAlign: "center", color: "#64748b" }}>
+            {t("materials.noRequirements")}
           </div>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px", textAlign: "right" }}>
             <thead>
               <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#475569" }}>
-                <th style={{ padding: "12px 16px" }}>{t("common.order")}</th>
-                <th style={{ padding: "12px 16px" }}>{t("orders.quantity")}</th>
-                <th style={{ padding: "12px 16px" }}>{t("orders.materialStatus")}</th>
-                <th style={{ padding: "12px 16px" }}>{t("orders.stateLabel")}</th>
+                <th style={{ padding: "12px 16px" }}>{t("materials.component")}</th>
+                <th style={{ padding: "12px 16px" }}>{t("common.state")}</th>
+                <th style={{ padding: "12px 16px" }}>{t("materials.required")}</th>
+                <th style={{ padding: "12px 16px" }}>{t("materials.reserved")}</th>
+                <th style={{ padding: "12px 16px" }}>{t("materials.issued")}</th>
+                <th style={{ padding: "12px 16px" }}>{t("materials.consumed")}</th>
+                <th style={{ padding: "12px 16px" }}>{t("materials.returned")}</th>
                 <th style={{ padding: "12px 16px", textAlign: "center" }}>{t("orders.quickIssue")}</th>
               </tr>
             </thead>
             <tbody>
-              {activeOrders.map((order) => (
-                <tr key={order.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                  <td style={{ padding: "12px 16px", fontWeight: 700, color: "#0284c7" }}>
-                    {order.orderNumber}
-                  </td>
-                  <td style={{ padding: "12px 16px" }}>
-                    {order.orderedQty} {order.uomCode}
-                  </td>
-                  <td style={{ padding: "12px 16px" }}>
-                    <ManufacturingStatusBadge state={order.materialStatus} />
-                  </td>
-                  <td style={{ padding: "12px 16px" }}>
-                    <ManufacturingStatusBadge state={order.state} />
-                  </td>
-                  <td style={{ padding: "12px 16px", textAlign: "center" }}>
-                    <div style={{ display: "inline-flex", gap: "6px" }}>
-                      <Button
-                        variant="secondary"
-                        onClick={() => setSelectedAction({ orderId: order.id, requirementId: "MAT-REQ-01", action: "Issued", uomCode: order.uomCode })}
-                      >
-                        {t("materials.stageIssue")}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        onClick={() => setSelectedAction({ orderId: order.id, requirementId: "MAT-REQ-01", action: "Consumed", uomCode: order.uomCode })}
-                      >
-                        {t("materials.directConsume")}
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {materials.map((mat) => {
+                const unreserved = Math.max(0, mat.requiredQty - mat.reservedQty);
+                const unissued = Math.max(0, mat.requiredQty - mat.issuedQty);
+                const unconsumed = Math.max(0, mat.issuedQty - mat.consumedQty);
+                return (
+                  <tr key={mat.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <td style={{ padding: "12px 16px", fontWeight: 700, color: "#0284c7" }}>
+                      {mat.preferredProductVariantId || mat.productVariantId}
+                    </td>
+                    <td style={{ padding: "12px 16px" }}>
+                      <ManufacturingStatusBadge state={mat.state} />
+                    </td>
+                    <td style={{ padding: "12px 16px" }}>
+                      {mat.requiredQty} {mat.uomCode}
+                    </td>
+                    <td style={{ padding: "12px 16px" }}>
+                      {mat.reservedQty} {mat.uomCode}
+                    </td>
+                    <td style={{ padding: "12px 16px", color: mat.issuedQty > 0 ? "#15803d" : undefined }}>
+                      {mat.issuedQty} {mat.uomCode}
+                    </td>
+                    <td style={{ padding: "12px 16px", color: mat.consumedQty > 0 ? "#0284c7" : undefined }}>
+                      {mat.consumedQty} {mat.uomCode}
+                    </td>
+                    <td style={{ padding: "12px 16px" }}>
+                      {mat.returnedQty} {mat.uomCode}
+                    </td>
+                    <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                      <div style={{ display: "inline-flex", gap: "6px" }}>
+                        <Button
+                          variant="secondary"
+                          size="small"
+                          onClick={() =>
+                            setSelectedAction({
+                              orderId: effectiveOrderId,
+                              requirementId: mat.id,
+                              action: "Reserved",
+                              uomCode: mat.uomCode,
+                              initialQty: unreserved > 0 ? unreserved : mat.requiredQty
+                            })
+                          }
+                        >
+                          {t("materials.reserved")}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="small"
+                          onClick={() =>
+                            setSelectedAction({
+                              orderId: effectiveOrderId,
+                              requirementId: mat.id,
+                              action: "Issued",
+                              uomCode: mat.uomCode,
+                              initialQty: unissued > 0 ? unissued : mat.requiredQty
+                            })
+                          }
+                        >
+                          {t("materials.stageIssue")}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="small"
+                          onClick={() =>
+                            setSelectedAction({
+                              orderId: effectiveOrderId,
+                              requirementId: mat.id,
+                              action: "Consumed",
+                              uomCode: mat.uomCode,
+                              initialQty: unconsumed > 0 ? unconsumed : mat.issuedQty
+                            })
+                          }
+                        >
+                          {t("materials.directConsume")}
+                        </Button>
+                        {mat.issuedQty > 0 && (
+                          <Button
+                            variant="secondary"
+                            size="small"
+                            onClick={() =>
+                              setSelectedAction({
+                                orderId: effectiveOrderId,
+                                requirementId: mat.id,
+                                action: "Returned",
+                                uomCode: mat.uomCode,
+                                initialQty: unconsumed > 0 ? unconsumed : 1
+                              })
+                            }
+                          >
+                            {t("materials.returnMaterial")}
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -108,6 +246,7 @@ export function MaterialsPage(): React.JSX.Element {
           requirementId={selectedAction.requirementId}
           actionType={selectedAction.action}
           uomCode={selectedAction.uomCode}
+          initialQty={selectedAction.initialQty}
         />
       )}
     </div>

@@ -14,7 +14,7 @@ export interface NewSupplierReturnModalProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly order: PurchaseOrderView;
-  readonly onCreated?: () => void;
+  readonly onCreated?: (() => void) | undefined;
 }
 
 export function NewSupplierReturnModal({

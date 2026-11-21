@@ -384,4 +384,128 @@ test.describe('TODIR ERP — Permission-Driven Navigation & Task Architecture (P
     const finalizeBtn = page.locator('[data-testid="finalize-reconciliation"]');
     await expect(finalizeBtn).toBeVisible();
   });
+
+  test('P3 Wave 2: Sales Quotation Operator lands on quotations and is denied settings', async ({ page }) => {
+    await setupSessionMock(page);
+
+    await page.route('**/api/v1/authorization/effective-access*', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          tenantId: 'tenant-demo',
+          membershipId: 'm1',
+          legalEntityId: 'le1',
+          branchId: 'b1',
+          isSuper: false,
+          permissions: ['sales.quotation.read', 'sales.quotation.create'],
+          entitledModules: ['sales'],
+          moduleStatuses: { sales: 'Active' },
+          version: '1'
+        })
+      });
+    });
+
+    await page.route('**/api/v1/sales/**', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], totalCount: 0 })
+      });
+    });
+
+    // Navigating to /sales with quotation-only permission
+    await page.goto('/sales');
+
+    // Root route or overview renders quotations workspace for quotation operator
+    await expect(page.locator('[data-testid="sales-quotations-page"], [data-testid="sales-overview-page"]')).toBeVisible({ timeout: 10000 });
+
+    // Directly navigating to /sales/settings must be blocked
+    await page.goto('/sales/settings');
+    const deniedView = page.locator('[data-testid="permission-denied-view"]');
+    await expect(deniedView).toBeVisible({ timeout: 10000 });
+  });
+
+  test('P3 Wave 2: Purchasing PO Clerk is denied matching & settings', async ({ page }) => {
+    await setupSessionMock(page);
+
+    await page.route('**/api/v1/authorization/effective-access*', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          tenantId: 'tenant-demo',
+          membershipId: 'm1',
+          legalEntityId: 'le1',
+          branchId: 'b1',
+          isSuper: false,
+          permissions: ['purchasing.po.read', 'purchasing.po.create'],
+          entitledModules: ['purchasing'],
+          moduleStatuses: { purchasing: 'Active' },
+          version: '1'
+        })
+      });
+    });
+
+    await page.route('**/api/v1/purchasing/**', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], totalCount: 0 })
+      });
+    });
+
+    // PO Clerk navigates to /purchasing/orders
+    await page.goto('/purchasing/orders');
+    await expect(page.locator('[data-testid="purchase-orders-page"]')).toBeVisible({ timeout: 10000 });
+
+    // Directly navigating to /purchasing/matching must be blocked
+    await page.goto('/purchasing/matching');
+    const deniedMatching = page.locator('[data-testid="permission-denied-view"]');
+    await expect(deniedMatching).toBeVisible({ timeout: 10000 });
+
+    // Directly navigating to /purchasing/settings must be blocked
+    await page.goto('/purchasing/settings');
+    const deniedSettings = page.locator('[data-testid="permission-denied-view"]');
+    await expect(deniedSettings).toBeVisible({ timeout: 10000 });
+  });
+
+  test('P3 Wave 2: POS Cashier fast-lane vs administrative registers access', async ({ page }) => {
+    await setupSessionMock(page);
+
+    await page.route('**/api/v1/authorization/effective-access*', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          tenantId: 'tenant-demo',
+          membershipId: 'm1',
+          legalEntityId: 'le1',
+          branchId: 'b1',
+          isSuper: false,
+          permissions: ['pos.cart.manage', 'pos.checkout.create', 'pos.session.open'],
+          entitledModules: ['pos'],
+          moduleStatuses: { pos: 'Active' },
+          version: '1'
+        })
+      });
+    });
+
+    await page.route('**/api/v1/pos/**', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([])
+      });
+    });
+
+    // Cashier navigates to /pos
+    await page.goto('/pos');
+    await expect(page.locator('[data-testid="pos-checkout-page"]')).toBeVisible({ timeout: 10000 });
+
+    // Directly navigating to /pos/registers must be blocked
+    await page.goto('/pos/registers');
+    const deniedRegisters = page.locator('[data-testid="permission-denied-view"]');
+    await expect(deniedRegisters).toBeVisible({ timeout: 10000 });
+  });
 });

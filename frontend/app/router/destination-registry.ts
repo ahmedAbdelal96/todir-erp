@@ -526,6 +526,278 @@ export const MANUFACTURING_DESTINATIONS: readonly NavDestination[] = [
   }
 ];
 
+export const SALES_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "sales-overview",
+    category: "sales",
+    moduleId: "sales",
+    path: "/sales",
+    labelKey: "tabs.overview",
+    fallbackLabel: "نظرة عامة على المبيعات",
+    icon: "sales",
+    permission: { anyOf: ["sales.quotation.read", "sales.order.read", "sales.history.read"] },
+    order: 10,
+    isPrimary: true,
+    mode: "read",
+    keywords: ["مبيعات", "أداء", "ملخص", "sales", "overview", "revenue"]
+  },
+  {
+    id: "sales-quotations",
+    category: "sales",
+    moduleId: "sales",
+    path: "/sales/quotations",
+    labelKey: "tabs.quotations",
+    fallbackLabel: "عروض الأسعار",
+    icon: "description",
+    permission: { anyOf: ["sales.quotation.read", "sales.quotation.create", "sales.quotation.edit", "sales.quotation.open", "sales.quotation.accept", "sales.quotation.decline", "sales.quotation.revise", "sales.quotation.cancel", "sales.quotation.convert_invoice", "sales.quotation.convert_order"] },
+    order: 20,
+    mode: "mixed",
+    keywords: ["عرض سعر", "عروض", "تسعير", "quotations", "quotes"]
+  },
+  {
+    id: "sales-orders",
+    category: "sales",
+    moduleId: "sales",
+    path: "/sales/orders",
+    labelKey: "tabs.orders",
+    fallbackLabel: "أوامر البيع والتنفيذ",
+    icon: "shopping_cart",
+    permission: { anyOf: ["sales.order.read", "sales.order.create", "sales.order.edit", "sales.order.confirm", "sales.order.amend", "sales.order.cancel", "sales.order.fulfill", "sales.order.invoice"] },
+    order: 30,
+    mode: "mixed",
+    keywords: ["أمر بيع", "أوامر", "تنفيذ", "شحن", "orders", "fulfillment"]
+  },
+  {
+    id: "sales-returns",
+    category: "sales",
+    moduleId: "sales",
+    path: "/sales/returns",
+    labelKey: "tabs.returns",
+    fallbackLabel: "مرتجعات المبيعات",
+    icon: "assignment_return",
+    permission: { anyOf: ["sales.return.create", "sales.return.approve", "sales.return.execute", "sales.history.read"] },
+    order: 40,
+    mode: "mixed",
+    keywords: ["مرتجع", "استرجاع", "مبيعات", "returns"]
+  },
+  {
+    id: "sales-history",
+    category: "sales",
+    moduleId: "sales",
+    path: "/sales/history",
+    labelKey: "tabs.history",
+    fallbackLabel: "سجل العمليات والتدقيق",
+    icon: "history",
+    permission: { anyOf: ["sales.history.read", "sales.audit.read"] },
+    order: 50,
+    mode: "read",
+    keywords: ["سجل", "تدقيق", "تاريخ المبيعات", "history", "audit"]
+  },
+  {
+    id: "sales-settings",
+    category: "sales",
+    moduleId: "sales",
+    path: "/sales/settings",
+    labelKey: "tabs.settings",
+    fallbackLabel: "إعدادات وملفات العملاء",
+    icon: "settings",
+    permission: { anyOf: ["sales.customer_profile.manage", "sales.channel.manage", "sales.team.manage"] },
+    order: 60,
+    mode: "mutation",
+    keywords: ["إعدادات", "ملف العميل", "فرق البيع", "قنوات البيع", "settings", "channels"]
+  }
+];
+
+export const PURCHASING_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "purchasing-overview",
+    category: "purchasing",
+    moduleId: "purchasing",
+    path: "/purchasing",
+    labelKey: "tabs.overview",
+    fallbackLabel: "نظرة عامة على المشتريات",
+    icon: "purchasing",
+    permission: { anyOf: ["purchasing.po.read", "purchasing.receipt.view", "purchasing.receipt.request", "purchasing.match.read", "purchasing.history.read"] },
+    order: 10,
+    isPrimary: true,
+    mode: "read",
+    keywords: ["مشتريات", "توريد", "نظرة عامة", "purchasing", "overview", "spend"]
+  },
+  {
+    id: "purchasing-orders",
+    category: "purchasing",
+    moduleId: "purchasing",
+    path: "/purchasing/orders",
+    labelKey: "tabs.orders",
+    fallbackLabel: "أوامر الشراء والتوريد",
+    icon: "shopping_bag",
+    permission: { anyOf: ["purchasing.po.read", "purchasing.po.create", "purchasing.po.edit", "purchasing.po.approve", "purchasing.po.reject", "purchasing.po.amend", "purchasing.po.cancel", "purchasing.po.close"] },
+    order: 20,
+    mode: "mixed",
+    keywords: ["أمر شراء", "أوامر", "طلب توريد", "purchase orders", "po"]
+  },
+  {
+    id: "purchasing-receipts",
+    category: "purchasing",
+    moduleId: "purchasing",
+    path: "/purchasing/receipts",
+    labelKey: "tabs.receipts",
+    fallbackLabel: "استلام البضائع والتوريدات",
+    icon: "local_shipping",
+    permission: { anyOf: ["purchasing.receipt.request", "purchasing.receipt.view"] },
+    order: 30,
+    mode: "mixed",
+    keywords: ["استلام", "إذن استلام", "فحص توريد", "goods receipt", "grn"]
+  },
+  {
+    id: "purchasing-matching",
+    category: "purchasing",
+    moduleId: "purchasing",
+    path: "/purchasing/matching",
+    labelKey: "tabs.matching",
+    fallbackLabel: "مطابقة الفواتير وأوامر الشراء",
+    icon: "rule",
+    permission: { anyOf: ["purchasing.match.read", "purchasing.match.override"] },
+    order: 40,
+    mode: "mixed",
+    keywords: ["مطابقة", "مطابقة ثلاثية", "فروق أسعار", "invoice matching", "3-way match"]
+  },
+  {
+    id: "purchasing-returns",
+    category: "purchasing",
+    moduleId: "purchasing",
+    path: "/purchasing/returns",
+    labelKey: "tabs.returns",
+    fallbackLabel: "مرتجعات الموردين",
+    icon: "assignment_return",
+    permission: { anyOf: ["purchasing.return.create", "purchasing.return.approve", "purchasing.return.execute", "purchasing.po.read", "purchasing.history.read"] },
+    order: 50,
+    mode: "mixed",
+    keywords: ["مرتجع مورد", "رد بضاعة", "supplier returns"]
+  },
+  {
+    id: "purchasing-suppliers",
+    category: "purchasing",
+    moduleId: "purchasing",
+    path: "/purchasing/suppliers",
+    labelKey: "tabs.suppliers",
+    fallbackLabel: "ملفات الموردين والشروط",
+    icon: "people",
+    permission: { anyOf: ["purchasing.supplier_profile.manage", "purchasing.po.read"] },
+    order: 60,
+    mode: "mixed",
+    keywords: ["موردين", "شروط دفع", "ملف مورد", "suppliers", "vendor profiles"]
+  },
+  {
+    id: "purchasing-history",
+    category: "purchasing",
+    moduleId: "purchasing",
+    path: "/purchasing/history",
+    labelKey: "tabs.history",
+    fallbackLabel: "سجل الشراء والتدقيق",
+    icon: "history",
+    permission: { anyOf: ["purchasing.history.read", "purchasing.audit.read"] },
+    order: 70,
+    mode: "read",
+    keywords: ["سجل شراء", "تاريخ", "تدقيق", "purchasing history", "audit"]
+  },
+  {
+    id: "purchasing-settings",
+    category: "purchasing",
+    moduleId: "purchasing",
+    path: "/purchasing/settings",
+    labelKey: "tabs.settings",
+    fallbackLabel: "إعدادات وسياسات الشراء",
+    icon: "settings",
+    permission: { anyOf: ["purchasing.settings.manage"] },
+    order: 80,
+    mode: "mutation",
+    keywords: ["إعدادات شراء", "سياسات", "سماحيات", "purchasing settings"]
+  }
+];
+
+export const POS_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "pos-checkout",
+    category: "inventory",
+    moduleId: "pos",
+    path: "/pos",
+    labelKey: "tabs.checkout",
+    fallbackLabel: "نقطة البيع السريعة (الكاشير)",
+    icon: "point_of_sale",
+    permission: { anyOf: ["pos.checkout.create", "pos.cart.manage"] },
+    order: 10,
+    isPrimary: true,
+    mode: "mixed",
+    keywords: ["كاشير", "دفع سريع", "سلة", "فاتورة فورية", "pos", "checkout", "fastlane"]
+  },
+  {
+    id: "pos-sessions",
+    category: "inventory",
+    moduleId: "pos",
+    path: "/pos/sessions",
+    labelKey: "tabs.sessions",
+    fallbackLabel: "جلسات الكاشير وحركات النقدية",
+    icon: "account_balance_wallet",
+    permission: { anyOf: ["pos.session.open", "pos.session.close", "pos.cash.manage"] },
+    order: 20,
+    mode: "mixed",
+    keywords: ["جلسة", "إغلاق وردية", "جرد نقدية", "عجز وزيادة", "sessions", "float", "drawer"]
+  },
+  {
+    id: "pos-registers",
+    category: "inventory",
+    moduleId: "pos",
+    path: "/pos/registers",
+    labelKey: "tabs.registers",
+    fallbackLabel: "إدارة نقاط البيع والأجهزة",
+    icon: "desktop_windows",
+    permission: { anyOf: ["pos.register.read", "pos.register.manage"] },
+    order: 30,
+    mode: "mixed",
+    keywords: ["أجهزة", "طابعات", "نقاط بيع", "registers", "terminals"]
+  },
+  {
+    id: "pos-returns",
+    category: "inventory",
+    moduleId: "pos",
+    path: "/pos/returns",
+    labelKey: "tabs.returns",
+    fallbackLabel: "المرتجعات واستبدال المشتريات",
+    icon: "assignment_return",
+    permission: { anyOf: ["pos.return.create", "pos.exchange.create"] },
+    order: 40,
+    mode: "mixed",
+    keywords: ["مرتجع", "استبدال", "رد أموال", "pos returns", "exchange"]
+  },
+  {
+    id: "pos-offline",
+    category: "inventory",
+    moduleId: "pos",
+    path: "/pos/offline",
+    labelKey: "tabs.offline",
+    fallbackLabel: "المزامنة دون اتصال وحل التعارض",
+    icon: "sync_problem",
+    permission: { anyOf: ["pos.offline.sync", "pos.override.approve"] },
+    order: 50,
+    mode: "mixed",
+    keywords: ["دون اتصال", "مزامنة", "تعارض", "offline sync", "conflicts"]
+  },
+  {
+    id: "pos-reports",
+    category: "inventory",
+    moduleId: "pos",
+    path: "/pos/reports",
+    labelKey: "tabs.reports",
+    fallbackLabel: "تقارير المبيعات والنقدية (POS)",
+    icon: "bar_chart",
+    permission: { anyOf: ["pos.report.read"] },
+    order: 60,
+    mode: "read",
+    keywords: ["تقارير كاشير", "مبيعات يومية", "ملخص الوردية", "z-report", "pos reports"]
+  }
+];
+
 export function isDestinationPermitted(
   dest: NavDestination,
   access: EffectiveAccess | null | undefined

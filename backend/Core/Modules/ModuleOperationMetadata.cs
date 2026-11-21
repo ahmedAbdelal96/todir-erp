@@ -54,7 +54,10 @@ public sealed class ModuleLifecycleEndpointFilter : IEndpointFilter
                 path.StartsWith("/api/v1/ledger", StringComparison.OrdinalIgnoreCase) ||
                 path.StartsWith("/api/v1/accounting", StringComparison.OrdinalIgnoreCase) ||
                 path.StartsWith("/api/v1/banking", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith("/api/v1/crm", StringComparison.OrdinalIgnoreCase))
+                path.StartsWith("/api/v1/crm", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("/api/v1/sales", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("/api/v1/purchasing", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("/api/v1/pos", StringComparison.OrdinalIgnoreCase))
             {
                 if (!path.EndsWith("/target", StringComparison.OrdinalIgnoreCase))
                 {

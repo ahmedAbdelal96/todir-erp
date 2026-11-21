@@ -13,7 +13,7 @@ namespace KernelIntegrationTests;
 
 public sealed class ModuleLifecycleCoverageAuditTests
 {
-    private static readonly string[] GovernedModules = ["inventory", "ledger", "accounting", "banking", "crm"];
+    private static readonly string[] GovernedModules = ["inventory", "ledger", "accounting", "banking", "crm", "sales", "purchasing", "pos"];
 
     private static readonly HashSet<string> ReviewedPostReadEndpoints = new(StringComparer.OrdinalIgnoreCase)
     {

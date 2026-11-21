@@ -1,8 +1,8 @@
 # ToDir ERP — Product Navigation, Access & UX Architecture Decision
 
-**Status:** Implemented (P0 Authorization Foundation, P1 Destination Architecture, P2 Pilots for Banking & CRM, and P3 Wave 1 for Accounting & Inventory Delivered & Verified)  
+**Status:** Implemented (P0 Authorization Foundation, P1 Destination Architecture, P2 Pilots for Banking & CRM, P3 Wave 1 for Accounting & Inventory, and P3 Wave 2 for Sales, Purchasing & POS Delivered & Verified)  
 **Reviewed branch / commit:** `dev`  
-**Execution scope:** Delivered and verified P0, P1, P2 (Banking & CRM task architecture) and P3 Wave 1 (Accounting & Inventory task architecture) end-to-end with real manifest alignment, fail-closed runtime guards, Command Palette indexing, 255 passing frontend tests, 0 hardcoded copy defects, passing Playwright journeys, and verified PostgreSQL integration tests.
+**Execution scope:** Delivered and verified P0, P1, P2 (Banking & CRM task architecture), P3 Wave 1 (Accounting & Inventory task architecture), and P3 Wave 2 (Sales, Purchasing & POS task architecture) end-to-end with real manifest alignment, fail-closed runtime guards, Command Palette indexing, 274 passing frontend tests, 0 hardcoded copy defects, passing Playwright journeys (9/9), and verified backend lifecycle audit tests (6/6).
 
 ## 1. Executive architecture decision
 

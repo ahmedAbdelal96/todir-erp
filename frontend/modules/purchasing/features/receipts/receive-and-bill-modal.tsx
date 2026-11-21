@@ -15,7 +15,7 @@ export interface ReceiveAndBillModalProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly order: PurchaseOrderView;
-  readonly onCompleted?: (receiptId: string, invoiceId: string) => void;
+  readonly onCompleted?: ((receiptId: string, invoiceId: string) => void) | undefined;
 }
 
 export function ReceiveAndBillModal({

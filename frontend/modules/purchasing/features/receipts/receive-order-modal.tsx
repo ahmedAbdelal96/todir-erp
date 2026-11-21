@@ -15,7 +15,7 @@ export interface ReceiveOrderModalProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly order: PurchaseOrderView;
-  readonly onReceived?: (receiptIds: string[]) => void;
+  readonly onReceived?: ((receiptIds: string[]) => void) | undefined;
 }
 
 export function ReceiveOrderModal({

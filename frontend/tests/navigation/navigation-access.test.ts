@@ -19,6 +19,9 @@ import {
   CRM_DESTINATIONS,
   ACCOUNTING_DESTINATIONS,
   INVENTORY_DESTINATIONS,
+  SALES_DESTINATIONS,
+  PURCHASING_DESTINATIONS,
+  POS_DESTINATIONS,
   NAVIGATION_CATEGORIES,
   resolveModuleLandingPath
 } from "../../app/router/destination-registry.ts";
@@ -502,5 +505,134 @@ describe("Permission-Driven Effective Access & Destination Architecture", () => 
       moduleStatuses: { ledger: "Active", accounting: "Active" }
     };
     assert.equal(evaluateEffectivePermissionCondition(compositeCondition, entitledAccountingAccess, false), true);
+  });
+
+  describe("P3 Wave 2: Sales, Purchasing & POS Destination & Role Isolation", () => {
+    it("isolates Sales quotations from order-only operators and guards settings", () => {
+      const quoteOperatorAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["sales"],
+        permissions: [
+          "sales.quotation.read",
+          "sales.quotation.create",
+          "sales.quotation.edit"
+        ],
+        moduleStatuses: { sales: "Active" }
+      };
+
+      const orderOperatorAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["sales"],
+        permissions: [
+          "sales.order.read",
+          "sales.order.fulfill"
+        ],
+        moduleStatuses: { sales: "Active" }
+      };
+
+      const salesOverviewDest = SALES_DESTINATIONS.find(d => d.id === "sales-overview")!;
+      const quotationsDest = SALES_DESTINATIONS.find(d => d.id === "sales-quotations")!;
+      const ordersDest = SALES_DESTINATIONS.find(d => d.id === "sales-orders")!;
+      const returnsDest = SALES_DESTINATIONS.find(d => d.id === "sales-returns")!;
+      const settingsDest = SALES_DESTINATIONS.find(d => d.id === "sales-settings")!;
+
+      // Quote operator can see overview & quotations, but CANNOT see orders, returns, or settings
+      assert.equal(isDestinationPermitted(salesOverviewDest, quoteOperatorAccess), true);
+      assert.equal(isDestinationPermitted(quotationsDest, quoteOperatorAccess), true);
+      assert.equal(isDestinationPermitted(ordersDest, quoteOperatorAccess), false);
+      assert.equal(isDestinationPermitted(returnsDest, quoteOperatorAccess), false);
+      assert.equal(isDestinationPermitted(settingsDest, quoteOperatorAccess), false);
+
+      // Order operator can see overview & orders, but CANNOT see quotations or settings
+      assert.equal(isDestinationPermitted(salesOverviewDest, orderOperatorAccess), true);
+      assert.equal(isDestinationPermitted(quotationsDest, orderOperatorAccess), false);
+      assert.equal(isDestinationPermitted(ordersDest, orderOperatorAccess), true);
+      assert.equal(isDestinationPermitted(settingsDest, orderOperatorAccess), false);
+    });
+
+    it("isolates Purchasing roles: PO clerk vs Receiving clerk vs Matching clerk vs Settings", () => {
+      const poClerkAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["purchasing"],
+        permissions: ["purchasing.po.read", "purchasing.po.create"],
+        moduleStatuses: { purchasing: "Active" }
+      };
+
+      const receivingClerkAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["purchasing"],
+        permissions: ["purchasing.receipt.view", "purchasing.receipt.request"],
+        moduleStatuses: { purchasing: "Active" }
+      };
+
+      const matchingClerkAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["purchasing"],
+        permissions: ["purchasing.match.read"],
+        moduleStatuses: { purchasing: "Active" }
+      };
+
+      const poOverviewDest = PURCHASING_DESTINATIONS.find(d => d.id === "purchasing-overview")!;
+      const ordersDest = PURCHASING_DESTINATIONS.find(d => d.id === "purchasing-orders")!;
+      const receiptsDest = PURCHASING_DESTINATIONS.find(d => d.id === "purchasing-receipts")!;
+      const matchingDest = PURCHASING_DESTINATIONS.find(d => d.id === "purchasing-matching")!;
+      const settingsDest = PURCHASING_DESTINATIONS.find(d => d.id === "purchasing-settings")!;
+
+      // PO Clerk: sees overview and orders only
+      assert.equal(isDestinationPermitted(poOverviewDest, poClerkAccess), true);
+      assert.equal(isDestinationPermitted(ordersDest, poClerkAccess), true);
+      assert.equal(isDestinationPermitted(receiptsDest, poClerkAccess), false);
+      assert.equal(isDestinationPermitted(matchingDest, poClerkAccess), false);
+      assert.equal(isDestinationPermitted(settingsDest, poClerkAccess), false);
+
+      // Receiving Clerk: sees overview and receipts only
+      assert.equal(isDestinationPermitted(poOverviewDest, receivingClerkAccess), true);
+      assert.equal(isDestinationPermitted(ordersDest, receivingClerkAccess), false);
+      assert.equal(isDestinationPermitted(receiptsDest, receivingClerkAccess), true);
+      assert.equal(isDestinationPermitted(matchingDest, receivingClerkAccess), false);
+      assert.equal(isDestinationPermitted(settingsDest, receivingClerkAccess), false);
+
+      // Matching Clerk: sees matching only
+      assert.equal(isDestinationPermitted(poOverviewDest, matchingClerkAccess), true);
+      assert.equal(isDestinationPermitted(ordersDest, matchingClerkAccess), false);
+      assert.equal(isDestinationPermitted(receiptsDest, matchingClerkAccess), false);
+      assert.equal(isDestinationPermitted(matchingDest, matchingClerkAccess), true);
+      assert.equal(isDestinationPermitted(settingsDest, matchingClerkAccess), false);
+    });
+
+    it("allows POS Cashier fast lane without administrative register read, while blocking unentitled tenants", () => {
+      // Cashier has operational permissions only, NO pos.register.read or pos.register.manage
+      const cashierAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["pos"],
+        permissions: [
+          "pos.cart.manage",
+          "pos.checkout.create",
+          "pos.session.open"
+        ],
+        moduleStatuses: { pos: "Active" }
+      };
+
+      const checkoutDest = POS_DESTINATIONS.find(d => d.id === "pos-checkout")!;
+      const sessionsDest = POS_DESTINATIONS.find(d => d.id === "pos-sessions")!;
+      const registersDest = POS_DESTINATIONS.find(d => d.id === "pos-registers")!;
+      const reportsDest = POS_DESTINATIONS.find(d => d.id === "pos-reports")!;
+
+      // Cashier can access checkout fast lane & sessions
+      assert.equal(isDestinationPermitted(checkoutDest, cashierAccess), true);
+      assert.equal(isDestinationPermitted(sessionsDest, cashierAccess), true);
+
+      // Cashier CANNOT access administrative registers page or reports
+      assert.equal(isDestinationPermitted(registersDest, cashierAccess), false);
+      assert.equal(isDestinationPermitted(reportsDest, cashierAccess), false);
+
+      // Commercial entitlement enforcement: if 'pos' is NOT entitled, all access is denied
+      const unentitledCashierAccess: EffectiveAccess = {
+        ...cashierAccess,
+        entitledModules: ["sales"] // pos missing!
+      };
+      assert.equal(isModuleOperational(unentitledCashierAccess, "pos"), false);
+      assert.equal(isDestinationPermitted(checkoutDest, unentitledCashierAccess), false);
+    });
   });
 });

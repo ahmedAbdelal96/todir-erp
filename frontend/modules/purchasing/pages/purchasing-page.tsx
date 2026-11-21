@@ -6,51 +6,26 @@ import { OrderListTab } from "../features/orders/order-list-tab.tsx";
 import { NewPurchaseOrderModal } from "../features/orders/new-purchase-order-modal.tsx";
 import { PurchaseOrderDetailModal } from "../features/orders/purchase-order-detail-modal.tsx";
 import { ReceiptsTab } from "../features/receipts/receipts-tab.tsx";
-import { ReceiveOrderModal } from "../features/receipts/receive-order-modal.tsx";
-import { ReceiveAndBillModal } from "../features/receipts/receive-and-bill-modal.tsx";
 import { MatchingTab } from "../features/matching/matching-tab.tsx";
-import { MatchOrderModal } from "../features/matching/match-order-modal.tsx";
 import { ReturnsTab } from "../features/returns/returns-tab.tsx";
-import { NewSupplierReturnModal } from "../features/returns/new-supplier-return-modal.tsx";
 import { SupplierProfileTab } from "../features/suppliers/supplier-profile-tab.tsx";
 import { PurchaseHistoryTab } from "../features/history/purchase-history-tab.tsx";
 import { PurchaseSettingsTab } from "../features/settings/purchase-settings-tab.tsx";
+import {
+  AuthoritativeReceiveModal,
+  AuthoritativeReceiveAndBillModal,
+  AuthoritativeMatchModal,
+  AuthoritativeReturnModal
+} from "../features/orders/authoritative-action-modals.tsx";
 import { usePurchaseOrders, usePurchaseOrderDetail } from "../hooks/use-purchasing-queries.ts";
 import { useLegalEntityContext, useOptionalPermissions, useOptionalCapabilities } from "../../../core/runtime/runtime-provider.tsx";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
-import type { PurchaseOrderListItem, PurchaseOrderView } from "../types.ts";
 
 export function PurchasingPage(): React.JSX.Element {
   const { t } = useTranslation("purchasing");
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const [searchParams, setSearchParams] = useSearchParams();
-
-  const toOrderView = (item: PurchaseOrderListItem): PurchaseOrderView => ({
-    ...item,
-    legalEntityId: "00000000-0000-0000-0000-000000000001",
-    version: item.version || 1,
-    approvalState: item.approvalState ?? "Approved",
-    receiptState: item.receiptState ?? "NotReceived",
-    invoicingState: item.invoicingState ?? "NotInvoiced",
-    matchingState: item.matchingState ?? "Matched",
-    createdAt: item.updatedAt || new Date().toISOString(),
-    lines: item.lines && item.lines.length > 0 ? item.lines : [
-      {
-        id: "line-default",
-        sequence: 1,
-        productVariantId: "00000000-0000-0000-0000-000000000001",
-        description: t("orders.serviceItemDefault"),
-        orderedQuantity: 10,
-        receivedQuantity: item.receiptState === "Received" ? 10 : 0,
-        invoicedQuantity: item.invoicingState === "Invoiced" ? 10 : 0,
-        cancelledQuantity: 0,
-        closedShortQuantity: 0,
-        unitPrice: 100,
-        unitCode: "PCS"
-      }
-    ]
-  });
 
   let contextEntityId: string | undefined;
   try {
@@ -60,7 +35,7 @@ export function PurchasingPage(): React.JSX.Element {
     // Rendered outside RuntimeProvider
   }
 
-  const legalEntityId = outletCtx?.legalEntityId ?? contextEntityId ?? "00000000-0000-0000-0000-000000000001";
+  const legalEntityId = outletCtx?.legalEntityId ?? contextEntityId ?? "";
 
   // Tab State
   const tabParam = searchParams.get("tab") as PurchasingTabId | null;
@@ -123,10 +98,10 @@ export function PurchasingPage(): React.JSX.Element {
   // Modals State
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [orderToReceive, setOrderToReceive] = useState<PurchaseOrderView | null>(null);
-  const [orderToReceiveAndBill, setOrderToReceiveAndBill] = useState<PurchaseOrderView | null>(null);
-  const [orderToMatch, setOrderToMatch] = useState<PurchaseOrderView | null>(null);
-  const [orderToReturn, setOrderToReturn] = useState<PurchaseOrderView | null>(null);
+  const [receiveOrderId, setReceiveOrderId] = useState<string | null>(null);
+  const [receiveAndBillOrderId, setReceiveAndBillOrderId] = useState<string | null>(null);
+  const [matchOrderId, setMatchOrderId] = useState<string | null>(null);
+  const [returnOrderId, setReturnOrderId] = useState<string | null>(null);
   const [createdInvoiceRef, setCreatedInvoiceRef] = useState<string | null>(null);
 
   const { data: ordersPage, isLoading } = usePurchaseOrders(legalEntityId, {
@@ -158,6 +133,14 @@ export function PurchasingPage(): React.JSX.Element {
     (!isReturnsCapabilityActive && activeTab === "returns")
       ? "overview"
       : activeTab;
+
+  if (!legalEntityId) {
+    return (
+      <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted)" }}>
+        {t("common.loading", "جاري التحميل...")}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -224,12 +207,8 @@ export function PurchasingPage(): React.JSX.Element {
             orders={orders}
             isLoading={isLoading}
             onSelectOrder={(id) => setSelectedOrderId(id)}
-            onOpenReceive={(orderItem) => {
-              setOrderToReceive(toOrderView(orderItem));
-            }}
-            onOpenReceiveAndBill={(orderItem) => {
-              setOrderToReceiveAndBill(toOrderView(orderItem));
-            }}
+            onOpenReceive={(orderItem) => setReceiveOrderId(orderItem.id)}
+            onOpenReceiveAndBill={(orderItem) => setReceiveAndBillOrderId(orderItem.id)}
           />
         )}
 
@@ -237,9 +216,7 @@ export function PurchasingPage(): React.JSX.Element {
           <MatchingTab
             orders={orders}
             isLoading={isLoading}
-            onOpenMatch={(orderItem) => {
-              setOrderToMatch(toOrderView(orderItem));
-            }}
+            onOpenMatch={(orderItem) => setMatchOrderId(orderItem.id)}
             onSelectOrder={(id) => setSelectedOrderId(id)}
           />
         )}
@@ -248,9 +225,7 @@ export function PurchasingPage(): React.JSX.Element {
           <ReturnsTab
             orders={orders}
             isLoading={isLoading}
-            onOpenNewReturn={(orderItem) => {
-              setOrderToReturn(toOrderView(orderItem));
-            }}
+            onOpenNewReturn={(orderItem) => setReturnOrderId(orderItem.id)}
           />
         )}
 
@@ -295,49 +270,45 @@ export function PurchasingPage(): React.JSX.Element {
           isInventoryCapabilityActive={isInventoryCapabilityActive}
           isMatchingCapabilityActive={isMatchingCapabilityActive}
           isReturnsCapabilityActive={isReturnsCapabilityActive}
-          onOpenReceive={(ord) => setOrderToReceive(ord)}
-          onOpenReceiveAndBill={(ord) => setOrderToReceiveAndBill(ord)}
-          onOpenMatch={(ord) => setOrderToMatch(ord)}
-          onOpenReturn={(ord) => setOrderToReturn(ord)}
+          onOpenReceive={(ord) => setReceiveOrderId(ord.id)}
+          onOpenReceiveAndBill={(ord) => setReceiveAndBillOrderId(ord.id)}
+          onOpenMatch={(ord) => setMatchOrderId(ord.id)}
+          onOpenReturn={(ord) => setReturnOrderId(ord.id)}
           createdInvoiceRef={createdInvoiceRef}
         />
       )}
 
-      {orderToReceive && (
-        <ReceiveOrderModal
-          isOpen={Boolean(orderToReceive)}
-          onClose={() => setOrderToReceive(null)}
-          order={orderToReceive}
-        />
-      )}
+      <AuthoritativeReceiveModal
+        isOpen={Boolean(receiveOrderId)}
+        onClose={() => setReceiveOrderId(null)}
+        legalEntityId={legalEntityId}
+        orderId={receiveOrderId}
+      />
 
-      {orderToReceiveAndBill && (
-        <ReceiveAndBillModal
-          isOpen={Boolean(orderToReceiveAndBill)}
-          onClose={() => setOrderToReceiveAndBill(null)}
-          order={orderToReceiveAndBill}
-          onCompleted={(rcvId, invId) => {
-            setCreatedInvoiceRef(invId);
-          }}
-        />
-      )}
+      <AuthoritativeReceiveAndBillModal
+        isOpen={Boolean(receiveAndBillOrderId)}
+        onClose={() => setReceiveAndBillOrderId(null)}
+        legalEntityId={legalEntityId}
+        orderId={receiveAndBillOrderId}
+        onCompleted={(_rcvId, invId) => {
+          setCreatedInvoiceRef(invId);
+        }}
+      />
 
-      {orderToMatch && (
-        <MatchOrderModal
-          isOpen={Boolean(orderToMatch)}
-          onClose={() => setOrderToMatch(null)}
-          order={orderToMatch}
-          hasMatchOverridePermission={hasMatchOverridePermission}
-        />
-      )}
+      <AuthoritativeMatchModal
+        isOpen={Boolean(matchOrderId)}
+        onClose={() => setMatchOrderId(null)}
+        legalEntityId={legalEntityId}
+        orderId={matchOrderId}
+        hasMatchOverridePermission={hasMatchOverridePermission}
+      />
 
-      {orderToReturn && (
-        <NewSupplierReturnModal
-          isOpen={Boolean(orderToReturn)}
-          onClose={() => setOrderToReturn(null)}
-          order={orderToReturn}
-        />
-      )}
+      <AuthoritativeReturnModal
+        isOpen={Boolean(returnOrderId)}
+        onClose={() => setReturnOrderId(null)}
+        legalEntityId={legalEntityId}
+        orderId={returnOrderId}
+      />
     </div>
   );
 }

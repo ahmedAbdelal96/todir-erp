@@ -1,23 +1,27 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useOutletContext } from "react-router-dom";
-import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import { Link } from "react-router-dom";
 import { ManufacturingHeader } from "../components/manufacturing-header.tsx";
 import { ManufacturingMetricRibbon } from "../components/manufacturing-metric-ribbon.tsx";
 import { ManufacturingStatusBadge } from "../components/manufacturing-status-badge.tsx";
+import { NoLegalEntityPrompt } from "../components/no-legal-entity-prompt.tsx";
+import { useManufacturingScope } from "../hooks/use-manufacturing-scope.ts";
 import { CreateOrderDialog } from "../features/orders/create-order-dialog.tsx";
 import { useOrdersQuery, usePlanningRunsQuery } from "../hooks/use-manufacturing.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 
 export function ManufacturingPage(): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
-  const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
-  const legalEntityId = outletCtx?.legalEntityId ?? "00000000-0000-0000-0000-000000000001";
+  const { legalEntityId, isReady } = useManufacturingScope();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   const { data: orders = [], isLoading: ordersLoading } = useOrdersQuery(legalEntityId);
   const { data: runs = [] } = usePlanningRunsQuery(legalEntityId);
+
+  if (!isReady) {
+    return <NoLegalEntityPrompt />;
+  }
 
   // Compute active & priority stats
   const inProgressOrders = orders.filter((o) => o.state === "InProgress");
@@ -166,10 +170,10 @@ export function ManufacturingPage(): React.JSX.Element {
             <div style={{ fontSize: "13px", color: "#64748b", marginBottom: "4px" }}>
               {t("mrp.lastRun")}:
             </div>
-            {runs.length > 0 ? (
+            {runs[0] ? (
               <div>
                 <div style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a" }}>
-                  {runs[0].runNumber}
+                  {runs[0].runNumber ?? runs[0].id.slice(0, 8)}
                 </div>
                 <div style={{ fontSize: "12px", color: "#64748b" }}>
                   {runs[0].horizonStart.slice(0, 10)} {t("mrp.to")} {runs[0].horizonEnd.slice(0, 10)}
@@ -187,7 +191,7 @@ export function ManufacturingPage(): React.JSX.Element {
       <CreateOrderDialog
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
-        legalEntityId={legalEntityId}
+        legalEntityId={legalEntityId ?? ""}
       />
     </div>
   );

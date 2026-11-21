@@ -11,7 +11,8 @@ export interface MaterialActionDialogProps {
   readonly orderId: string;
   readonly requirementId: string;
   readonly actionType: "Reserved" | "Issued" | "Consumed" | "Returned";
-  readonly uomCode?: string;
+  readonly uomCode?: string | undefined;
+  readonly initialQty?: number | undefined;
 }
 
 export function MaterialActionDialog({
@@ -20,12 +21,13 @@ export function MaterialActionDialog({
   orderId,
   requirementId,
   actionType,
-  uomCode = "EA"
+  uomCode = "EA",
+  initialQty
 }: MaterialActionDialogProps): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
   const materialMutation = useMaterialActionMutation();
 
-  const [quantity, setQuantity] = useState("10");
+  const [quantity, setQuantity] = useState(() => (initialQty != null && initialQty > 0 ? String(initialQty) : "1"));
   const [warehouseId, setWarehouseId] = useState("");
   const [substituteVariantId, setSubstituteVariantId] = useState("");
   const [idempotencyKey] = useState(() => `mat-${Date.now()}`);
@@ -102,7 +104,7 @@ export function MaterialActionDialog({
           label={t("common.quantity")}
           type="number"
           value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
+          onChange={(val) => setQuantity(val)}
           min="0.0001"
           step="any"
           required
@@ -111,13 +113,13 @@ export function MaterialActionDialog({
         <TextField
           label={t("materials.warehouse")}
           value={warehouseId}
-          onChange={(e) => setWarehouseId(e.target.value)}
+          onChange={(val) => setWarehouseId(val)}
         />
 
         <TextField
           label={t("definitions.substituteVariantId")}
           value={substituteVariantId}
-          onChange={(e) => setSubstituteVariantId(e.target.value)}
+          onChange={(val) => setSubstituteVariantId(val)}
         />
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>

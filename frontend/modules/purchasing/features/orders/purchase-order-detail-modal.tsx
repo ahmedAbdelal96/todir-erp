@@ -28,6 +28,7 @@ export interface PurchaseOrderDetailModalProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly order: PurchaseOrderView | null;
+  readonly isLoading?: boolean | undefined;
   readonly onUpdated?: () => void;
   readonly hasPriceReadPermission?: boolean | undefined;
   readonly hasPriceOverridePermission?: boolean | undefined;
@@ -45,6 +46,7 @@ export function PurchaseOrderDetailModal({
   isOpen,
   onClose,
   order,
+  isLoading = false,
   onUpdated,
   hasPriceReadPermission = true,
   hasPriceOverridePermission = true,
@@ -71,6 +73,16 @@ export function PurchaseOrderDetailModal({
   const rejectMutation = useRejectPurchaseOrderMutation(order?.legalEntityId ?? "", order?.id ?? "");
   const createInvoiceMutation = useCreateSupplierInvoiceMutation(order?.legalEntityId ?? "", order?.id ?? "");
   const approveAndBillMutation = useApproveAndBillMutation(order?.legalEntityId ?? "", order?.id ?? "");
+
+  if (isLoading) {
+    return (
+      <Dialog isOpen={isOpen} onClose={onClose} title={t("orders.detailTitle")}>
+        <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-content-muted)" }}>
+          {t("common.loading", "جارٍ التحميل...")}
+        </div>
+      </Dialog>
+    );
+  }
 
   if (!order) return <></>;
 

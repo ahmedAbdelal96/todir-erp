@@ -38,7 +38,7 @@ const MODULE_CATEGORIES: Record<string, NavigationCategory> = {
   catalog: "inventory",
   inventory: "inventory",
   manufacturing: "inventory",
-  pos: "inventory",
+  pos: "sales",
   projects: "inventory",
   service: "inventory",
   accounting: "finance",

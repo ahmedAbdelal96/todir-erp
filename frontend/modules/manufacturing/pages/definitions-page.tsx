@@ -1,9 +1,9 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext } from "react-router-dom";
-import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 import { ManufacturingHeader } from "../components/manufacturing-header.tsx";
 import { ManufacturingStatusBadge } from "../components/manufacturing-status-badge.tsx";
+import { NoLegalEntityPrompt } from "../components/no-legal-entity-prompt.tsx";
+import { useManufacturingScope } from "../hooks/use-manufacturing-scope.ts";
 import { CreatePlantDialog } from "../features/definitions/create-plant-dialog.tsx";
 import { CreateBomDialog } from "../features/definitions/create-bom-dialog.tsx";
 import { CreateFormulaDialog } from "../features/definitions/create-formula-dialog.tsx";
@@ -26,8 +26,7 @@ type DefinitionTab = "plants" | "boms" | "formulas" | "routings" | "workCenters"
 
 export function DefinitionsPage(): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
-  const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
-  const legalEntityId = outletCtx?.legalEntityId ?? "00000000-0000-0000-0000-000000000001";
+  const { legalEntityId, isReady } = useManufacturingScope();
 
   const [activeTab, setActiveTab] = useState<DefinitionTab>("definitions");
 
@@ -48,6 +47,10 @@ export function DefinitionsPage(): React.JSX.Element {
   const { data: workCenters = [] } = useWorkCentersQuery();
   const { data: definitions = [] } = useDefinitionsQuery(legalEntityId);
   const { data: subGroups = [] } = useSubstitutionGroupsQuery();
+
+  if (!isReady) {
+    return <NoLegalEntityPrompt />;
+  }
 
   const getPrimaryActionForTab = () => {
     switch (activeTab) {
@@ -366,7 +369,7 @@ export function DefinitionsPage(): React.JSX.Element {
       <CreatePlantDialog
         isOpen={isPlantOpen}
         onClose={() => setIsPlantOpen(false)}
-        legalEntityId={legalEntityId}
+        legalEntityId={legalEntityId ?? ""}
       />
       <CreateBomDialog
         isOpen={isBomOpen}
@@ -383,12 +386,12 @@ export function DefinitionsPage(): React.JSX.Element {
       <CreateWorkCenterDialog
         isOpen={isWorkCenterOpen}
         onClose={() => setIsWorkCenterOpen(false)}
-        legalEntityId={legalEntityId}
+        legalEntityId={legalEntityId ?? ""}
       />
       <CreateDefinitionDialog
         isOpen={isDefOpen}
         onClose={() => setIsDefOpen(false)}
-        legalEntityId={legalEntityId}
+        legalEntityId={legalEntityId ?? ""}
       />
       <CreateSubstitutionGroupDialog
         isOpen={isSubstituteOpen}

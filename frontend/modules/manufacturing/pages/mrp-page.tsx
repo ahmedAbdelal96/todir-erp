@@ -1,9 +1,9 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext } from "react-router-dom";
-import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 import { ManufacturingHeader } from "../components/manufacturing-header.tsx";
 import { ManufacturingStatusBadge } from "../components/manufacturing-status-badge.tsx";
+import { NoLegalEntityPrompt } from "../components/no-legal-entity-prompt.tsx";
+import { useManufacturingScope } from "../hooks/use-manufacturing-scope.ts";
 import { CreatePlanningRunDialog } from "../features/mrp/create-planning-run-dialog.tsx";
 import { CreateMpsDialog } from "../features/mrp/create-mps-dialog.tsx";
 import { FirmProductionDialog } from "../features/mrp/firm-production-dialog.tsx";
@@ -13,8 +13,7 @@ import type { PlannedSupply } from "../types.ts";
 
 export function MrpPage(): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
-  const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
-  const legalEntityId = outletCtx?.legalEntityId ?? "00000000-0000-0000-0000-000000000001";
+  const { legalEntityId, isReady } = useManufacturingScope();
 
   const [isRunOpen, setIsRunOpen] = useState(false);
   const [isMpsOpen, setIsMpsOpen] = useState(false);
@@ -26,6 +25,10 @@ export function MrpPage(): React.JSX.Element {
 
   const { data: supplies = [], isLoading: suppliesLoading } = usePlannedSuppliesQuery(activeRunId);
   const { data: mpsPlans = [] } = useMpsPlansQuery(legalEntityId);
+
+  if (!isReady) {
+    return <NoLegalEntityPrompt />;
+  }
 
   return (
     <div
@@ -115,7 +118,7 @@ export function MrpPage(): React.JSX.Element {
             >
               {runs.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.runNumber} ({r.horizonStart.slice(0, 10)} {t("mrp.to")} {r.horizonEnd.slice(0, 10)})
+                  {r.runNumber ?? r.id.slice(0, 8)} ({r.horizonStart.slice(0, 10)} {t("mrp.to")} {r.horizonEnd.slice(0, 10)})
                 </option>
               ))}
             </select>
@@ -146,7 +149,7 @@ export function MrpPage(): React.JSX.Element {
               {supplies.map((sup) => (
                 <tr key={sup.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                   <td style={{ padding: "12px 16px", fontWeight: 700 }}>
-                    {sup.supplyType === "Manufacture" ? t("mrp.supplyManufacture") : sup.supplyType === "Purchase" ? t("mrp.supplyPurchase") : t("mrp.supplyTransfer")}
+                    {(sup.supplyType === "Production" || sup.supplyType === "Manufacture") ? t("mrp.supplyManufacture") : sup.supplyType === "Purchase" ? t("mrp.supplyPurchase") : t("mrp.supplyTransfer")}
                   </td>
                   <td style={{ padding: "12px 16px" }}>
                     {sup.productVariantId.slice(0, 8)}...
@@ -155,13 +158,13 @@ export function MrpPage(): React.JSX.Element {
                     {sup.quantity} {sup.uomCode}
                   </td>
                   <td style={{ padding: "12px 16px", color: "#475569" }}>
-                    {sup.dueDate.slice(0, 10)}
+                    {(sup.dueDate ?? sup.needDate).slice(0, 10)}
                   </td>
                   <td style={{ padding: "12px 16px" }}>
                     <ManufacturingStatusBadge state={sup.state} />
                   </td>
                   <td style={{ padding: "12px 16px", textAlign: "center" }}>
-                    {sup.state === "Suggested" && sup.supplyType === "Manufacture" && (
+                    {sup.state === "Suggested" && (sup.supplyType === "Production" || sup.supplyType === "Manufacture") && (
                       <Button
                         variant="primary"
                         onClick={() => setSelectedSupplyForFirm(sup)}
@@ -180,20 +183,20 @@ export function MrpPage(): React.JSX.Element {
       <CreatePlanningRunDialog
         isOpen={isRunOpen}
         onClose={() => setIsRunOpen(false)}
-        legalEntityId={legalEntityId}
+        legalEntityId={legalEntityId ?? ""}
       />
 
       <CreateMpsDialog
         isOpen={isMpsOpen}
         onClose={() => setIsMpsOpen(false)}
-        legalEntityId={legalEntityId}
+        legalEntityId={legalEntityId ?? ""}
       />
 
       {selectedSupplyForFirm && (
         <FirmProductionDialog
           isOpen={Boolean(selectedSupplyForFirm)}
           onClose={() => setSelectedSupplyForFirm(null)}
-          legalEntityId={legalEntityId}
+          legalEntityId={legalEntityId ?? ""}
           plannedSupply={selectedSupplyForFirm}
         />
       )}

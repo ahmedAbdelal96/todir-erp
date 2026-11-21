@@ -15,6 +15,14 @@ export const en = {
     offline: "Offline & Sync",
     reports: "Session & Sales Reports",
   },
+  tabs: {
+    checkout: "Cashier Checkout",
+    sessions: "Cashier Sessions",
+    registers: "Registers & Terminals",
+    returns: "Sales Returns",
+    offline: "Offline & Sync",
+    reports: "Session & Sales Reports"
+  },
   page: {
     title: "Point of Sale (POS)",
     subtitle: "Counter sales, registers, cashier shifts, cash drops and reconciliation",

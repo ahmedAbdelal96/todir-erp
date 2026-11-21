@@ -9,7 +9,10 @@ import {
   CRM_DESTINATIONS,
   ACCOUNTING_DESTINATIONS,
   INVENTORY_DESTINATIONS,
-  MANUFACTURING_DESTINATIONS
+  MANUFACTURING_DESTINATIONS,
+  SALES_DESTINATIONS,
+  PURCHASING_DESTINATIONS,
+  POS_DESTINATIONS
 } from "../../app/router/destination-registry.ts";
 import type { PermissionCondition } from "../../app/router/route-contract.ts";
 
@@ -175,6 +178,45 @@ describe("Permission Manifest Authoritative Audit", () => {
       }
     }
     assert.deepEqual(invalidCodes, [], `All MANUFACTURING_DESTINATIONS permissions must be valid manifests. Found invalid: ${invalidCodes.join(", ")}`);
+  });
+
+  it("verifies 100% of SALES_DESTINATIONS permissions exist in manifest catalog", () => {
+    const invalidCodes: string[] = [];
+    for (const dest of SALES_DESTINATIONS) {
+      const codes = extractPermissions(dest.permission);
+      for (const code of codes) {
+        if (!authoritativeCatalog.has(code)) {
+          invalidCodes.push(`${dest.id} -> ${code}`);
+        }
+      }
+    }
+    assert.deepEqual(invalidCodes, [], `All SALES_DESTINATIONS permissions must be valid manifests. Found invalid: ${invalidCodes.join(", ")}`);
+  });
+
+  it("verifies 100% of PURCHASING_DESTINATIONS permissions exist in manifest catalog", () => {
+    const invalidCodes: string[] = [];
+    for (const dest of PURCHASING_DESTINATIONS) {
+      const codes = extractPermissions(dest.permission);
+      for (const code of codes) {
+        if (!authoritativeCatalog.has(code)) {
+          invalidCodes.push(`${dest.id} -> ${code}`);
+        }
+      }
+    }
+    assert.deepEqual(invalidCodes, [], `All PURCHASING_DESTINATIONS permissions must be valid manifests. Found invalid: ${invalidCodes.join(", ")}`);
+  });
+
+  it("verifies 100% of POS_DESTINATIONS permissions exist in manifest catalog", () => {
+    const invalidCodes: string[] = [];
+    for (const dest of POS_DESTINATIONS) {
+      const codes = extractPermissions(dest.permission);
+      for (const code of codes) {
+        if (!authoritativeCatalog.has(code)) {
+          invalidCodes.push(`${dest.id} -> ${code}`);
+        }
+      }
+    }
+    assert.deepEqual(invalidCodes, [], `All POS_DESTINATIONS permissions must be valid manifests. Found invalid: ${invalidCodes.join(", ")}`);
   });
 
   it("verifies 100% of permissions in all module routes.tsx files match manifest catalog", () => {
