@@ -21,16 +21,33 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
 
     private static string GetAdminConnectionString()
     {
-        var conn = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
-            ?? Environment.GetEnvironmentVariable("TODIR_ACCEPTANCE_ADMIN_CONNECTION")
-            ?? "Host=127.0.0.1;Port=15432;Database=todir_nav_acceptance;Username=postgres;Password=postgres";
+        var conn = Environment.GetEnvironmentVariable("TODIR_ACCEPTANCE_ADMIN_CONNECTION")
+            ?? Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION");
+
+        if (string.IsNullOrWhiteSpace(conn))
+        {
+            throw new InvalidOperationException(
+                "CRITICAL SAFETY VIOLATION: An explicitly configured disposable acceptance environment is required. " +
+                "Set TODIR_ACCEPTANCE_ADMIN_CONNECTION or TODIR_P04_ADMIN_CONNECTION to a verified disposable database.");
+        }
 
         var builder = new NpgsqlConnectionStringBuilder(conn);
         var db = builder.Database ?? string.Empty;
+
+        // 1. Target database name must contain 'acceptance' or 'test'
         if (!db.Contains("acceptance", StringComparison.OrdinalIgnoreCase) &&
             !db.Contains("test", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException($"CRITICAL SAFETY VIOLATION: Refusing to run tests against non-test database '{db}'. Target must contain 'acceptance' or 'test'.");
+            throw new InvalidOperationException($"CRITICAL SAFETY VIOLATION: Refusing to run tests against database '{db}'. Target database must contain 'acceptance' or 'test'.");
+        }
+
+        // 2. Explicit disposable flag or acceptance environment verification
+        var isExplicitlyDisposable = string.Equals(Environment.GetEnvironmentVariable("TODIR_ACCEPTANCE_DISPOSABLE"), "true", StringComparison.OrdinalIgnoreCase) ||
+                                     db.EndsWith("_acceptance", StringComparison.OrdinalIgnoreCase) ||
+                                     db.EndsWith("_test", StringComparison.OrdinalIgnoreCase);
+        if (!isExplicitlyDisposable)
+        {
+            throw new InvalidOperationException($"CRITICAL SAFETY VIOLATION: Database '{db}' is not verified as a disposable acceptance database. Set TODIR_ACCEPTANCE_DISPOSABLE=true.");
         }
 
         return conn;
@@ -38,14 +55,22 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
 
     private static string GetAppConnectionString(string adminConn)
     {
-        if (Environment.GetEnvironmentVariable("TODIR_APP_CONNECTION") is string appConn && !string.IsNullOrWhiteSpace(appConn))
+        var appConn = Environment.GetEnvironmentVariable("TODIR_ACCEPTANCE_APP_CONNECTION")
+            ?? Environment.GetEnvironmentVariable("TODIR_APP_CONNECTION");
+
+        if (!string.IsNullOrWhiteSpace(appConn))
         {
             return appConn;
         }
 
         var appPassword = Environment.GetEnvironmentVariable("TODIR_APP_PASSWORD")
-            ?? Environment.GetEnvironmentVariable("TODIR_RUNTIME_PASSWORD")
-            ?? "postgres";
+            ?? Environment.GetEnvironmentVariable("TODIR_RUNTIME_PASSWORD");
+
+        if (string.IsNullOrWhiteSpace(appPassword))
+        {
+            throw new InvalidOperationException(
+                "CRITICAL SAFETY VIOLATION: Application database credentials must be explicitly configured via TODIR_ACCEPTANCE_APP_CONNECTION or TODIR_APP_PASSWORD.");
+        }
 
         return new NpgsqlConnectionStringBuilder(adminConn)
         {
@@ -168,7 +193,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         });
         Assert.Equal(HttpStatusCode.Forbidden, acc2Res.StatusCode);
         var errDoc = await acc2Res.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("module.lifecycle_readonly", errDoc.GetProperty("code").GetString());
+        Assert.Equal("module.lifecycle_wind_down", errDoc.GetProperty("code").GetString());
 
         // 4. Verify DB state unchanged
         await using (var cmd = new NpgsqlCommand($"select count(*) from finance_ledger.account where tenant_id = '{fixture.Tenant.Value}' and code = '1002'", adminConn))
@@ -665,22 +690,42 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
     }
 
     [Fact]
-    public void InvalidStatus_FailsClosedWithoutMutatingSchemaConstraints()
+    public void ProductionStatusEvaluation_InvalidOrCorruptStatus_FailsClosedWithModuleInvalidStatus()
     {
-        var validStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "Active", "ReadOnly", "WindDown", "Disabled", "Failed", "Requested", "Validating", "Provisioning", "AwaitingGoLive"
-        };
-
+        // 1. Production decision logic with corrupted/non-existent status must fail closed with module.invalid_status
         const string corruptStatus = "CorruptedNonExistentStatus";
-        Assert.DoesNotContain(corruptStatus, validStatuses);
+        var mutationDecision = NpgsqlModuleLifecycleEnforcer.EvaluateStatus(corruptStatus, isPurchasable: false, isMutation: true);
+        Assert.False(mutationDecision.Allowed);
+        Assert.False(mutationDecision.IsReadOnly);
+        Assert.Equal("Disabled", mutationDecision.Status);
+        Assert.Equal("module.invalid_status", mutationDecision.DeniedReason);
 
-        var decision = !validStatuses.Contains(corruptStatus)
-            ? new ModuleAccessDecision(false, false, "Disabled", "module.invalid_status")
-            : new ModuleAccessDecision(true, false, "Active", null);
+        var readDecision = NpgsqlModuleLifecycleEnforcer.EvaluateStatus(corruptStatus, isPurchasable: false, isMutation: false);
+        Assert.False(readDecision.Allowed);
+        Assert.Equal("module.invalid_status", readDecision.DeniedReason);
 
-        Assert.False(decision.Allowed);
-        Assert.Equal("module.invalid_status", decision.DeniedReason);
+        // 2. Verified valid production statuses produce expected production decisions
+        var activeDecision = NpgsqlModuleLifecycleEnforcer.EvaluateStatus("Active", isPurchasable: false, isMutation: true);
+        Assert.True(activeDecision.Allowed);
+        Assert.Null(activeDecision.DeniedReason);
+
+        var readOnlyDecision = NpgsqlModuleLifecycleEnforcer.EvaluateStatus("ReadOnly", isPurchasable: false, isMutation: true);
+        Assert.False(readOnlyDecision.Allowed);
+        Assert.True(readOnlyDecision.IsReadOnly);
+        Assert.Equal("module.lifecycle_readonly", readOnlyDecision.DeniedReason);
+
+        var windDownDecision = NpgsqlModuleLifecycleEnforcer.EvaluateStatus("WindDown", isPurchasable: false, isMutation: true);
+        Assert.False(windDownDecision.Allowed);
+        Assert.Equal("module.lifecycle_wind_down", windDownDecision.DeniedReason);
+
+        // 3. Deliberate breakage verification: Any status not in the production ValidStatuses set fails closed
+        var fakeStatuses = new[] { "AdminOverride", "BypassSecurity", "SuperUser", "Custom", "RANDOM_STATUS" };
+        foreach (var fake in fakeStatuses)
+        {
+            var fakeDecision = NpgsqlModuleLifecycleEnforcer.EvaluateStatus(fake, isPurchasable: false, isMutation: true);
+            Assert.False(fakeDecision.Allowed, $"Fake status '{fake}' was unexpectedly allowed.");
+            Assert.Equal("module.invalid_status", fakeDecision.DeniedReason);
+        }
     }
 
     // -------------------------------------------------------------------------

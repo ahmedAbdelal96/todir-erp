@@ -1,9 +1,12 @@
+using System.Security.Claims;
 using Core.Modules;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.DependencyInjection;
+using Shared.Primitives.Identifiers;
 using Xunit;
 
 namespace KernelIntegrationTests;
@@ -94,9 +97,9 @@ public sealed class ModuleLifecycleCoverageAuditTests
                 }
             }
 
-            // 4. Verify Effective Filter Registration
-            var hasLifecycleFilter = endpoint.Metadata.Any(m => m.GetType().Name.Contains("Filter") || m is ModuleOperationMetadata);
-            if (!hasLifecycleFilter)
+            // 4. Verify Effective Filter Registration via ModuleLifecycleEnforcedAttribute (NOT solely metadata presence)
+            var hasLifecycleEnforcement = endpoint.Metadata.GetMetadata<ModuleLifecycleEnforcedAttribute>() is not null;
+            if (!hasLifecycleEnforcement)
             {
                 missingFilter.Add($"{string.Join(",", httpMethods)} {pattern}");
             }
@@ -128,7 +131,7 @@ public sealed class ModuleLifecycleCoverageAuditTests
         if (missingMetadata.Count > 0)
             errors.Add("Missing ModuleOperationMetadata:\n" + string.Join("\n", missingMetadata));
         if (missingFilter.Count > 0)
-            errors.Add("Missing ModuleLifecycleEndpointFilter:\n" + string.Join("\n", missingFilter));
+            errors.Add("Missing ModuleLifecycleEndpointFilter (ModuleLifecycleEnforcedAttribute):\n" + string.Join("\n", missingFilter));
         if (wrongModuleOwnership.Count > 0)
             errors.Add("Mismatched Module Ownership:\n" + string.Join("\n", wrongModuleOwnership));
         if (wrongPermissionOwnership.Count > 0)
@@ -143,6 +146,22 @@ public sealed class ModuleLifecycleCoverageAuditTests
 
         Assert.True(verifiedMutationsCount >= 40, $"Expected at least 40 mutation endpoints across governed modules, found {verifiedMutationsCount}");
         Assert.True(verifiedReadsCount >= 30, $"Expected at least 30 read endpoints across governed modules, found {verifiedReadsCount}");
+    }
+
+    [Fact]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1707:Identifiers should not contain underscores")]
+    public void ControlledNegative_OmittingLifecycleEnforcement_FailsCoverageGate()
+    {
+        // An endpoint that has ModuleOperationMetadata but omitted AddModuleLifecycleEnforcement() must be flagged
+        var unprotectedEndpoint = new RouteEndpoint(
+            _ => Task.CompletedTask,
+            RoutePatternFactory.Parse("/api/v1/inventory/legal-entities/{entityId}/omitted-enforcement"),
+            0,
+            new EndpointMetadataCollection(new ModuleOperationMetadata("inventory", ModuleOperationKind.Mutation, "inventory.test")),
+            "Omitted Enforcement Endpoint");
+
+        var hasLifecycleEnforcement = unprotectedEndpoint.Metadata.GetMetadata<ModuleLifecycleEnforcedAttribute>() is not null;
+        Assert.False(hasLifecycleEnforcement, "Controlled negative check: endpoint without AddModuleLifecycleEnforcement() must NOT pass filter check.");
     }
 
     [Fact]
@@ -162,5 +181,73 @@ public sealed class ModuleLifecycleCoverageAuditTests
         {
             Assert.Equal("module.missing_metadata", pd.Title);
         }
+    }
+
+    [Theory]
+    [InlineData("Active", true, StatusCodes.Status200OK, null)]
+    [InlineData("ReadOnly", false, StatusCodes.Status403Forbidden, "module.lifecycle_readonly")]
+    [InlineData("WindDown", false, StatusCodes.Status403Forbidden, "module.lifecycle_wind_down")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1707:Identifiers should not contain underscores")]
+    public async Task EffectiveEndpointFilterExecution_ActiveMutationSucceeds_ReadOnlyAndWindDownRejected(
+        string lifecycleStatus, bool expectSuccess, int expectedStatusCode, string? expectedCode)
+    {
+        var tenantId = Guid.NewGuid();
+        var entityId = Guid.NewGuid();
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = $"/api/v1/inventory/legal-entities/{entityId}/warehouses";
+        context.Request.RouteValues["entityId"] = entityId.ToString();
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([
+            new Claim("tenant_id", tenantId.ToString())
+        ], "TestAuth"));
+
+        var enforcer = new ControllableLifecycleEnforcer(lifecycleStatus);
+        var services = new ServiceCollection();
+        services.AddSingleton<IModuleLifecycleEnforcer>(enforcer);
+        context.RequestServices = services.BuildServiceProvider();
+
+        var endpoint = new RouteEndpoint(
+            _ => Task.CompletedTask,
+            RoutePatternFactory.Parse("/api/v1/inventory/legal-entities/{entityId:guid}/warehouses"),
+            0,
+            new EndpointMetadataCollection(
+                new ModuleOperationMetadata("inventory", ModuleOperationKind.Mutation, "inventory.warehouse.create"),
+                new ModuleLifecycleEnforcedAttribute()),
+            "Create Warehouse");
+        context.SetEndpoint(endpoint);
+
+        var filter = new ModuleLifecycleEndpointFilter();
+        var invocationContext = new DefaultEndpointFilterInvocationContext(context);
+
+        var result = await filter.InvokeAsync(invocationContext, _ => ValueTask.FromResult<object?>(Results.Ok(new { created = true })));
+
+        if (expectSuccess)
+        {
+            var okResult = Assert.IsAssignableFrom<IValueHttpResult>(result);
+            Assert.NotNull(okResult.Value);
+        }
+        else
+        {
+            var problem = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+            Assert.Equal(expectedStatusCode, problem.StatusCode);
+            if (result is IValueHttpResult val && val.Value is Microsoft.AspNetCore.Mvc.ProblemDetails pd)
+            {
+                Assert.Equal(expectedCode, pd.Title);
+            }
+        }
+    }
+
+    private sealed class ControllableLifecycleEnforcer(string status) : IModuleLifecycleEnforcer
+    {
+        public Task<ModuleAccessDecision> EvaluateAccessAsync(TenantId tenantId, string moduleId, Guid? legalEntityId = null, bool isMutation = false, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(NpgsqlModuleLifecycleEnforcer.EvaluateStatus(status, isPurchasable: false, isMutation: isMutation));
+        }
+
+        public Task<string> GetStatusAsync(TenantId tenantId, string moduleId, Guid? legalEntityId = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(status);
+
+        public Task<bool> CanMutateAsync(TenantId tenantId, string moduleId, Guid? legalEntityId = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(status.Equals("Active", StringComparison.OrdinalIgnoreCase));
     }
 }

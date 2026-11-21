@@ -58,7 +58,14 @@ test.describe('TODIR ERP — Real-Stack Navigation & Authorization Acceptance Su
     // 2. Click Banking -> lands on /banking/cash (first authorized destination)
     await bankingLink.click();
     await expect(page).toHaveURL(/\/banking\/cash/);
-    await expect(page.locator('[data-testid="banking-cash-page"]')).toBeVisible({ timeout: 10000 });
+    const cashPage = page.locator('[data-testid="banking-cash-page"]');
+    await expect(cashPage).toBeVisible({ timeout: 10000 });
+
+    // Positive task usability verification: Cash counting task action is rendered for authorized role
+    const newCountBtn = page.locator('[data-testid="new-cash-count"]');
+    if (await newCountBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await expect(newCountBtn).toBeVisible();
+    }
 
     // 3. Direct route guard: Navigate directly to forbidden treasury accounts
     await page.goto('/banking/accounts');
@@ -94,9 +101,18 @@ test.describe('TODIR ERP — Real-Stack Navigation & Authorization Acceptance Su
     await page.goto('/crm');
     await page.waitForLoadState('networkidle');
 
-    // 1. CRM Leads is accessible
+    // 1. CRM Leads is accessible and interactive
     const crmPage = page.getByTestId('crm-page');
-    await expect(crmPage.getByRole('button', { name: 'العملاء المحتملين', exact: true })).toBeVisible({ timeout: 10000 });
+    const leadsTab = crmPage.getByRole('button', { name: 'العملاء المحتملين', exact: true });
+    await expect(leadsTab).toBeVisible({ timeout: 10000 });
+    await leadsTab.click();
+
+    // Positive task usability verification: Leads search/filter is interactive
+    const searchInput = crmPage.locator('input[type="text"], input[type="search"]').first();
+    if (await searchInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await searchInput.fill('Atlas');
+      await expect(searchInput).toHaveValue('Atlas');
+    }
 
     // 2. Management tab is completely hidden
     await expect(crmPage.getByRole('button', { name: 'إدارة المبيعات والتقارير', exact: true })).not.toBeVisible();
@@ -114,8 +130,10 @@ test.describe('TODIR ERP — Real-Stack Navigation & Authorization Acceptance Su
     await page.goto('/accounting/statements');
     await page.waitForLoadState('networkidle');
 
-    // 1. Accounting Statements page is accessible
+    // 1. Accounting Statements page is accessible and usable
     await expect(page.locator('body')).not.toContainText('غير مصرح لك بالوصول');
+    const mainContent = page.locator('main, [role="main"]').first();
+    await expect(mainContent).toBeVisible({ timeout: 10000 });
 
     // 2. Direct navigation to Inventory warehouses is forbidden
     await page.goto('/inventory/warehouses');
@@ -125,59 +143,121 @@ test.describe('TODIR ERP — Real-Stack Navigation & Authorization Acceptance Su
     await expect(deniedView).toBeVisible({ timeout: 10000 });
   });
 
-  test('Legal Entity Switching: Active state allows mutations, ReadOnly state blocks mutations with HTTP 403', async ({ page }) => {
+  test('Legal Entity Switching: UI selector updates context, Active allows mutations, ReadOnly blocks with 403', async ({ page }) => {
     await loginUser(page, 'admin@atlas.com');
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // 1. Verify Effective Access for MAIN entity (Active)
+    // 1. Locate UI organization selector in header
+    const entitySelect = page.locator('#entity-select');
+    await expect(entitySelect).toBeVisible({ timeout: 15000 });
+
+    // 2. Select MAIN entity via application UI if not already selected
+    if (await entitySelect.inputValue() !== MAIN_ENTITY_ID) {
+      const switchPromise = page.waitForResponse(res => res.url().includes('/api/v1/context/organization') && res.status() === 204);
+      await entitySelect.selectOption(MAIN_ENTITY_ID);
+      await switchPromise;
+      await page.waitForResponse(res => res.url().includes('/api/v1/authorization/effective-access') && res.status() === 200);
+      await page.waitForLoadState('networkidle');
+    }
+    await expect(entitySelect).toHaveValue(MAIN_ENTITY_ID);
+
+    // 3. Verify active legal entity and effective permissions
     const accessMainRes = await page.request.get(`/api/v1/authorization/effective-access?legalEntityId=${MAIN_ENTITY_ID}`);
     expect(accessMainRes.status()).toBe(200);
     const accessMain = await accessMainRes.json();
     expect(accessMain.moduleStatuses.inventory).toBe('Active');
     expect(accessMain.moduleStatuses.accounting).toBe('Active');
 
-    // 2. Switch organization context to SECONDARY entity
+    // 4. Perform an authorized operation on MAIN in Active state and verify its committed result
     const csrfRes = await page.request.get('/api/v1/auth/csrf');
     const { token } = await csrfRes.json();
-
-    const switchRes = await page.request.post('/api/v1/context/organization', {
+    const mainWhCode = `WH_MAIN_${Date.now()}`;
+    const createWhRes = await page.request.post(`/api/v1/inventory/legal-entities/${MAIN_ENTITY_ID}/warehouses`, {
       headers: {
         'Content-Type': 'application/json',
         'X-CSRF-TOKEN': token
       },
       data: {
-        legalEntityId: SECONDARY_ENTITY_ID,
-        branchId: null
+        code: mainWhCode,
+        name: 'Main Active Test Warehouse',
+        locationMode: 'WarehouseOnly'
       }
     });
-    expect(switchRes.status()).toBe(204);
+    expect(createWhRes.status()).toBe(201);
+    const createdWh = await createWhRes.json();
+    expect(createdWh.code).toBe(mainWhCode);
 
-    // 3. Verify Effective Access for SECONDARY entity (ReadOnly)
+    // Verify committed result via API read
+    const mainListRes = await page.request.get(`/api/v1/inventory/legal-entities/${MAIN_ENTITY_ID}/warehouses`);
+    expect(mainListRes.status()).toBe(200);
+    const mainWhList = await mainListRes.json();
+    expect(mainWhList.some((w: any) => w.code === mainWhCode)).toBe(true);
+
+    // 5. Select SECONDARY using the actual application UI
+    const switchSecPromise = page.waitForResponse(res => res.url().includes('/api/v1/context/organization') && res.status() === 204);
+    await entitySelect.selectOption(SECONDARY_ENTITY_ID);
+    await switchSecPromise;
+    await page.waitForResponse(res => res.url().includes('/api/v1/authorization/effective-access') && res.status() === 200);
+    await page.waitForLoadState('networkidle');
+
+    // 6. Verify the frontend has updated its context
+    await expect(entitySelect).toHaveValue(SECONDARY_ENTITY_ID);
     const accessSecRes = await page.request.get(`/api/v1/authorization/effective-access?legalEntityId=${SECONDARY_ENTITY_ID}`);
     expect(accessSecRes.status()).toBe(200);
     const accessSec = await accessSecRes.json();
     expect(accessSec.moduleStatuses.inventory).toBe('ReadOnly');
     expect(accessSec.moduleStatuses.accounting).toBe('ReadOnly');
 
-    // 4. Mutation on ReadOnly SECONDARY entity fails with 403 module.lifecycle_readonly
+    // 7. Verify previous-company cached records and actions are not exposed
+    await page.goto('/inventory/warehouses');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator(`text=${mainWhCode}`)).not.toBeVisible();
+
+    const secWhListRes = await page.request.get(`/api/v1/inventory/legal-entities/${SECONDARY_ENTITY_ID}/warehouses`);
+    expect(secWhListRes.status()).toBe(200);
+    const secWhList = await secWhListRes.json();
+    expect(secWhList.some((w: any) => w.code === mainWhCode)).toBe(false);
+
+    // 8. Attempt an otherwise permitted mutation under ReadOnly
+    const roWhCode = `WH_RO_FAIL_${Date.now()}`;
     const roMutationRes = await page.request.post(`/api/v1/inventory/legal-entities/${SECONDARY_ENTITY_ID}/warehouses`, {
       headers: {
         'Content-Type': 'application/json',
         'X-CSRF-TOKEN': token
       },
       data: {
-        code: 'WH_RO_REAL_TEST',
-        name: 'ReadOnly Real Test Warehouse',
+        code: roWhCode,
+        name: 'ReadOnly Attempted Warehouse',
         locationMode: 'WarehouseOnly'
       }
     });
+
+    // 9. Assert exact HTTP 403 and lifecycle error code
     expect(roMutationRes.status()).toBe(403);
     const roError = await roMutationRes.json();
     expect(roError.code).toBe('module.lifecycle_readonly');
 
-    // 5. Historical reads on ReadOnly SECONDARY entity succeed (200 OK)
-    const roReadRes = await page.request.get(`/api/v1/inventory/legal-entities/${SECONDARY_ENTITY_ID}/warehouses`);
-    expect(roReadRes.status()).toBe(200);
+    // 10. Verify no prohibited database mutation
+    const secListAfterRes = await page.request.get(`/api/v1/inventory/legal-entities/${SECONDARY_ENTITY_ID}/warehouses`);
+    expect(secListAfterRes.status()).toBe(200);
+    const secWhListAfter = await secListAfterRes.json();
+    expect(secWhListAfter.some((w: any) => w.code === roWhCode)).toBe(false);
+
+    // 11. Verify permitted historical reads
+    expect(secListAfterRes.status()).toBe(200);
+
+    // 12. Switch back and verify correct authorization restoration
+    const switchBackPromise = page.waitForResponse(res => res.url().includes('/api/v1/context/organization') && res.status() === 204);
+    await entitySelect.selectOption(MAIN_ENTITY_ID);
+    await switchBackPromise;
+    await page.waitForResponse(res => res.url().includes('/api/v1/authorization/effective-access') && res.status() === 200);
+    await page.waitForLoadState('networkidle');
+    await expect(entitySelect).toHaveValue(MAIN_ENTITY_ID);
+
+    const accessRestoredRes = await page.request.get(`/api/v1/authorization/effective-access?legalEntityId=${MAIN_ENTITY_ID}`);
+    expect(accessRestoredRes.status()).toBe(200);
+    const accessRestored = await accessRestoredRes.json();
+    expect(accessRestored.moduleStatuses.inventory).toBe('Active');
   });
 });

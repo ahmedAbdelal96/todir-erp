@@ -84,10 +84,16 @@ public sealed class NpgsqlModuleLifecycleEnforcer(NpgsqlDataSource dataSource, I
         var rawStatusObj = await command.ExecuteScalarAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
 
+        var rawStatus = rawStatusObj?.ToString();
+        return EvaluateStatus(rawStatus, manifest.Purchasable, isMutation);
+    }
+
+    public static ModuleAccessDecision EvaluateStatus(string? rawStatus, bool isPurchasable, bool isMutation)
+    {
         string status;
-        if (rawStatusObj is not null)
+        if (rawStatus is not null)
         {
-            status = rawStatusObj.ToString()!;
+            status = rawStatus;
             if (!ValidStatuses.Contains(status))
             {
                 // Invalid or unknown lifecycle status must FAIL CLOSED
@@ -99,7 +105,7 @@ public sealed class NpgsqlModuleLifecycleEnforcer(NpgsqlDataSource dataSource, I
             // Missing module instance:
             // Core/non-purchasable modules default to Active.
             // Purchasable modules require explicit operational activation; fail closed if absent.
-            if (!manifest.Purchasable)
+            if (!isPurchasable)
             {
                 status = "Active";
             }
@@ -115,7 +121,8 @@ public sealed class NpgsqlModuleLifecycleEnforcer(NpgsqlDataSource dataSource, I
         {
             if (isMutation)
             {
-                return new ModuleAccessDecision(false, true, status, "module.lifecycle_readonly");
+                var code = normStatus == "winddown" ? "module.lifecycle_wind_down" : "module.lifecycle_readonly";
+                return new ModuleAccessDecision(false, true, status, code);
             }
             return new ModuleAccessDecision(true, true, status, null);
         }

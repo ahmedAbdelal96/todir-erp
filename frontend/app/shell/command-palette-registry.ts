@@ -171,5 +171,16 @@ export function buildCommandPaletteItems({
     });
   }
 
+  if (canPerform("manufacturing.production.manage", "manufacturing") || canPerform("manufacturing.production.read", "manufacturing")) {
+    items.push({
+      id: "action-manufacturing-orders",
+      title: t("commandPalette.actionManufacturingOrders", "أوامر الإنتاج والتصنيع"),
+      subtitle: t("commandPalette.subtitleManufacturing", "إدارة عمليات التشغيل وأوامر الإنتاج"),
+      category: "navigation",
+      keywords: ["تصنيع", "إنتاج", "أمر تشغيل", "mrp", "production", "manufacturing"],
+      onSelect: () => navigate("/manufacturing/orders")
+    });
+  }
+
   return items;
 }

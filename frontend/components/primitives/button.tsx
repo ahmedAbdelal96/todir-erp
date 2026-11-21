@@ -18,6 +18,7 @@ export interface ButtonProps
   readonly size?: ButtonSize | undefined;
   readonly isLoading?: boolean | undefined;
   readonly isDisabled?: boolean | undefined;
+  readonly disabled?: boolean | undefined;
   readonly startIcon?: ReactNode | undefined;
   readonly endIcon?: ReactNode | undefined;
   readonly className?: string | undefined;
@@ -32,6 +33,7 @@ export function Button({
   size = "comfortable",
   isLoading = false,
   isDisabled = false,
+  disabled = false,
   startIcon,
   endIcon,
   className,
@@ -41,7 +43,7 @@ export function Button({
   type = "button",
   ...props
 }: ButtonProps): React.JSX.Element {
-  const isEffectiveDisabled = isDisabled || isLoading;
+  const isEffectiveDisabled = isDisabled || disabled || isLoading;
 
   return (
     <AriaButton

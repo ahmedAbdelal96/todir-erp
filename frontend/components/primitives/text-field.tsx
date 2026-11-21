@@ -44,7 +44,9 @@ export interface TextFieldProps
   readonly name?: string | undefined;
   readonly type?: string | undefined;
   readonly isRequired?: boolean | undefined;
+  readonly required?: boolean | undefined;
   readonly isDisabled?: boolean | undefined;
+  readonly disabled?: boolean | undefined;
   readonly autoFocus?: boolean | undefined;
   readonly onChange?: ((value: string) => void) | undefined;
 }
@@ -67,12 +69,16 @@ export function TextField({
   name,
   type,
   isRequired,
+  required,
   isDisabled,
+  disabled,
   autoFocus,
   onChange,
   ...props
 }: TextFieldProps): React.JSX.Element {
   const isEffectivelyReadOnly = isReadOnly || isLocked;
+  const effectiveIsRequired = isRequired ?? required;
+  const effectiveIsDisabled = isDisabled ?? disabled;
   const { "aria-label": explicitAriaLabel, ...restProps } = props;
   const effectiveAriaLabel = explicitAriaLabel || label || placeholder;
 
@@ -87,8 +93,8 @@ export function TextField({
       {...(defaultValue !== undefined ? { defaultValue } : {})}
       {...(name !== undefined ? { name } : {})}
       {...(type !== undefined ? { type } : {})}
-      {...(isRequired !== undefined ? { isRequired } : {})}
-      {...(isDisabled !== undefined ? { isDisabled } : {})}
+      {...(effectiveIsRequired !== undefined ? { isRequired: effectiveIsRequired } : {})}
+      {...(effectiveIsDisabled !== undefined ? { isDisabled: effectiveIsDisabled } : {})}
       {...(autoFocus !== undefined ? { autoFocus } : {})}
       {...(onChange !== undefined ? { onChange } : {})}
       isReadOnly={isEffectivelyReadOnly}

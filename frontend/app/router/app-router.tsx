@@ -27,6 +27,7 @@ import { projectsRoutes } from "@modules/projects/public.ts";
 import { serviceRoutes } from "@modules/service/public.ts";
 import { bankingRoutes } from "@modules/banking/public.ts";
 import { settingsRoutes } from "@modules/settings/public.ts";
+import { manufacturingRoutes } from "@modules/manufacturing/public.ts";
 import { useTranslation } from "react-i18next";
 
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
@@ -114,6 +115,7 @@ const workspaceRoutes: RouteObject = {
     ...protectModuleRoutes(subledgerRoutes),
     ...protectModuleRoutes(taxRoutes),
     ...protectModuleRoutes(inventoryRoutes),
+    ...protectModuleRoutes(manufacturingRoutes),
     ...protectModuleRoutes(salesRoutes),
     ...protectModuleRoutes(purchasingRoutes),
     ...protectModuleRoutes(hrRoutes),

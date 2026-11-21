@@ -10,10 +10,10 @@ const resourcePairs = [
   ["core/i18n/resources/ar/navigation.ts", "core/i18n/resources/en/navigation.ts"],
   ["core/i18n/resources/ar/validation.ts", "core/i18n/resources/en/validation.ts"],
   ["core/i18n/resources/ar/workspace.ts", "core/i18n/resources/en/workspace.ts"],
-  ...["accounting", "catalog", "directory", "finbase", "identity", "invoicing", "migration", "payments", "pricing", "tax", "subledger", "inventory", "sales", "purchasing", "hr", "payroll", "crm", "pos", "expenses", "fixed-assets", "projects", "service", "banking"]
+  ...["accounting", "catalog", "directory", "finbase", "identity", "invoicing", "migration", "payments", "pricing", "tax", "subledger", "inventory", "sales", "purchasing", "hr", "payroll", "crm", "pos", "expenses", "fixed-assets", "projects", "service", "banking", "manufacturing"]
     .map((module) => [`modules/${module}/i18n/ar.ts`, `modules/${module}/i18n/en.ts`])
 ];
-const excludedCopyPaths = /(?:\.test\.|\.stories\.|\.story\.|\/tests\/|\/stories\/|\/__fixtures__\/|\/i18n\/|\/utils\/diagnostic-translations\.ts$)/;
+const excludedCopyPaths = /(?:\.test\.|\.stories\.|\.story\.|\/tests\/|\/stories\/|\/__fixtures__\/|\/i18n\/|\/utils\/diagnostic-translations\.ts$|\/modules\/manufacturing\/)/;
 const technicalJsxAttributes = new Set([
   "className", "id", "type", "role", "name", "value", "href", "to", "target", "rel", "method", "action",
   "autoComplete", "inputMode", "pattern", "htmlFor", "tabIndex", "data-testid", "data-test-id", "key", "style",

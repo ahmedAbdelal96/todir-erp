@@ -22,6 +22,7 @@ import { projectsRoutes } from "../../modules/projects/public.ts";
 import { serviceRoutes } from "../../modules/service/public.ts";
 import { bankingRoutes } from "../../modules/banking/public.ts";
 import { settingsRoutes } from "../../modules/settings/public.ts";
+import { manufacturingRoutes } from "../../modules/manufacturing/public.ts";
 import type { ModuleNavigationRegistration, NavigationCategory } from "./route-contract.ts";
 import type { EffectiveAccess } from "../../core/runtime/effective-access.ts";
 import { isModulePermitted } from "./destination-registry.ts";
@@ -36,6 +37,7 @@ const MODULE_CATEGORIES: Record<string, NavigationCategory> = {
   purchasing: "purchasing",
   catalog: "inventory",
   inventory: "inventory",
+  manufacturing: "inventory",
   pos: "inventory",
   projects: "inventory",
   service: "inventory",
@@ -84,6 +86,7 @@ const rawRegistry: readonly ModuleNavigationRegistration[] = [
   subledgerRoutes.navigation,
   taxRoutes.navigation,
   inventoryRoutes.navigation,
+  manufacturingRoutes.navigation,
   salesRoutes.navigation,
   purchasingRoutes.navigation,
   hrRoutes.navigation,

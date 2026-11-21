@@ -63,14 +63,20 @@ This backlog tracks the phased transition of TODIR ERP SaaS from coarse single-p
 
 ---
 
-## 3. Explicit Hold: P3 Wave 2 (Deferred Scope)
+## 3. Explicit Hold: P3 Wave 2 & Subsequent Rollout Waves (Deferred Scope)
 
-Per explicit Product Owner instruction, **P3 Wave 2 must remain untouched** during this release.
+Per canonical architecture decision and explicit Product Owner instruction, **P3 Wave 2 must remain untouched** during this foundation release.
 Do not proceed to P3 Wave 2 until authorized:
-- [ ] Sales & Commercial Task Destinations (Wave 2)
-- [ ] Purchasing & Supplier Task Destinations (Wave 2)
-- [ ] Fixed Assets & Depreciation Task Destinations (Wave 2)
-- [ ] HR & Payroll Task Destinations (Wave 2)
+
+### P3 Wave 2 (Agreed Scope — Deferred):
+- [ ] Sales & Commercial Task Destinations (Quotes, Orders, Customers, Invoicing handoff)
+- [ ] Purchasing & Supplier Task Destinations (RFQs, Purchase Orders, Suppliers, Receiving handoff)
+- [ ] POS Fast-Lane Task Destinations (Register, Sessions, Daily Reconciliation)
+
+### Subsequent Rollout Waves (Preserved in Later Waves):
+- [ ] **Wave 3**: Fixed Assets & Depreciation, Expenses, Invoicing & Billing, Payments
+- [ ] **Wave 4**: HR & Employment, Payroll Runs, Attendance, Leave Management
+- [ ] **Wave 5**: Manufacturing, Projects, Field Service
 
 ---
 
@@ -83,7 +89,7 @@ Do not proceed to P3 Wave 2 until authorized:
 | **Localization Verification** | `pnpm run localization:verify` | **PASSED** | Zero missing keys, full Arabic/English parity |
 | **Frontend Unit Suite** | `pnpm run test:frontend` | **PASSED** | 260/260 tests passed (55 suites) |
 | **Permission Audit** | `node --test frontend/tests/navigation/permissions-manifest-audit.test.ts` | **PASSED** | 100% of permissions verified against 24 module manifests |
-| **Lifecycle Coverage Audit** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~ModuleLifecycleCoverageAuditTests` | **PASSED** | 2/2 tests passed (route coverage, reviewed exceptions catalog, fail-closed missing metadata) |
-| **Lifecycle Security Acceptance** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~NavigationSecurityAcceptanceTests` | **PASSED** | 15/15 tests passed with controlled Active -> ReadOnly transitions against live PostgreSQL (`todir_nav_acceptance`) |
+| **Lifecycle Coverage Audit** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~ModuleLifecycleCoverageAuditTests` | **PASSED** | 6/6 tests passed (effective execution verification, omission negative gate, missing metadata fail-closed, no filter bypass) |
+| **Lifecycle Security Acceptance** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~NavigationSecurityAcceptanceTests` | **PASSED** | 15/15 tests passed with hardened environment isolation and pure production status logic against live PostgreSQL (`todir_nav_acceptance`) |
 | **Browser E2E UI Regression** | `pnpm --dir frontend exec playwright test tests/e2e/navigation-access.spec.ts` | **PASSED** | 6/6 mock-based browser journeys passed |
-| **Browser Real-Stack Acceptance** | `pnpm --dir frontend exec playwright test tests/e2e/navigation-real-stack.spec.ts` | **PASSED** | 4/4 real-stack browser journeys passed against live ASP.NET Core API and PostgreSQL |
+| **Browser Real-Stack Acceptance** | `pnpm --dir frontend exec playwright test tests/e2e/navigation-real-stack.spec.ts` | **PASSED** | 4/4 real-stack browser journeys passed against live ASP.NET Core API and PostgreSQL with genuine UI organization switching |

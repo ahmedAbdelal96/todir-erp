@@ -22,6 +22,9 @@ public sealed class ModuleOperationMetadata(string moduleId, ModuleOperationKind
     public bool IsMutation => Kind is ModuleOperationKind.Mutation or ModuleOperationKind.Administrative;
 }
 
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
+public sealed class ModuleLifecycleEnforcedAttribute : Attribute { }
+
 public static class ModuleEndpointExtensions
 {
     public static RouteHandlerBuilder RequireModuleMutation(this RouteHandlerBuilder builder, string moduleId, string? permission = null)
@@ -31,7 +34,10 @@ public static class ModuleEndpointExtensions
         => builder.WithMetadata(new ModuleOperationMetadata(moduleId, ModuleOperationKind.Read, permission));
 
     public static RouteGroupBuilder AddModuleLifecycleEnforcement(this RouteGroupBuilder builder)
-        => builder.AddEndpointFilter<ModuleLifecycleEndpointFilter>();
+    {
+        builder.WithMetadata(new ModuleLifecycleEnforcedAttribute());
+        return builder.AddEndpointFilter<ModuleLifecycleEndpointFilter>();
+    }
 }
 
 public sealed class ModuleLifecycleEndpointFilter : IEndpointFilter

@@ -405,6 +405,127 @@ export const INVENTORY_DESTINATIONS: readonly NavDestination[] = [
   }
 ];
 
+export const MANUFACTURING_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "manufacturing-overview",
+    category: "inventory",
+    moduleId: "manufacturing",
+    path: "/manufacturing",
+    labelKey: "tabs.overview",
+    fallbackLabel: "لوحة التحكم وأولويات العمل",
+    icon: "dashboard",
+    permission: { anyOf: ["manufacturing.read", "manufacturing.production.read", "manufacturing.mrp.read", "manufacturing.execution.manage"] },
+    order: 10,
+    isPrimary: true,
+    mode: "read",
+    keywords: ["تصنيع", "لوحة التحكم", "أولويات", "نظرة عامة", "manufacturing", "overview"]
+  },
+  {
+    id: "manufacturing-orders",
+    category: "inventory",
+    moduleId: "manufacturing",
+    path: "/manufacturing/orders",
+    labelKey: "tabs.orders",
+    fallbackLabel: "أوامر الإنتاج والتصنيع",
+    icon: "assignment",
+    permission: { anyOf: ["manufacturing.production.read", "manufacturing.production.manage", "manufacturing.production.create", "manufacturing.production.release"] },
+    order: 20,
+    mode: "mixed",
+    keywords: ["أمر تصنيع", "أوامر الإنتاج", "تشغيل", "production orders", "work orders"]
+  },
+  {
+    id: "manufacturing-shop-floor",
+    category: "inventory",
+    moduleId: "manufacturing",
+    path: "/manufacturing/shop-floor",
+    labelKey: "tabs.shopFloor",
+    fallbackLabel: "صالة التشغيل وأرضية المصنع",
+    icon: "precision_manufacturing",
+    permission: { anyOf: ["manufacturing.execution.manage", "manufacturing.production.execute"] },
+    order: 30,
+    mode: "mixed",
+    keywords: ["صالة التشغيل", "طابور العمليات", "مشغل", "ماكينة", "shop floor", "execution"]
+  },
+  {
+    id: "manufacturing-materials",
+    category: "inventory",
+    moduleId: "manufacturing",
+    path: "/manufacturing/materials",
+    labelKey: "tabs.materials",
+    fallbackLabel: "جاهزية وصرف المواد الخام",
+    icon: "category",
+    permission: { anyOf: ["manufacturing.material.read", "manufacturing.material.issue", "manufacturing.material.consume", "manufacturing.material.return", "manufacturing.execution.manage"] },
+    order: 40,
+    mode: "mixed",
+    keywords: ["صرف خامات", "حجز مواد", "استهلاك", "ارتجاع", "materials", "issuance"]
+  },
+  {
+    id: "manufacturing-mrp",
+    category: "inventory",
+    moduleId: "manufacturing",
+    path: "/manufacturing/mrp",
+    labelKey: "tabs.mrp",
+    fallbackLabel: "تخطيط المتطلبات والإنتاج (MRP)",
+    icon: "schedule",
+    permission: { anyOf: ["manufacturing.mrp.read", "manufacturing.mrp.manage", "manufacturing.mrp.run", "manufacturing.planning.read", "manufacturing.planning.run", "manufacturing.planning.firm"] },
+    order: 50,
+    mode: "mixed",
+    keywords: ["تخطيط", "mrp", "mps", "توقعات", "عجز خامات", "planning", "forecast"]
+  },
+  {
+    id: "manufacturing-definitions",
+    category: "inventory",
+    moduleId: "manufacturing",
+    path: "/manufacturing/definitions",
+    labelKey: "tabs.definitions",
+    fallbackLabel: "البيانات الأساسية وقوائم المواد (BOM)",
+    icon: "schema",
+    permission: { anyOf: ["manufacturing.definition.read", "manufacturing.definition.manage", "manufacturing.plant.manage", "manufacturing.bom.read", "manufacturing.bom.create", "manufacturing.routing.read", "manufacturing.capacity.manage"] },
+    order: 60,
+    mode: "mixed",
+    keywords: ["قائمة مواد", "bom", "وصفة", "مسار عمليات", "مصانع", "مراكز عمل", "definitions", "routing"]
+  },
+  {
+    id: "manufacturing-capacity",
+    category: "inventory",
+    moduleId: "manufacturing",
+    path: "/manufacturing/capacity",
+    labelKey: "tabs.capacity",
+    fallbackLabel: "الطاقة الإنتاجية ومراكز العمل",
+    icon: "event_available",
+    permission: { anyOf: ["manufacturing.capacity.manage", "manufacturing.read"] },
+    order: 70,
+    mode: "mixed",
+    keywords: ["طاقة", "ساعات تشغيل", "تقويم", "توقف وصيانة", "capacity", "work centers"]
+  },
+  {
+    id: "manufacturing-genealogy",
+    category: "inventory",
+    moduleId: "manufacturing",
+    path: "/manufacturing/genealogy",
+    labelKey: "tabs.genealogy",
+    fallbackLabel: "شجرة تتبع التشغيلات (Genealogy)",
+    icon: "account_tree",
+    permission: { anyOf: ["manufacturing.production.read", "manufacturing.read"] },
+    order: 80,
+    mode: "read",
+    keywords: ["تتبع", "تشغيلة", "شجرة", "genealogy", "traceability", "lot"]
+  },
+  {
+    id: "manufacturing-costing",
+    category: "inventory",
+    moduleId: "manufacturing",
+    path: "/manufacturing/costing",
+    labelKey: "tabs.costing",
+    fallbackLabel: "تكاليف الإنتاج وإقفال الـ WIP",
+    icon: "payments",
+    permission: { anyOf: ["manufacturing.cost.read", "manufacturing.cost.manage", "manufacturing.cost.sensitive.read"] },
+    order: 90,
+    mode: "mixed",
+    keywords: ["تكاليف تصنيع", "فروق التكاليف", "تحت التشغيل", "wip", "costing", "variance"]
+  }
+];
+
 export function isDestinationPermitted(
   dest: NavDestination,
   access: EffectiveAccess | null | undefined

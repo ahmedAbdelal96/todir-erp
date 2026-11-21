@@ -47,6 +47,8 @@ import { ar as bankingAr } from "../modules/banking/i18n/ar.ts";
 import { en as bankingEn } from "../modules/banking/i18n/en.ts";
 import { ar as settingsAr } from "../modules/settings/i18n/ar.ts";
 import { en as settingsEn } from "../modules/settings/i18n/en.ts";
+import { ar as manufacturingAr } from "../modules/manufacturing/i18n/ar.ts";
+import { en as manufacturingEn } from "../modules/manufacturing/i18n/en.ts";
 
 const resources = {
   ar: {
@@ -73,6 +75,7 @@ const resources = {
     projects: projectsAr,
     service: serviceAr,
     banking: bankingAr,
+    manufacturing: manufacturingAr,
     settings: settingsAr
   },
   en: {
@@ -99,6 +102,7 @@ const resources = {
     projects: projectsEn,
     service: serviceEn,
     banking: bankingEn,
+    manufacturing: manufacturingEn,
     settings: settingsEn
   }
 } as const;
