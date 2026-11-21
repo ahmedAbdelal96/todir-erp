@@ -13,6 +13,17 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    public async Task<Shared.Contracts.Purchasing.ManufacturingSubcontractSourceSnapshot?> GetManufacturingSubcontractSourceAsync(TenantId tenant, Guid legalEntityId, Guid purchaseOrderId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await SetTenantAsync(connection, null, tenant, ct);
+        await using var command = new NpgsqlCommand("select supplier_party_id,currency_code,state,net_total from business_purchasing.purchase_order where tenant_id=$1 and legal_entity_id=$2 and id=$3", connection);
+        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(legalEntityId); command.Parameters.AddWithValue(purchaseOrderId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return null;
+        return new(purchaseOrderId, legalEntityId, reader.GetGuid(0), reader.GetString(1).Trim().ToUpperInvariant(), reader.GetDecimal(3), reader.GetString(2));
+    }
+
     public async Task<IReadOnlyList<Shared.Contracts.ManufacturingPlanning.ManufacturingSupplySnapshot>> ListEligibleManufacturingSupplyAsync(TenantId tenant, Guid legalEntityId, DateOnly from, DateOnly to, CancellationToken ct)
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct);

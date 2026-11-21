@@ -19,7 +19,10 @@ public sealed partial class ManufacturingRepository(
     IEnumerable<IManufacturingDemandCapabilities>? demandCapabilities = null,
     IManufacturingSupplyCapabilities? supplyCapabilities = null,
     Shared.Contracts.Inventory.IInventoryCapabilities? inventoryCapabilities = null,
-    Shared.Contracts.Maintenance.IMaintenanceDowntimeCapabilities? maintenanceDowntime = null) : IManufacturingCostReader
+    Shared.Contracts.Maintenance.IMaintenanceDowntimeCapabilities? maintenanceDowntime = null,
+    Shared.Contracts.Quality.IQualityDecisionCapabilities? qualityDecisions = null,
+    Shared.Contracts.Hr.IHumanResourcesPayrollCapability? hrPayroll = null,
+    Shared.Contracts.Purchasing.IManufacturingSubcontractSourceCapabilities? subcontractSources = null) : IManufacturingCostReader
 
 {
     public Task<PlantResponse> CreatePlantAsync(TenantId tenant, Guid actor, CreatePlantRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
@@ -167,6 +170,36 @@ public sealed partial class ManufacturingRepository(
     public Task<ProductionOrderResponse> CreateProductionOrderAsync(TenantId tenant, Guid actor, CreateProductionOrderRequest request, Guid correlationId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, (context, token) => CreateProductionOrderInContextAsync(context, tenant, actor, request, correlationId, token), ct);
 
     public Task<ProductionOrderResponse?> GetProductionOrderAsync(TenantId tenant, Guid orderId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, (context, token) => ReadOrderAsync(context, tenant.Value, orderId, token), ct);
+
+    public Task<Guid?> GetProductionOrderLegalEntityAsync(TenantId tenant, Guid orderId, CancellationToken ct) => coordinator.ExecuteAsync(tenant,
+        (context, token) => ScalarAsync<Guid?>(context, "select legal_entity_id from business_manufacturing.production_order where tenant_id=$1 and id=$2", token, tenant.Value, orderId), ct);
+
+    public Task<Guid?> GetPlantLegalEntityAsync(TenantId tenant, Guid plantId, CancellationToken ct) => coordinator.ExecuteAsync(tenant,
+        (context, token) => ScalarAsync<Guid?>(context, "select legal_entity_id from business_manufacturing.plant where tenant_id=$1 and id=$2", token, tenant.Value, plantId), ct);
+
+    public Task<Guid?> GetOperationLegalEntityAsync(TenantId tenant, Guid operationId, CancellationToken ct) => coordinator.ExecuteAsync(tenant,
+        (context, token) => ScalarAsync<Guid?>(context, "select o.legal_entity_id from business_manufacturing.production_operation p join business_manufacturing.production_order o on o.tenant_id=p.tenant_id and o.id=p.production_order_id where p.tenant_id=$1 and p.id=$2", token, tenant.Value, operationId), ct);
+
+    public Task<Guid?> GetWorkCenterLegalEntityAsync(TenantId tenant, Guid workCenterId, CancellationToken ct) => coordinator.ExecuteAsync(tenant,
+        (context, token) => ScalarAsync<Guid?>(context, "select p.legal_entity_id from business_manufacturing.work_center w join business_manufacturing.plant p on p.tenant_id=w.tenant_id and p.id=w.plant_id where w.tenant_id=$1 and w.id=$2", token, tenant.Value, workCenterId), ct);
+
+    public Task<Guid?> GetPlanningRunLegalEntityAsync(TenantId tenant, Guid runId, CancellationToken ct) => coordinator.ExecuteAsync(tenant,
+        (context, token) => ScalarAsync<Guid?>(context, "select legal_entity_id from business_manufacturing.planning_run where tenant_id=$1 and id=$2", token, tenant.Value, runId), ct);
+
+    public Task<Guid?> GetMpsPlanLegalEntityAsync(TenantId tenant, Guid planId, CancellationToken ct) => coordinator.ExecuteAsync(tenant,
+        (context, token) => ScalarAsync<Guid?>(context, "select legal_entity_id from business_manufacturing.mps_plan where tenant_id=$1 and id=$2", token, tenant.Value, planId), ct);
+
+    public Task<Guid?> GetPlannedSupplyLegalEntityAsync(TenantId tenant, Guid supplyId, CancellationToken ct) => coordinator.ExecuteAsync(tenant,
+        (context, token) => ScalarAsync<Guid?>(context, "select r.legal_entity_id from business_manufacturing.planned_supply s join business_manufacturing.planning_run r on r.tenant_id=s.tenant_id and r.id=s.planning_run_id where s.tenant_id=$1 and s.id=$2", token, tenant.Value, supplyId), ct);
+
+    public Task<Guid?> GetOutputLegalEntityAsync(TenantId tenant, Guid outputId, CancellationToken ct) => coordinator.ExecuteAsync(tenant,
+        (context, token) => ScalarAsync<Guid?>(context, "select o.legal_entity_id from business_manufacturing.production_output p join business_manufacturing.production_order o on o.tenant_id=p.tenant_id and o.id=p.production_order_id where p.tenant_id=$1 and p.id=$2", token, tenant.Value, outputId), ct);
+
+    public Task<Guid?> GetMaterialEventLegalEntityAsync(TenantId tenant, Guid inputEventId, CancellationToken ct) => coordinator.ExecuteAsync(tenant,
+        (context, token) => ScalarAsync<Guid?>(context, "select o.legal_entity_id from business_manufacturing.production_material_event e join business_manufacturing.production_material_requirement r on r.tenant_id=e.tenant_id and r.id=e.requirement_id join business_manufacturing.production_order o on o.tenant_id=r.tenant_id and o.id=r.production_order_id where e.tenant_id=$1 and e.id=$2", token, tenant.Value, inputEventId), ct);
+
+    public Task<Guid?> GetOutputKeyLegalEntityAsync(TenantId tenant, string key, CancellationToken ct) => coordinator.ExecuteAsync(tenant,
+        (context, token) => ScalarAsync<Guid?>(context, "select o.legal_entity_id from business_manufacturing.production_output p join business_manufacturing.production_order o on o.tenant_id=p.tenant_id and o.id=p.production_order_id where p.tenant_id=$1 and p.idempotency_key=$2", token, tenant.Value, key), ct);
     public Task<IReadOnlyList<ProductionOrderResponse>> ListProductionOrdersAsync(TenantId tenant, Guid legalEntityId, string? state, Guid? productVariantId, int limit, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
         await using var command = Command(context, "select id,number,legal_entity_id,plant_id,product_variant_id,ordered_qty,uom_code,need_date,state,material_state,operation_state,quality_state,cost_state,completed_qty,scrap_qty,row_version from business_manufacturing.production_order where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or state=$3) and ($4::uuid is null or product_variant_id=$4) order by need_date,id limit $5", tenant.Value, legalEntityId, Db(state), Db(productVariantId), Math.Clamp(limit, 1, 200));

@@ -32,6 +32,15 @@ public interface IPurchasingReadCapabilities
     Task<bool> IsPurchaseOrderApprovedAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default);
 }
 
+public sealed record ManufacturingSubcontractSourceSnapshot(Guid PurchaseOrderId, Guid LegalEntityId,
+    Guid SupplierPartyId, string CurrencyCode, decimal AuthorizedAmount, string State);
+
+public interface IManufacturingSubcontractSourceCapabilities
+{
+    Task<ManufacturingSubcontractSourceSnapshot?> GetManufacturingSubcontractSourceAsync(TenantId tenantId,
+        Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default);
+}
+
 public sealed record PurchaseLandedCostLine(Guid PurchaseOrderLineId, Guid? ProductVariantId, decimal Quantity, decimal UnitPrice, string CurrencyCode);
 public sealed record PurchaseLandedCostContext(Guid PurchaseOrderId, Guid LegalEntityId, Guid SupplierPartyId, string CurrencyCode, IReadOnlyList<PurchaseLandedCostLine> Lines);
 

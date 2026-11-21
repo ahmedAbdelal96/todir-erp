@@ -1,4 +1,7 @@
 using Core.Transactions;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Modules.Manufacturing.DTOs;
 using Modules.Manufacturing.Entities;
 using Npgsql;
@@ -14,6 +17,8 @@ namespace Modules.Manufacturing.Repositories;
 /// </summary>
 public sealed partial class ManufacturingRepository
 {
+    private static string Hash<T>(T value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value)))).ToLowerInvariant();
+
     public Task AssignOperationResourceAsync(TenantId tenant, Guid actor, Guid orderId, Guid operationId, AssignOperationResourceRequest request, CancellationToken ct) =>
         coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
@@ -29,17 +34,28 @@ public sealed partial class ManufacturingRepository
     public Task<ProductionCostResponse> RecordLaborFactAsync(TenantId tenant, Guid actor, Guid orderId, RecordLaborFactRequest request, CancellationToken ct) =>
         coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
-            if (request.Minutes <= 0 || request.RateAmount < 0 || string.IsNullOrWhiteSpace(request.SourceRef) || string.IsNullOrWhiteSpace(request.IdempotencyKey)) throw new ManufacturingException("manufacturing.labor_fact_invalid");
+            if (request.Minutes <= 0 || request.RateAmount < 0 || request.EmployeeId is null || string.IsNullOrWhiteSpace(request.SourceRef) || string.IsNullOrWhiteSpace(request.IdempotencyKey)) throw new ManufacturingException("manufacturing.labor_fact_invalid");
             var order = await ReadOrderAsync(context, tenant.Value, orderId, token) ?? throw new ManufacturingException("manufacturing.production_order_not_found");
+            if (hrPayroll is null) throw new ManufacturingException("manufacturing.hr_provider_unavailable");
+            if (!await hrPayroll.EmployeeBelongsToLegalEntityAsync(tenant, request.EmployeeId.Value, order.LegalEntityId, token)) throw new ManufacturingException("manufacturing.employee_not_eligible");
             if (request.ProductionOperationId is { } operationId && !await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_operation where tenant_id=$1 and id=$2 and production_order_id=$3)", token, tenant.Value, operationId, orderId)) throw new ManufacturingException("manufacturing.operation_not_found");
             if (request.ResourceId is { } resourceId && !await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.manufacturing_resource r join business_manufacturing.production_order o on o.tenant_id=r.tenant_id and o.plant_id=r.plant_id where r.tenant_id=$1 and r.id=$2 and o.id=$3)", token, tenant.Value, resourceId, orderId)) throw new ManufacturingException("manufacturing.resource_not_found");
+            var requestHash = Hash(request);
             var existingLaborId = await ScalarAsync<Guid?>(context, "select id from business_manufacturing.production_labor_fact where tenant_id=$1 and idempotency_key=$2", token, tenant.Value, request.IdempotencyKey);
             var factId = existingLaborId ?? Guid.CreateVersion7();
+            if (existingLaborId is { } existing)
+            {
+                var storedHash = await ScalarAsync<string?>(context, "select request_hash from business_manufacturing.production_labor_fact where tenant_id=$1 and id=$2", token, tenant.Value, existing);
+                if (storedHash is not null && !string.Equals(storedHash, requestHash, StringComparison.Ordinal)) throw new ManufacturingException("manufacturing.idempotency_conflict");
+                if (storedHash is null) await ExecuteAsync(context, "update business_manufacturing.production_labor_fact set request_hash=$3 where tenant_id=$1 and id=$2", token, tenant.Value, existing, requestHash);
+            }
             if (existingLaborId is null)
             {
                 var amount = request.RateAmount * request.Minutes / 60m;
-                await ExecuteAsync(context, "insert into business_manufacturing.production_labor_fact(tenant_id,id,production_order_id,production_operation_id,resource_id,employee_id,work_date,minutes,rate_amount,currency_code,source_ref,idempotency_key) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)", token, tenant.Value, factId, orderId, Db(request.ProductionOperationId), Db(request.ResourceId), Db(request.EmployeeId), request.WorkDate, request.Minutes, request.RateAmount, request.CurrencyCode.ToUpperInvariant(), request.SourceRef, request.IdempotencyKey);
-                await ExecuteAsync(context, "insert into business_manufacturing.production_actual_cost_fact(tenant_id,id,production_order_id,source_type,source_id,cost_category,amount,currency_code,quantity,source_date,idempotency_key) values($1,$2,$3,'LaborFact',$4,'Labor',$5,$6,$7,$8,$9)", token, tenant.Value, Guid.CreateVersion7(), orderId, factId.ToString("D"), amount, request.CurrencyCode.ToUpperInvariant(), request.Minutes, request.WorkDate, $"labor:{request.IdempotencyKey}");
+                await ExecuteAsync(context, "insert into business_manufacturing.production_labor_fact(tenant_id,id,production_order_id,production_operation_id,resource_id,employee_id,work_date,minutes,rate_amount,currency_code,source_ref,idempotency_key,request_hash) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", token, tenant.Value, factId, orderId, Db(request.ProductionOperationId), Db(request.ResourceId), request.EmployeeId.Value, request.WorkDate, request.Minutes, request.RateAmount, request.CurrencyCode.Trim().ToUpperInvariant(), request.SourceRef.Trim(), request.IdempotencyKey, requestHash);
+                var costFactId = Guid.CreateVersion7();
+                await ExecuteAsync(context, "insert into business_manufacturing.production_actual_cost_fact(tenant_id,id,production_order_id,source_type,source_id,cost_category,amount,currency_code,quantity,source_date,idempotency_key) values($1,$2,$3,'LaborFact',$4,'Labor',$5,$6,$7,$8,$9)", token, tenant.Value, costFactId, orderId, factId.ToString("D"), amount, request.CurrencyCode.Trim().ToUpperInvariant(), request.Minutes, request.WorkDate, $"labor:{request.IdempotencyKey}");
+                context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "ProductionCostFactRecordedV1", JsonSerializer.Serialize(new { productionOrderId = orderId, legalEntityId = order.LegalEntityId, costFactId, costCategory = "Labor", amount, currencyCode = request.CurrencyCode.Trim().ToUpperInvariant(), sourceDate = request.WorkDate, sourceReference = factId.ToString("D") }), tenant, DateTimeOffset.UtcNow, orderId, orderId, "manufacturing"));
                 if (request.ProductionOperationId is { } laborOperationId) await ExecuteAsync(context, "update business_manufacturing.production_operation set actual_minutes=coalesce(actual_minutes,0)+$1,row_version=row_version+1 where tenant_id=$2 and id=$3", token, request.Minutes, tenant.Value, laborOperationId);
                 await ExecuteAsync(context, "update business_manufacturing.production_order set cost_state='Accumulating',updated_at=now(),row_version=row_version+1 where tenant_id=$1 and id=$2", token, tenant.Value, orderId);
                 await RefreshVarianceAsync(context, tenant.Value, orderId, token);
@@ -48,11 +64,11 @@ public sealed partial class ManufacturingRepository
             return await GetProductionCostInContextAsync(context, tenant.Value, orderId, token);
         }, ct);
 
-    public Task<IReadOnlyList<ProductionOperationResponse>> ListShopFloorQueueAsync(TenantId tenant, Guid plantId, DateOnly from, DateOnly to, string? state, CancellationToken ct) =>
+    public Task<IReadOnlyList<ProductionOperationResponse>> ListShopFloorQueueAsync(TenantId tenant, Guid plantId, DateOnly from, DateOnly to, string? state, int limit, CancellationToken ct) =>
         coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
             var rows = new List<ProductionOperationResponse>();
-            await using var command = Command(context, "select p.id,p.production_order_id,p.sequence_no,p.name,p.work_center_id,p.state,p.completed_qty,p.actual_good_qty,p.actual_scrap_qty,p.actual_minutes,p.quality_gate_required,p.row_version from business_manufacturing.production_operation p join business_manufacturing.production_order o on o.tenant_id=p.tenant_id and o.id=p.production_order_id where p.tenant_id=$1 and o.plant_id=$2 and o.need_date between $3 and $4 and o.state in ('Released','InProgress','OnHold') and ($5::text is null or p.state=$5) order by o.need_date,p.sequence_no,p.id", tenant.Value, plantId, from, to, Db(state));
+            await using var command = Command(context, "select p.id,p.production_order_id,p.sequence_no,p.name,p.work_center_id,p.state,p.completed_qty,p.actual_good_qty,p.actual_scrap_qty,p.actual_minutes,p.quality_gate_required,p.row_version from business_manufacturing.production_operation p join business_manufacturing.production_order o on o.tenant_id=p.tenant_id and o.id=p.production_order_id where p.tenant_id=$1 and o.plant_id=$2 and o.need_date between $3 and $4 and o.state in ('Released','InProgress','OnHold') and ($5::text is null or p.state=$5) order by o.need_date,p.sequence_no,p.id limit $6", tenant.Value, plantId, from, to, Db(state), Math.Clamp(limit, 1, 1000));
             await using var reader = await command.ExecuteReaderAsync(token);
             while (await reader.ReadAsync(token)) rows.Add(ReadOperation(reader));
             return (IReadOnlyList<ProductionOperationResponse>)rows;
@@ -62,21 +78,33 @@ public sealed partial class ManufacturingRepository
         coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
             if (request.DecisionState is not ("Pending" or "Passed" or "Failed" or "Blocked")) throw new ManufacturingException("manufacturing.quality_gate_invalid");
-            if (request.Required && !request.CapabilityAvailable && request.DecisionState == "Passed") throw new ManufacturingException("manufacturing.quality_capability_unavailable");
-            _ = await ScalarAsync<Guid>(context, "select id from business_manufacturing.production_order where tenant_id=$1 and id=$2", token, tenant.Value, orderId);
+            var legalEntityId = await ScalarAsync<Guid?>(context, "select legal_entity_id from business_manufacturing.production_order where tenant_id=$1 and id=$2", token, tenant.Value, orderId) ?? throw new ManufacturingException("manufacturing.production_order_not_found");
             if (request.ProductionOperationId is { } operationId && !await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_operation where tenant_id=$1 and id=$2 and production_order_id=$3)", token, tenant.Value, operationId, orderId)) throw new ManufacturingException("manufacturing.operation_not_found");
+            var capabilityAvailable = false; var decisionState = request.DecisionState; var evidence = request.SourceRef;
+            if (request.DecisionState is "Passed" or "Failed")
+            {
+                if (qualityDecisions is null) throw new ManufacturingException("manufacturing.quality_provider_unavailable");
+                var snapshot = await qualityDecisions.GetProductionDecisionAsync(tenant, legalEntityId, orderId, request.ProductionOperationId, token);
+                if (snapshot is null || snapshot.ProductionOrderId != orderId || snapshot.ProductionOperationId != request.ProductionOperationId || snapshot.DecisionState != request.DecisionState || !snapshot.CapabilityAvailable || string.IsNullOrWhiteSpace(snapshot.EvidenceReference)) throw new ManufacturingException("manufacturing.quality_decision_unverified");
+                capabilityAvailable = true; evidence = snapshot.EvidenceReference;
+            }
+            else if (request.DecisionState == "Pending")
+            {
+                if (request.Required && qualityDecisions is null) capabilityAvailable = false;
+                else capabilityAvailable = request.CapabilityAvailable;
+            }
             var gateId = await ScalarAsync<Guid?>(context, "select id from business_manufacturing.production_quality_gate where tenant_id=$1 and production_order_id=$2 and production_operation_id is not distinct from $3::uuid", token, tenant.Value, orderId, Db(request.ProductionOperationId)) ?? Guid.CreateVersion7();
-            await ExecuteAsync(context, "insert into business_manufacturing.production_quality_gate(tenant_id,id,production_order_id,production_operation_id,required,capability_available,decision_state,source_ref,decided_at) values($1,$2,$3,$4,$5,$6,$7,$8,case when $7 in ('Passed','Failed') then now() else null end) on conflict (tenant_id,id) do update set required=excluded.required,capability_available=excluded.capability_available,decision_state=excluded.decision_state,source_ref=excluded.source_ref,decided_at=excluded.decided_at", token, tenant.Value, gateId, orderId, Db(request.ProductionOperationId), request.Required, request.CapabilityAvailable, request.DecisionState, Db(request.SourceRef));
+            await ExecuteAsync(context, "insert into business_manufacturing.production_quality_gate(tenant_id,id,production_order_id,production_operation_id,required,capability_available,decision_state,source_ref,decided_at) values($1,$2,$3,$4,$5,$6,$7,$8,case when $7 in ('Passed','Failed') then now() else null end) on conflict (tenant_id,id) do update set required=excluded.required,capability_available=excluded.capability_available,decision_state=excluded.decision_state,source_ref=excluded.source_ref,decided_at=excluded.decided_at", token, tenant.Value, gateId, orderId, Db(request.ProductionOperationId), request.Required, capabilityAvailable, decisionState, Db(evidence));
             await ExecuteAsync(context, "update business_manufacturing.production_order set quality_state=case when exists(select 1 from business_manufacturing.production_quality_gate g where g.tenant_id=$1 and g.production_order_id=$2 and g.required and (g.decision_state in ('Failed','Blocked') or not g.capability_available)) then 'Blocked' when exists(select 1 from business_manufacturing.production_quality_gate g where g.tenant_id=$1 and g.production_order_id=$2 and g.required and g.decision_state='Pending') then 'Pending' when exists(select 1 from business_manufacturing.production_quality_gate g where g.tenant_id=$1 and g.production_order_id=$2 and g.required) then 'Passed' else 'NotRequired' end,updated_at=now(),row_version=row_version+1 where tenant_id=$1 and id=$2", token, tenant.Value, orderId);
             await AuditAsync(context, tenant.Value, "ProductionQualityGate", gateId, "decision_recorded", actor, null, request, token);
             return await ReadQualityGateAsync(context, tenant.Value, gateId, token) ?? throw new ManufacturingException("manufacturing.quality_gate_not_found");
         }, ct);
 
-    public Task<IReadOnlyList<QualityGateResponse>> ListQualityGatesAsync(TenantId tenant, Guid orderId, CancellationToken ct) =>
+    public Task<IReadOnlyList<QualityGateResponse>> ListQualityGatesAsync(TenantId tenant, Guid orderId, int limit, CancellationToken ct) =>
         coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
             var result = new List<QualityGateResponse>();
-            await using var command = Command(context, "select id,production_order_id,production_operation_id,required,capability_available,decision_state,source_ref from business_manufacturing.production_quality_gate where tenant_id=$1 and production_order_id=$2 order by id", tenant.Value, orderId);
+            await using var command = Command(context, "select id,production_order_id,production_operation_id,required,capability_available,decision_state,source_ref from business_manufacturing.production_quality_gate where tenant_id=$1 and production_order_id=$2 order by id limit $3", tenant.Value, orderId, Math.Clamp(limit, 1, 1000));
             await using var reader = await command.ExecuteReaderAsync(token);
             while (await reader.ReadAsync(token)) result.Add(ReadQualityGate(reader));
             return (IReadOnlyList<QualityGateResponse>)result;
@@ -88,12 +116,32 @@ public sealed partial class ManufacturingRepository
             if (request.Quantity <= 0 || request.CommittedAmount < 0 || string.IsNullOrWhiteSpace(request.IdempotencyKey)) throw new ManufacturingException("manufacturing.subcontract_invalid");
             var order = await ReadOrderAsync(context, tenant.Value, orderId, token) ?? throw new ManufacturingException("manufacturing.production_order_not_found");
             if (request.ProductionOperationId is { } operationId && !await ScalarAsync<bool>(context, "select exists(select 1 from business_manufacturing.production_operation where tenant_id=$1 and id=$2 and production_order_id=$3)", token, tenant.Value, operationId, orderId)) throw new ManufacturingException("manufacturing.operation_not_found");
+            if (!string.Equals(request.SourceModule, "purchasing", StringComparison.OrdinalIgnoreCase) || !Guid.TryParse(request.SourceDocumentId, out var purchaseOrderId)) throw new ManufacturingException("manufacturing.subcontract_source_unverified");
+            if (request.CommittedAmount > 0m)
+            {
+                if (subcontractSources is null || request.CurrencyCode is null) throw new ManufacturingException("manufacturing.subcontract_source_unverified");
+                var source = await subcontractSources.GetManufacturingSubcontractSourceAsync(tenant, order.LegalEntityId, purchaseOrderId, token);
+                if (source is null || source.State is not ("Approved" or "Sent" or "Open" or "PartiallyCompleted") || source.AuthorizedAmount < request.CommittedAmount || !string.Equals(source.CurrencyCode, request.CurrencyCode.Trim(), StringComparison.OrdinalIgnoreCase) || request.SupplierPartyId is not null && source.SupplierPartyId != request.SupplierPartyId) throw new ManufacturingException("manufacturing.subcontract_source_unverified");
+            }
+            var requestHash = Hash(request);
             var existingId = await ScalarAsync<Guid?>(context, "select id from business_manufacturing.production_subcontract_commitment where tenant_id=$1 and idempotency_key=$2", token, tenant.Value, request.IdempotencyKey);
             if (existingId is { } replayId)
+            {
+                var storedHash = await ScalarAsync<string?>(context, "select request_hash from business_manufacturing.production_subcontract_commitment where tenant_id=$1 and id=$2", token, tenant.Value, replayId);
+                if (storedHash is not null && !string.Equals(storedHash, requestHash, StringComparison.Ordinal)) throw new ManufacturingException("manufacturing.idempotency_conflict");
+                if (storedHash is null) await ExecuteAsync(context, "update business_manufacturing.production_subcontract_commitment set request_hash=$3 where tenant_id=$1 and id=$2", token, tenant.Value, replayId, requestHash);
                 return await ReadSubcontractCommitmentAsync(context, tenant.Value, replayId, token) ?? throw new ManufacturingException("manufacturing.subcontract_not_found");
+            }
             var id = Guid.CreateVersion7();
-            await ExecuteAsync(context, "insert into business_manufacturing.production_subcontract_commitment(tenant_id,id,production_order_id,production_operation_id,source_module,source_document_id,supplier_party_id,quantity,uom_code,expected_date,committed_amount,currency_code,idempotency_key) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) on conflict (tenant_id,idempotency_key) do update set quantity=excluded.quantity,expected_date=excluded.expected_date,committed_amount=excluded.committed_amount,currency_code=excluded.currency_code", token, tenant.Value, id, orderId, Db(request.ProductionOperationId), request.SourceModule, request.SourceDocumentId, Db(request.SupplierPartyId), request.Quantity, request.UomCode, request.ExpectedDate, request.CommittedAmount, Db(request.CurrencyCode?.ToUpperInvariant()), request.IdempotencyKey);
-            if (request.CommittedAmount > 0 && request.CurrencyCode is not null) await ExecuteAsync(context, "insert into business_manufacturing.production_actual_cost_fact(tenant_id,id,production_order_id,source_type,source_id,cost_category,amount,currency_code,source_date,idempotency_key) values($1,$2,$3,$4,$5,'Subcontract',$6,$7,$8,$9) on conflict (tenant_id,idempotency_key) do nothing", token, tenant.Value, Guid.CreateVersion7(), orderId, request.SourceModule, request.SourceDocumentId, request.CommittedAmount, request.CurrencyCode.ToUpperInvariant(), request.ExpectedDate, $"subcontract:{request.IdempotencyKey}");
+            await ExecuteAsync(context, "insert into business_manufacturing.production_subcontract_commitment(tenant_id,id,production_order_id,production_operation_id,source_module,source_document_id,supplier_party_id,quantity,uom_code,expected_date,committed_amount,currency_code,idempotency_key,request_hash) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)", token, tenant.Value, id, orderId, Db(request.ProductionOperationId), request.SourceModule.Trim().ToLowerInvariant(), request.SourceDocumentId.Trim(), Db(request.SupplierPartyId), request.Quantity, request.UomCode.Trim(), request.ExpectedDate, request.CommittedAmount, Db(request.CurrencyCode?.Trim().ToUpperInvariant()), request.IdempotencyKey, requestHash);
+            if (request.CommittedAmount > 0 && request.CurrencyCode is not null)
+            {
+                var costFactId = Guid.CreateVersion7();
+                await ExecuteAsync(context, "insert into business_manufacturing.production_actual_cost_fact(tenant_id,id,production_order_id,source_type,source_id,cost_category,amount,currency_code,source_date,idempotency_key) values($1,$2,$3,'PurchaseOrder',$4,'Subcontract',$5,$6,$7,$8)", token, tenant.Value, costFactId, orderId, request.SourceDocumentId, request.CommittedAmount, request.CurrencyCode.Trim().ToUpperInvariant(), request.ExpectedDate, $"subcontract:{request.IdempotencyKey}");
+                // The purchasing document remains the commercial source, but the
+                // ledger fact identity must be unique per immutable cost fact.
+                context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "ProductionCostFactRecordedV1", JsonSerializer.Serialize(new { productionOrderId = orderId, legalEntityId = order.LegalEntityId, costFactId, costCategory = "Subcontract", amount = request.CommittedAmount, currencyCode = request.CurrencyCode.Trim().ToUpperInvariant(), sourceDate = request.ExpectedDate, sourceReference = costFactId.ToString("D") }), tenant, DateTimeOffset.UtcNow, orderId, orderId, "manufacturing"));
+            }
             await ExecuteAsync(context, "update business_manufacturing.production_order set cost_state=case when $3 > 0 then 'Accumulating' else cost_state end,updated_at=now(),row_version=row_version+1 where tenant_id=$1 and id=$2", token, tenant.Value, orderId, request.CommittedAmount);
             await RefreshVarianceAsync(context, tenant.Value, orderId, token);
             await AuditAsync(context, tenant.Value, "ProductionSubcontractCommitment", id, "created", actor, null, request, token);
@@ -122,11 +170,11 @@ public sealed partial class ManufacturingRepository
             return await ReadMpsPlanAsync(context, tenant.Value, planId, token) ?? throw new ManufacturingException("manufacturing.mps_not_found");
         }, ct);
 
-    public Task<IReadOnlyList<MpsPlanResponse>> ListMpsPlansAsync(TenantId tenant, Guid legalEntityId, Guid? plantId, Guid? productVariantId, DateOnly? from, DateOnly? to, CancellationToken ct) =>
+    public Task<IReadOnlyList<MpsPlanResponse>> ListMpsPlansAsync(TenantId tenant, Guid legalEntityId, Guid? plantId, Guid? productVariantId, DateOnly? from, DateOnly? to, int limit, CancellationToken ct) =>
         coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
             var result = new List<MpsPlanResponse>();
-            await using var command = Command(context, "select id,legal_entity_id,plant_id,product_variant_id,bucket_start,bucket_end,quantity,uom_code,state,source_ref,version from business_manufacturing.mps_plan where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or plant_id=$3) and ($4::uuid is null or product_variant_id=$4) and ($5::date is null or bucket_end >= $5) and ($6::date is null or bucket_start <= $6) order by bucket_start,product_variant_id,version desc", tenant.Value, legalEntityId, Db(plantId), Db(productVariantId), Db(from), Db(to));
+            await using var command = Command(context, "select id,legal_entity_id,plant_id,product_variant_id,bucket_start,bucket_end,quantity,uom_code,state,source_ref,version from business_manufacturing.mps_plan where tenant_id=$1 and legal_entity_id=$2 and ($3::uuid is null or plant_id=$3) and ($4::uuid is null or product_variant_id=$4) and ($5::date is null or bucket_end >= $5) and ($6::date is null or bucket_start <= $6) order by bucket_start,product_variant_id,version desc limit $7", tenant.Value, legalEntityId, Db(plantId), Db(productVariantId), Db(from), Db(to), Math.Clamp(limit, 1, 1000));
             await using var reader = await command.ExecuteReaderAsync(token);
             while (await reader.ReadAsync(token)) result.Add(ReadMpsPlan(reader));
             return (IReadOnlyList<MpsPlanResponse>)result;

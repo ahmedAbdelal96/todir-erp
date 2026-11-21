@@ -26,12 +26,14 @@ public sealed class LedgerSetupRepository(
         ("110000", "النقدية والبنوك", "Cash and Banks", "Asset", "Cash", true, "100000"),
         ("120000", "العملاء", "Accounts Receivable", "Asset", "ReceivableControl", true, "100000"),
         ("130000", "المخزون", "Inventory", "Asset", "InventoryAsset", true, "100000"),
+        ("140000", "إنتاج تحت التشغيل", "Manufacturing Work In Progress", "Asset", "ManufacturingWip", true, "100000"),
         ("200000", "الالتزامات", "Liabilities", "Liability", "Other", false, null),
         ("210000", "الموردون", "Accounts Payable", "Liability", "PayableControl", true, "200000"),
         ("215000", "بضاعة مستلمة غير مفوترة", "Goods Received Not Invoiced", "Liability", "InventoryClearing", true, "200000"),
         ("220000", "ضريبة المخرجات", "Output Tax Payable", "Liability", "Tax", true, "200000"),
         ("221000", "ضريبة المدخلات القابلة للاسترداد", "Recoverable Input Tax", "Asset", "Tax", true, "100000"),
         ("230000", "التزامات الرواتب", "Payroll Payable", "Liability", "Payroll", true, "200000"),
+        ("240000", "استحقاقات تكاليف التصنيع", "Manufacturing Cost Accrual", "Liability", "ManufacturingAccrual", true, "200000"),
         ("231000", "التزام رد مصروفات الموظفين", "Employee Reimbursement Payable", "Liability", "EmployeeReimbursement", true, "200000"),
         ("300000", "حقوق الملكية", "Equity", "Equity", "Other", false, null),
         ("310000", "الأرباح المحتجزة", "Retained Earnings", "Equity", "RetainedEarnings", true, "300000"),
@@ -41,6 +43,7 @@ public sealed class LedgerSetupRepository(
         ("500000", "المصروفات", "Expenses", "Expense", "Other", false, null),
         ("510000", "تكلفة المبيعات", "Cost of Goods Sold", "Expense", "COGS", true, "500000"),
         ("550000", "خسائر وتسويات المخزون", "Inventory Adjustment Losses", "Expense", "InventoryVariance", true, "500000"),
+        ("551000", "فروق تكاليف التصنيع", "Manufacturing Cost Variance", "Expense", "ManufacturingVariance", true, "500000"),
         ("520000", "مصروف الرواتب", "Payroll Expense", "Expense", "Payroll", true, "500000"),
         ("530000", "ديون معدومة", "Bad Debt Expense", "Expense", "BadDebt", true, "500000"),
         ("540000", "مصروفات المشتريات", "Purchase Expenses", "Expense", "Purchases", true, "500000"),
@@ -68,6 +71,9 @@ public sealed class LedgerSetupRepository(
         ("InputTaxRecoverable", "ضريبة المدخلات القابلة للاسترداد", "Recoverable Input Tax", "221000"),
         ("Cash", "النقدية", "Cash", "110000"),
         ("InventoryAsset", "مخزون", "Inventory Asset", "130000"),
+        ("ManufacturingWip", "إنتاج تحت التشغيل", "Manufacturing WIP", "140000"),
+        ("ManufacturingAccrual", "استحقاقات تكاليف التصنيع", "Manufacturing Cost Accrual", "240000"),
+        ("ManufacturingVariance", "فروق تكاليف التصنيع", "Manufacturing Cost Variance", "551000"),
         ("COGS", "تكلفة المبيعات", "Cost of Goods Sold", "510000"),
         ("InventoryOffset", "بضاعة مستلمة غير مفوترة", "Goods Received Not Invoiced", "215000"),
         ("InventoryAdjustmentGain", "أرباح تسويات المخزون", "Inventory Adjustment Gains", "430000"),
@@ -142,6 +148,7 @@ public sealed class LedgerSetupRepository(
             }
             foreach (var producer in Producers)
                 await EnsureProducerRegistrationAsync(context, tenant, entity, producer, token);
+            await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.ManufacturingCostAccrued, "MANUFACTURING_COST_ACCRUED_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.SettlementFxDifference, "SETTLEMENT_FX_DIFFERENCE_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.UnrealizedFxRevaluation, "UNREALIZED_FX_REVALUATION_V1", token);
             await EnsureSimplePostingRuleAsync(context, tenant, entity, AccountingFactTypes.SettlementWriteOff, "SETTLEMENT_WRITE_OFF_V1", token);
@@ -327,6 +334,7 @@ public sealed class LedgerSetupRepository(
         ("subledger", AccountingFactTypes.SettlementFxDifference), ("subledger", AccountingFactTypes.SettlementWriteOff), ("expenses", AccountingFactTypes.SettlementWriteOff),
         ("accounting", AccountingFactTypes.UnrealizedFxRevaluation),
         ("banking", AccountingFactTypes.BankOriginatedFinancialEventApproved)
+        ,("manufacturing", AccountingFactTypes.ManufacturingCostAccrued)
     ];
 
     private async Task EnsureProducerRegistrationAsync(ITransactionContext context, TenantId tenant, LegalEntityId entity, (string Module, string FactType) producer, CancellationToken ct) => await ExecuteAsync(context, "insert into finance_ledger.fact_producer_registration (tenant_id,legal_entity_id,id,producer_module,fact_type,fact_version,status,registered_at) values ($1,$2,$3,$4,$5,1,'Active',$6) on conflict (tenant_id,legal_entity_id,producer_module,fact_type,fact_version) do nothing", ct, tenant.Value, entity.Value, Guid.CreateVersion7(), producer.Module, producer.FactType, clock.GetUtcNow());

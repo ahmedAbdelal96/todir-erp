@@ -13,10 +13,10 @@ public sealed partial class ManufacturingRepository
         {
             if (from > to || to.DayNumber - from.DayNumber > 366) throw new ManufacturingException("manufacturing.capacity_range_invalid");
             var result = new List<CapacityResponse>();
-            await using var centers = Command(context, "select id,default_efficiency from business_manufacturing.work_center where tenant_id=$1 and plant_id=$2 and state='Active' and ($3::uuid is null or id=$3) order by id", tenant.Value, plantId, Db(workCenterId));
+            await using var centers = Command(context, "select id,default_efficiency,time_zone from business_manufacturing.work_center where tenant_id=$1 and plant_id=$2 and state='Active' and ($3::uuid is null or id=$3) order by id", tenant.Value, plantId, Db(workCenterId));
             await using var centerReader = await centers.ExecuteReaderAsync(token);
-            var workCenters = new List<(Guid Id, decimal Efficiency)>();
-            while (await centerReader.ReadAsync(token)) workCenters.Add((centerReader.GetGuid(0), centerReader.GetDecimal(1)));
+            var workCenters = new List<(Guid Id, decimal Efficiency, string TimeZone)>();
+            while (await centerReader.ReadAsync(token)) workCenters.Add((centerReader.GetGuid(0), centerReader.GetDecimal(1), centerReader.GetString(2)));
             await centerReader.DisposeAsync();
 
             foreach (var workCenter in workCenters)
@@ -45,8 +45,11 @@ public sealed partial class ManufacturingRepository
                         for (var day = from; day <= to; day = day.AddDays(1))
                         {
                             if (!calendars.TryGetValue((short)day.DayOfWeek, out var calendar)) continue;
-                            var shiftStart = new DateTimeOffset(day.ToDateTime(calendar.Start, DateTimeKind.Utc));
-                            var shiftEnd = new DateTimeOffset(day.ToDateTime(calendar.End, DateTimeKind.Utc));
+                            TimeZoneInfo zone;
+                            try { zone = TimeZoneInfo.FindSystemTimeZoneById(workCenter.TimeZone); }
+                            catch (TimeZoneNotFoundException) { throw new ManufacturingException("manufacturing.work_center_timezone_invalid"); }
+                            var shiftStart = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(day.ToDateTime(calendar.Start), DateTimeKind.Unspecified), zone));
+                            var shiftEnd = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(day.ToDateTime(calendar.End), DateTimeKind.Unspecified), zone));
                             var clipped = intervals.Select(item => (Start: item.StartedAt > shiftStart ? item.StartedAt : shiftStart, End: (item.EndedAt ?? shiftEnd) < shiftEnd ? item.EndedAt ?? shiftEnd : shiftEnd))
                                 .Where(item => item.End > item.Start).OrderBy(item => item.Start).ToList();
                             var mergedEnd = shiftStart;

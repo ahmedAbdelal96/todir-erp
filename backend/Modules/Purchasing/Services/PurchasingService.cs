@@ -23,7 +23,7 @@ public sealed class PurchasingService(
     IInvoiceComplianceSnapshotCapability invoiceSnapshots,
     TimeProvider clock,
     IInventoryPurchasingCapabilities? inventory = null,
-    IInvoicingCorrectionCapabilities? corrections = null) : Shared.Contracts.Purchasing.IPurchasingSourceCapabilities, Shared.Contracts.Purchasing.IPurchasingFixedAssetCapabilities, Shared.Contracts.Purchasing.IPurchasingReadCapabilities, Shared.Contracts.Purchasing.IPurchasingLandedCostCapabilities, Shared.Contracts.ManufacturingPlanning.IManufacturingSupplyCapabilities
+    IInvoicingCorrectionCapabilities? corrections = null) : Shared.Contracts.Purchasing.IPurchasingSourceCapabilities, Shared.Contracts.Purchasing.IPurchasingFixedAssetCapabilities, Shared.Contracts.Purchasing.IPurchasingReadCapabilities, Shared.Contracts.Purchasing.IPurchasingLandedCostCapabilities, Shared.Contracts.Purchasing.IManufacturingSubcontractSourceCapabilities, Shared.Contracts.ManufacturingPlanning.IManufacturingSupplyCapabilities
 {
     public Task<IReadOnlyList<Shared.Contracts.ManufacturingPlanning.ManufacturingSupplySnapshot>> ListEligibleSupplyAsync(TenantId tenant, Guid legalEntityId, DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
         => repository.ListEligibleManufacturingSupplyAsync(tenant, legalEntityId, from, to, cancellationToken);
@@ -52,6 +52,8 @@ public sealed class PurchasingService(
     public Task<long> CloseAsync(TenantId tenant, Guid actor, Guid entity, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.CloseAsync(tenant, actor, entity, id, request, correlation, ct);
     public Task<long> CloseShortAsync(TenantId tenant, Guid actor, Guid entity, Guid id, PurchaseOrderCommandRequest request, Guid correlation, CancellationToken ct) => repository.CloseShortAsync(tenant, actor, entity, id, request, correlation, ct);
     public Task<bool> IsPurchaseOrderApprovedAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default) => repository.IsApprovedAsync(tenantId, legalEntityId, purchaseOrderId, cancellationToken);
+    public Task<Shared.Contracts.Purchasing.ManufacturingSubcontractSourceSnapshot?> GetManufacturingSubcontractSourceAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default)
+        => repository.GetManufacturingSubcontractSourceAsync(tenantId, legalEntityId, purchaseOrderId, cancellationToken);
     public async Task<Shared.Contracts.Purchasing.PurchaseOrderInvoiceSource?> GetInvoiceSourceAsync(TenantId tenantId, Guid legalEntityId, Guid purchaseOrderId, CancellationToken cancellationToken = default)
     {
         var source = await GetFinalizedCapitalizationSourceAsync(tenantId, legalEntityId, purchaseOrderId, cancellationToken);

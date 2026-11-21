@@ -2,11 +2,13 @@ using System.Text.Json;
 using Core.Messaging;
 using MassTransit;
 using Npgsql;
+using Shared.Contracts.Ledger;
+using Shared.Primitives.Identifiers;
 
 namespace Worker;
 
 /// <summary>Projects manufacturing events through the real Outbox/RabbitMQ/Inbox path and keeps replay idempotent.</summary>
-public sealed class ManufacturingIntegrationConsumer(NpgsqlDataSource dataSource, IInboxStore inboxStore) : IConsumer<OutboxPublishedMessage>
+public sealed class ManufacturingIntegrationConsumer(NpgsqlDataSource dataSource, IInboxStore inboxStore, ILedgerPostingEngine ledger) : IConsumer<OutboxPublishedMessage>
 {
     public const string EndpointName = "manufacturing-integration";
     private static readonly HashSet<string> Supported = ["ProductionOrderCreatedV1", "ProductionOrderReleasedV1", "ProductionOrderStartedV1", "MaterialConsumedForProductionV1", "ProductionOutputReportedV1", "ProductionScrapReportedV1", "ProductionCostFactRecordedV1", "ProductionOrderClosedV1"];
@@ -49,6 +51,21 @@ public sealed class ManufacturingIntegrationConsumer(NpgsqlDataSource dataSource
                 audit.Parameters.AddWithValue(message.TenantId.Value); audit.Parameters.AddWithValue(Guid.CreateVersion7()); audit.Parameters.AddWithValue("IntegrationEvent"); audit.Parameters.AddWithValue(orderId); audit.Parameters.AddWithValue($"worker.received.{message.MessageType}"); audit.Parameters.AddWithValue(message.Payload); await audit.ExecuteNonQueryAsync(context.CancellationToken);
             }
             await transaction.CommitAsync(context.CancellationToken);
+            if (message.MessageType == "ProductionCostFactRecordedV1" && ReadGuid(root, "costFactId") is { } costFactId)
+            {
+                var category = root.TryGetProperty("costCategory", out var categoryValue) ? categoryValue.GetString() : null;
+                var amount = root.TryGetProperty("amount", out var amountValue) && amountValue.TryGetDecimal(out var parsedAmount) ? parsedAmount : 0m;
+                var currency = root.TryGetProperty("currencyCode", out var currencyValue) ? currencyValue.GetString() : null;
+                var sourceReference = root.TryGetProperty("sourceReference", out var referenceValue) ? referenceValue.GetString() : costFactId.ToString("D");
+                var legalEntityId = ReadGuid(root, "legalEntityId") ?? throw new InvalidOperationException("manufacturing.cost_event_legal_entity_missing");
+                var sourceDate = root.TryGetProperty("sourceDate", out var dateValue) && DateOnly.TryParse(dateValue.GetString(), out var parsedDate) ? parsedDate : DateOnly.FromDateTime(message.OccurredAt.UtcDateTime);
+                if (category is not "Material" && amount > 0m && currency is not null)
+                {
+                    var payload = new ManufacturingCostAccruedPayload(amount, currency, category ?? "Overhead", orderId, sourceReference ?? costFactId.ToString("D"));
+                    var fact = new AccountingFactEnvelope<IAccountingFactPayload>(costFactId, message.TenantId, new LegalEntityId(legalEntityId), AccountingFactTypes.ManufacturingCostAccrued, 1, "manufacturing", sourceReference ?? costFactId.ToString("D"), $"manufacturing-ledger:{costFactId:D}", sourceDate, sourceDate, payload, message.CorrelationId, Guid.Empty);
+                    await ledger.PostAsync(fact, context.CancellationToken);
+                }
+            }
             await inboxStore.MarkProcessedAsync(EndpointName, message.MessageId, message.TenantId, context.CancellationToken);
         }
         catch

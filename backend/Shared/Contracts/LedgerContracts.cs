@@ -51,6 +51,7 @@ public static class AccountingFactTypes
     public const string FixedAssetCostAdded = "FixedAssetCostAdded";
     public const string FixedAssetCostReduced = "FixedAssetCostReduced";
     public const string FixedAssetImpairmentPosted = "FixedAssetImpairmentPosted";
+    public const string ManufacturingCostAccrued = "ManufacturingCostAccrued";
     public const string BankOriginatedFinancialEventApproved = "BankOriginatedFinancialEventApproved";
 
     public static IReadOnlySet<string> Known { get; } = new HashSet<string>(StringComparer.Ordinal)
@@ -58,7 +59,7 @@ public static class AccountingFactTypes
         CustomerInvoicePosted, CustomerCreditNotePosted, VendorBillPosted, VendorCreditNotePosted, CustomerDebitNotePosted, VendorDebitNotePosted,
         PaymentReceived, PaymentMade, RefundPaid, InternalTransferCompleted, PaymentFeeRecognized, PaymentFeeReversed, PosCashSalePosted, InventoryReceiptValued, InventoryIssueValued, InventoryCostAdjustment, InventoryValuationReversal,
         ExpenseRecognized, PayrollPosted, TaxAdjustment, SettlementFxDifference, SettlementWriteOff, UnrealizedFxRevaluation,
-        OpeningBalancePosted, ManualGeneralJournalPosted, FixedAssetAcquisitionPosted, FixedAssetDepreciationPosted, FixedAssetDepreciationReversed, FixedAssetDisposalPosted, FixedAssetDisposalReversed, FixedAssetCostAdded, FixedAssetCostReduced, FixedAssetImpairmentPosted, BankOriginatedFinancialEventApproved
+        OpeningBalancePosted, ManualGeneralJournalPosted, FixedAssetAcquisitionPosted, FixedAssetDepreciationPosted, FixedAssetDepreciationReversed, FixedAssetDisposalPosted, FixedAssetDisposalReversed, FixedAssetCostAdded, FixedAssetCostReduced, FixedAssetImpairmentPosted, ManufacturingCostAccrued, BankOriginatedFinancialEventApproved
     };
 }
 
@@ -189,6 +190,7 @@ public sealed record FixedAssetDisposalPostedPayload(decimal GrossCost, decimal 
 public sealed record FixedAssetDisposalReversedPayload(decimal GrossCost, decimal AccumulatedDepreciation, decimal NetBookValue, decimal Proceeds, decimal DirectCosts, decimal GainLoss, string CurrencyCode, string AssetReference, Guid OriginalDisposalFactId, decimal? BaseGrossCost = null, decimal? BaseAccumulatedDepreciation = null, decimal? BaseProceeds = null, decimal? BaseDirectCosts = null, decimal AccumulatedImpairment = 0m) : IAccountingFactPayload;
 public sealed record FixedAssetCostAdjustmentPostedPayload(decimal Amount, string CurrencyCode, string AssetBookReference, string AssetReference, string Reason, decimal? BaseAmount = null, string? BaseCurrencyCode = null) : IAccountingFactPayload;
 public sealed record FixedAssetImpairmentPostedPayload(decimal Amount, string CurrencyCode, string AssetBookReference, string AssetReference, string Reason, decimal? BaseAmount = null, string? BaseCurrencyCode = null) : IAccountingFactPayload;
+public sealed record ManufacturingCostAccruedPayload(decimal Amount, string CurrencyCode, string CostCategory, Guid ProductionOrderId, string SourceReference, decimal? Quantity = null) : IAccountingFactPayload;
 
 public sealed record LedgerDimensionAssignment(string Code, Guid ValueId, string ValueCode);
 

@@ -528,6 +528,8 @@ public sealed class LedgerRepository(
     {
         if (!AccountingFactTypes.Known.Contains(fact.FactType)) throw new LedgerDomainException("ledger.fact_unsupported", "This accounting fact type is not in the canonical catalog.");
         if (fact.FactVersion != 1) throw new LedgerDomainException("ledger.fact_unsupported", "This fact version is not enabled by the Pass 1 posting engine.");
+        if (fact.FactType == AccountingFactTypes.ManufacturingCostAccrued && fact.Payload is ManufacturingCostAccruedPayload manufacturingCost)
+            return await transactions.ExecuteAsync(fact.TenantId, (context, token) => PostManufacturingCostInTransactionAsync(context, fact, manufacturingCost, token), cancellationToken);
         if (fact.Payload is ExplicitLedgerPostingPayload explicitPosting && (fact.FactType is AccountingFactTypes.ManualGeneralJournalPosted or AccountingFactTypes.OpeningBalancePosted))
             return await PostExplicitLinesAsync(fact, explicitPosting, cancellationToken);
         if (!string.Equals(fact.FactType, AccountingFactTypes.CustomerInvoicePosted, StringComparison.Ordinal)) throw new LedgerDomainException("ledger.posting_rule_missing", "The fact is catalogued but no Pass 1 posting rule is enabled for it.");
@@ -577,6 +579,31 @@ public sealed class LedgerRepository(
             context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), LedgerEventTypes.JournalEntryPostedV1, outbox, fact.TenantId, now, fact.CorrelationId, fact.FactId, "ledger"));
             return new LedgerPostingResult(fact.FactId, entryId, entryNumber, "Posted", false, determinations);
         }, cancellationToken);
+    }
+
+    public async Task<LedgerPostingResult> PostManufacturingCostInTransactionAsync(ITransactionContext context,
+        AccountingFactEnvelope<IAccountingFactPayload> fact, ManufacturingCostAccruedPayload payload, CancellationToken ct)
+    {
+        if (fact.SourceModule != "manufacturing" || fact.FactType != AccountingFactTypes.ManufacturingCostAccrued || payload.Amount <= 0m
+            || payload.CurrencyCode.Trim().Length != 3 || payload.ProductionOrderId == Guid.Empty
+            || payload.CostCategory is not ("Labor" or "Machine" or "Overhead" or "Subcontract" or "Variance"))
+            throw new LedgerDomainException("ledger.manufacturing_cost_fact_invalid", "The Manufacturing cost fact is incomplete or financially inconsistent.");
+        if (!await IsRegisteredProducerAsync(context, fact, ct)) throw new LedgerDomainException("ledger.fact_producer_unregistered", "Manufacturing is not registered for this accounting fact type.");
+        var baseCurrency = await financialRead.GetBaseCurrencyCodeAsync(fact.TenantId, fact.LegalEntityId, ct) ?? throw new LedgerDomainException("ledger.entity_missing", "Legal entity financial context is unavailable.");
+        var currency = payload.CurrencyCode.Trim().ToUpperInvariant();
+        if (!string.Equals(currency, baseCurrency, StringComparison.OrdinalIgnoreCase)) throw new LedgerDomainException("ledger.currency_mismatch", "Manufacturing cost posting currently requires the legal-entity base currency.");
+        var configuration = await ResolveConfigurationAsync(context, fact.PostingDate, fact.TenantId.Value, fact.LegalEntityId.Value, ct);
+        var wip = await ResolveSemanticAccountIdAsync(context, fact, configuration, "ManufacturingWip", ct);
+        var creditRole = payload.CostCategory == "Variance" ? "ManufacturingVariance" : "ManufacturingAccrual";
+        var credit = await ResolveSemanticAccountIdAsync(context, fact, configuration, creditRole, ct);
+        var journal = await ScalarGuidAsync(context, "select id from finance_ledger.journal where tenant_id=$1 and legal_entity_id=$2 and code='GENERAL' and status='Active'", ct, fact.TenantId.Value, fact.LegalEntityId.Value) ?? throw new LedgerDomainException("ledger.journal_missing", "The General journal is not configured.");
+        var description = $"Manufacturing {payload.CostCategory} for order {payload.ProductionOrderId:D}";
+        var lines = new[]
+        {
+            new LedgerPostingLinePayload(wip, payload.Amount, 0m, currency, payload.Amount, 0m, payload.Amount, 0m, 1m, [], description, payload.SourceReference),
+            new LedgerPostingLinePayload(credit, 0m, payload.Amount, currency, 0m, payload.Amount, 0m, payload.Amount, 1m, [], description, payload.SourceReference)
+        };
+        return await PostSemanticExplicitInTransactionAsync(context, fact, new ExplicitLedgerPostingPayload(journal, description, baseCurrency, lines), payload, configuration, ct);
     }
 
     private static bool RequiresRegisteredProducer(string factType) =>

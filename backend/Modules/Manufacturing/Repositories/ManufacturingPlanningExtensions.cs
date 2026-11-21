@@ -70,7 +70,7 @@ public sealed partial class ManufacturingRepository
         return demands;
     }
 
-    private static async Task ExpandDependentDemandsAsync(ITransactionContext context, Guid tenant, PlanningRunResponse run, CancellationToken token)
+    private async Task ExpandDependentDemandsAsync(ITransactionContext context, Guid tenant, PlanningRunResponse run, CancellationToken token)
     {
         var roots = new List<(Guid Id, Guid ProductVariantId, Guid? PlantId, DateOnly NeedDate, decimal Quantity, string UomCode)>();
         await using (var command = Command(context, "select id,product_variant_id,plant_id,need_date,quantity,uom_code from business_manufacturing.planning_demand where tenant_id=$1 and planning_run_id=$2 and parent_demand_id is null order by need_date,id", tenant, run.Id))
@@ -81,10 +81,15 @@ public sealed partial class ManufacturingRepository
         }
 
         foreach (var root in roots)
-            await ExpandNodeAsync(context, tenant, run, root.Id, root.ProductVariantId, root.PlantId, root.NeedDate, root.Quantity, root.UomCode, 0, new HashSet<Guid>(), token);
+        {
+            var available = await GetPlanningAvailableAsync(context, tenant, run.LegalEntityId, root.ProductVariantId, root.PlantId, root.UomCode, token);
+            var netRootQuantity = Math.Max(0m, root.Quantity - available);
+            if (netRootQuantity > 0m)
+                await ExpandNodeAsync(context, tenant, run, root.Id, root.ProductVariantId, root.PlantId, root.NeedDate, netRootQuantity, root.UomCode, 0, new HashSet<Guid>(), token);
+        }
     }
 
-    private static async Task ExpandNodeAsync(ITransactionContext context, Guid tenant, PlanningRunResponse run, Guid parentDemandId,
+    private async Task ExpandNodeAsync(ITransactionContext context, Guid tenant, PlanningRunResponse run, Guid parentDemandId,
         Guid productVariantId, Guid? plantId, DateOnly needDate, decimal quantity, string parentUom, int level,
         HashSet<Guid> path, CancellationToken token)
     {
@@ -94,6 +99,10 @@ public sealed partial class ManufacturingRepository
             await ExecuteAsync(context, "insert into business_manufacturing.planning_exception(tenant_id,id,planning_run_id,product_variant_id,exception_type,severity,need_date,quantity,message) values($1,$2,$3,$4,'BomCycle','Error',$5,$6,$7)", token, tenant, Guid.CreateVersion7(), run.Id, productVariantId, needDate, quantity, "The active BOM/formula graph contains a cycle.");
             throw new ManufacturingException("manufacturing.bom_cycle_detected");
         }
+
+        var available = await GetPlanningAvailableAsync(context, tenant, run.LegalEntityId, productVariantId, plantId, parentUom, token);
+        quantity = Math.Max(0m, quantity - available);
+        if (quantity <= 0m) return;
 
         var definition = await ReadPlanningDefinitionAsync(context, tenant, run, productVariantId, plantId, needDate, quantity, token);
         if (definition is null) return;
@@ -242,6 +251,14 @@ public sealed partial class ManufacturingRepository
             return hasDefinition ? "Production" : "Purchase";
         }
         return "Production";
+    }
+
+    private async Task<decimal> GetPlanningAvailableAsync(ITransactionContext context, Guid tenant, Guid legalEntityId, Guid productVariantId, Guid? plantId, string uomCode, CancellationToken token)
+    {
+        if (inventoryCapabilities is null) return 0m;
+        var scope = await ReadPlantWarehouseScopeAsync(context, tenant, plantId, token);
+        var availability = await inventoryCapabilities.GetAvailabilityAsync(tenant, legalEntityId, productVariantId, true, token);
+        return availability.Where(row => (!scope.HasScope || scope.WarehouseIds.Contains(row.WarehouseId)) && string.Equals(row.BaseUnitCode, uomCode, StringComparison.OrdinalIgnoreCase)).Sum(row => Math.Max(0m, row.Available));
     }
 
     private static async Task<(bool HasScope, HashSet<Guid> WarehouseIds)> ReadPlantWarehouseScopeAsync(ITransactionContext context, Guid tenant, Guid? plantId, CancellationToken token)
