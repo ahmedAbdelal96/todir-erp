@@ -103,13 +103,13 @@ export function CreateWorkCenterDialog({ isOpen, onClose, legalEntityId }: Creat
           <TextField
             label={t("definitions.workCenterCode")}
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(val) => setCode(val)}
             required
           />
           <TextField
             label={t("definitions.workCenterName")}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(val) => setName(val)}
             required
           />
         </div>
@@ -139,7 +139,7 @@ export function CreateWorkCenterDialog({ isOpen, onClose, legalEntityId }: Creat
             label={t("common.efficiency")}
             type="number"
             value={defaultEfficiency}
-            onChange={(e) => setDefaultEfficiency(e.target.value)}
+            onChange={(val) => setDefaultEfficiency(val)}
           />
         </div>
 
@@ -159,19 +159,19 @@ export function CreateWorkCenterDialog({ isOpen, onClose, legalEntityId }: Creat
                 label={t("common.shiftStart")}
                 type="time"
                 value={shiftStart}
-                onChange={(e) => setShiftStart(e.target.value)}
+                onChange={(val) => setShiftStart(val)}
               />
               <TextField
                 label={t("common.shiftEnd")}
                 type="time"
                 value={shiftEnd}
-                onChange={(e) => setShiftEnd(e.target.value)}
+                onChange={(val) => setShiftEnd(val)}
               />
               <TextField
                 label={t("common.breakMinutes")}
                 type="number"
                 value={breakMinutes}
-                onChange={(e) => setBreakMinutes(e.target.value)}
+                onChange={(val) => setBreakMinutes(val)}
               />
             </div>
           )}

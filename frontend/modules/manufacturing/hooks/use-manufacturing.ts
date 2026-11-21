@@ -48,7 +48,8 @@ export const MANUFACTURING_QUERY_KEYS = {
   capacity: (plantId: string, from: string, to: string, workCenterId?: string) => [...MANUFACTURING_QUERY_KEYS.all, "capacity", plantId, from, to, workCenterId] as const,
   definitions: (legalEntityId: string, plantId?: string, variantId?: string) => [...MANUFACTURING_QUERY_KEYS.all, "definitions", legalEntityId, plantId, variantId] as const,
   substitutionGroups: () => [...MANUFACTURING_QUERY_KEYS.all, "substitutionGroups"] as const,
-  orders: (legalEntityId: string, state?: string, variantId?: string) => [...MANUFACTURING_QUERY_KEYS.all, "orders", legalEntityId, state, variantId] as const,
+  orders: (legalEntityId: string, state?: string, variantId?: string, plantId?: string, search?: string, limit?: number, offset?: number) => [...MANUFACTURING_QUERY_KEYS.all, "orders", legalEntityId, state, variantId, plantId, search, limit, offset] as const,
+  ordersCount: (legalEntityId: string, state?: string, variantId?: string, plantId?: string, search?: string) => [...MANUFACTURING_QUERY_KEYS.all, "ordersCount", legalEntityId, state, variantId, plantId, search] as const,
   order: (orderId: string) => [...MANUFACTURING_QUERY_KEYS.all, "order", orderId] as const,
   materials: (orderId: string) => [...MANUFACTURING_QUERY_KEYS.all, "materials", orderId] as const,
   operations: (orderId: string) => [...MANUFACTURING_QUERY_KEYS.all, "operations", orderId] as const,
@@ -64,18 +65,18 @@ export const MANUFACTURING_QUERY_KEYS = {
 };
 
 // Query Hooks
-export function usePlantsQuery(legalEntityId: string) {
+export function usePlantsQuery(legalEntityId: string | undefined) {
   return useQuery({
-    queryKey: MANUFACTURING_QUERY_KEYS.plants(legalEntityId),
-    queryFn: () => manufacturingApi.listPlants(legalEntityId),
+    queryKey: MANUFACTURING_QUERY_KEYS.plants(legalEntityId ?? ""),
+    queryFn: () => manufacturingApi.listPlants(legalEntityId!),
     enabled: Boolean(legalEntityId)
   });
 }
 
-export function useProfilesQuery(legalEntityId: string, productVariantId?: string) {
+export function useProfilesQuery(legalEntityId: string | undefined, productVariantId?: string) {
   return useQuery({
-    queryKey: MANUFACTURING_QUERY_KEYS.profiles(legalEntityId, productVariantId),
-    queryFn: () => manufacturingApi.listProfiles(legalEntityId, productVariantId),
+    queryKey: MANUFACTURING_QUERY_KEYS.profiles(legalEntityId ?? "", productVariantId),
+    queryFn: () => manufacturingApi.listProfiles(legalEntityId!, productVariantId),
     enabled: Boolean(legalEntityId)
   });
 }
@@ -148,10 +149,10 @@ export function useCapacityQuery(plantId: string, from: string, to: string, work
   });
 }
 
-export function useDefinitionsQuery(legalEntityId: string, plantId?: string, productVariantId?: string) {
+export function useDefinitionsQuery(legalEntityId: string | undefined, plantId?: string, productVariantId?: string) {
   return useQuery({
-    queryKey: MANUFACTURING_QUERY_KEYS.definitions(legalEntityId, plantId, productVariantId),
-    queryFn: () => manufacturingApi.listDefinitions(legalEntityId, plantId, productVariantId),
+    queryKey: MANUFACTURING_QUERY_KEYS.definitions(legalEntityId ?? "", plantId, productVariantId),
+    queryFn: () => manufacturingApi.listDefinitions(legalEntityId!, plantId, productVariantId),
     enabled: Boolean(legalEntityId)
   });
 }
@@ -163,15 +164,24 @@ export function useSubstitutionGroupsQuery() {
   });
 }
 
-export function useProductionOrdersQuery(legalEntityId: string, filters?: { state?: string; productVariantId?: string; limit?: number }) {
+export function useProductionOrdersQuery(legalEntityId: string | undefined, filters?: { state?: string | undefined; productVariantId?: string | undefined; plantId?: string | undefined; search?: string | undefined; limit?: number | undefined; offset?: number | undefined }) {
   return useQuery({
-    queryKey: MANUFACTURING_QUERY_KEYS.orders(legalEntityId, filters?.state, filters?.productVariantId),
-    queryFn: () => manufacturingApi.listProductionOrders(legalEntityId, filters),
+    queryKey: MANUFACTURING_QUERY_KEYS.orders(legalEntityId ?? "", filters?.state, filters?.productVariantId, filters?.plantId, filters?.search, filters?.limit, filters?.offset),
+    queryFn: () => manufacturingApi.listProductionOrders(legalEntityId!, filters),
+    enabled: Boolean(legalEntityId)
+  });
+}
+
+export function useProductionOrdersCountQuery(legalEntityId: string | undefined, filters?: { state?: string | undefined; productVariantId?: string | undefined; plantId?: string | undefined; search?: string | undefined }) {
+  return useQuery({
+    queryKey: MANUFACTURING_QUERY_KEYS.ordersCount(legalEntityId ?? "", filters?.state, filters?.productVariantId, filters?.plantId, filters?.search),
+    queryFn: () => manufacturingApi.countProductionOrders(legalEntityId!, filters),
     enabled: Boolean(legalEntityId)
   });
 }
 
 export const useOrdersQuery = useProductionOrdersQuery;
+export const useOrdersCountQuery = useProductionOrdersCountQuery;
 export const useOrderQuery = useProductionOrderQuery;
 export const useMaterialsQuery = useOrderMaterialsQuery;
 export const useOperationsQuery = useOrderOperationsQuery;
@@ -248,10 +258,10 @@ export function useOrderCloseReadinessQuery(orderId: string) {
   });
 }
 
-export function usePlanningRunsQuery(legalEntityId: string) {
+export function usePlanningRunsQuery(legalEntityId: string | undefined) {
   return useQuery({
-    queryKey: MANUFACTURING_QUERY_KEYS.planningRuns(legalEntityId),
-    queryFn: () => manufacturingApi.listPlanningRuns(legalEntityId),
+    queryKey: MANUFACTURING_QUERY_KEYS.planningRuns(legalEntityId ?? ""),
+    queryFn: () => manufacturingApi.listPlanningRuns(legalEntityId!),
     enabled: Boolean(legalEntityId)
   });
 }
@@ -264,10 +274,10 @@ export function usePlannedSuppliesQuery(runId: string) {
   });
 }
 
-export function useMpsPlansQuery(legalEntityId: string, filters?: { plantId?: string; productVariantId?: string }) {
+export function useMpsPlansQuery(legalEntityId: string | undefined, filters?: { plantId?: string; productVariantId?: string }) {
   return useQuery({
-    queryKey: MANUFACTURING_QUERY_KEYS.mpsPlans(legalEntityId, filters?.plantId, filters?.productVariantId),
-    queryFn: () => manufacturingApi.listMpsPlans(legalEntityId, filters),
+    queryKey: MANUFACTURING_QUERY_KEYS.mpsPlans(legalEntityId ?? "", filters?.plantId, filters?.productVariantId),
+    queryFn: () => manufacturingApi.listMpsPlans(legalEntityId!, filters),
     enabled: Boolean(legalEntityId)
   });
 }

@@ -10,18 +10,25 @@ export interface QualityGateDialogProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly orderId: string;
-  readonly gate?: QualityGate | null;
+  readonly gate?: QualityGate | null | undefined;
+  readonly orderState?: string | undefined;
+  readonly canManagePolicy?: boolean | undefined;
 }
 
 export function QualityGateDialog({
   isOpen,
   onClose,
   orderId,
-  gate
+  gate,
+  orderState = "Draft",
+  canManagePolicy = true
 }: QualityGateDialogProps): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
   const decisionMutation = useRecordQualityDecisionMutation();
   const policyMutation = useUpdateQualityPolicyMutation();
+
+  const isDraft = orderState === "Draft";
+  const allowPolicy = isDraft && canManagePolicy;
 
   const [mode, setMode] = useState<"decision" | "policy">("decision");
   const [decisionState, setDecisionState] = useState("Passed");
@@ -96,22 +103,24 @@ export function QualityGateDialog({
         >
           {t("quality.decisionState")}
         </button>
-        <button
-          type="button"
-          onClick={() => setMode("policy")}
-          style={{
-            flex: 1,
-            padding: "0.5rem",
-            borderRadius: "var(--radius-sm)",
-            border: `1px solid ${mode === "policy" ? "var(--color-brand-primary)" : "var(--color-border-default)"}`,
-            background: mode === "policy" ? "var(--color-brand-primary)" : "transparent",
-            color: mode === "policy" ? "#fff" : "inherit",
-            fontWeight: 600,
-            cursor: "pointer"
-          }}
-        >
-          {t("quality.updatePolicy")}
-        </button>
+        {allowPolicy && (
+          <button
+            type="button"
+            onClick={() => setMode("policy")}
+            style={{
+              flex: 1,
+              padding: "0.5rem",
+              borderRadius: "var(--radius-sm)",
+              border: `1px solid ${mode === "policy" ? "var(--color-brand-primary)" : "var(--color-border-default)"}`,
+              background: mode === "policy" ? "var(--color-brand-primary)" : "transparent",
+              color: mode === "policy" ? "#fff" : "inherit",
+              fontWeight: 600,
+              cursor: "pointer"
+            }}
+          >
+            {t("quality.updatePolicy")}
+          </button>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -132,15 +141,15 @@ export function QualityGateDialog({
               >
                 <option value="Passed">{t("status.Passed")}</option>
                 <option value="Failed">{t("status.Failed")}</option>
-                <option value="Exempt">{t("status.Exempt")}</option>
                 <option value="Blocked">{t("status.Blocked")}</option>
+                <option value="Pending">{t("status.Pending")}</option>
               </select>
             </label>
 
             <TextField
               label={t("orders.sourceRef")}
               value={sourceRef}
-              onChange={(e) => setSourceRef(e.target.value)}
+              onChange={(val) => setSourceRef(val)}
             />
           </>
         ) : (
@@ -157,7 +166,7 @@ export function QualityGateDialog({
             <TextField
               label={t("quality.exemptReason")}
               value={policyReason}
-              onChange={(e) => setPolicyReason(e.target.value)}
+              onChange={(val) => setPolicyReason(val)}
               required
             />
           </>

@@ -22,7 +22,7 @@ export function CloseReadinessPanel({ orderId, onCloseClick }: CloseReadinessPan
     return <div style={{ padding: "1rem" }}>{t("orders.noMatchingOrders")}</div>;
   }
 
-  const isBlocked = !readiness.canClose;
+  const isBlocked = !(readiness.canClose ?? (readiness.state === "Ready" || readiness.state === "Reconciled"));
 
   return (
     <div

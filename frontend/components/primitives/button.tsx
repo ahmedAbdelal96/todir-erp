@@ -6,8 +6,8 @@ import {
 } from "react-aria-components";
 import clsx from "clsx";
 
-export type ButtonVariant = "primary" | "secondary" | "tertiary" | "ghost" | "danger";
-export type ButtonSize = "comfortable" | "compact";
+export type ButtonVariant = "primary" | "secondary" | "tertiary" | "ghost" | "danger" | "destructive" | "outline";
+export type ButtonSize = "comfortable" | "compact" | "small";
 
 export interface ButtonProps
   extends Omit<
@@ -44,6 +44,8 @@ export function Button({
   ...props
 }: ButtonProps): React.JSX.Element {
   const isEffectiveDisabled = isDisabled || disabled || isLoading;
+  const resolvedVariant = variant === "destructive" ? "danger" : variant === "outline" ? "secondary" : variant;
+  const resolvedSize = size === "small" ? "compact" : size;
 
   return (
     <AriaButton
@@ -54,8 +56,8 @@ export function Button({
       {...(type !== undefined ? { type } : {})}
       className={clsx(
         "ui-button",
-        `ui-button--${variant}`,
-        `ui-button--${size}`,
+        `ui-button--${resolvedVariant}`,
+        `ui-button--${resolvedSize}`,
         {
           "ui-button--loading": isLoading,
           "ui-button--disabled": isEffectiveDisabled
@@ -141,6 +143,7 @@ function getVariantStyles(variant: ButtonVariant): React.CSSProperties {
         boxShadow: "0 2px 4px 0 rgba(16, 42, 67, 0.25), inset 0 1px 0 0 rgba(255, 255, 255, 0.22)"
       };
     case "secondary":
+    case "outline":
       return {
         backgroundColor: "var(--color-surface-card, #ffffff)",
         borderColor: "var(--color-border-default, #cbd5e1)",
@@ -148,6 +151,7 @@ function getVariantStyles(variant: ButtonVariant): React.CSSProperties {
         boxShadow: "0 1px 2px 0 rgba(15, 23, 42, 0.06)"
       };
     case "danger":
+    case "destructive":
       return {
         backgroundColor: "var(--color-status-danger, #ef4444)",
         borderColor: "#dc2626",

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { ProductPicker, type ProductPickerSelection } from "../../../catalog/public.ts";
 import { useCreateOrderMutation, usePlantsQuery } from "../../hooks/use-manufacturing.ts";
 import { manufacturingApi } from "../../services/manufacturing-api.ts";
 import type { ProductionDefinition } from "../../types.ts";
@@ -121,14 +122,17 @@ export function CreateOrderDialog({ isOpen, onClose, legalEntityId }: CreateOrde
             </select>
           </label>
 
-          <TextField
+          <ProductPicker
             label={t("orders.product")}
             value={productVariantId}
-            onChange={(e) => {
-              setProductVariantId(e.target.value);
+            isRequired
+            onChange={(sel: ProductPickerSelection) => {
+              setProductVariantId(sel.variantId);
+              if (sel.baseUomCode && (!uomCode || uomCode === "EA")) {
+                setUomCode(sel.baseUomCode);
+              }
               setResolvedDef(null);
             }}
-            required
           />
         </div>
 
@@ -137,7 +141,7 @@ export function CreateOrderDialog({ isOpen, onClose, legalEntityId }: CreateOrde
             label={t("orders.quantity")}
             type="number"
             value={orderedQty}
-            onChange={(e) => setOrderedQty(e.target.value)}
+            onChange={(val) => setOrderedQty(val)}
             min="0.0001"
             step="any"
             required
@@ -146,7 +150,7 @@ export function CreateOrderDialog({ isOpen, onClose, legalEntityId }: CreateOrde
           <TextField
             label={t("orders.uom")}
             value={uomCode}
-            onChange={(e) => setUomCode(e.target.value)}
+            onChange={(val) => setUomCode(val)}
             required
           />
 
@@ -154,7 +158,7 @@ export function CreateOrderDialog({ isOpen, onClose, legalEntityId }: CreateOrde
             label={t("orders.needDate")}
             type="date"
             value={needDate}
-            onChange={(e) => setNeedDate(e.target.value)}
+            onChange={(val) => setNeedDate(val)}
             required
           />
         </div>
@@ -173,17 +177,17 @@ export function CreateOrderDialog({ isOpen, onClose, legalEntityId }: CreateOrde
                 fontSize: "0.875rem"
               }}
             >
-              <option value="Manual">Manual</option>
-              <option value="Sales">Sales</option>
-              <option value="MRP">MRP</option>
-              <option value="Project">Project</option>
+              <option value="Manual">{t("orders.sourceManual")}</option>
+              <option value="Sales">{t("orders.sourceSales")}</option>
+              <option value="MRP">{t("orders.sourceMrp")}</option>
+              <option value="Project">{t("orders.sourceProject")}</option>
             </select>
           </label>
 
           <TextField
             label={t("orders.sourceRef")}
             value={sourceRef}
-            onChange={(e) => setSourceRef(e.target.value)}
+            onChange={(val) => setSourceRef(val)}
           />
         </div>
 

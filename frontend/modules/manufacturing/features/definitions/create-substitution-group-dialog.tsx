@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { ProductPicker, type ProductPickerSelection } from "../../../catalog/public.ts";
 import { useCreateSubstitutionGroupMutation, useAddSubstituteMutation } from "../../hooks/use-manufacturing.ts";
 
 export interface CreateSubstitutionGroupDialogProps {
@@ -68,13 +69,13 @@ export function CreateSubstitutionGroupDialog({ isOpen, onClose }: CreateSubstit
           <TextField
             label={t("definitions.substituteGroupCode")}
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(val) => setCode(val)}
             required
           />
           <TextField
             label={t("definitions.substituteGroupName")}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(val) => setName(val)}
             required
           />
         </div>
@@ -104,22 +105,27 @@ export function CreateSubstitutionGroupDialog({ isOpen, onClose }: CreateSubstit
           <div style={{ fontSize: "13px", fontWeight: 600, color: "#1e293b", marginBottom: "8px" }}>
             {t("definitions.firstSubstitute")}
           </div>
-          <TextField
+          <ProductPicker
             label={t("definitions.substituteVariantId")}
             value={substituteVariantId}
-            onChange={(e) => setSubstituteVariantId(e.target.value)}
+            onChange={(sel: ProductPickerSelection) => {
+              setSubstituteVariantId(sel.variantId);
+              if (sel.baseUomCode && (!uomCode || uomCode === "KG")) {
+                setUomCode(sel.baseUomCode);
+              }
+            }}
           />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "8px" }}>
             <TextField
               label={t("definitions.replacementRatio")}
               type="number"
               value={replacementRatio}
-              onChange={(e) => setReplacementRatio(e.target.value)}
+              onChange={(val) => setReplacementRatio(val)}
             />
             <TextField
               label={t("orders.uom")}
               value={uomCode}
-              onChange={(e) => setUomCode(e.target.value)}
+              onChange={(val) => setUomCode(val)}
             />
           </div>
         </div>

@@ -55,21 +55,21 @@ export function CreatePlantDialog({ isOpen, onClose, legalEntityId }: CreatePlan
         <TextField
           label={t("definitions.plantCode")}
           value={code}
-          onChange={(e) => setCode(e.target.value)}
+          onChange={(val) => setCode(val)}
           required
         />
 
         <TextField
           label={t("definitions.plantName")}
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(val) => setName(val)}
           required
         />
 
         <TextField
           label={t("common.timeZone")}
           value={timeZone}
-          onChange={(e) => setTimeZone(e.target.value)}
+          onChange={(val) => setTimeZone(val)}
         />
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>

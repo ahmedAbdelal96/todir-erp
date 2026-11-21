@@ -1,15 +1,14 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext } from "react-router-dom";
-import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 import { ManufacturingHeader } from "../components/manufacturing-header.tsx";
 import { ManufacturingStatusBadge } from "../components/manufacturing-status-badge.tsx";
+import { NoLegalEntityPrompt } from "../components/no-legal-entity-prompt.tsx";
+import { useManufacturingScope } from "../hooks/use-manufacturing-scope.ts";
 import { usePlantsQuery, useWorkCentersQuery, useCapacityQuery } from "../hooks/use-manufacturing.ts";
 
 export function CapacityPage(): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
-  const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
-  const legalEntityId = outletCtx?.legalEntityId ?? "00000000-0000-0000-0000-000000000001";
+  const { legalEntityId, isReady } = useManufacturingScope();
 
   const { data: plants = [] } = usePlantsQuery(legalEntityId);
   const [selectedPlantId, setSelectedPlantId] = useState<string>("");
@@ -25,6 +24,10 @@ export function CapacityPage(): React.JSX.Element {
   })();
 
   const { data: capacity = [] } = useCapacityQuery(effectivePlantId, today, nextMonth);
+
+  if (!isReady) {
+    return <NoLegalEntityPrompt />;
+  }
 
   return (
     <div
@@ -100,17 +103,17 @@ export function CapacityPage(): React.JSX.Element {
             </div>
 
             <div style={{ fontSize: "13px", color: "#64748b", marginBottom: "12px" }}>
-              النموذج: <strong>{wc.capacityModel}</strong> • الكفاءة الافتراضية: <strong>{((wc.defaultEfficiency ?? 1) * 100).toFixed(0)}%</strong>
+              {t("capacity.modelLabel")}{" "}<strong>{wc.capacityModel}</strong> • {t("capacity.efficiencyLabel")}{" "}<strong>{((wc.defaultEfficiency ?? 1) * 100).toFixed(0)}%</strong>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", background: "#f8fafc", padding: "10px", borderRadius: "6px" }}>
               <div>
                 <div style={{ fontSize: "12px", color: "#64748b" }}>{t("capacity.availableHours", "الساعات المتاحة")}</div>
-                <div style={{ fontSize: "16px", fontWeight: 700, color: "#15803d" }}>160 س</div>
+                <div style={{ fontSize: "16px", fontWeight: 700, color: "#15803d" }}>{160} {t("capacity.hoursUnit")}</div>
               </div>
               <div>
                 <div style={{ fontSize: "12px", color: "#64748b" }}>{t("capacity.plannedHours", "ساعات محملة")}</div>
-                <div style={{ fontSize: "16px", fontWeight: 700, color: "#0284c7" }}>35 س</div>
+                <div style={{ fontSize: "16px", fontWeight: 700, color: "#0284c7" }}>{35} {t("capacity.hoursUnit")}</div>
               </div>
             </div>
           </div>

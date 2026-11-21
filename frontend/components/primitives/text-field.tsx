@@ -43,6 +43,9 @@ export interface TextFieldProps
   readonly defaultValue?: string | undefined;
   readonly name?: string | undefined;
   readonly type?: string | undefined;
+  readonly min?: string | number | undefined;
+  readonly max?: string | number | undefined;
+  readonly step?: string | number | undefined;
   readonly isRequired?: boolean | undefined;
   readonly required?: boolean | undefined;
   readonly isDisabled?: boolean | undefined;
@@ -68,6 +71,9 @@ export function TextField({
   defaultValue,
   name,
   type,
+  min,
+  max,
+  step,
   isRequired,
   required,
   isDisabled,
@@ -147,6 +153,9 @@ export function TextField({
         <AriaInput
           {...(type !== undefined ? { type } : {})}
           {...(placeholder !== undefined ? { placeholder } : {})}
+          {...(min !== undefined ? { min } : {})}
+          {...(max !== undefined ? { max } : {})}
+          {...(step !== undefined ? { step } : {})}
           dir={inputDir}
           style={{
             flex: 1,

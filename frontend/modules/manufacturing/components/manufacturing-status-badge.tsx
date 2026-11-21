@@ -59,11 +59,11 @@ export function ManufacturingStatusBadge({ status, state, type = "order" }: Manu
       break;
   }
 
-  const label = t(`status.${status}`, status);
+  const label = t(`status.${resolvedStatus}` as any, resolvedStatus);
 
   return (
     <StatusBadge
-      data-testid={`status-badge-${status.toLowerCase()}`}
+      data-testid={`status-badge-${resolvedStatus.toLowerCase()}`}
       intent={intent}
       label={label}
       size="small"

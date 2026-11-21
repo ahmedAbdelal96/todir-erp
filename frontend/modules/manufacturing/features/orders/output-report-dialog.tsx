@@ -80,7 +80,7 @@ export function OutputReportDialog({
             label={t("common.quantity")}
             type="number"
             value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
+            onChange={(val) => setQuantity(val)}
             min="0.0001"
             step="any"
             required
@@ -113,14 +113,14 @@ export function OutputReportDialog({
             label={t("costing.unitCost")}
             type="number"
             value={provisionalValue}
-            onChange={(e) => setProvisionalValue(e.target.value)}
+            onChange={(val) => setProvisionalValue(val)}
             step="any"
           />
 
           <TextField
             label={t("common.currency")}
             value={currencyCode}
-            onChange={(e) => setCurrencyCode(e.target.value)}
+            onChange={(val) => setCurrencyCode(val)}
           />
         </div>
 
@@ -128,13 +128,13 @@ export function OutputReportDialog({
           <TextField
             label={t("materials.lotSerial")}
             value={lotId}
-            onChange={(e) => setLotId(e.target.value)}
+            onChange={(val) => setLotId(val)}
           />
 
           <TextField
             label={t("materials.warehouse")}
             value={warehouseId}
-            onChange={(e) => setWarehouseId(e.target.value)}
+            onChange={(val) => setWarehouseId(val)}
           />
         </div>
 

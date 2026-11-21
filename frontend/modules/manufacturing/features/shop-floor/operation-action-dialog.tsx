@@ -96,7 +96,7 @@ export function OperationActionDialog({
             label={t("shopFloor.goodOutput")}
             type="number"
             value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
+            onChange={(val) => setQuantity(val)}
             min="0.0001"
             step="any"
             required
@@ -107,7 +107,7 @@ export function OperationActionDialog({
           label={t("shopFloor.actualMinutes")}
           type="number"
           value={actualMinutes}
-          onChange={(e) => setActualMinutes(e.target.value)}
+          onChange={(val) => setActualMinutes(val)}
           min="0"
           step="any"
         />
@@ -116,7 +116,7 @@ export function OperationActionDialog({
           <TextField
             label={t("orders.reasonLabel")}
             value={reason}
-            onChange={(e) => setReason(e.target.value)}
+            onChange={(val) => setReason(val)}
             required
           />
         ) : null}

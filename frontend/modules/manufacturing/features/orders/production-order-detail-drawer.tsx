@@ -182,7 +182,7 @@ export function ProductionOrderDetailDrawer({
             <div style={{ fontSize: "0.8125rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-sm)", overflow: "hidden" }}>
               {materials.slice(0, 4).map((m) => (
                 <div key={m.id} style={{ padding: "0.5rem 0.75rem", borderBottom: "1px solid var(--color-border-default)", display: "flex", justifyContent: "space-between" }}>
-                  <span>{m.componentProductVariantId.slice(0, 8)}...</span>
+                  <span>{(m.componentProductVariantId ?? m.productVariantId).slice(0, 8)}...</span>
                   <span><BdiText>{`${m.consumedQty} / ${m.requiredQty} ${m.uomCode}`}</BdiText></span>
                 </div>
               ))}
@@ -203,7 +203,7 @@ export function ProductionOrderDetailDrawer({
           </section>
 
           {/* Close Readiness Blocker Notice if exists */}
-          {closeReadiness && !closeReadiness.canClose ? (
+          {closeReadiness && !(closeReadiness.canClose ?? (closeReadiness.state === "Ready" || closeReadiness.state === "Reconciled")) ? (
             <div role="alert" style={{ padding: "0.75rem", background: "#fef2f2", border: "1px solid #ef4444", borderRadius: "var(--radius-sm)", color: "#b91c1c", fontSize: "0.8125rem" }}>
               <strong>{t("costing.closeBlockersTitle")}:</strong> {t("costing.unpostedLedgerWarning")}
             </div>

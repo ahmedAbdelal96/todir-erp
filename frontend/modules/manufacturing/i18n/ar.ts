@@ -78,6 +78,17 @@ export const ar = {
     plannedDate: "المخطط",
     sourceType: "مصدر الأمر",
     sourceRef: "المرجع المصدري",
+    sourceManual: "يدوي مباشر",
+    sourceSales: "أمر بيع معتمد",
+    sourceMrp: "تخطيط المتطلبات (MRP)",
+    sourceProject: "مشروع / مهمة",
+    scrapReasons: {
+      defect: "عيب تصنيعي",
+      machineError: "عطل بالماكينة",
+      setupWaste: "هالك إعداد وتجهيز",
+      rawMaterialFault: "عيب بالمادة الخام",
+      operatorMistake: "خطأ مشغل"
+    },
     progress: "نسبة الإنجاز",
     completedQty: "الكمية المنجزة",
     scrapQty: "كمية الهالك",
@@ -143,6 +154,10 @@ export const ar = {
   materials: {
     title: "جاهزية وصرف المواد الخام",
     subtitle: "متابعة أرصدة المكونات، وصرف الخامات لصالة التشغيل، وإثبات الاستهلاك والارتجاع",
+    orderMaterialsTitle: "خامات ومواد أمر الإنتاج",
+    selectOrderPrompt: "اختر أمر إنتاج لعرض وإدارة حجز وصرف خاماته",
+    component: "مكون الخام",
+    noRequirements: "لا توجد متطلبات خامات مسجلة لهذا الأمر",
     required: "الكمية المطلوبة",
     reserved: "المحجوز",
     issued: "المصروف للمصنع",
@@ -312,9 +327,18 @@ export const ar = {
     noSubstitutes: "لا توجد مجموعات بدائل مسجلة."
   },
 
+  scope: {
+    noLegalEntityTitle: "يجب تحديد الكيان القانوني (الشركة)",
+    noLegalEntityDescription: "يرجى اختيار الكيان القانوني من شريط الأدوات العلوي للوصول إلى بيانات وعمليات التصنيع وتخطيط الإنتاج.",
+    selectLegalEntity: "تحديد الكيان القانوني"
+  },
+
   capacity: {
     title: "الطاقة الإنتاجية ومراكز العمل",
     subtitle: "تخطيط ومراقبة سعة مراكز العمل، وساعات التوقف للصيانة، وحمل التشغيل",
+    modelLabel: "النموذج:",
+    efficiencyLabel: "الكفاءة الافتراضية:",
+    hoursUnit: "س",
     availableHours: "الساعات المتاحة",
     downtimeHours: "ساعات التوقف والصيانة",
     plannedHours: "ساعات التشغيل المحملة",
@@ -347,7 +371,8 @@ export const ar = {
     producedQty: "الكمية المنتجة",
     commingled: "مزيج مستمر من عدة صوامع (Commingled)",
     outputId: "معرف مخرج الإنتاج",
-    inputEventId: "معرف حدث صرف المادة"
+    inputEventId: "معرف حدث صرف المادة",
+    unspecified: "غير محدد"
   },
 
   costing: {
@@ -386,7 +411,31 @@ export const ar = {
     closedOrders: "أوامر مقفلة ومسواة بالكامل",
     activeAndDistributed: "نشط وموزع",
     orderCostStatus: "حالة تكاليف أوامر الإنتاج",
-    addCostFact: "قيد تكلفة"
+    addCostFact: "قيد تكلفة",
+    ordersCount: "أمر",
+    noOrders: "لا توجد أوامر إنتاج مسجلة.",
+    productionOrder: "أمر الإنتاج",
+    orderedQty: "الكمية المطلوبة",
+    completedQty: "المنجز التام",
+    costStatus: "حالة التكاليف",
+    orderState: "حالة الأمر",
+    actionRecordCost: "إجراء قيد تكلفة",
+    closeReadiness: "جاهزية الإقفال",
+    readyToClose: "جاهز للإقفال",
+    blocked: "محظور الإقفال",
+    closeOrder: "إقفال الأمر مالياً",
+    varianceAnalysis: "تحليل فروق التكاليف",
+    reasons: {
+      output_incomplete: "الكمية المنجزة أقل من المطلوب",
+      material_unaccounted: "توجد خامات مصروفة لم تُستَهلك أو تُرد",
+      operations_incomplete: "العمليات الصناعية لم تكتمل بالكامل",
+      output_unreconciled: "مخرجات الإنتاج غير مرحلة للمخزن",
+      wip_negative: "رصيد الـ WIP سالب غير منطقي",
+      wip_unreconciled: "يوجد رصيد WIP معلق يتطلب التسوية",
+      ledger_unposted: "توجد قيود تكاليف غير مرحلة لدفتر الأستاذ",
+      quality_unreconciled: "بوابات الجودة معلقة أو محظورة",
+      cost_unreconciled: "حساب التكاليف غير مكتمل"
+    }
   },
 
   quality: {

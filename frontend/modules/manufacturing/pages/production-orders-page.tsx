@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { ManufacturingHeader } from "../components/manufacturing-header.tsx";
@@ -21,6 +21,7 @@ export function ProductionOrdersPage(): React.JSX.Element {
   const [selectedState, setSelectedState] = useState<string>("ALL");
   const [selectedPlantId, setSelectedPlantId] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -28,32 +29,37 @@ export function ProductionOrdersPage(): React.JSX.Element {
   const [selectedOrderForDrawer, setSelectedOrderForDrawer] = useState<ProductionOrder | null>(null);
   const [orderForAction, setOrderForAction] = useState<{ order: ProductionOrder; action: "release" | "start" | "hold" | "resume" | "complete" | "close" | "cancel" } | null>(null);
 
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedState, selectedPlantId, debouncedSearch]);
+
   const offset = (page - 1) * pageSize;
   const stateFilter = selectedState !== "ALL" ? selectedState : undefined;
+  const plantFilter = selectedPlantId !== "ALL" ? selectedPlantId : undefined;
+  const searchFilter = debouncedSearch.trim() || undefined;
 
-  const { data: totalCount = 0 } = useOrdersCountQuery(legalEntityId, stateFilter ? { state: stateFilter } : undefined);
-  const { data: orders = [], isLoading } = useOrdersQuery(legalEntityId, {
+  const queryFilters = {
     ...(stateFilter ? { state: stateFilter } : {}),
+    ...(plantFilter ? { plantId: plantFilter } : {}),
+    ...(searchFilter ? { search: searchFilter } : {})
+  };
+
+  const { data: totalCount = 0 } = useOrdersCountQuery(legalEntityId, queryFilters);
+  const { data: orders = [], isLoading } = useOrdersQuery(legalEntityId, {
+    ...queryFilters,
     limit: pageSize,
     offset
   });
   const { data: plants = [] } = usePlantsQuery(legalEntityId);
 
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
-
-  const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
-      if (selectedPlantId !== "ALL" && order.plantId !== selectedPlantId) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const orderNum = order.orderNumber ?? order.number ?? "";
-        const matchNumber = orderNum.toLowerCase().includes(q);
-        const matchProduct = order.productVariantId.toLowerCase().includes(q);
-        if (!matchNumber && !matchProduct) return false;
-      }
-      return true;
-    });
-  }, [orders, selectedPlantId, searchQuery]);
 
   if (!isReady) {
     return <NoLegalEntityPrompt />;
@@ -187,14 +193,14 @@ export function ProductionOrdersPage(): React.JSX.Element {
               </tr>
             </thead>
             <tbody>
-              {filteredOrders.length === 0 ? (
+              {orders.length === 0 ? (
                 <tr>
                   <td colSpan={7} style={{ padding: "32px 16px", textAlign: "center", color: "#64748b" }}>
                     {isLoading ? t("common.loading") : t("orders.noMatchingOrders")}
                   </td>
                 </tr>
               ) : (
-                filteredOrders.map((order) => {
+                orders.map((order) => {
                   const plant = plants.find((p) => p.id === order.plantId);
                   return (
                     <tr

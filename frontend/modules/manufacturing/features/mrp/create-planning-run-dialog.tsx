@@ -88,7 +88,7 @@ export function CreatePlanningRunDialog({
           label={t("mrp.horizonStart")}
           type="date"
           value={horizonStart}
-          onChange={(e) => setHorizonStart(e.target.value)}
+          onChange={(val) => setHorizonStart(val)}
           required
         />
 
@@ -96,7 +96,7 @@ export function CreatePlanningRunDialog({
           label={t("mrp.horizonEnd")}
           type="date"
           value={horizonEnd}
-          onChange={(e) => setHorizonEnd(e.target.value)}
+          onChange={(val) => setHorizonEnd(val)}
           required
         />
 

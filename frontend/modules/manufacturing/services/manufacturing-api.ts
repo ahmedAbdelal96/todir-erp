@@ -250,10 +250,18 @@ export const manufacturingApi = {
   // Production Orders
   listProductionOrders(
     legalEntityId: string,
-    filters?: { state?: string; productVariantId?: string; limit?: number }
+    filters?: { state?: string | undefined; productVariantId?: string | undefined; plantId?: string | undefined; search?: string | undefined; limit?: number | undefined; offset?: number | undefined }
   ): Promise<ProductionOrder[]> {
     const qs = buildQuery({ ...filters });
     return httpClient<ProductionOrder[]>(`${BASE_URL}/legal-entities/${legalEntityId}/production-orders${qs}`, { legalEntityId });
+  },
+
+  countProductionOrders(
+    legalEntityId: string,
+    filters?: { state?: string | undefined; productVariantId?: string | undefined; plantId?: string | undefined; search?: string | undefined }
+  ): Promise<number> {
+    const qs = buildQuery({ legalEntityId, ...filters });
+    return httpClient<number>(`${BASE_URL}/production-orders/count${qs}`, { legalEntityId });
   },
 
   getProductionOrder(orderId: string): Promise<ProductionOrder> {

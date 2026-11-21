@@ -11,9 +11,9 @@ export type CostState = "Estimated" | "Accumulating" | "Reconciled" | "Closed";
 export type BomState = "Draft" | "Approved" | "Active" | "Superseded" | "Archived";
 export type ConsumptionMethod = "Manual" | "Backflush" | "Staged";
 export type OutputType = "Good" | "Primary" | "CoProduct" | "ByProduct" | "Loss";
-export type PlannedSupplyType = "Production" | "Purchase" | "Transfer";
+export type PlannedSupplyType = "Production" | "Purchase" | "Transfer" | "Manufacture";
 export type PlannedSupplyState = "Suggested" | "Firmed" | "Cancelled" | "Stale";
-export type CapacityModel = "Hours" | "Units";
+export type CapacityModel = "Hours" | "Units" | "Finite" | "Infinite";
 
 export interface Plant {
   readonly id: string;
@@ -175,6 +175,7 @@ export interface ProductionDefinition {
   readonly minQty?: number | null;
   readonly maxQty?: number | null;
   readonly priority: number;
+  readonly expectedYield?: number;
   readonly state: string;
 }
 
@@ -193,12 +194,17 @@ export interface ProductionOrder {
   readonly plannedEnd?: string | null;
   readonly state: ProductionOrderState;
   readonly materialState: MaterialState;
+  readonly materialStatus?: MaterialState;
   readonly operationState: OperationState;
+  readonly operationStatus?: OperationState;
   readonly qualityState: QualityState;
+  readonly qualityStatus?: QualityState;
   readonly costState: CostState;
+  readonly costStatus?: CostState;
   readonly completedQty: number;
   readonly scrapQty: number;
   readonly rowVersion: number;
+  readonly version?: number;
 }
 
 export interface ProductionMaterial {
@@ -289,19 +295,26 @@ export interface ProductionCost {
 export interface ProductionCloseReadiness {
   readonly productionOrderId: string;
   readonly state: string;
+  readonly canClose?: boolean;
   readonly materialIssuedQty: number;
   readonly materialAccountedQty: number;
   readonly goodOutputQty: number;
   readonly scrapQty: number;
   readonly operationsComplete: boolean;
+  readonly allOperationsComplete?: boolean;
   readonly qualityState: QualityState;
   readonly costState: CostState;
   readonly wipAmount: number;
+  readonly wipBalance?: number;
   readonly blockReason?: string | null;
+  readonly blockers?: readonly string[];
+  readonly issuedMaterialCost?: number;
+  readonly consumedMaterialCost?: number;
 }
 
 export interface PlanningRun {
   readonly id: string;
+  readonly runNumber?: string;
   readonly legalEntityId: string;
   readonly plantId?: string | null;
   readonly horizonStart: string;
@@ -315,9 +328,11 @@ export interface PlanningRun {
 export interface PlannedSupply {
   readonly id: string;
   readonly planningRunId: string;
+  readonly plantId?: string | null;
   readonly productVariantId: string;
   readonly supplyType: PlannedSupplyType;
   readonly needDate: string;
+  readonly dueDate?: string;
   readonly suggestedStart?: string | null;
   readonly quantity: number;
   readonly uomCode: string;
@@ -456,7 +471,7 @@ export interface CreateFormulaVersionRequest {
 }
 
 export interface CreateRoutingRequest {
-  readonly productVariantId?: string | null;
+  readonly productVariantId?: string | null | undefined;
   readonly code: string;
   readonly name: string;
 }
@@ -465,19 +480,19 @@ export interface RoutingOperationInput {
   readonly sequenceNo: number;
   readonly code: string;
   readonly name: string;
-  readonly workCenterId?: string | null;
-  readonly setupMinutes?: number;
-  readonly runMinutesPerUnit?: number;
-  readonly queueMinutes?: number;
-  readonly moveMinutes?: number;
-  readonly operationType?: string;
-  readonly dependsOnSequence?: number | null;
-  readonly qualityGateRequired?: boolean;
+  readonly workCenterId?: string | null | undefined;
+  readonly setupMinutes?: number | undefined;
+  readonly runMinutesPerUnit?: number | undefined;
+  readonly queueMinutes?: number | undefined;
+  readonly moveMinutes?: number | undefined;
+  readonly operationType?: string | undefined;
+  readonly dependsOnSequence?: number | null | undefined;
+  readonly qualityGateRequired?: boolean | undefined;
 }
 
 export interface CreateRoutingVersionRequest {
   readonly validFrom: string;
-  readonly validTo?: string | null;
+  readonly validTo?: string | null | undefined;
   readonly operations: readonly RoutingOperationInput[];
 }
 
@@ -504,15 +519,15 @@ export interface CreateProductionDefinitionRequest {
   readonly plantId: string;
   readonly productVariantId: string;
   readonly manufacturingMode: ManufacturingMode;
-  readonly bomVersionId?: string | null;
-  readonly formulaVersionId?: string | null;
-  readonly routingVersionId?: string | null;
+  readonly bomVersionId?: string | null | undefined;
+  readonly formulaVersionId?: string | null | undefined;
+  readonly routingVersionId?: string | null | undefined;
   readonly validFrom: string;
-  readonly validTo?: string | null;
-  readonly minQty?: number | null;
-  readonly maxQty?: number | null;
-  readonly priority?: number;
-  readonly expectedYield?: number;
+  readonly validTo?: string | null | undefined;
+  readonly minQty?: number | null | undefined;
+  readonly maxQty?: number | null | undefined;
+  readonly priority?: number | undefined;
+  readonly expectedYield?: number | undefined;
 }
 
 export interface ResolveDefinitionRequest {
@@ -530,18 +545,18 @@ export interface CreateProductionOrderRequest {
   readonly orderedQty: number;
   readonly uomCode: string;
   readonly needDate: string;
-  readonly plannedStart?: string | null;
-  readonly plannedEnd?: string | null;
-  readonly sourceType?: string;
-  readonly sourceRef?: string | null;
-  readonly productionDefinitionId?: string | null;
-  readonly projectId?: string | null;
-  readonly projectTaskId?: string | null;
+  readonly plannedStart?: string | null | undefined;
+  readonly plannedEnd?: string | null | undefined;
+  readonly sourceType?: string | undefined;
+  readonly sourceRef?: string | null | undefined;
+  readonly productionDefinitionId?: string | null | undefined;
+  readonly projectId?: string | null | undefined;
+  readonly projectTaskId?: string | null | undefined;
 }
 
 export interface ProductionActionRequest {
   readonly expectedVersion: number;
-  readonly reason?: string | null;
+  readonly reason?: string | null | undefined;
 }
 
 export interface MaterialActionRequest {
@@ -550,50 +565,50 @@ export interface MaterialActionRequest {
   readonly uomCode: string;
   readonly eventType: "Reserved" | "Issued" | "Consumed" | "Returned";
   readonly idempotencyKey: string;
-  readonly inventoryOperationId?: string | null;
-  readonly unitCost?: number | null;
-  readonly currencyCode?: string | null;
-  readonly substituteProductVariantId?: string | null;
-  readonly warehouseId?: string | null;
-  readonly locationId?: string | null;
-  readonly enteredUomId?: string | null;
-  readonly conversionFactorSnapshot?: number;
-  readonly inventoryReservationId?: string | null;
+  readonly inventoryOperationId?: string | null | undefined;
+  readonly unitCost?: number | null | undefined;
+  readonly currencyCode?: string | null | undefined;
+  readonly substituteProductVariantId?: string | null | undefined;
+  readonly warehouseId?: string | null | undefined;
+  readonly locationId?: string | null | undefined;
+  readonly enteredUomId?: string | null | undefined;
+  readonly conversionFactorSnapshot?: number | undefined;
+  readonly inventoryReservationId?: string | null | undefined;
 }
 
 export interface OutputReportRequest {
   readonly quantity: number;
   readonly uomCode: string;
-  readonly outputType?: OutputType;
+  readonly outputType?: OutputType | undefined;
   readonly idempotencyKey: string;
-  readonly operationId?: string | null;
-  readonly provisionalValue?: number | null;
-  readonly currencyCode?: string | null;
-  readonly lotId?: string | null;
-  readonly serialId?: string | null;
-  readonly warehouseId?: string | null;
-  readonly locationId?: string | null;
-  readonly enteredUomId?: string | null;
-  readonly conversionFactorSnapshot?: number;
-  readonly inventoryOperationId?: string | null;
-  readonly productVariantId?: string | null;
+  readonly operationId?: string | null | undefined;
+  readonly provisionalValue?: number | null | undefined;
+  readonly currencyCode?: string | null | undefined;
+  readonly lotId?: string | null | undefined;
+  readonly serialId?: string | null | undefined;
+  readonly warehouseId?: string | null | undefined;
+  readonly locationId?: string | null | undefined;
+  readonly enteredUomId?: string | null | undefined;
+  readonly conversionFactorSnapshot?: number | undefined;
+  readonly inventoryOperationId?: string | null | undefined;
+  readonly productVariantId?: string | null | undefined;
 }
 
 export interface ScrapReportRequest {
   readonly quantity: number;
   readonly uomCode: string;
   readonly category: string;
-  readonly reason?: string | null;
+  readonly reason?: string | null | undefined;
   readonly idempotencyKey: string;
-  readonly operationId?: string | null;
+  readonly operationId?: string | null | undefined;
 }
 
 export interface OperationActionRequest {
   readonly expectedVersion: number;
   readonly idempotencyKey: string;
-  readonly reason?: string | null;
-  readonly quantity?: number | null;
-  readonly actualMinutes?: number | null;
+  readonly reason?: string | null | undefined;
+  readonly quantity?: number | null | undefined;
+  readonly actualMinutes?: number | null | undefined;
 }
 
 export interface AssignOperationResourceRequest {
@@ -614,38 +629,38 @@ export interface RecordLaborFactRequest {
 }
 
 export interface QualityGateDecisionRequest {
-  readonly productionOperationId?: string | null;
+  readonly productionOperationId?: string | null | undefined;
   readonly required: boolean;
   readonly capabilityAvailable: boolean;
   readonly decisionState: string;
-  readonly sourceRef?: string | null;
+  readonly sourceRef?: string | null | undefined;
 }
 
 export interface QualityGatePolicyRequest {
-  readonly productionOperationId?: string | null;
+  readonly productionOperationId?: string | null | undefined;
   readonly required: boolean;
   readonly reason: string;
 }
 
 export interface CreateSubcontractCommitmentRequest {
-  readonly productionOperationId?: string | null;
+  readonly productionOperationId?: string | null | undefined;
   readonly sourceModule: string;
   readonly sourceDocumentId: string;
-  readonly supplierPartyId?: string | null;
+  readonly supplierPartyId?: string | null | undefined;
   readonly quantity: number;
   readonly uomCode: string;
   readonly expectedDate: string;
   readonly committedAmount: number;
-  readonly currencyCode?: string | null;
+  readonly currencyCode?: string | null | undefined;
   readonly idempotencyKey: string;
 }
 
 export interface CreatePlanningRunRequest {
   readonly legalEntityId: string;
-  readonly plantId?: string | null;
+  readonly plantId?: string | null | undefined;
   readonly horizonStart: string;
   readonly horizonEnd: string;
-  readonly policyVersion?: string;
+  readonly policyVersion?: string | undefined;
 }
 
 export interface CreateMpsPlanRequest {
@@ -684,8 +699,8 @@ export interface GenealogyLinkRequest {
   readonly inputEventId: string;
   readonly inputQuantity: number;
   readonly outputQuantity: number;
-  readonly inputLotId?: string | null;
-  readonly outputLotId?: string | null;
+  readonly inputLotId?: string | null | undefined;
+  readonly outputLotId?: string | null | undefined;
   readonly certainty: "Exact" | "Possible" | "Commingled";
   readonly idempotencyKey: string;
 }

@@ -22,7 +22,7 @@ export function FirmProductionDialog({
   const firmMutation = useFirmProductionMutation();
   const { data: plants = [] } = usePlantsQuery(legalEntityId);
 
-  const [plantId, setPlantId] = useState(plannedSupply.plantId || "");
+  const [plantId, setPlantId] = useState(plannedSupply.plantId ?? "");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,15 +31,9 @@ export function FirmProductionDialog({
 
     firmMutation.mutate(
       {
-        supplyId: plannedSupply.id,
-        request: {
-          legalEntityId,
-          plantId: effectivePlantId,
-          productVariantId: plannedSupply.productVariantId,
-          orderedQty: plannedSupply.quantity,
-          uomCode: plannedSupply.uomCode,
-          needDate: plannedSupply.needDate
-        }
+        plannedSupplyId: plannedSupply.id,
+        legalEntityId,
+        plantId: effectivePlantId
       },
       {
         onSuccess: () => {

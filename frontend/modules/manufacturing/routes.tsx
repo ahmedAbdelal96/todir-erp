@@ -27,7 +27,9 @@ const manufacturingModulePermissions: PermissionCondition = {
     "manufacturing.definition.manage",
     "manufacturing.plant.manage",
     "manufacturing.bom.read",
-    "manufacturing.capacity.manage"
+    "manufacturing.capacity.manage",
+    "manufacturing.cost.read",
+    "manufacturing.cost.manage"
   ]
 };
 
@@ -155,7 +157,7 @@ export const manufacturingRoutes: ModuleRouteRegistration = {
       path: "manufacturing/costing",
       element: (
         <PermissionGuard
-          permission={{ anyOf: ["manufacturing.cost.read", "manufacturing.cost.manage", "manufacturing.read"] }}
+          permission={{ anyOf: ["manufacturing.cost.read", "manufacturing.cost.manage", "manufacturing.cost.sensitive.read"] }}
           moduleId="manufacturing"
           mode="mixed"
         >

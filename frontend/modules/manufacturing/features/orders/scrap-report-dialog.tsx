@@ -72,7 +72,7 @@ export function ScrapReportDialog({
           label={t("orders.scrapQty")}
           type="number"
           value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
+          onChange={(val) => setQuantity(val)}
           min="0.0001"
           step="any"
           required
@@ -91,18 +91,18 @@ export function ScrapReportDialog({
               fontSize: "0.875rem"
             }}
           >
-            <option value="Defect">Defect</option>
-            <option value="MachineError">Machine Error</option>
-            <option value="SetupWaste">Setup Waste</option>
-            <option value="RawMaterialFault">Raw Material Fault</option>
-            <option value="OperatorMistake">Operator Mistake</option>
+            <option value="Defect">{t("orders.scrapReasons.defect")}</option>
+            <option value="MachineError">{t("orders.scrapReasons.machineError")}</option>
+            <option value="SetupWaste">{t("orders.scrapReasons.setupWaste")}</option>
+            <option value="RawMaterialFault">{t("orders.scrapReasons.rawMaterialFault")}</option>
+            <option value="OperatorMistake">{t("orders.scrapReasons.operatorMistake")}</option>
           </select>
         </label>
 
         <TextField
           label={t("orders.reasonLabel")}
           value={reason}
-          onChange={(e) => setReason(e.target.value)}
+          onChange={(val) => setReason(val)}
         />
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1rem" }}>

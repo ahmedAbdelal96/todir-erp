@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { ProductPicker, type ProductPickerSelection } from "../../../catalog/public.ts";
 import { useCreateMpsPlanMutation, usePlantsQuery } from "../../hooks/use-manufacturing.ts";
 
 export interface CreateMpsDialogProps {
@@ -86,11 +87,16 @@ export function CreateMpsDialog({ isOpen, onClose, legalEntityId }: CreateMpsDia
           </select>
         </div>
 
-        <TextField
+        <ProductPicker
           label={t("mrp.targetProduct")}
           value={productVariantId}
-          onChange={(e) => setProductVariantId(e.target.value)}
-          required
+          isRequired
+          onChange={(sel: ProductPickerSelection) => {
+            setProductVariantId(sel.variantId);
+            if (sel.baseUomCode && (!uomCode || uomCode === "EA")) {
+              setUomCode(sel.baseUomCode);
+            }
+          }}
         />
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
@@ -98,13 +104,13 @@ export function CreateMpsDialog({ isOpen, onClose, legalEntityId }: CreateMpsDia
             label={t("mrp.targetQty")}
             type="number"
             value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
+            onChange={(val) => setQuantity(val)}
             required
           />
           <TextField
             label={t("orders.uom")}
             value={uomCode}
-            onChange={(e) => setUomCode(e.target.value)}
+            onChange={(val) => setUomCode(val)}
             required
           />
         </div>
@@ -114,14 +120,14 @@ export function CreateMpsDialog({ isOpen, onClose, legalEntityId }: CreateMpsDia
             label={t("mrp.horizonStart")}
             type="date"
             value={bucketStart}
-            onChange={(e) => setBucketStart(e.target.value)}
+            onChange={(val) => setBucketStart(val)}
             required
           />
           <TextField
             label={t("mrp.horizonEnd")}
             type="date"
             value={bucketEnd}
-            onChange={(e) => setBucketEnd(e.target.value)}
+            onChange={(val) => setBucketEnd(val)}
             required
           />
         </div>
@@ -129,7 +135,7 @@ export function CreateMpsDialog({ isOpen, onClose, legalEntityId }: CreateMpsDia
         <TextField
           label={t("mrp.planningRef")}
           value={sourceRef}
-          onChange={(e) => setSourceRef(e.target.value)}
+          onChange={(val) => setSourceRef(val)}
         />
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "12px" }}>

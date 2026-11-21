@@ -1,12 +1,15 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ManufacturingHeader } from "../components/manufacturing-header.tsx";
+import { NoLegalEntityPrompt } from "../components/no-legal-entity-prompt.tsx";
 import { LinkGenealogyDialog } from "../features/genealogy/link-genealogy-dialog.tsx";
+import { useManufacturingScope } from "../hooks/use-manufacturing-scope.ts";
 import { useForwardGenealogyQuery, useReverseGenealogyQuery } from "../hooks/use-manufacturing.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 
 export function GenealogyPage(): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
+  const { legalEntityId, isReady } = useManufacturingScope();
 
   const [direction, setDirection] = useState<"forward" | "reverse">("reverse");
   const [searchId, setSearchId] = useState("");
@@ -25,6 +28,10 @@ export function GenealogyPage(): React.JSX.Element {
       setActiveQueryId(searchId.trim());
     }
   };
+
+  if (!isReady) {
+    return <NoLegalEntityPrompt />;
+  }
 
   return (
     <div
@@ -98,7 +105,7 @@ export function GenealogyPage(): React.JSX.Element {
             type="text"
             value={searchId}
             onChange={(e) => setSearchId(e.target.value)}
-            placeholder={direction === "reverse" ? "أدخل معرف مخرج الإنتاج التام (Output ID)..." : "أدخل معرف حدث صرف الخام (Input Event ID)..."}
+            placeholder={direction === "reverse" ? t("genealogy.searchOutputLotPlaceholder") : t("genealogy.searchInputLotPlaceholder")}
             style={{
               flex: 1,
               padding: "8px 12px",
@@ -108,7 +115,7 @@ export function GenealogyPage(): React.JSX.Element {
             }}
           />
           <Button type="submit" variant="primary">
-            {t("common.confirm", "بحث وتتبع")}
+            {t("genealogy.searchAndTrace")}
           </Button>
         </form>
       </div>
@@ -124,16 +131,16 @@ export function GenealogyPage(): React.JSX.Element {
         }}
       >
         <h3 style={{ margin: "0 0 12px", fontSize: "15px", fontWeight: 700, color: "#102a43" }}>
-          سجل روابط التشغيلات
+          {t("genealogy.linksRecord")}
         </h3>
 
         {!activeQueryId ? (
           <div style={{ padding: "32px 0", textAlign: "center", color: "#64748b" }}>
-            أدخل معرف التشغيلة للبدء في تتبع شجرة الأنساب الصناعية.
+            {t("genealogy.enterPrompt")}
           </div>
         ) : results.length === 0 ? (
           <div style={{ padding: "32px 0", textAlign: "center", color: "#64748b" }}>
-            {isLoading ? t("common.loading", "جاري التحميل...") : "لا توجد روابط تشغيلية مسجلة لهذه المعرفات"}
+            {isLoading ? t("common.loading", "جاري التحميل...") : t("genealogy.noLinks")}
           </div>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px", textAlign: "right" }}>
@@ -141,8 +148,8 @@ export function GenealogyPage(): React.JSX.Element {
               <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#475569" }}>
                 <th style={{ padding: "12px 16px" }}>{t("genealogy.outputLot", "تشغيلة المنتج التام")}</th>
                 <th style={{ padding: "12px 16px" }}>{t("genealogy.inputLot", "تشغيلة الخام")}</th>
-                <th style={{ padding: "12px 16px" }}>الكمية المستهلكة</th>
-                <th style={{ padding: "12px 16px" }}>الكمية المنتجة</th>
+                <th style={{ padding: "12px 16px" }}>{t("genealogy.consumedQty")}</th>
+                <th style={{ padding: "12px 16px" }}>{t("genealogy.producedQty")}</th>
                 <th style={{ padding: "12px 16px" }}>{t("genealogy.certainty", "درجة التأكيد")}</th>
               </tr>
             </thead>
@@ -150,10 +157,10 @@ export function GenealogyPage(): React.JSX.Element {
               {results.map((item, idx) => (
                 <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
                   <td style={{ padding: "12px 16px", fontWeight: 700, color: "#0284c7" }}>
-                    {item.outputLotId ?? "غير محدد"}
+                    {item.outputLotId ?? t("genealogy.unspecified")}
                   </td>
                   <td style={{ padding: "12px 16px", fontWeight: 600 }}>
-                    {item.inputLotId ?? "غير محدد"}
+                    {item.inputLotId ?? t("genealogy.unspecified")}
                   </td>
                   <td style={{ padding: "12px 16px" }}>{item.inputQuantity}</td>
                   <td style={{ padding: "12px 16px" }}>{item.outputQuantity}</td>
@@ -181,7 +188,8 @@ export function GenealogyPage(): React.JSX.Element {
       <LinkGenealogyDialog
         isOpen={isLinkOpen}
         onClose={() => setIsLinkOpen(false)}
-        orderId={activeQueryId || "GEN-ORD-01"}
+        orderId={activeQueryId || undefined}
+        legalEntityId={legalEntityId}
       />
     </div>
   );

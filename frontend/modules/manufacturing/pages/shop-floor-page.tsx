@@ -1,9 +1,9 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext } from "react-router-dom";
-import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 import { ManufacturingHeader } from "../components/manufacturing-header.tsx";
 import { ManufacturingStatusBadge } from "../components/manufacturing-status-badge.tsx";
+import { NoLegalEntityPrompt } from "../components/no-legal-entity-prompt.tsx";
+import { useManufacturingScope } from "../hooks/use-manufacturing-scope.ts";
 import { OperationActionDialog } from "../features/shop-floor/operation-action-dialog.tsx";
 import { OutputReportDialog } from "../features/orders/output-report-dialog.tsx";
 import { ScrapReportDialog } from "../features/orders/scrap-report-dialog.tsx";
@@ -13,8 +13,7 @@ import type { ProductionOperation } from "../types.ts";
 
 export function ShopFloorPage(): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
-  const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
-  const legalEntityId = outletCtx?.legalEntityId ?? "00000000-0000-0000-0000-000000000001";
+  const { legalEntityId, isReady } = useManufacturingScope();
 
   const { data: plants = [] } = usePlantsQuery(legalEntityId);
   const [selectedPlantId, setSelectedPlantId] = useState<string>("");
@@ -35,6 +34,10 @@ export function ShopFloorPage(): React.JSX.Element {
   const [selectedOperation, setSelectedOperation] = useState<{ op: ProductionOperation; action: "start" | "pause" | "resume" | "complete" } | null>(null);
   const [outputOrderId, setOutputOrderId] = useState<string | null>(null);
   const [scrapOrderId, setScrapOrderId] = useState<string | null>(null);
+
+  if (!isReady) {
+    return <NoLegalEntityPrompt />;
+  }
 
   return (
     <div
@@ -130,15 +133,15 @@ export function ShopFloorPage(): React.JSX.Element {
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
                     <span style={{ fontSize: "16px", fontWeight: 700, color: "#102a43" }}>
-                      #{op.sequenceNo} {op.name} ({op.code})
+                      #{op.sequenceNo} {op.name} {op.code ? `(${op.code})` : ""}
                     </span>
                     <ManufacturingStatusBadge state={op.state} />
                   </div>
                   <div style={{ fontSize: "13px", color: "#64748b" }}>
-                    {t("shopFloor.center")}: <strong>{wc ? `${wc.code} - ${wc.name}` : t("shopFloor.generalNotSpecified")}</strong> • {t("shopFloor.setupTime")}: {op.standardSetupMinutes} {t("shopFloor.minutesUnit")} • {t("shopFloor.runTimeUnit")}: {op.standardRunMinutesPerUnit} {t("shopFloor.minutesUnit")}
+                    {t("shopFloor.center")}: <strong>{wc ? `${wc.code} - ${wc.name}` : t("shopFloor.generalNotSpecified")}</strong> • {t("shopFloor.setupTime")}: {op.standardSetupMinutes ?? 0} {t("shopFloor.minutesUnit")} • {t("shopFloor.runTimeUnit")}: {op.standardRunMinutesPerUnit ?? 0} {t("shopFloor.minutesUnit")}
                   </div>
                   <div style={{ fontSize: "13px", color: "#334155", marginTop: "4px" }}>
-                    {t("shopFloor.orderRef")}: <code>{op.productionOrderId.slice(0, 8)}</code> • {t("shopFloor.actualTime")}: {op.actualLaborMinutes + op.actualMachineMinutes} {t("shopFloor.minutesLong")}
+                    {t("shopFloor.orderRef")}: <code>{op.productionOrderId.slice(0, 8)}</code> • {t("shopFloor.actualTime")}: {(op.actualLaborMinutes ?? op.actualMinutes ?? 0) + (op.actualMachineMinutes ?? 0)} {t("shopFloor.minutesLong")}
                   </div>
                 </div>
 
@@ -202,7 +205,7 @@ export function ShopFloorPage(): React.JSX.Element {
           operationId={selectedOperation.op.id}
           operationName={selectedOperation.op.name}
           action={selectedOperation.action}
-          currentVersion={selectedOperation.op.version}
+          currentVersion={selectedOperation.op.version ?? selectedOperation.op.rowVersion ?? 1}
         />
       )}
 

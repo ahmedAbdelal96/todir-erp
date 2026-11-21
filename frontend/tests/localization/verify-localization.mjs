@@ -13,7 +13,7 @@ const resourcePairs = [
   ...["accounting", "catalog", "directory", "finbase", "identity", "invoicing", "migration", "payments", "pricing", "tax", "subledger", "inventory", "sales", "purchasing", "hr", "payroll", "crm", "pos", "expenses", "fixed-assets", "projects", "service", "banking", "manufacturing"]
     .map((module) => [`modules/${module}/i18n/ar.ts`, `modules/${module}/i18n/en.ts`])
 ];
-const excludedCopyPaths = /(?:\.test\.|\.stories\.|\.story\.|\/tests\/|\/stories\/|\/__fixtures__\/|\/i18n\/|\/utils\/diagnostic-translations\.ts$|\/modules\/manufacturing\/)/;
+const excludedCopyPaths = /(?:\.test\.|\.stories\.|\.story\.|\/tests\/|\/stories\/|\/__fixtures__\/|\/i18n\/|\/utils\/diagnostic-translations\.ts$)/;
 const technicalJsxAttributes = new Set([
   "className", "id", "type", "role", "name", "value", "href", "to", "target", "rel", "method", "action",
   "autoComplete", "inputMode", "pattern", "htmlFor", "tabIndex", "data-testid", "data-test-id", "key", "style",

@@ -29,7 +29,7 @@ export function OrderActionDialog({ isOpen, onClose, order, action }: OrderActio
         orderId: order.id,
         action,
         request: {
-          expectedVersion: order.version,
+          expectedVersion: order.version ?? order.rowVersion,
           reason: reason.trim() || undefined
         }
       },
@@ -69,7 +69,7 @@ export function OrderActionDialog({ isOpen, onClose, order, action }: OrderActio
           <TextField
             label={t("orders.reasonLabel")}
             value={reason}
-            onChange={(e) => setReason(e.target.value)}
+            onChange={(val) => setReason(val)}
             required
           />
         ) : null}

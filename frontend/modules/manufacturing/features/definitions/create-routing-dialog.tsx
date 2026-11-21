@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { ProductPicker, type ProductPickerSelection } from "../../../catalog/public.ts";
 import { useCreateRoutingMutation, useCreateRoutingVersionMutation, useWorkCentersQuery } from "../../hooks/use-manufacturing.ts";
 import type { RoutingOperationInput } from "../../types.ts";
 
@@ -93,21 +94,21 @@ export function CreateRoutingDialog({ isOpen, onClose }: CreateRoutingDialogProp
           <TextField
             label={t("definitions.routingCode")}
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(val) => setCode(val)}
             required
           />
           <TextField
             label={t("definitions.routingName")}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(val) => setName(val)}
             required
           />
         </div>
 
-        <TextField
+        <ProductPicker
           label={t("orders.product")}
           value={productVariantId}
-          onChange={(e) => setProductVariantId(e.target.value)}
+          onChange={(sel: ProductPickerSelection) => setProductVariantId(sel.variantId)}
         />
 
         <div style={{ borderTop: "1px solid #cbd5e1", paddingTop: "12px" }}>
@@ -139,29 +140,29 @@ export function CreateRoutingDialog({ isOpen, onClose }: CreateRoutingDialogProp
                   label={t("shopFloor.sequence")}
                   type="number"
                   value={String(op.sequenceNo)}
-                  onChange={(e) => updateOperation(idx, { sequenceNo: parseInt(e.target.value, 10) || 10 })}
+                  onChange={(val) => updateOperation(idx, { sequenceNo: parseInt(val, 10) || 10 })}
                 />
                 <TextField
                   label={t("common.code")}
                   value={op.code}
-                  onChange={(e) => updateOperation(idx, { code: e.target.value })}
+                  onChange={(val) => updateOperation(idx, { code: val })}
                 />
                 <TextField
                   label={t("shopFloor.operationName")}
                   value={op.name}
-                  onChange={(e) => updateOperation(idx, { name: e.target.value })}
+                  onChange={(val) => updateOperation(idx, { name: val })}
                 />
                 <TextField
                   label={t("common.setupMinutes")}
                   type="number"
                   value={String(op.setupMinutes ?? 0)}
-                  onChange={(e) => updateOperation(idx, { setupMinutes: parseInt(e.target.value, 10) || 0 })}
+                  onChange={(val) => updateOperation(idx, { setupMinutes: parseInt(val, 10) || 0 })}
                 />
                 <TextField
                   label={t("common.runMinutes")}
                   type="number"
                   value={String(op.runMinutesPerUnit ?? 1)}
-                  onChange={(e) => updateOperation(idx, { runMinutesPerUnit: parseFloat(e.target.value) || 1 })}
+                  onChange={(val) => updateOperation(idx, { runMinutesPerUnit: parseFloat(val) || 1 })}
                 />
                 <button
                   type="button"

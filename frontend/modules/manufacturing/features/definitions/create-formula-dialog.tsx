@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { ProductPicker, type ProductPickerSelection } from "../../../catalog/public.ts";
 import { useCreateFormulaMutation, useCreateFormulaVersionMutation } from "../../hooks/use-manufacturing.ts";
 import type { FormulaIngredientInput, FormulaOutputInput, OutputType } from "../../types.ts";
 
@@ -114,31 +115,36 @@ export function CreateFormulaDialog({ isOpen, onClose }: CreateFormulaDialogProp
           <TextField
             label={t("definitions.formulaCode")}
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(val) => setCode(val)}
             required
           />
 
           <TextField
             label={t("definitions.formulaName")}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(val) => setName(val)}
             required
           />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: "0.75rem" }}>
-          <TextField
+          <ProductPicker
             label={t("orders.product")}
             value={productVariantId}
-            onChange={(e) => setProductVariantId(e.target.value)}
-            required
+            isRequired
+            onChange={(sel: ProductPickerSelection) => {
+              setProductVariantId(sel.variantId);
+              if (sel.baseUomCode && (!outputUomCode || outputUomCode === "L")) {
+                setOutputUomCode(sel.baseUomCode);
+              }
+            }}
           />
 
           <TextField
             label={t("definitions.baseOutputQty")}
             type="number"
             value={baseBatchQty}
-            onChange={(e) => setBaseBatchQty(e.target.value)}
+            onChange={(val) => setBaseBatchQty(val)}
             min="0.0001"
             step="any"
             required
@@ -147,7 +153,7 @@ export function CreateFormulaDialog({ isOpen, onClose }: CreateFormulaDialogProp
           <TextField
             label={t("orders.uom")}
             value={outputUomCode}
-            onChange={(e) => setOutputUomCode(e.target.value)}
+            onChange={(val) => setOutputUomCode(val)}
             required
           />
 
@@ -155,7 +161,7 @@ export function CreateFormulaDialog({ isOpen, onClose }: CreateFormulaDialogProp
             label={t("definitions.expectedYield")}
             type="number"
             value={expectedYield}
-            onChange={(e) => setExpectedYield(e.target.value)}
+            onChange={(val) => setExpectedYield(val)}
             min="0.01"
             max="1"
             step="0.01"
@@ -173,20 +179,26 @@ export function CreateFormulaDialog({ isOpen, onClose }: CreateFormulaDialogProp
           </div>
           {ingredients.map((ing, idx) => (
             <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: "0.5rem", marginBottom: "0.5rem" }}>
-              <TextField
+              <ProductPicker
                 value={ing.productVariantId}
-                onChange={(e) => updateIngredient(idx, { productVariantId: e.target.value })}
+                isRequired
+                onChange={(sel: ProductPickerSelection) => {
+                  updateIngredient(idx, {
+                    productVariantId: sel.variantId,
+                    uomCode: sel.baseUomCode || ing.uomCode
+                  });
+                }}
               />
               <TextField
                 type="number"
                 value={String(ing.quantity)}
-                onChange={(e) => updateIngredient(idx, { quantity: parseFloat(e.target.value) || 0 })}
+                onChange={(val) => updateIngredient(idx, { quantity: parseFloat(val) || 0 })}
                 min="0.0001"
                 step="any"
               />
               <TextField
                 value={ing.uomCode}
-                onChange={(e) => updateIngredient(idx, { uomCode: e.target.value })}
+                onChange={(val) => updateIngredient(idx, { uomCode: val })}
               />
               <Button type="button" size="small" variant="destructive" onPress={() => removeIngredient(idx)} isDisabled={ingredients.length === 1}>
                 ×
@@ -205,9 +217,15 @@ export function CreateFormulaDialog({ isOpen, onClose }: CreateFormulaDialogProp
           </div>
           {outputs.map((out, idx) => (
             <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 1fr 1fr auto", gap: "0.5rem", marginBottom: "0.5rem" }}>
-              <TextField
+              <ProductPicker
                 value={out.productVariantId}
-                onChange={(e) => updateOutput(idx, { productVariantId: e.target.value })}
+                isRequired
+                onChange={(sel: ProductPickerSelection) => {
+                  updateOutput(idx, {
+                    productVariantId: sel.variantId,
+                    uomCode: sel.baseUomCode || out.uomCode
+                  });
+                }}
               />
               <select
                 value={out.outputType}
@@ -222,13 +240,13 @@ export function CreateFormulaDialog({ isOpen, onClose }: CreateFormulaDialogProp
               <TextField
                 type="number"
                 value={String(out.quantity)}
-                onChange={(e) => updateOutput(idx, { quantity: parseFloat(e.target.value) || 0 })}
+                onChange={(val) => updateOutput(idx, { quantity: parseFloat(val) || 0 })}
                 min="0.0001"
                 step="any"
               />
               <TextField
                 value={out.uomCode}
-                onChange={(e) => updateOutput(idx, { uomCode: e.target.value })}
+                onChange={(val) => updateOutput(idx, { uomCode: val })}
               />
               <Button type="button" size="small" variant="destructive" onPress={() => removeOutput(idx)} isDisabled={outputs.length === 1}>
                 ×

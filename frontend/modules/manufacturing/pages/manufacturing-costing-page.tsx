@@ -1,20 +1,29 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext } from "react-router-dom";
-import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 import { ManufacturingHeader } from "../components/manufacturing-header.tsx";
 import { ManufacturingStatusBadge } from "../components/manufacturing-status-badge.tsx";
+import { NoLegalEntityPrompt } from "../components/no-legal-entity-prompt.tsx";
 import { RecordCostFactDialog } from "../features/costing/record-cost-fact-dialog.tsx";
+import { CloseReadinessPanel } from "../features/orders/close-readiness-panel.tsx";
+import { useManufacturingScope } from "../hooks/use-manufacturing-scope.ts";
 import { useOrdersQuery } from "../hooks/use-manufacturing.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 
 export function ManufacturingCostingPage(): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
-  const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
-  const legalEntityId = outletCtx?.legalEntityId ?? "00000000-0000-0000-0000-000000000001";
+  const { legalEntityId, isReady } = useManufacturingScope();
 
   const { data: orders = [] } = useOrdersQuery(legalEntityId);
   const [selectedOrderIdForCost, setSelectedOrderIdForCost] = useState<string | null>(null);
+  const [inspectedOrderId, setInspectedOrderId] = useState<string | null>(null);
+
+  if (!isReady) {
+    return <NoLegalEntityPrompt />;
+  }
+
+  const completedOrdersCount = orders.filter((o) => o.state === "Completed").length;
+  const closedOrdersCount = orders.filter((o) => o.state === "Closed").length;
+  const accumulatingOrdersCount = orders.filter((o) => o.costStatus === "Accumulating").length;
 
   return (
     <div
@@ -37,50 +46,66 @@ export function ManufacturingCostingPage(): React.JSX.Element {
         <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "16px" }}>
           <div style={{ fontSize: "12px", color: "#64748b" }}>{t("costing.wipBalance", "رصيد التشغيل تحت التنفيذ (WIP)")}</div>
           <div style={{ fontSize: "20px", fontWeight: 700, color: "#102a43", marginTop: "4px" }}>
-            نشط وموزع
+            {accumulatingOrdersCount > 0
+              ? `${accumulatingOrdersCount} ${t("costing.ordersCount", "أمر")}`
+              : t("costing.activeAndDistributed", "نشط وموزع")}
           </div>
         </div>
 
         <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "16px" }}>
-          <div style={{ fontSize: "12px", color: "#64748b" }}>الأوامر المؤهلة للإقفال المالي</div>
+          <div style={{ fontSize: "12px", color: "#64748b" }}>{t("costing.eligibleForClose", "الأوامر المؤهلة للإقفال المالي")}</div>
           <div style={{ fontSize: "20px", fontWeight: 700, color: "#15803d", marginTop: "4px" }}>
-            {orders.filter((o) => o.state === "Completed").length} أمر
+            {completedOrdersCount} {t("costing.ordersCount", "أمر")}
           </div>
         </div>
 
         <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "16px" }}>
-          <div style={{ fontSize: "12px", color: "#64748b" }}>أوامر مقفلة ومسواة بالكامل</div>
+          <div style={{ fontSize: "12px", color: "#64748b" }}>{t("costing.closedOrders", "أوامر مقفلة ومسواة بالكامل")}</div>
           <div style={{ fontSize: "20px", fontWeight: 700, color: "#475569", marginTop: "4px" }}>
-            {orders.filter((o) => o.state === "Closed").length} أمر
+            {closedOrdersCount} {t("costing.ordersCount", "أمر")}
           </div>
         </div>
       </div>
 
+      {inspectedOrderId && (
+        <div style={{ marginBottom: "16px" }}>
+          <CloseReadinessPanel orderId={inspectedOrderId} />
+        </div>
+      )}
+
       {/* Orders Costing Table */}
       <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "16px" }}>
         <h3 style={{ margin: "0 0 12px", fontSize: "15px", fontWeight: 700, color: "#102a43" }}>
-          حالة تكاليف أوامر الإنتاج
+          {t("costing.orderCostStatus", "حالة تكاليف أوامر الإنتاج")}
         </h3>
 
         {orders.length === 0 ? (
           <div style={{ padding: "32px 0", textAlign: "center", color: "#64748b" }}>
-            لا توجد أوامر إنتاج مسجلة.
+            {t("costing.noOrders", "لا توجد أوامر إنتاج مسجلة.")}
           </div>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px", textAlign: "right" }}>
             <thead>
               <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#475569" }}>
-                <th style={{ padding: "12px 16px" }}>أمر الإنتاج</th>
-                <th style={{ padding: "12px 16px" }}>الكمية المطلوبة</th>
-                <th style={{ padding: "12px 16px" }}>المنجز التام</th>
-                <th style={{ padding: "12px 16px" }}>حالة التكاليف</th>
-                <th style={{ padding: "12px 16px" }}>حالة الأمر</th>
-                <th style={{ padding: "12px 16px", textAlign: "center" }}>إجراء قيد تكلفة</th>
+                <th style={{ padding: "12px 16px" }}>{t("costing.productionOrder", "أمر الإنتاج")}</th>
+                <th style={{ padding: "12px 16px" }}>{t("costing.orderedQty", "الكمية المطلوبة")}</th>
+                <th style={{ padding: "12px 16px" }}>{t("costing.completedQty", "المنجز التام")}</th>
+                <th style={{ padding: "12px 16px" }}>{t("costing.costStatus", "حالة التكاليف")}</th>
+                <th style={{ padding: "12px 16px" }}>{t("costing.orderState", "حالة الأمر")}</th>
+                <th style={{ padding: "12px 16px", textAlign: "center" }}>{t("costing.actionRecordCost", "إجراء قيد تكلفة")}</th>
               </tr>
             </thead>
             <tbody>
               {orders.map((order) => (
-                <tr key={order.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                <tr
+                  key={order.id}
+                  style={{
+                    borderBottom: "1px solid #f1f5f9",
+                    cursor: "pointer",
+                    background: inspectedOrderId === order.id ? "#f0fdf4" : undefined
+                  }}
+                  onClick={() => setInspectedOrderId(inspectedOrderId === order.id ? null : order.id)}
+                >
                   <td style={{ padding: "12px 16px", fontWeight: 700, color: "#0284c7" }}>
                     {order.orderNumber}
                   </td>
@@ -99,7 +124,10 @@ export function ManufacturingCostingPage(): React.JSX.Element {
                   <td style={{ padding: "12px 16px", textAlign: "center" }}>
                     <Button
                       variant="secondary"
-                      onClick={() => setSelectedOrderIdForCost(order.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedOrderIdForCost(order.id);
+                      }}
                     >
                       + {t("costing.recordCostFact", "قيد تكلفة")}
                     </Button>

@@ -85,13 +85,13 @@ export function RecordCostFactDialog({ isOpen, onClose, orderId }: RecordCostFac
             label={t("costing.costAmount")}
             type="number"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(val) => setAmount(val)}
             required
           />
           <TextField
             label={t("common.currency")}
             value={currencyCode}
-            onChange={(e) => setCurrencyCode(e.target.value)}
+            onChange={(val) => setCurrencyCode(val)}
             required
           />
         </div>
@@ -100,12 +100,12 @@ export function RecordCostFactDialog({ isOpen, onClose, orderId }: RecordCostFac
           <TextField
             label={t("common.sourceType")}
             value={sourceType}
-            onChange={(e) => setSourceType(e.target.value)}
+            onChange={(val) => setSourceType(val)}
           />
           <TextField
             label={t("common.sourceId")}
             value={sourceId}
-            onChange={(e) => setSourceId(e.target.value)}
+            onChange={(val) => setSourceId(val)}
           />
         </div>
 
@@ -113,7 +113,7 @@ export function RecordCostFactDialog({ isOpen, onClose, orderId }: RecordCostFac
           label={t("common.sourceDate")}
           type="date"
           value={sourceDate}
-          onChange={(e) => setSourceDate(e.target.value)}
+          onChange={(val) => setSourceDate(val)}
           required
         />
 

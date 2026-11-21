@@ -78,6 +78,17 @@ export const en = {
     plannedDate: "Planned",
     sourceType: "Source Type",
     sourceRef: "Source Reference",
+    sourceManual: "Direct Manual",
+    sourceSales: "Sales Demand",
+    sourceMrp: "MRP Planning",
+    sourceProject: "Project Task",
+    scrapReasons: {
+      defect: "Manufacturing Defect",
+      machineError: "Machine Breakdown",
+      setupWaste: "Setup / Calibration Waste",
+      rawMaterialFault: "Raw Material Fault",
+      operatorMistake: "Operator Error"
+    },
     progress: "Progress",
     completedQty: "Completed Qty",
     scrapQty: "Scrap Qty",
@@ -143,6 +154,10 @@ export const en = {
   materials: {
     title: "Materials Readiness & Issuance",
     subtitle: "Track component availability, stage raw materials to the floor, and record consumption and returns",
+    orderMaterialsTitle: "Order Material Requirements",
+    selectOrderPrompt: "Select a production order to manage material requirements",
+    component: "Component",
+    noRequirements: "No material requirements recorded for this order",
     required: "Required Quantity",
     reserved: "Reserved",
     issued: "Issued to Floor",
@@ -312,9 +327,18 @@ export const en = {
     noSubstitutes: "No substitution groups registered."
   },
 
+  scope: {
+    noLegalEntityTitle: "Legal Entity Context Required",
+    noLegalEntityDescription: "Please select an active legal entity from the topbar context switcher to access manufacturing and production planning operations.",
+    selectLegalEntity: "Select Legal Entity"
+  },
+
   capacity: {
     title: "Capacity & Work Centers",
     subtitle: "Plan and monitor work center workload, maintenance downtime, and scheduling bottlenecks",
+    modelLabel: "Model:",
+    efficiencyLabel: "Default Efficiency:",
+    hoursUnit: "h",
     availableHours: "Available Hours",
     downtimeHours: "Downtime / Maintenance",
     plannedHours: "Planned Workload",
@@ -347,7 +371,8 @@ export const en = {
     producedQty: "Produced Quantity",
     commingled: "Commingled Continuous Mix",
     outputId: "Output ID",
-    inputEventId: "Input Event ID"
+    inputEventId: "Input Event ID",
+    unspecified: "Unspecified"
   },
 
   costing: {
@@ -386,7 +411,31 @@ export const en = {
     closedOrders: "Closed & Reconciled Orders",
     activeAndDistributed: "Active & Distributed",
     orderCostStatus: "Production Orders Cost Status",
-    addCostFact: "Cost Fact"
+    addCostFact: "Cost Fact",
+    ordersCount: "orders",
+    noOrders: "No production orders recorded.",
+    productionOrder: "Production Order",
+    orderedQty: "Ordered Quantity",
+    completedQty: "Completed Good Output",
+    costStatus: "Cost Status",
+    orderState: "Order State",
+    actionRecordCost: "Record Cost Fact",
+    closeReadiness: "Close Readiness",
+    readyToClose: "Ready to Close",
+    blocked: "Close Blocked",
+    closeOrder: "Close Order Financially",
+    varianceAnalysis: "Cost Variance Analysis",
+    reasons: {
+      output_incomplete: "Completed quantity is less than ordered",
+      material_unaccounted: "Issued materials are not fully accounted for",
+      operations_incomplete: "Operations are not fully complete",
+      output_unreconciled: "Outputs are not committed to inventory",
+      wip_negative: "WIP balance is negative",
+      wip_unreconciled: "Unreconciled WIP balance remaining",
+      ledger_unposted: "Unposted cost entries in general ledger",
+      quality_unreconciled: "Quality gates are pending or blocked",
+      cost_unreconciled: "Costing is not finalized"
+    }
   },
 
   quality: {

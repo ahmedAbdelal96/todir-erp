@@ -195,7 +195,7 @@ export function ProductionOrderWorkspacePage(): React.JSX.Element {
                 <tbody>
                   {materials.map((mat) => (
                     <tr key={mat.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{mat.componentProductVariantId.slice(0, 8)}...</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{(mat.componentProductVariantId ?? mat.productVariantId).slice(0, 8)}...</td>
                       <td style={{ padding: "10px 12px" }}>{mat.requiredQty} {mat.uomCode}</td>
                       <td style={{ padding: "10px 12px" }}>{mat.reservedQty}</td>
                       <td style={{ padding: "10px 12px", color: "#0284c7" }}>{mat.issuedQty}</td>
@@ -245,10 +245,10 @@ export function ProductionOrderWorkspacePage(): React.JSX.Element {
                   {operations.map((op) => (
                     <tr key={op.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "10px 12px", fontWeight: 700 }}>#{op.sequenceNo}</td>
-                      <td style={{ padding: "10px 12px" }}>{op.code}</td>
+                      <td style={{ padding: "10px 12px" }}>{op.code ?? `#${op.sequenceNo}`}</td>
                       <td style={{ padding: "10px 12px", fontWeight: 600 }}>{op.name}</td>
-                      <td style={{ padding: "10px 12px" }}>{op.standardSetupMinutes + op.standardRunMinutesPerUnit} {t("shopFloor.minutesUnit")}</td>
-                      <td style={{ padding: "10px 12px" }}>{op.actualLaborMinutes + op.actualMachineMinutes} {t("shopFloor.minutesUnit")}</td>
+                      <td style={{ padding: "10px 12px" }}>{(op.standardSetupMinutes ?? 0) + (op.standardRunMinutesPerUnit ?? 0)} {t("shopFloor.minutesUnit")}</td>
+                      <td style={{ padding: "10px 12px" }}>{(op.actualLaborMinutes ?? op.actualMinutes ?? 0) + (op.actualMachineMinutes ?? 0)} {t("shopFloor.minutesUnit")}</td>
                       <td style={{ padding: "10px 12px" }}><ManufacturingStatusBadge state={op.state} /></td>
                     </tr>
                   ))}
@@ -412,6 +412,7 @@ export function ProductionOrderWorkspacePage(): React.JSX.Element {
         isOpen={isQualityGateOpen}
         onClose={() => setIsQualityGateOpen(false)}
         orderId={order.id}
+        orderState={order.state}
       />
 
       <RecordCostFactDialog

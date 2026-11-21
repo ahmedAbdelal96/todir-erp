@@ -322,10 +322,17 @@ public sealed partial class ManufacturingRepository(
 
     public Task<Guid?> GetOutputKeyLegalEntityAsync(TenantId tenant, string key, CancellationToken ct) => coordinator.ExecuteAsync(tenant,
         (context, token) => ScalarAsync<Guid?>(context, "select o.legal_entity_id from business_manufacturing.production_output p join business_manufacturing.production_order o on o.tenant_id=p.tenant_id and o.id=p.production_order_id where p.tenant_id=$1 and p.idempotency_key=$2", token, tenant.Value, key), ct);
-    public Task<IReadOnlyList<ProductionOrderResponse>> ListProductionOrdersAsync(TenantId tenant, Guid legalEntityId, string? state, Guid? productVariantId, int limit, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    public Task<IReadOnlyList<ProductionOrderResponse>> ListProductionOrdersAsync(TenantId tenant, Guid legalEntityId, string? state, Guid? productVariantId, Guid? plantId = null, string? search = null, int limit = 50, int offset = 0, CancellationToken ct = default) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
-        await using var command = Command(context, "select id,number,legal_entity_id,plant_id,product_variant_id,ordered_qty,uom_code,need_date,state,material_state,operation_state,quality_state,cost_state,completed_qty,scrap_qty,row_version from business_manufacturing.production_order where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or state=$3) and ($4::uuid is null or product_variant_id=$4) order by need_date,id limit $5", tenant.Value, legalEntityId, Db(state), Db(productVariantId), Math.Clamp(limit, 1, 200));
+        var searchPattern = string.IsNullOrWhiteSpace(search) ? null : $"%{search.Trim()}%";
+        await using var command = Command(context, "select id,number,legal_entity_id,plant_id,product_variant_id,ordered_qty,uom_code,need_date,state,material_state,operation_state,quality_state,cost_state,completed_qty,scrap_qty,row_version from business_manufacturing.production_order where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or state=$3) and ($4::uuid is null or product_variant_id=$4) and ($5::uuid is null or plant_id=$5) and ($6::text is null or number ilike $6) order by need_date asc, id asc limit $7 offset $8", tenant.Value, legalEntityId, Db(state), Db(productVariantId), Db(plantId), Db(searchPattern), Math.Clamp(limit, 1, 200), Math.Max(0, offset));
         await using var reader = await command.ExecuteReaderAsync(token); var result = new List<ProductionOrderResponse>(); while (await reader.ReadAsync(token)) result.Add(ReadOrder(reader)); return (IReadOnlyList<ProductionOrderResponse>)result;
+    }, ct);
+
+    public Task<int> CountProductionOrdersAsync(TenantId tenant, Guid legalEntityId, string? state, Guid? productVariantId, Guid? plantId = null, string? search = null, CancellationToken ct = default) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var searchPattern = string.IsNullOrWhiteSpace(search) ? null : $"%{search.Trim()}%";
+        return await ScalarAsync<int>(context, "select count(*) from business_manufacturing.production_order where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or state=$3) and ($4::uuid is null or product_variant_id=$4) and ($5::uuid is null or plant_id=$5) and ($6::text is null or number ilike $6)", token, tenant.Value, legalEntityId, Db(state), Db(productVariantId), Db(plantId), Db(searchPattern));
     }, ct);
 
     public Task<ProductionOrderResponse> TransitionProductionOrderAsync(TenantId tenant, Guid actor, Guid orderId, string action, long expectedVersion, Guid correlationId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>

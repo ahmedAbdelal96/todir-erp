@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { ProductPicker, type ProductPickerSelection } from "../../../catalog/public.ts";
 import { useCreateBomMutation, useCreateBomVersionMutation } from "../../hooks/use-manufacturing.ts";
 import type { BomLineInput } from "../../types.ts";
 
@@ -94,31 +95,36 @@ export function CreateBomDialog({ isOpen, onClose }: CreateBomDialogProps): Reac
           <TextField
             label={t("definitions.bomCode")}
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(val) => setCode(val)}
             required
           />
 
           <TextField
             label={t("definitions.bomName")}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(val) => setName(val)}
             required
           />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: "0.75rem" }}>
-          <TextField
+          <ProductPicker
             label={t("orders.product")}
             value={productVariantId}
-            onChange={(e) => setProductVariantId(e.target.value)}
-            required
+            isRequired
+            onChange={(sel: ProductPickerSelection) => {
+              setProductVariantId(sel.variantId);
+              if (sel.baseUomCode && (!outputUomCode || outputUomCode === "EA")) {
+                setOutputUomCode(sel.baseUomCode);
+              }
+            }}
           />
 
           <TextField
             label={t("definitions.baseOutputQty")}
             type="number"
             value={baseOutputQty}
-            onChange={(e) => setBaseOutputQty(e.target.value)}
+            onChange={(val) => setBaseOutputQty(val)}
             min="0.0001"
             step="any"
             required
@@ -127,7 +133,7 @@ export function CreateBomDialog({ isOpen, onClose }: CreateBomDialogProps): Reac
           <TextField
             label={t("orders.uom")}
             value={outputUomCode}
-            onChange={(e) => setOutputUomCode(e.target.value)}
+            onChange={(val) => setOutputUomCode(val)}
             required
           />
         </div>
@@ -144,23 +150,29 @@ export function CreateBomDialog({ isOpen, onClose }: CreateBomDialogProps): Reac
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             {lines.map((line, idx) => (
               <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: "0.5rem", alignItems: "end" }}>
-                <TextField
+                <ProductPicker
                   label={idx === 0 ? t("definitions.componentId") : undefined}
                   value={line.componentProductVariantId}
-                  onChange={(e) => updateLine(idx, { componentProductVariantId: e.target.value })}
+                  isRequired
+                  onChange={(sel: ProductPickerSelection) => {
+                    updateLine(idx, {
+                      componentProductVariantId: sel.variantId,
+                      uomCode: sel.baseUomCode || line.uomCode
+                    });
+                  }}
                 />
                 <TextField
                   label={idx === 0 ? t("common.quantity") : undefined}
                   type="number"
                   value={String(line.requiredQty)}
-                  onChange={(e) => updateLine(idx, { requiredQty: parseFloat(e.target.value) || 0 })}
+                  onChange={(val) => updateLine(idx, { requiredQty: parseFloat(val) || 0 })}
                   min="0.0001"
                   step="any"
                 />
                 <TextField
                   label={idx === 0 ? t("common.unit") : undefined}
                   value={line.uomCode}
-                  onChange={(e) => updateLine(idx, { uomCode: e.target.value })}
+                  onChange={(val) => updateLine(idx, { uomCode: val })}
                 />
                 <Button
                   type="button"

@@ -81,14 +81,14 @@ export function AllocateCostDialog({ isOpen, onClose, orderId, outputId }: Alloc
             label={t("costing.allocationValue")}
             type="number"
             value={allocationValue}
-            onChange={(e) => setAllocationValue(e.target.value)}
+            onChange={(val) => setAllocationValue(val)}
             required
           />
           <TextField
             label={t("costing.allocatedAmount")}
             type="number"
             value={allocatedAmount}
-            onChange={(e) => setAllocatedAmount(e.target.value)}
+            onChange={(val) => setAllocatedAmount(val)}
             required
           />
         </div>
@@ -96,7 +96,7 @@ export function AllocateCostDialog({ isOpen, onClose, orderId, outputId }: Alloc
         <TextField
           label={t("common.currency")}
           value={currencyCode}
-          onChange={(e) => setCurrencyCode(e.target.value)}
+          onChange={(val) => setCurrencyCode(val)}
           required
         />
 

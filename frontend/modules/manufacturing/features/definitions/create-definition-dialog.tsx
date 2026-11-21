@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Dialog } from "../../../../components/primitives/dialog.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
 import { TextField } from "../../../../components/primitives/text-field.tsx";
+import { ProductPicker, type ProductPickerSelection } from "../../../catalog/public.ts";
 import { useCreateDefinitionMutation, usePlantsQuery } from "../../hooks/use-manufacturing.ts";
 import type { ManufacturingMode } from "../../types.ts";
 
@@ -110,31 +111,31 @@ export function CreateDefinitionDialog({ isOpen, onClose, legalEntityId }: Creat
           </div>
         </div>
 
-        <TextField
+        <ProductPicker
           label={t("orders.product")}
           value={productVariantId}
-          onChange={(e) => setProductVariantId(e.target.value)}
-          required
+          isRequired
+          onChange={(sel: ProductPickerSelection) => setProductVariantId(sel.variantId)}
         />
 
         {mode === "Discrete" ? (
           <TextField
             label={t("definitions.bomVersionId")}
             value={bomVersionId}
-            onChange={(e) => setBomVersionId(e.target.value)}
+            onChange={(val) => setBomVersionId(val)}
           />
         ) : (
           <TextField
             label={t("definitions.formulaVersionId")}
             value={formulaVersionId}
-            onChange={(e) => setFormulaVersionId(e.target.value)}
+            onChange={(val) => setFormulaVersionId(val)}
           />
         )}
 
         <TextField
           label={t("definitions.routingVersionId")}
           value={routingVersionId}
-          onChange={(e) => setRoutingVersionId(e.target.value)}
+          onChange={(val) => setRoutingVersionId(val)}
         />
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
@@ -142,14 +143,14 @@ export function CreateDefinitionDialog({ isOpen, onClose, legalEntityId }: Creat
             label={t("common.validFrom")}
             type="date"
             value={validFrom}
-            onChange={(e) => setValidFrom(e.target.value)}
+            onChange={(val) => setValidFrom(val)}
             required
           />
           <TextField
             label={t("common.validTo")}
             type="date"
             value={validTo}
-            onChange={(e) => setValidTo(e.target.value)}
+            onChange={(val) => setValidTo(val)}
           />
         </div>
 
@@ -158,13 +159,13 @@ export function CreateDefinitionDialog({ isOpen, onClose, legalEntityId }: Creat
             label={t("common.priority")}
             type="number"
             value={priority}
-            onChange={(e) => setPriority(e.target.value)}
+            onChange={(val) => setPriority(val)}
           />
           <TextField
             label={t("definitions.expectedYield")}
             type="number"
             value={expectedYield}
-            onChange={(e) => setExpectedYield(e.target.value)}
+            onChange={(val) => setExpectedYield(val)}
           />
         </div>
 
