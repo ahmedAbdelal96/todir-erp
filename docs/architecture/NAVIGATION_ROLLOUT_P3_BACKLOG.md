@@ -41,7 +41,7 @@ This backlog tracks the phased transition of TODIR ERP SaaS from coarse single-p
   - Sales rep vs Manager isolation: management dashboard and pipeline inspection hidden for sales reps; lands on `/crm/leads`.
   - Mutation actions guarded with `crm.team.manage`.
 
-### Milestone P3 Wave 1: Accounting & Inventory Task Routes (COMPLETED)
+### Milestone P3 Wave 1: Accounting & Inventory Task Routes & Final Authorization Closure (COMPLETED)
 - [x] **Accounting / Ledger Module**:
   - Registered 8 task destinations (`overview`, `journals`, `ledger`, `trial-balance`, `statements`, `periods`, `reconciliation`, `revaluation`).
   - Core non-purchasable Ledger vs commercial Accounting distinction: non-purchasable Ledger destinations remain accessible to authorized users; `/accounting/periods` close action fails closed if commercial `accounting` is unentitled.
@@ -51,7 +51,12 @@ This backlog tracks the phased transition of TODIR ERP SaaS from coarse single-p
   - Registered 7 task destinations (`overview`, `movements`, `transfers`, `counts`, `adjustments`, `warehouses`, `traceability`).
   - Physical count clerk isolation (`inventory.count.create`, `inventory.count.enter`): lands on `/inventory/counts`; root redirects without 403; cannot post adjustments.
   - Operational tabs (`CountsTab`, `CountDetailModal`, `AdjustmentsTab`, `TransfersTab`) guarded against unauthorized mutation and ReadOnly/WindDown lifecycle.
-  - Backend mutation endpoints in Inventory, Ledger, and Accounting enforce `IModuleLifecycleEnforcer`.
+  - Backend mutation endpoints in Inventory, Ledger, Accounting, Banking, and CRM enforce `IModuleLifecycleEnforcer`.
+- [x] **Backend & Frontend Authorization Hardening (Final Closure)**:
+  - 100% of mutation endpoints in Inventory, Ledger, Accounting, Banking, and CRM enforce lifecycle via `IModuleLifecycleEnforcer` and `ModuleLifecycleEndpointFilter`, verified via automated test `ModuleLifecycleCoverageAuditTests`.
+  - Zero fail-open behavior in production DI: `UnavailableModuleLifecycleEnforcer` fails closed with `infrastructure.unavailable`.
+  - Removed string-based mutation heuristic in frontend `effective-access.ts`: read destinations like `inventory.traceability.manage` remain accessible in ReadOnly while mutation actions within are guarded by `canPerformAction`.
+  - Discrete 12-test backend security acceptance matrix in `NavigationSecurityAcceptanceTests.cs` verified against isolated PostgreSQL container.
 
 ---
 

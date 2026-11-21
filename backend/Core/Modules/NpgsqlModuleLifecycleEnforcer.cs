@@ -5,8 +5,38 @@ namespace Core.Modules;
 
 public sealed class NpgsqlModuleLifecycleEnforcer(NpgsqlDataSource dataSource, IModuleRegistry? registry = null) : IModuleLifecycleEnforcer
 {
+    private static readonly HashSet<string> ValidStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Active", "ReadOnly", "WindDown", "Disabled", "Failed", "Requested", "Validating", "Provisioning", "AwaitingGoLive"
+    };
+
     public async Task<ModuleAccessDecision> EvaluateAccessAsync(TenantId tenantId, string moduleId, Guid? legalEntityId = null, bool isMutation = false, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(moduleId))
+        {
+            return new ModuleAccessDecision(false, false, "Disabled", "module.invalid_id");
+        }
+
+        var normalizedModuleId = moduleId.Trim().ToLowerInvariant();
+
+        // 1. Check registry: Unknown modules must NOT receive automatic operational access (FAIL CLOSED)
+        ModuleManifest manifest;
+        if (registry is not null)
+        {
+            try
+            {
+                manifest = registry.Find(normalizedModuleId);
+            }
+            catch (KeyNotFoundException)
+            {
+                return new ModuleAccessDecision(false, false, "Disabled", "module.unknown");
+            }
+        }
+        else
+        {
+            return new ModuleAccessDecision(false, false, "Disabled", "module.registry_unavailable");
+        }
+
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var tx = await connection.BeginTransactionAsync(cancellationToken);
         await using (var setTenant = new NpgsqlCommand("select set_config('app.tenant_id', $1, true)", connection, tx))
@@ -15,22 +45,8 @@ public sealed class NpgsqlModuleLifecycleEnforcer(NpgsqlDataSource dataSource, I
             await setTenant.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        // 1. Check purchasable commercial entitlement if registry available
-        bool isPurchasable = false;
-        try
-        {
-            if (registry is not null)
-            {
-                var manifest = registry.Find(moduleId);
-                isPurchasable = manifest.Purchasable;
-            }
-        }
-        catch (KeyNotFoundException)
-        {
-            // Unknown module, fallback to purchasable check
-        }
-
-        if (isPurchasable)
+        // 2. Commercial Entitlement Check for Purchasable Modules (FAIL CLOSED)
+        if (manifest.Purchasable)
         {
             const string entitlementSql = """
                 select exists (
@@ -41,7 +57,7 @@ public sealed class NpgsqlModuleLifecycleEnforcer(NpgsqlDataSource dataSource, I
                 """;
             await using var entCommand = new NpgsqlCommand(entitlementSql, connection, tx);
             entCommand.Parameters.AddWithValue(tenantId.Value);
-            entCommand.Parameters.AddWithValue(moduleId);
+            entCommand.Parameters.AddWithValue(normalizedModuleId);
             var isEntitled = (bool)(await entCommand.ExecuteScalarAsync(cancellationToken) ?? false);
             if (!isEntitled)
             {
@@ -50,7 +66,7 @@ public sealed class NpgsqlModuleLifecycleEnforcer(NpgsqlDataSource dataSource, I
             }
         }
 
-        // 2. Check scoped module instance lifecycle status
+        // 3. Scoped Module Instance Status Resolution (LegalEntity override, fallback to Tenant scope)
         const string instanceSql = """
             select status from platform.module_instance 
             where tenant_id = $1 and lower(module_id) = lower($2) 
@@ -63,12 +79,29 @@ public sealed class NpgsqlModuleLifecycleEnforcer(NpgsqlDataSource dataSource, I
             """;
         await using var command = new NpgsqlCommand(instanceSql, connection, tx);
         command.Parameters.AddWithValue(tenantId.Value);
-        command.Parameters.AddWithValue(moduleId);
+        command.Parameters.AddWithValue(normalizedModuleId);
         command.Parameters.AddWithValue((object?)legalEntityId ?? DBNull.Value);
-        var rawStatus = await command.ExecuteScalarAsync(cancellationToken);
+        var rawStatusObj = await command.ExecuteScalarAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
 
-        var status = rawStatus?.ToString() ?? "Active";
+        string status;
+        if (rawStatusObj is not null)
+        {
+            status = rawStatusObj.ToString()!;
+            if (!ValidStatuses.Contains(status))
+            {
+                // Invalid or unknown lifecycle status must FAIL CLOSED
+                return new ModuleAccessDecision(false, false, "Disabled", "module.invalid_status");
+            }
+        }
+        else
+        {
+            // Missing module instance:
+            // Core/non-purchasable modules default to Active.
+            // Purchasable modules with active entitlement default to Active.
+            status = "Active";
+        }
+
         var normStatus = status.ToLowerInvariant();
 
         if (normStatus is "readonly" or "winddown")
@@ -85,7 +118,12 @@ public sealed class NpgsqlModuleLifecycleEnforcer(NpgsqlDataSource dataSource, I
             return new ModuleAccessDecision(false, false, status, "module.disabled");
         }
 
-        return new ModuleAccessDecision(true, false, "Active", null);
+        if (normStatus is "active")
+        {
+            return new ModuleAccessDecision(true, false, "Active", null);
+        }
+
+        return new ModuleAccessDecision(false, false, "Disabled", "module.invalid_status");
     }
 
     public async Task<string> GetStatusAsync(TenantId tenantId, string moduleId, Guid? legalEntityId = null, CancellationToken cancellationToken = default)

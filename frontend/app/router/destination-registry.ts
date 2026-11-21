@@ -374,7 +374,7 @@ export const INVENTORY_DESTINATIONS: readonly NavDestination[] = [
     icon: "reconcile",
     permission: { anyOf: ["inventory.adjustment.create", "inventory.adjustment.approve", "inventory.adjustment.post"] },
     order: 50,
-    mode: "mixed",
+    mode: "mutation",
     keywords: ["تسوية", "تعديل كميات", "عجز", "زيادة", "adjustments"]
   },
   {

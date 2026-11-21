@@ -4,7 +4,7 @@ import type { CommandItem } from "../../components/primitives/command-palette.ts
 import type { ModuleNavigationRegistration } from "../router/route-contract.ts";
 import type { EffectiveAccess } from "../../core/runtime/effective-access.ts";
 import { hasPermissionInAccess, isModuleOperational } from "../../core/runtime/effective-access.ts";
-import { isDestinationPermitted } from "../router/destination-registry.ts";
+import { isDestinationPermitted, isModulePermitted } from "../router/destination-registry.ts";
 
 export interface BuildCommandPaletteOptions {
   readonly modules: readonly ModuleNavigationRegistration[];
@@ -27,6 +27,9 @@ export function buildCommandPaletteItems({
 
   // 1. Navigation items from registered and permitted modules
   for (const mod of modules) {
+    if (effectiveAccess && !isModulePermitted(mod, effectiveAccess)) {
+      continue;
+    }
     const navKey = mod.navigationKey;
     const title = t(`navigation:${navKey}`, mod.id);
     items.push({
@@ -60,7 +63,7 @@ export function buildCommandPaletteItems({
   // Fail-closed helper to check permission in effectiveAccess
   const canPerform = (permission: string, moduleId: string): boolean => {
     if (!effectiveAccess) return false;
-    if (!isModuleOperational(effectiveAccess, moduleId)) return false;
+    if (!isModuleOperational(effectiveAccess, moduleId, false)) return false;
     if (effectiveAccess.isSuper) return true;
     return hasPermissionInAccess(effectiveAccess, permission);
   };

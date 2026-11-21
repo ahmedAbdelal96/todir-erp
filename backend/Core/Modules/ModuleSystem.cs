@@ -86,6 +86,16 @@ public sealed class NullModuleLifecycleEnforcer : IModuleLifecycleEnforcer
     public Task<string> GetStatusAsync(Shared.Primitives.Identifiers.TenantId tenantId, string moduleId, Guid? legalEntityId = null, CancellationToken cancellationToken = default) => Task.FromResult("Active");
 }
 
+public sealed class UnavailableModuleLifecycleEnforcer : IModuleLifecycleEnforcer
+{
+    public Task<ModuleAccessDecision> EvaluateAccessAsync(Shared.Primitives.Identifiers.TenantId tenantId, string moduleId, Guid? legalEntityId = null, bool isMutation = false, CancellationToken cancellationToken = default)
+        => Task.FromResult(new ModuleAccessDecision(false, false, "Unavailable", "infrastructure.unavailable"));
+    public Task<bool> CanMutateAsync(Shared.Primitives.Identifiers.TenantId tenantId, string moduleId, Guid? legalEntityId = null, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
+    public Task<string> GetStatusAsync(Shared.Primitives.Identifiers.TenantId tenantId, string moduleId, Guid? legalEntityId = null, CancellationToken cancellationToken = default)
+        => Task.FromResult("Unavailable");
+}
+
 public interface IModuleLifecycleContributor
 {
     string ModuleId { get; }

@@ -165,10 +165,7 @@ export function isPermissionEffective(
   if (!hasPermissionInAccess(access, permission)) return false;
 
   const owningModule = getOwningModuleForPermission(permission);
-  const isMutation = isMutationPermission(permission);
-  const effectiveAllowReadOnly = allowReadOnly && !isMutation;
-
-  return isModuleOperational(access, owningModule, effectiveAllowReadOnly);
+  return isModuleOperational(access, owningModule, allowReadOnly);
 }
 
 export type PermissionCondition =

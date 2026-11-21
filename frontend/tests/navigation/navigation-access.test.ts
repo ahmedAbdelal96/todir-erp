@@ -8,7 +8,8 @@ import {
   hasPermissionInAccess,
   hasAnyPermissionInAccess,
   hasAllPermissionsInAccess,
-  isModuleReadOnly
+  isModuleReadOnly,
+  canPerformAction
 } from "../../core/runtime/effective-access.ts";
 import {
   isDestinationPermitted,
@@ -441,6 +442,40 @@ describe("Permission-Driven Effective Access & Destination Architecture", () => 
       moduleStatuses: { inventory: "Active" }
     };
     assert.equal(isDestinationPermitted(adjustmentsDest, activeAccess), true);
+  });
+
+  it("allows inventory-traceability (mode: read) in ReadOnly while canPerformAction disables mutations", () => {
+    const readOnlyAccess: EffectiveAccess = {
+      ...emptyAccess,
+      entitledModules: ["inventory"],
+      permissions: [
+        "inventory.traceability.manage",
+        "inventory.lot.create",
+        "inventory.serial.create"
+      ],
+      moduleStatuses: { inventory: "ReadOnly" }
+    };
+
+    // Traceability destination has mode: 'read' and permission: 'inventory.traceability.manage'
+    const traceabilityDest = INVENTORY_DESTINATIONS.find(d => d.id === "inventory-traceability")!;
+    assert.ok(traceabilityDest);
+    assert.equal(traceabilityDest.mode, "read");
+
+    // In ReadOnly, traceability MUST remain accessible for historical tracking and lot/serial lookup
+    assert.equal(isDestinationPermitted(traceabilityDest, readOnlyAccess), true);
+
+    // Mutation actions within the page (e.g. creating lots or serials) must be prevented by canPerformAction
+    assert.equal(canPerformAction(readOnlyAccess, "inventory.lot.create"), false);
+    assert.equal(canPerformAction(readOnlyAccess, "inventory.serial.create"), false);
+
+    // When module is Active, mutation actions become permitted
+    const activeAccess: EffectiveAccess = {
+      ...readOnlyAccess,
+      moduleStatuses: { inventory: "Active" }
+    };
+    assert.equal(isDestinationPermitted(traceabilityDest, activeAccess), true);
+    assert.equal(canPerformAction(activeAccess, "inventory.lot.create"), true);
+    assert.equal(canPerformAction(activeAccess, "inventory.serial.create"), true);
   });
 
   it("enforces multi-module commercial entitlement isolation without cross-module bypass", () => {
