@@ -408,6 +408,8 @@ export const en = {
     costSubcontract: "Subcontracting Cost",
     costAmount: "Cost Amount",
     eligibleForClose: "Orders Eligible for Close",
+    completedBlocked: "Completed Orders Blocked from Close",
+    accumulatingOrders: "Orders Accumulating Costs",
     closedOrders: "Closed & Reconciled Orders",
     activeAndDistributed: "Active & Distributed",
     orderCostStatus: "Production Orders Cost Status",

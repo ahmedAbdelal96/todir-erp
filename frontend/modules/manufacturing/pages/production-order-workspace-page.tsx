@@ -18,11 +18,14 @@ import {
   useCostQuery
 } from "../hooks/use-manufacturing.ts";
 import { Button } from "../../../components/primitives/button.tsx";
+import { useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
 import type { ProductionMaterial } from "../types.ts";
 
 export function ProductionOrderWorkspacePage(): React.JSX.Element {
   const { orderId } = useParams<{ orderId: string }>();
   const { t } = useTranslation("manufacturing");
+  const permissions = useOptionalPermissions();
+  const canManagePolicy = permissions?.hasPermission("manufacturing.quality.policy.manage") ?? false;
 
   const [activeTab, setActiveTab] = useState<"snapshot" | "materials" | "operations" | "quality" | "costing" | "outputs">("materials");
 
@@ -89,11 +92,11 @@ export function ProductionOrderWorkspacePage(): React.JSX.Element {
                 {t("orders.title")}
               </Link>
               {" / "}
-              <span style={{ color: "#0f172a", fontWeight: 600 }}>{order.orderNumber}</span>
+              <span style={{ color: "#0f172a", fontWeight: 600 }}>{order.orderNumber ?? order.number}</span>
             </nav>
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
               <h1 style={{ margin: 0, fontSize: "1.5rem", color: "#102a43", fontWeight: 700 }}>
-                {order.orderNumber}
+                {order.orderNumber ?? order.number}
               </h1>
               <ManufacturingStatusBadge state={order.state} />
             </div>
@@ -413,6 +416,7 @@ export function ProductionOrderWorkspacePage(): React.JSX.Element {
         onClose={() => setIsQualityGateOpen(false)}
         orderId={order.id}
         orderState={order.state}
+        canManagePolicy={canManagePolicy}
       />
 
       <RecordCostFactDialog

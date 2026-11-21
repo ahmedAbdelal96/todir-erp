@@ -21,7 +21,7 @@ export function QualityGateDialog({
   orderId,
   gate,
   orderState = "Draft",
-  canManagePolicy = true
+  canManagePolicy = false
 }: QualityGateDialogProps): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
   const decisionMutation = useRecordQualityDecisionMutation();
@@ -31,6 +31,12 @@ export function QualityGateDialog({
   const allowPolicy = isDraft && canManagePolicy;
 
   const [mode, setMode] = useState<"decision" | "policy">("decision");
+
+  React.useEffect(() => {
+    if (!allowPolicy && mode === "policy") {
+      setMode("decision");
+    }
+  }, [allowPolicy, mode]);
   const [decisionState, setDecisionState] = useState("Passed");
   const [sourceRef, setSourceRef] = useState("");
   const [policyRequired, setPolicyRequired] = useState(gate?.required ?? true);

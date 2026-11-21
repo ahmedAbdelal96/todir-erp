@@ -408,6 +408,8 @@ export const ar = {
     costSubcontract: "تكاليف التشغيل للغير (Subcontract)",
     costAmount: "مبلغ التكلفة",
     eligibleForClose: "الأوامر المؤهلة للإقفال المالي",
+    completedBlocked: "أوامر مكتملة محظورة الإقفال",
+    accumulatingOrders: "أوامر قيد تجميع التكاليف",
     closedOrders: "أوامر مقفلة ومسواة بالكامل",
     activeAndDistributed: "نشط وموزع",
     orderCostStatus: "حالة تكاليف أوامر الإنتاج",

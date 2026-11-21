@@ -6,24 +6,22 @@ import { NoLegalEntityPrompt } from "../components/no-legal-entity-prompt.tsx";
 import { RecordCostFactDialog } from "../features/costing/record-cost-fact-dialog.tsx";
 import { CloseReadinessPanel } from "../features/orders/close-readiness-panel.tsx";
 import { useManufacturingScope } from "../hooks/use-manufacturing-scope.ts";
-import { useOrdersQuery } from "../hooks/use-manufacturing.ts";
+import { useOrdersQuery, useCostingSummaryQuery } from "../hooks/use-manufacturing.ts";
 import { Button } from "../../../components/primitives/button.tsx";
+import { BdiText } from "../../../components/formatting/bidi-text.tsx";
 
 export function ManufacturingCostingPage(): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
   const { legalEntityId, isReady } = useManufacturingScope();
 
-  const { data: orders = [] } = useOrdersQuery(legalEntityId);
+  const { data: orders = [], isLoading: isOrdersLoading } = useOrdersQuery(legalEntityId);
+  const { data: costingSummary, isLoading: isSummaryLoading } = useCostingSummaryQuery(legalEntityId);
   const [selectedOrderIdForCost, setSelectedOrderIdForCost] = useState<string | null>(null);
   const [inspectedOrderId, setInspectedOrderId] = useState<string | null>(null);
 
   if (!isReady) {
     return <NoLegalEntityPrompt />;
   }
-
-  const completedOrdersCount = orders.filter((o) => o.state === "Completed").length;
-  const closedOrdersCount = orders.filter((o) => o.state === "Closed").length;
-  const accumulatingOrdersCount = orders.filter((o) => o.costStatus === "Accumulating").length;
 
   return (
     <div
@@ -43,26 +41,49 @@ export function ManufacturingCostingPage(): React.JSX.Element {
 
       {/* Overview Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px", marginBottom: "16px" }}>
-        <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "16px" }}>
-          <div style={{ fontSize: "12px", color: "#64748b" }}>{t("costing.wipBalance", "رصيد التشغيل تحت التنفيذ (WIP)")}</div>
-          <div style={{ fontSize: "20px", fontWeight: 700, color: "#102a43", marginTop: "4px" }}>
-            {accumulatingOrdersCount > 0
-              ? `${accumulatingOrdersCount} ${t("costing.ordersCount", "أمر")}`
-              : t("costing.activeAndDistributed", "نشط وموزع")}
+        <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "16px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+          <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>{t("costing.wipBalance", "رصيد التشغيل تحت التنفيذ (WIP)")}</div>
+          <div data-testid="kpi-wip-balance" style={{ fontSize: "20px", fontWeight: 700, color: "#102a43", marginTop: "4px" }}>
+            <BdiText>
+              {costingSummary
+                ? `${costingSummary.totalWipAmount.toLocaleString()} ${costingSummary.currencyCode}`
+                : isSummaryLoading
+                ? t("common.loading")
+                : t("costing.zeroAmount", "0 EGP")}
+            </BdiText>
+          </div>
+          <div style={{ fontSize: "12px", color: "#64748b", marginTop: "4px" }}>
+            {costingSummary?.accumulatingOrdersCount ?? 0} {t("costing.ordersCount", "أمر")} — {t("costing.accumulatingOrders", "أوامر قيد تجميع التكاليف")}
           </div>
         </div>
 
-        <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "16px" }}>
-          <div style={{ fontSize: "12px", color: "#64748b" }}>{t("costing.eligibleForClose", "الأوامر المؤهلة للإقفال المالي")}</div>
-          <div style={{ fontSize: "20px", fontWeight: 700, color: "#15803d", marginTop: "4px" }}>
-            {completedOrdersCount} {t("costing.ordersCount", "أمر")}
+        <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "16px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+          <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>{t("costing.eligibleForClose", "الأوامر المؤهلة للإقفال المالي")}</div>
+          <div data-testid="kpi-eligible-close" style={{ fontSize: "20px", fontWeight: 700, color: "#15803d", marginTop: "4px" }}>
+            {costingSummary?.eligibleForCloseOrdersCount ?? 0} {t("costing.ordersCount", "أمر")}
+          </div>
+          <div style={{ fontSize: "12px", color: "#15803d", marginTop: "4px" }}>
+            {t("costing.reconciliationSuccess", "مطابقة محاسبية مكتملة")}
           </div>
         </div>
 
-        <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "16px" }}>
-          <div style={{ fontSize: "12px", color: "#64748b" }}>{t("costing.closedOrders", "أوامر مقفلة ومسواة بالكامل")}</div>
-          <div style={{ fontSize: "20px", fontWeight: 700, color: "#475569", marginTop: "4px" }}>
-            {closedOrdersCount} {t("costing.ordersCount", "أمر")}
+        <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "16px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+          <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>{t("costing.completedBlocked", "أوامر مكتملة محظورة الإقفال")}</div>
+          <div data-testid="kpi-completed-blocked" style={{ fontSize: "20px", fontWeight: 700, color: "#b45309", marginTop: "4px" }}>
+            {costingSummary?.completedBlockedOrdersCount ?? 0} {t("costing.ordersCount", "أمر")}
+          </div>
+          <div style={{ fontSize: "12px", color: "#b45309", marginTop: "4px" }}>
+            {t("costing.unpostedLedgerWarning", "تتطلب تسوية خامات أو قيود")}
+          </div>
+        </div>
+
+        <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "16px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+          <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>{t("costing.closedOrders", "أوامر مقفلة ومسواة بالكامل")}</div>
+          <div data-testid="kpi-closed-orders" style={{ fontSize: "20px", fontWeight: 700, color: "#475569", marginTop: "4px" }}>
+            {costingSummary?.closedReconciledOrdersCount ?? 0} {t("costing.ordersCount", "أمر")}
+          </div>
+          <div style={{ fontSize: "12px", color: "#64748b", marginTop: "4px" }}>
+            {t("costing.activeAndDistributed", "نشط وموزع")}
           </div>
         </div>
       </div>
@@ -107,7 +128,7 @@ export function ManufacturingCostingPage(): React.JSX.Element {
                   onClick={() => setInspectedOrderId(inspectedOrderId === order.id ? null : order.id)}
                 >
                   <td style={{ padding: "12px 16px", fontWeight: 700, color: "#0284c7" }}>
-                    {order.orderNumber}
+                    {order.orderNumber ?? order.number}
                   </td>
                   <td style={{ padding: "12px 16px" }}>
                     {order.orderedQty} {order.uomCode}

@@ -73,3 +73,4 @@ public sealed record OutputCostAllocationResponse(Guid Id, Guid ProductionOrderI
 public sealed record WorkCenterResponse(Guid Id, Guid PlantId, string Code, string Name, string CapacityModel, decimal DefaultEfficiency, string State);
 public sealed record SubstitutionGroupResponse(Guid Id, string Code, string Name, string Policy);
 public sealed record SubstituteResponse(Guid Id, Guid GroupId, Guid ProductVariantId, int Priority, decimal ReplacementRatio, string UomCode, DateOnly ValidFrom, DateOnly? ValidTo);
+public sealed record ManufacturingCostingSummaryResponse(int AccumulatingOrdersCount, decimal TotalWipAmount, string CurrencyCode, int CompletedBlockedOrdersCount, int EligibleForCloseOrdersCount, int ClosedReconciledOrdersCount);

@@ -83,7 +83,7 @@ export function MaterialsPage(): React.JSX.Element {
           ) : (
             activeOrders.map((o) => (
               <option key={o.id} value={o.id}>
-                {o.orderNumber} ({t(`status.${o.state}`)}) - {o.orderedQty} {o.uomCode}
+                {o.orderNumber ?? o.number} ({t(`status.${o.state}`)}) - {o.orderedQty} {o.uomCode}
               </option>
             ))
           )}

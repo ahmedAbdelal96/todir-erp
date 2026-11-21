@@ -48,6 +48,7 @@ import type {
   RecordCostFactRequest,
   AllocateOutputCostRequest,
   ProductionCloseReadiness,
+  ManufacturingCostingSummary,
   PlanningRun,
   CreatePlanningRunRequest,
   PlannedSupply,
@@ -389,6 +390,10 @@ export const manufacturingApi = {
 
   getOrderCloseReadiness(orderId: string): Promise<ProductionCloseReadiness> {
     return httpClient<ProductionCloseReadiness>(`${BASE_URL}/production-orders/${orderId}/close-readiness`);
+  },
+
+  getCostingSummary(legalEntityId: string): Promise<ManufacturingCostingSummary> {
+    return httpClient<ManufacturingCostingSummary>(`${BASE_URL}/legal-entities/${legalEntityId}/costing-summary`, { legalEntityId });
   },
 
   // MRP & Planning

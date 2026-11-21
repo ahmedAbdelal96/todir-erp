@@ -5,7 +5,7 @@
   "contractsVersion": 1,
   "layer": "L4",
   "type": "business-module",
-  "purchasable": true,
+  "purchasable": false,
   "scope": "tenant",
   "dependencies": {
     "hard": ["platform-kernel"],

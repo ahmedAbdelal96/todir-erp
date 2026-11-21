@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('TODIR Module 26 — Manufacturing & MRP End-to-End Workflow Verification', () => {
+test.describe('TODIR Module 26 — Manufacturing & MRP Mocked Component & Browser Regression Suite', () => {
   const setupSession = async (page: any, hasLegalEntity = true) => {
     page.on('console', (msg: any) => {
       if (msg.type() === 'error') console.log('BROWSER ERROR:', msg.text());
@@ -241,6 +241,22 @@ test.describe('TODIR Module 26 — Manufacturing & MRP End-to-End Workflow Verif
             state: 'FullyIssued'
           }
         ])
+      });
+    });
+
+    // Mock Costing Summary
+    await page.route('**/api/v1/manufacturing/legal-entities/*/costing-summary*', async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          accumulatingOrdersCount: 2,
+          totalWipAmount: 18500,
+          currencyCode: 'EGP',
+          completedBlockedOrdersCount: 1,
+          eligibleForCloseOrdersCount: 1,
+          closedReconciledOrdersCount: 3
+        })
       });
     });
 

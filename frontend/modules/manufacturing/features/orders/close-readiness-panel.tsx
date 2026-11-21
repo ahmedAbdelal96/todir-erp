@@ -24,6 +24,10 @@ export function CloseReadinessPanel({ orderId, onCloseClick }: CloseReadinessPan
 
   const isBlocked = !(readiness.canClose ?? (readiness.state === "Ready" || readiness.state === "Reconciled"));
 
+  const blockersText = (readiness.blockers && readiness.blockers.length > 0)
+    ? readiness.blockers.join(", ")
+    : readiness.blockReason;
+
   return (
     <div
       data-testid="close-readiness-panel"
@@ -57,7 +61,7 @@ export function CloseReadinessPanel({ orderId, onCloseClick }: CloseReadinessPan
         </div>
       </div>
 
-      {readiness.blockers && readiness.blockers.length > 0 ? (
+      {blockersText ? (
         <div
           data-testid="close-blocker-message"
           style={{
@@ -70,34 +74,34 @@ export function CloseReadinessPanel({ orderId, onCloseClick }: CloseReadinessPan
             fontWeight: 600
           }}
         >
-          {t("costing.closeBlockersTitle")}: {readiness.blockers.join(", ")}
+          {t("costing.closeBlockersTitle")}: {blockersText}
         </div>
       ) : null}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.5rem", fontSize: "0.75rem" }}>
         <div style={{ padding: "0.375rem 0.5rem", background: "#ffffff", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)" }}>
           <span style={{ color: "var(--color-content-muted)" }}>{t("materials.issued")}:</span>
-          <div><strong><BdiText>{String(readiness.issuedMaterialCost)}</BdiText></strong></div>
+          <div><strong><BdiText>{String(readiness.issuedMaterialCost ?? readiness.materialIssuedQty ?? 0)}</BdiText></strong></div>
         </div>
         <div style={{ padding: "0.375rem 0.5rem", background: "#ffffff", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)" }}>
           <span style={{ color: "var(--color-content-muted)" }}>{t("materials.consumed")}:</span>
-          <div><strong><BdiText>{String(readiness.consumedMaterialCost)}</BdiText></strong></div>
+          <div><strong><BdiText>{String(readiness.consumedMaterialCost ?? readiness.materialAccountedQty ?? 0)}</BdiText></strong></div>
         </div>
         <div style={{ padding: "0.375rem 0.5rem", background: "#ffffff", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)" }}>
           <span style={{ color: "var(--color-content-muted)" }}>{t("shopFloor.goodOutput")}:</span>
-          <div><strong><BdiText>{String(readiness.goodOutputQty)}</BdiText></strong></div>
+          <div><strong><BdiText>{String(readiness.goodOutputQty ?? 0)}</BdiText></strong></div>
         </div>
         <div style={{ padding: "0.375rem 0.5rem", background: "#ffffff", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)" }}>
           <span style={{ color: "var(--color-content-muted)" }}>{t("shopFloor.scrapOutput")}:</span>
-          <div><strong><BdiText>{String(readiness.scrapQty)}</BdiText></strong></div>
+          <div><strong><BdiText>{String(readiness.scrapQty ?? 0)}</BdiText></strong></div>
         </div>
         <div style={{ padding: "0.375rem 0.5rem", background: "#ffffff", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)" }}>
           <span style={{ color: "var(--color-content-muted)" }}>{t("workspace.operationsTab")}:</span>
-          <div><strong>{readiness.allOperationsComplete ? t("status.Completed") : t("status.InProgress")}</strong></div>
+          <div><strong>{(readiness.allOperationsComplete ?? readiness.operationsComplete) ? t("status.Completed") : t("status.InProgress")}</strong></div>
         </div>
         <div style={{ padding: "0.375rem 0.5rem", background: "#ffffff", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-default)" }}>
           <span style={{ color: "var(--color-content-muted)" }}>{t("costing.wipBalance")}:</span>
-          <div><strong><BdiText>{String(readiness.wipBalance)}</BdiText></strong></div>
+          <div><strong><BdiText>{String(readiness.wipBalance ?? readiness.wipAmount ?? 0)}</BdiText></strong></div>
         </div>
       </div>
     </div>

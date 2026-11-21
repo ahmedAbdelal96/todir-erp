@@ -57,6 +57,7 @@ export const MANUFACTURING_QUERY_KEYS = {
   qualityGates: (orderId: string) => [...MANUFACTURING_QUERY_KEYS.all, "qualityGates", orderId] as const,
   cost: (orderId: string) => [...MANUFACTURING_QUERY_KEYS.all, "cost", orderId] as const,
   closeReadiness: (orderId: string) => [...MANUFACTURING_QUERY_KEYS.all, "closeReadiness", orderId] as const,
+  costingSummary: (legalEntityId: string) => [...MANUFACTURING_QUERY_KEYS.all, "costingSummary", legalEntityId] as const,
   planningRuns: (legalEntityId: string) => [...MANUFACTURING_QUERY_KEYS.all, "planningRuns", legalEntityId] as const,
   plannedSupplies: (runId: string) => [...MANUFACTURING_QUERY_KEYS.all, "plannedSupplies", runId] as const,
   mpsPlans: (legalEntityId: string, plantId?: string, variantId?: string) => [...MANUFACTURING_QUERY_KEYS.all, "mpsPlans", legalEntityId, plantId, variantId] as const,
@@ -255,6 +256,14 @@ export function useOrderCloseReadinessQuery(orderId: string) {
     queryKey: MANUFACTURING_QUERY_KEYS.closeReadiness(orderId),
     queryFn: () => manufacturingApi.getOrderCloseReadiness(orderId),
     enabled: Boolean(orderId)
+  });
+}
+
+export function useCostingSummaryQuery(legalEntityId: string | undefined) {
+  return useQuery({
+    queryKey: MANUFACTURING_QUERY_KEYS.costingSummary(legalEntityId ?? ""),
+    queryFn: () => manufacturingApi.getCostingSummary(legalEntityId!),
+    enabled: Boolean(legalEntityId)
   });
 }
 

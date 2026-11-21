@@ -49,7 +49,7 @@ export function OrderActionDialog({ isOpen, onClose, order, action }: OrderActio
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
-      title={`${getActionLabel()} — ${order.orderNumber}`}
+      title={`${getActionLabel()} — ${order.orderNumber ?? order.number}`}
       description={t("orders.confirmActionDesc")}
       size="small"
     >
@@ -61,7 +61,7 @@ export function OrderActionDialog({ isOpen, onClose, order, action }: OrderActio
         ) : null}
 
         <div style={{ fontSize: "0.875rem", color: "var(--color-content-muted)" }}>
-          <div>{t("orders.orderNumber")}: <strong>{order.orderNumber}</strong></div>
+          <div>{t("orders.orderNumber")}: <strong>{order.orderNumber ?? order.number}</strong></div>
           <div>{t("orders.stateLabel")}: <strong>{t(`status.${order.state}`)}</strong></div>
         </div>
 

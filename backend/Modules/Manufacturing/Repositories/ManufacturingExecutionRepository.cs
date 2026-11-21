@@ -133,6 +133,66 @@ public sealed partial class ManufacturingRepository
             return new ProductionCloseReadinessResponse(orderId, reason is null ? "Ready" : "Blocked", material.Issued, material.Accounted, order.CompletedQty, order.ScrapQty, operationsComplete, order.QualityState, order.CostState, wip, reason);
         }, ct);
 
+    public Task<ManufacturingCostingSummaryResponse> GetCostingSummaryAsync(TenantId tenant, Guid legalEntityId, CancellationToken ct) =>
+        coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            var accumulatingCount = await ScalarAsync<int>(context,
+                "select count(*) from business_manufacturing.production_order where tenant_id=$1 and legal_entity_id=$2 and cost_state='Accumulating'",
+                token, tenant.Value, legalEntityId);
+
+            var closedCount = await ScalarAsync<int>(context,
+                "select count(*) from business_manufacturing.production_order where tenant_id=$1 and legal_entity_id=$2 and state='Closed'",
+                token, tenant.Value, legalEntityId);
+
+            var wip = await ScalarAsync<decimal>(context,
+                @"select coalesce(
+                    (select sum(f.amount)
+                     from business_manufacturing.production_actual_cost_fact f
+                     join business_manufacturing.production_order o on o.tenant_id=f.tenant_id and o.id=f.production_order_id
+                     where f.tenant_id=$1 and o.legal_entity_id=$2 and o.state <> 'Closed' and o.state <> 'Cancelled'), 0)
+                  - coalesce(
+                    (select sum(p.final_value)
+                     from business_manufacturing.production_output p
+                     join business_manufacturing.production_order o on o.tenant_id=p.tenant_id and o.id=p.production_order_id
+                     where p.tenant_id=$1 and o.legal_entity_id=$2 and o.state <> 'Closed' and o.state <> 'Cancelled' and p.inventory_receipt_status='Committed'), 0)",
+                token, tenant.Value, legalEntityId);
+
+            var completedOrderIds = new List<Guid>();
+            await using (var cmd = Command(context, "select id from business_manufacturing.production_order where tenant_id=$1 and legal_entity_id=$2 and state='Completed'", tenant.Value, legalEntityId))
+            await using (var r = await cmd.ExecuteReaderAsync(token))
+            {
+                while (await r.ReadAsync(token))
+                {
+                    completedOrderIds.Add(r.GetGuid(0));
+                }
+            }
+
+            var completedBlockedCount = 0;
+            var eligibleForCloseCount = 0;
+
+            foreach (var orderId in completedOrderIds)
+            {
+                var readiness = await GetCloseReadinessAsync(tenant, orderId, token);
+                if (readiness.State == "Ready")
+                {
+                    eligibleForCloseCount++;
+                }
+                else
+                {
+                    completedBlockedCount++;
+                }
+            }
+
+            return new ManufacturingCostingSummaryResponse(
+                accumulatingCount,
+                wip,
+                "EGP",
+                completedBlockedCount,
+                eligibleForCloseCount,
+                closedCount
+            );
+        }, ct);
+
     private static ProductionOperationResponse ReadOperation(NpgsqlDataReader reader) => new(reader.GetGuid(0), reader.GetGuid(1), reader.GetInt32(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetGuid(4), reader.GetString(5), reader.GetDecimal(6), reader.GetDecimal(7), reader.GetDecimal(8), reader.IsDBNull(9) ? null : reader.GetDecimal(9), reader.GetBoolean(10), reader.GetInt64(11));
     private static async Task<ProductionOperationResponse?> ReadOperationAsync(ITransactionContext context, Guid tenant, Guid id, CancellationToken token)
     {

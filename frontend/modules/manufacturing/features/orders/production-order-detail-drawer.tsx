@@ -82,7 +82,7 @@ export function ProductionOrderDetailDrawer({
               {t("orders.title")}
             </div>
             <h2 style={{ margin: "0.25rem 0 0", fontSize: "1.25rem", color: "var(--color-brand-primary, #102a43)" }}>
-              <BdiText>{order.orderNumber}</BdiText>
+              <BdiText>{order.orderNumber ?? order.number}</BdiText>
             </h2>
           </div>
           <button

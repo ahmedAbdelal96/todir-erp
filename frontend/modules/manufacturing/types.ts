@@ -312,6 +312,15 @@ export interface ProductionCloseReadiness {
   readonly consumedMaterialCost?: number;
 }
 
+export interface ManufacturingCostingSummary {
+  readonly accumulatingOrdersCount: number;
+  readonly totalWipAmount: number;
+  readonly currencyCode: string;
+  readonly completedBlockedOrdersCount: number;
+  readonly eligibleForCloseOrdersCount: number;
+  readonly closedReconciledOrdersCount: number;
+}
+
 export interface PlanningRun {
   readonly id: string;
   readonly runNumber?: string;

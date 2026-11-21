@@ -82,7 +82,7 @@ export function LinkGenealogyDialog({ isOpen, onClose, orderId: propOrderId, leg
             >
               {orders.map((o) => (
                 <option key={o.id} value={o.id}>
-                  {o.orderNumber} ({o.orderedQty} {o.uomCode})
+                  {o.orderNumber ?? o.number} ({o.orderedQty} {o.uomCode})
                 </option>
               ))}
             </select>

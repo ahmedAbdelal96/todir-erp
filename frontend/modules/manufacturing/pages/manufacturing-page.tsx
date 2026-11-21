@@ -130,7 +130,7 @@ export function ManufacturingPage(): React.JSX.Element {
                 >
                   <div>
                     <div style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a" }}>
-                      {order.orderNumber}
+                      {order.orderNumber ?? order.number}
                     </div>
                     <div style={{ fontSize: "12px", color: "#64748b" }}>
                       {order.orderedQty} {order.uomCode} • {t("orders.needDatePrefix")}: {order.needDate?.slice(0, 10)}
