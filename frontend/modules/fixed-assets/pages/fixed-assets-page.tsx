@@ -53,7 +53,11 @@ export type FixedAssetsTabId =
   | "reports"
   | "my-assets";
 
-export function FixedAssetsPage(): React.JSX.Element {
+export interface FixedAssetsPageProps {
+  readonly initialTab?: FixedAssetsTabId | undefined;
+}
+
+export function FixedAssetsPage({ initialTab }: FixedAssetsPageProps = {}): React.JSX.Element {
   const { t } = useTranslation("fixedAssets");
   const isMobile = useIsMobile(768);
 
@@ -62,7 +66,7 @@ export function FixedAssetsPage(): React.JSX.Element {
   const permissions = outletCtx?.permissions ?? useOptionalPermissions();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = (searchParams.get("tab") as FixedAssetsTabId | null) ?? "register";
+  const activeTab = (searchParams.get("tab") as FixedAssetsTabId | null) ?? initialTab ?? "register";
 
   const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || "";
   const legalEntityName = runtimeContext?.name;

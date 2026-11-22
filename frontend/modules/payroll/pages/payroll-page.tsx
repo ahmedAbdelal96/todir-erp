@@ -17,7 +17,11 @@ import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { useOptionalLegalEntityContext } from "../../../core/runtime/runtime-provider.tsx";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 
-export function PayrollPage(): React.JSX.Element {
+export interface PayrollPageProps {
+  readonly initialTab?: PayrollTabId | undefined;
+}
+
+export function PayrollPage({ initialTab }: PayrollPageProps = {}): React.JSX.Element {
   const { t } = useTranslation("payroll");
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -35,7 +39,7 @@ export function PayrollPage(): React.JSX.Element {
   }
 
   // Active tab & Run Workspace selection derived from searchParams
-  const activeTab = (searchParams.get("tab") as PayrollTabId | null) ?? "home";
+  const activeTab = (searchParams.get("tab") as PayrollTabId | null) ?? initialTab ?? "home";
   const selectedRunId = searchParams.get("runId");
 
   // Help Modal State

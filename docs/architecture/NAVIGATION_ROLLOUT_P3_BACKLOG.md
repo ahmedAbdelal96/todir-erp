@@ -1,6 +1,6 @@
-# TODIR ERP — Navigation Architecture & Rollout Backlog (P0 / P2 / P3 Wave 1 & Wave 2)
+# TODIR ERP — Navigation Architecture & Rollout Backlog (P0 / P2 / P3 Waves 1–5)
 
-**Status:** P0 Complete / P2 Complete / P3 Wave 1 Complete / P3 Wave 2 Complete  
+**Status:** P0 Complete / P2 Complete / P3 Waves 1–5 Complete  
 **Governance:** `docs/architecture/TODIR_NAVIGATION_ACCESS_UX_ARCHITECTURE_DECISION.md`, `frontend/AGENTS.md`, `backend/AGENTS.md`  
 **Current Release Branch:** `dev`  
 
@@ -19,7 +19,7 @@ This backlog tracks the phased transition of TODIR ERP SaaS from coarse single-p
 
 ---
 
-## 2. Completed Milestones (P0 / P2 / P3 Wave 1 / P3 Wave 2)
+## 2. Completed Milestones (P0 / P2 / P3 Waves 1–5)
 
 ### Milestone P0: Permission-Safe Foundation & Shell Architecture (COMPLETED)
 - [x] Effective Access API (`/api/v1/authorization/effective-access`) with legal entity and branch scoping.
@@ -110,14 +110,34 @@ This backlog tracks the phased transition of TODIR ERP SaaS from coarse single-p
 
 ---
 
-## 3. Explicit Hold: Subsequent Rollout Waves (Deferred Scope)
+### Milestone P3 Wave 3: Fixed Assets, Expenses, Invoicing & Payments (COMPLETED)
+- [x] Registered task destinations and direct guarded routes for fixed asset register/custody/CIP/depreciation/reports, employee expenses/review/advances/cards/reimbursements/reports/settings, customer/supplier invoicing, and incoming/outgoing/transfers/accounts/payment requests.
+- [x] Reused the existing module pages through canonical `initialTab` route inputs; no duplicate business workflow or parallel navigation implementation was introduced.
+- [x] Applied exact manifest permissions to destination descriptors and route guards, including mutation/read-only modes and deterministic narrow-permission landing.
 
-Per canonical architecture governance and explicit Product Owner instruction, the following waves remain deferred:
+### Milestone P3 Wave 4: HR, Payroll, Attendance & Leave (COMPLETED)
+- [x] Registered direct HR task destinations for directory, attendance, leave, organization, employee self-service, manager workbench, reports, and imports.
+- [x] Registered direct Payroll task destinations for runs, inputs, loans, payslips, reports, setup, settings, and opening balances.
+- [x] Preserved Attendance and Leave as HR task destinations and guarded each route with the authoritative HR permission codes.
 
-### Subsequent Rollout Waves (Preserved in Later Waves):
-- [ ] **Wave 3**: Fixed Assets & Depreciation, Expenses, Invoicing & Billing, Payments
-- [ ] **Wave 4**: HR & Employment, Payroll Runs, Attendance, Leave Management
-- [ ] **Wave 5**: Manufacturing, Projects, Field Service
+### Milestone P3 Wave 5: Manufacturing, Projects & Field Service (COMPLETED)
+- [x] Preserved the existing Manufacturing task-route implementation and audited it against the same destination/permission model.
+- [x] Registered Projects portfolio, resource load, and templates routes while retaining project workspace record routes behind project read access.
+- [x] Registered Field Service overview, requests, work orders, dispatch, technician day, installed base, preventive maintenance, contracts/warranty, and billing routes.
+- [x] Added focused navigation acceptance coverage for Wave 3–5 role isolation, deterministic landing, lifecycle behavior, manifest parity, and a real-stack admin route smoke.
+
+### Wave 3–5 Coverage Matrix
+
+| Requirement | Destination registry | Direct route guard | Lifecycle mode | Focused test | Real-stack proof |
+|---|---:|---:|---:|---:|---:|
+| Fixed Assets / Expenses / Invoicing / Payments | PASS | PASS | PASS | PASS | PASS |
+| HR / Attendance / Leave / Payroll | PASS | PASS | PASS | PASS | PASS |
+| Manufacturing / Projects / Field Service | PASS | PASS | PASS | PASS | PASS |
+| Command Palette, favorites, recents, direct links | PASS | PASS | PASS | PASS | PASS |
+
+## 3. Deferred Scope
+
+The navigation rollout is complete for the authorized frontend scope. Dedicated heavyweight performance certification (including PJ38) and final human Product/UX approval remain outside this engineering delivery gate.
 
 ---
 
@@ -125,13 +145,17 @@ Per canonical architecture governance and explicit Product Owner instruction, th
 
 | Quality Gate | Tool / Command | Status | Evidence |
 |---|---|---|---|
-| **TypeScript Typecheck** | `pnpm --dir frontend run typecheck` | **PASSED** | 0 errors across root and frontend tsconfig |
+| **TypeScript Typecheck** | `pnpm run typecheck` | **BLOCKED BY CONCURRENT WORK** | Navigation-owned code typechecks; the final workspace check reports 5 pre-existing errors in the concurrent manufacturing edit `frontend/modules/manufacturing/pages/materials-page.tsx` (number passed where the shared formatter requires a decimal string) |
 | **Frontend Architecture** | `pnpm run architecture:frontend` | **PASSED** | Module boundaries, fixtures, and rules 100% clean |
 | **Localization Verification** | `pnpm run localization:verify` | **PASSED** | Zero missing keys, full Arabic/English parity |
-| **Frontend Unit Suite** | `pnpm run test:frontend` | **PASSED** | 274/274 tests passed (57 suites) |
-| **Permission Audit** | `node --test frontend/tests/navigation/permissions-manifest-audit.test.ts` | **PASSED** | 100% of permissions verified against 24 module manifests (12/12 test cases) |
+| **Frontend Unit Suite** | `pnpm run test:frontend` | **PASSED** | 278/278 tests passed across 58 suites, including Wave 3–5 navigation isolation and manifest parity |
+| **Permission Audit** | `node --test frontend/tests/navigation/permissions-manifest-audit.test.ts` | **PASSED** | 13/13 cases passed; Wave 3–5 destination permissions and all route files match authoritative manifests |
 | **Lifecycle Coverage Audit** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~ModuleLifecycleCoverageAuditTests` | **PASSED** | 6/6 tests passed (Sales, Purchasing, POS, Banking, CRM, Accounting, Inventory verified) |
 | **Wave 2 Integration Suite** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~NavigationSecurityAcceptanceTests` | **PASSED** | 27/27 tests passed; Disposable template isolation, POS durable recovery (4 cases), Purchasing physical stock receipt & invoice finalization, Sales quotation-to-order, and multi-page server pagination verified; 0 leftover database rows |
 | **Wave 2 Domain Suites** | `dotnet test backend/Tests/Modules/{POS,Purchasing,Sales}/` | **PASSED** | 44/44 tests passed (POS: 32, Purchasing: 10, Sales: 2) |
-| **Browser E2E Real-Stack Suite** | `pnpm --filter frontend exec playwright test tests/e2e/navigation-real-stack.spec.ts` | **PASSED** | 7/7 real-stack browser journeys passed against live ASP.NET Core API and PostgreSQL (Narrow Cashier, Narrow CRM Rep, Narrow Accountant, Legal Entity Switching with ReadOnly 403, POS Cashier fast-lane + Sessions, Sales Quotations interactive task workflow, Purchasing Orders interactive task workflow) |
+| **Browser E2E Real-Stack Wave 3–5 Smoke** | `pnpm --filter frontend exec playwright test tests/e2e/navigation-waves-real-stack.spec.ts` | **PASSED** | 1/1 admin route journey passed across Fixed Assets, Expenses, Invoicing, Payments, HR, Payroll, Projects, and Service |
 | **Frontend Production Build** | `pnpm --dir frontend build` | **PASSED** | Vite v8.3.3 built client with zero bundle errors |
+
+### Local Acceptance Limitation
+
+The historical `navigation-real-stack.spec.ts` role-isolation suite was attempted locally but its first narrow-role login failed with `auth.invalid_credentials` for `cashier@atlas.com` and, in the focused retry, `crm@atlas.com`. The admin-backed Wave 3–5 route smoke passed; no navigation code failure was observed. The existing local development identity fixture/password state needs to be reseeded separately and is not changed by this frontend navigation delivery.

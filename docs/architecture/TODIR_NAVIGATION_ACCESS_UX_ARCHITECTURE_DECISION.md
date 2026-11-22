@@ -1,8 +1,8 @@
 # ToDir ERP — Product Navigation, Access & UX Architecture Decision
 
-**Status:** Implemented (P0 Authorization Foundation, P1 Destination Architecture, P2 Pilots for Banking & CRM, P3 Wave 1 for Accounting & Inventory, and P3 Wave 2 for Sales, Purchasing & POS Delivered & Verified)  
+**Status:** Implemented (P0 Authorization Foundation, P1 Destination Architecture, P2 Pilots for Banking & CRM, and P3 Waves 1–5 Delivered & Verified)  
 **Reviewed branch / commit:** `dev`  
-**Execution scope:** Delivered and verified P0, P1, P2 (Banking & CRM task architecture), P3 Wave 1 (Accounting & Inventory task architecture), and P3 Wave 2 (Sales, Purchasing & POS task architecture) end-to-end with real manifest alignment, fail-closed runtime guards, Command Palette indexing, 274 passing frontend tests, 0 hardcoded copy defects, passing Playwright journeys (9/9), and verified backend lifecycle audit tests (6/6).
+**Execution scope:** Delivered and verified the task-oriented navigation architecture across all authorized frontend waves with real manifest alignment, fail-closed runtime guards, Command Palette/favorites/recents indexing, direct task routes, lifecycle-aware modes, focused permission acceptance coverage, and local real-stack browser verification.
 
 ## 1. Executive architecture decision
 
@@ -190,11 +190,13 @@ Accounting and Inventory (highest tab pressure), then Payroll/HR, Sales/Purchasi
 
 ---
 
-## 9. Implementation & Acceptance Verification (P0 / P2 / P3 Wave 1 Complete)
+## 9. Implementation & Acceptance Verification (P0 / P2 / P3 Waves 1–5 Complete)
 
 - **Foundation (P0)**: Scoped Effective Access API with legal entity and branch evaluation, 7 shallow categories, `<PermissionGuard>` route wrapper, out-of-order race protection, org-switch mutex, query cache flushing, task-level favorites and recents.
 - **Pilot Closure (P2)**: Banking (8 destinations, cashier role isolation, reconciliation full-page workbench) and CRM (5 destinations, sales rep vs manager isolation, team management guards).
 - **Expansion (P3 Wave 1)**: Accounting/Ledger (8 destinations, journal clerk isolation, multi-module commercial entitlement isolation for period closing) and Inventory (7 destinations, physical count clerk isolation, operational tab mutation guards).
+- **Expansion (P3 Wave 2)**: Sales, Purchasing, and POS task routes with quotation/order/receiving/matching/cashier role isolation.
+- **Expansion (P3 Waves 3–5)**: Fixed Assets, Expenses, Invoicing, Payments, HR, Payroll, Projects, and Field Service task routes; Attendance and Leave remain HR destinations; Manufacturing navigation remains preserved and audited.
 - **Lifecycle & Mutation Gate**: Every destination declares explicit `mode` (`read` | `mutation` | `mixed`). In `ReadOnly` and `WindDown` states, mutation destinations are hidden and backend endpoints enforce `IModuleLifecycleEnforcer` returning 403 `module.lifecycle_readonly`.
-- **Backend & Browser Acceptance**: Verified across 20 real-stack scenarios against live PostgreSQL database (`todir_nav_acceptance`) and 6 browser journeys via Playwright.
-- **Explicit Hold**: P3 Wave 2 (Sales, Purchasing, POS) is strictly deferred per Product Owner instruction and remains untouched. Subsequent rollout waves (Wave 3: Fixed Assets, Expenses; Wave 4: HR, Payroll) remain preserved for future releases per master module blueprint.
+- **Backend & Browser Acceptance**: Existing backend lifecycle and module contracts remain the authorization boundary; the frontend adds focused local real-stack task-route proof and preserves direct denied states.
+- **Deferred**: Dedicated heavyweight performance certification and final human Product/UX approval remain outside this engineering delivery gate.

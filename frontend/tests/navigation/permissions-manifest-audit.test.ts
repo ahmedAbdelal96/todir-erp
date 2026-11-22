@@ -12,7 +12,15 @@ import {
   MANUFACTURING_DESTINATIONS,
   SALES_DESTINATIONS,
   PURCHASING_DESTINATIONS,
-  POS_DESTINATIONS
+  POS_DESTINATIONS,
+  FIXED_ASSETS_DESTINATIONS,
+  EXPENSES_DESTINATIONS,
+  INVOICING_DESTINATIONS,
+  PAYMENTS_DESTINATIONS,
+  HR_DESTINATIONS,
+  PAYROLL_DESTINATIONS,
+  PROJECTS_DESTINATIONS,
+  SERVICE_DESTINATIONS
 } from "../../app/router/destination-registry.ts";
 import type { PermissionCondition } from "../../app/router/route-contract.ts";
 
@@ -217,6 +225,26 @@ describe("Permission Manifest Authoritative Audit", () => {
       }
     }
     assert.deepEqual(invalidCodes, [], `All POS_DESTINATIONS permissions must be valid manifests. Found invalid: ${invalidCodes.join(", ")}`);
+  });
+
+  it("verifies 100% of P3 Wave 3–5 destination permissions exist in manifest catalog", () => {
+    const waveDestinations = [
+      ...FIXED_ASSETS_DESTINATIONS,
+      ...EXPENSES_DESTINATIONS,
+      ...INVOICING_DESTINATIONS,
+      ...PAYMENTS_DESTINATIONS,
+      ...HR_DESTINATIONS,
+      ...PAYROLL_DESTINATIONS,
+      ...PROJECTS_DESTINATIONS,
+      ...SERVICE_DESTINATIONS
+    ];
+    const invalidCodes: string[] = [];
+    for (const dest of waveDestinations) {
+      for (const code of extractPermissions(dest.permission)) {
+        if (!authoritativeCatalog.has(code)) invalidCodes.push(`${dest.id} -> ${code}`);
+      }
+    }
+    assert.deepEqual(invalidCodes, [], `All Wave 3–5 destination permissions must be valid manifests. Found invalid: ${invalidCodes.join(", ")}`);
   });
 
   it("verifies 100% of permissions in all module routes.tsx files match manifest catalog", () => {

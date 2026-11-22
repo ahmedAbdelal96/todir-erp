@@ -27,13 +27,17 @@ import {
 
 export type ProjectsRootTabId = "portfolio" | "resourceLoad" | "templates";
 
-export function ProjectsPage(): React.JSX.Element {
+export interface ProjectsPageProps {
+  readonly initialTab?: ProjectsRootTabId | undefined;
+}
+
+export function ProjectsPage({ initialTab }: ProjectsPageProps = {}): React.JSX.Element {
   const { t } = useTranslation("projects");
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const isMobile = useIsMobile();
 
-  const activeTab = (searchParams.get("tab") as ProjectsRootTabId | null) ?? "portfolio";
+  const activeTab = (searchParams.get("tab") as ProjectsRootTabId | null) ?? initialTab ?? "portfolio";
 
   const handleTabChange = (tab: ProjectsRootTabId) => {
     setSearchParams((prev) => {

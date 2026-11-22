@@ -17,7 +17,11 @@ import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { useLegalEntityContext } from "../../../core/runtime/runtime-provider.tsx";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 
-export function HrPage(): React.JSX.Element {
+export interface HrPageProps {
+  readonly initialTab?: HrTabId | undefined;
+}
+
+export function HrPage({ initialTab }: HrPageProps = {}): React.JSX.Element {
   const { t } = useTranslation("hr");
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -33,7 +37,7 @@ export function HrPage(): React.JSX.Element {
   const legalEntityId = outletCtx?.legalEntityId || contextEntityId || "00000000-0000-0000-0000-000000000001";
 
   // Tab & Employee State derived from searchParams (Single Source of Truth)
-  const activeTab = (searchParams.get("tab") as HrTabId | null) ?? "home";
+  const activeTab = (searchParams.get("tab") as HrTabId | null) ?? initialTab ?? "home";
   const selectedEmployeeId = searchParams.get("employeeId");
 
   // Help Modal State

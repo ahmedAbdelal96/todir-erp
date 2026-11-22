@@ -30,7 +30,11 @@ export type ExpensesTabId =
   | "reports"
   | "settings";
 
-export function ExpensesPage(): React.JSX.Element {
+export interface ExpensesPageProps {
+  readonly initialTab?: ExpensesTabId | undefined;
+}
+
+export function ExpensesPage({ initialTab }: ExpensesPageProps = {}): React.JSX.Element {
   const { t } = useTranslation("expenses");
   const isMobile = useIsMobile(768);
 
@@ -39,7 +43,7 @@ export function ExpensesPage(): React.JSX.Element {
   const permissions = outletCtx?.permissions ?? useOptionalPermissions();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = (searchParams.get("tab") as ExpensesTabId | null) ?? "self-service";
+  const activeTab = (searchParams.get("tab") as ExpensesTabId | null) ?? initialTab ?? "self-service";
 
   const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || null;
 

@@ -37,7 +37,11 @@ export type ServiceTabId =
   | "contracts-warranty"
   | "billing";
 
-export function ServicePage(): React.JSX.Element {
+export interface ServicePageProps {
+  readonly initialTab?: ServiceTabId | undefined;
+}
+
+export function ServicePage({ initialTab }: ServicePageProps = {}): React.JSX.Element {
   const { t } = useTranslation("service");
   const isMobile = useIsMobile(768);
 
@@ -46,7 +50,7 @@ export function ServicePage(): React.JSX.Element {
   const permissions = outletCtx?.permissions ?? useOptionalPermissions();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = (searchParams.get("tab") as ServiceTabId | null) ?? "overview";
+  const activeTab = (searchParams.get("tab") as ServiceTabId | null) ?? initialTab ?? "overview";
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const queryEntityId = searchParams.get("legalEntityId");

@@ -44,7 +44,11 @@ import type {
   PaymentType
 } from "../types.ts";
 
-export function PaymentListPage(): React.JSX.Element {
+export interface PaymentListPageProps {
+  readonly initialTab?: string | undefined;
+}
+
+export function PaymentListPage({ initialTab }: PaymentListPageProps = {}): React.JSX.Element {
   const { t } = useTranslation(["payments", "common"]);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -53,7 +57,7 @@ export function PaymentListPage(): React.JSX.Element {
   const perms = usePaymentsPermissions();
 
   // Tab State: "all" | "incoming" | "outgoing" | "transfers" | "accounts" | "requests"
-  const activeTab = searchParams.get("tab") || "all";
+  const activeTab = searchParams.get("tab") || initialTab || "all";
   const setActiveTab = (tab: string) => {
     const next = new URLSearchParams(searchParams);
     next.set("tab", tab);

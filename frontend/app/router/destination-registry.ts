@@ -798,6 +798,354 @@ export const POS_DESTINATIONS: readonly NavDestination[] = [
   }
 ];
 
+export const FIXED_ASSETS_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "fixed-assets-overview", category: "finance", moduleId: "fixed-assets", path: "/fixed-assets",
+    labelKey: "tabs.overview", fallbackLabel: "نظرة عامة على الأصول", icon: "fixed-assets",
+    permission: { anyOf: ["assets.read", "assets.financial.read", "assets.audit.read"] }, order: 10, isPrimary: true, mode: "read",
+    keywords: ["أصول", "أصول ثابتة", "fixed assets", "overview"]
+  },
+  {
+    id: "fixed-assets-register", category: "finance", moduleId: "fixed-assets", path: "/fixed-assets/register",
+    labelKey: "tabs.register", fallbackLabel: "سجل الأصول", icon: "fixed-assets",
+    permission: { anyOf: ["assets.read", "assets.create", "assets.edit"] }, order: 20, mode: "mixed",
+    keywords: ["سجل الأصول", "asset register", "assets"]
+  },
+  {
+    id: "fixed-assets-custody", category: "finance", moduleId: "fixed-assets", path: "/fixed-assets/custody",
+    labelKey: "tabs.custody", fallbackLabel: "العهد والتحقق الميداني", icon: "verified",
+    permission: { anyOf: ["assets.read", "assets.assign", "assets.verification.manage"] }, order: 30, mode: "mixed",
+    keywords: ["عهدة", "تحقق", "custody", "verification"]
+  },
+  {
+    id: "fixed-assets-capitalization", category: "finance", moduleId: "fixed-assets", path: "/fixed-assets/capitalization",
+    labelKey: "tabs.capitalization", fallbackLabel: "الرسملة والمشروعات الرأسمالية", icon: "layers",
+    permission: { anyOf: ["assets.read", "assets.capitalize", "assets.opening.manage"] }, order: 40, mode: "mixed",
+    keywords: ["رسملة", "مشروعات رأسمالية", "CIP", "capitalization"]
+  },
+  {
+    id: "fixed-assets-depreciation", category: "finance", moduleId: "fixed-assets", path: "/fixed-assets/depreciation",
+    labelKey: "tabs.depreciation", fallbackLabel: "الاستهلاك والدفاتر", icon: "calculate",
+    permission: { anyOf: ["assets.financial.read", "assets.book.manage", "assets.depreciation.prepare", "assets.depreciation.post", "assets.depreciation.reverse"] }, order: 50, mode: "mixed",
+    keywords: ["استهلاك", "دفاتر أصول", "depreciation", "books"]
+  },
+  {
+    id: "fixed-assets-reports", category: "finance", moduleId: "fixed-assets", path: "/fixed-assets/reports",
+    labelKey: "tabs.reports", fallbackLabel: "تقارير الأصول والمطابقة", icon: "reports",
+    permission: { anyOf: ["assets.financial.read", "assets.audit.read", "assets.export"] }, order: 60, mode: "read",
+    keywords: ["تقارير", "مطابقة", "asset reports", "reconciliation"]
+  },
+  {
+    id: "fixed-assets-my-assets", category: "finance", moduleId: "fixed-assets", path: "/fixed-assets/my-assets",
+    labelKey: "tabs.myAssets", fallbackLabel: "أصولي وعهد العمل", icon: "person",
+    permission: "assets.read", order: 70, mode: "read",
+    keywords: ["أصولي", "عهد العمل", "my assets"]
+  }
+];
+
+export const EXPENSES_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "expenses-overview", category: "finance", moduleId: "expenses", path: "/expenses",
+    labelKey: "tabs.overview", fallbackLabel: "نظرة عامة على المصروفات", icon: "expenses",
+    permission: { anyOf: ["expenses.read", "expenses.create", "expenses.reimbursement.read", "expenses.reimbursement.manage"] }, order: 10, isPrimary: true, mode: "read",
+    keywords: ["مصروفات", "نفقات", "expenses", "overview"]
+  },
+  {
+    id: "expenses-self-service", category: "finance", moduleId: "expenses", path: "/expenses/self-service",
+    labelKey: "tabs.selfService", fallbackLabel: "مصروفاتي وطلبات السداد", icon: "person",
+    permission: { anyOf: ["expenses.read", "expenses.create", "expenses.submit", "expenses.reimbursement.read"] }, order: 20, mode: "mixed",
+    keywords: ["مصروفاتي", "طلب سداد", "self service", "reimbursement"]
+  },
+  {
+    id: "expenses-review", category: "finance", moduleId: "expenses", path: "/expenses/review",
+    labelKey: "tabs.review", fallbackLabel: "مراجعة واعتماد المصروفات", icon: "check",
+    permission: { anyOf: ["expenses.approve", "expenses.finalize", "expenses.audit.read"] }, order: 30, mode: "mixed",
+    keywords: ["مراجعة", "اعتماد", "مصروفات", "review", "approval"]
+  },
+  {
+    id: "expenses-advances", category: "finance", moduleId: "expenses", path: "/expenses/advances",
+    labelKey: "tabs.advances", fallbackLabel: "السلف وتسويتها", icon: "banknotes",
+    permission: { anyOf: ["expenses.reimbursement.manage", "expenses.approve", "expenses.finalize"] }, order: 40, mode: "mixed",
+    keywords: ["سلف", "تسوية سلفة", "advances"]
+  },
+  {
+    id: "expenses-corporate-cards", category: "finance", moduleId: "expenses", path: "/expenses/corporate-cards",
+    labelKey: "tabs.corporateCards", fallbackLabel: "البطاقات المؤسسية", icon: "credit-card",
+    permission: { anyOf: ["expenses.read", "expenses.approve", "expenses.finalize"] }, order: 50, mode: "mixed",
+    keywords: ["بطاقات", "بطاقة مؤسسية", "corporate cards"]
+  },
+  {
+    id: "expenses-reimbursements", category: "finance", moduleId: "expenses", path: "/expenses/reimbursements",
+    labelKey: "tabs.reimbursements", fallbackLabel: "السداد والتعويضات", icon: "transfer",
+    permission: { anyOf: ["expenses.reimbursement.read", "expenses.reimbursement.manage", "expenses.finalize"] }, order: 60, mode: "mixed",
+    keywords: ["سداد", "تعويض", "reimbursements"]
+  },
+  {
+    id: "expenses-reports", category: "finance", moduleId: "expenses", path: "/expenses/reports",
+    labelKey: "tabs.reports", fallbackLabel: "تقارير المصروفات", icon: "reports",
+    permission: { anyOf: ["expenses.audit.read", "expenses.read"] }, order: 70, mode: "read",
+    keywords: ["تقارير مصروفات", "expenses reports"]
+  },
+  {
+    id: "expenses-settings", category: "finance", moduleId: "expenses", path: "/expenses/settings",
+    labelKey: "tabs.settings", fallbackLabel: "إعدادات المصروفات", icon: "settings",
+    permission: "expenses.category.manage", order: 80, mode: "mutation",
+    keywords: ["إعدادات المصروفات", "سياسات المصروفات", "expense settings"]
+  }
+];
+
+export const INVOICING_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "invoicing-overview", category: "sales", moduleId: "invoicing", path: "/invoicing",
+    labelKey: "tabs.overview", fallbackLabel: "نظرة عامة على الفوترة", icon: "invoicing",
+    permission: { anyOf: ["invoicing.customer_invoice.read", "invoicing.supplier_invoice.read", "invoicing.customer_invoice.create", "invoicing.supplier_invoice.create"] }, order: 10, isPrimary: true, mode: "read",
+    keywords: ["فواتير", "فوترة", "invoicing", "billing"]
+  },
+  {
+    id: "invoicing-customer", category: "sales", moduleId: "invoicing", path: "/invoicing/customer-invoices",
+    labelKey: "tabs.customerInvoices", fallbackLabel: "فواتير العملاء", icon: "receipt",
+    permission: { anyOf: ["invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.finalize"] }, order: 20, mode: "mixed",
+    keywords: ["فاتورة عميل", "فواتير مبيعات", "customer invoices"]
+  },
+  {
+    id: "invoicing-supplier", category: "sales", moduleId: "invoicing", path: "/invoicing/supplier-invoices",
+    labelKey: "tabs.supplierInvoices", fallbackLabel: "فواتير الموردين", icon: "receipt",
+    permission: { anyOf: ["invoicing.supplier_invoice.read", "invoicing.supplier_invoice.create", "invoicing.supplier_invoice.edit", "invoicing.supplier_invoice.finalize"] }, order: 30, mode: "mixed",
+    keywords: ["فاتورة مورد", "فواتير مشتريات", "supplier invoices"]
+  }
+];
+
+export const PAYMENTS_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "payments-overview", category: "finance", moduleId: "payments", path: "/payments",
+    labelKey: "tabs.overview", fallbackLabel: "نظرة عامة على المدفوعات", icon: "payments",
+    permission: { anyOf: ["payments.read", "payments.incoming.create", "payments.outgoing.create", "payments.account.read"] }, order: 10, isPrimary: true, mode: "read",
+    keywords: ["مدفوعات", "تحصيل", "صرف", "payments"]
+  },
+  {
+    id: "payments-incoming", category: "finance", moduleId: "payments", path: "/payments/incoming",
+    labelKey: "tabs.incoming", fallbackLabel: "سندات القبض والتحصيل", icon: "arrow-down",
+    permission: { anyOf: ["payments.read", "payments.incoming.create", "payments.complete_manual"] }, order: 20, mode: "mixed",
+    keywords: ["سند قبض", "تحصيل", "incoming payments"]
+  },
+  {
+    id: "payments-outgoing", category: "finance", moduleId: "payments", path: "/payments/outgoing",
+    labelKey: "tabs.outgoing", fallbackLabel: "سندات الصرف للموردين", icon: "arrow-up",
+    permission: { anyOf: ["payments.read", "payments.outgoing.create", "payments.complete_manual"] }, order: 30, mode: "mixed",
+    keywords: ["سند صرف", "صرف مورد", "outgoing payments"]
+  },
+  {
+    id: "payments-transfers", category: "finance", moduleId: "payments", path: "/payments/transfers",
+    labelKey: "tabs.transfers", fallbackLabel: "التحويلات الداخلية", icon: "transfer",
+    permission: { anyOf: ["payments.read", "payments.internal_transfer.create"] }, order: 40, mode: "mixed",
+    keywords: ["تحويل داخلي", "internal transfer"]
+  },
+  {
+    id: "payments-accounts", category: "finance", moduleId: "payments", path: "/payments/accounts",
+    labelKey: "tabs.accounts", fallbackLabel: "حسابات الدفع", icon: "account-balance",
+    permission: { anyOf: ["payments.account.read", "payments.account.manage"] }, order: 50, mode: "mixed",
+    keywords: ["حسابات الدفع", "payment accounts"]
+  },
+  {
+    id: "payments-requests", category: "finance", moduleId: "payments", path: "/payments/requests",
+    labelKey: "tabs.requests", fallbackLabel: "طلبات الدفع الإلكتروني", icon: "link",
+    permission: { anyOf: ["payments.provider.read", "payments.provider.manage", "payments.provider.retry", "payments.provider.reconcile", "payments.incoming.create"] }, order: 60, mode: "mixed",
+    keywords: ["طلبات دفع", "بوابة دفع", "payment requests"]
+  }
+];
+
+export const HR_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "hr-overview", category: "hr", moduleId: "hr", path: "/hr",
+    labelKey: "tabs.home", fallbackLabel: "نظرة عامة على الموارد البشرية", icon: "users",
+    permission: { anyOf: ["hr.home.read", "hr.employee.read_basic", "hr.employee.read_self", "hr.employee.read_team"] }, order: 10, isPrimary: true, mode: "read",
+    keywords: ["موارد بشرية", "موظفون", "HR", "overview"]
+  },
+  {
+    id: "hr-directory", category: "hr", moduleId: "hr", path: "/hr/directory",
+    labelKey: "tabs.directory", fallbackLabel: "دليل الموظفين", icon: "users",
+    permission: { anyOf: ["hr.employee.read_basic", "hr.employee.create", "hr.employee.manage"] }, order: 20, mode: "mixed",
+    keywords: ["موظفين", "دليل الموظفين", "employee directory"]
+  },
+  {
+    id: "hr-attendance", category: "hr", moduleId: "hr", path: "/hr/attendance",
+    labelKey: "tabs.attendance", fallbackLabel: "الحضور والانصراف", icon: "schedule",
+    permission: { anyOf: ["hr.attendance.read", "hr.attendance.read_self", "hr.attendance.manage", "hr.attendance.correct"] }, order: 30, mode: "mixed",
+    keywords: ["حضور", "انصراف", "attendance"]
+  },
+  {
+    id: "hr-leave", category: "hr", moduleId: "hr", path: "/hr/leave",
+    labelKey: "tabs.leave", fallbackLabel: "طلبات الإجازات", icon: "event",
+    permission: { anyOf: ["hr.leave.read", "hr.leave.read_self", "hr.leave.read_team", "hr.leave.request_self", "hr.leave.approve_team", "hr.leave.approve"] }, order: 40, mode: "mixed",
+    keywords: ["إجازات", "طلب إجازة", "leave"]
+  },
+  {
+    id: "hr-organization", category: "hr", moduleId: "hr", path: "/hr/organization",
+    labelKey: "tabs.organization", fallbackLabel: "الهيكل التنظيمي", icon: "account-tree",
+    permission: { anyOf: ["hr.department.read", "hr.department.manage", "hr.position.read", "hr.position.manage", "hr.assignment.read", "hr.assignment.manage"] }, order: 50, mode: "mixed",
+    keywords: ["هيكل تنظيمي", "إدارات", "وظائف", "organization"]
+  },
+  {
+    id: "hr-self-service", category: "hr", moduleId: "hr", path: "/hr/self-service",
+    labelKey: "tabs.selfservice", fallbackLabel: "الخدمة الذاتية للموظف", icon: "person",
+    permission: { anyOf: ["hr.employee.read_self", "hr.leave.read_self", "hr.leave.request_self", "hr.attendance.read_self", "hr.employee.document.read_self"] }, order: 60, mode: "mixed",
+    keywords: ["خدمة ذاتية", "موظف", "self service"]
+  },
+  {
+    id: "hr-manager", category: "hr", moduleId: "hr", path: "/hr/manager",
+    labelKey: "tabs.manager", fallbackLabel: "إدارة الفريق", icon: "supervisor",
+    permission: { anyOf: ["hr.employee.read_team", "hr.leave.read_team", "hr.leave.approve_team", "hr.attendance.manage"] }, order: 70, mode: "mixed",
+    keywords: ["إدارة الفريق", "اعتماد الإجازات", "manager"]
+  },
+  {
+    id: "hr-reports", category: "hr", moduleId: "hr", path: "/hr/reports",
+    labelKey: "tabs.reports", fallbackLabel: "تقارير الموارد البشرية", icon: "reports",
+    permission: { anyOf: ["hr.report.read", "hr.audit.read", "hr.export"] }, order: 80, mode: "read",
+    keywords: ["تقارير الموارد البشرية", "HR reports"]
+  },
+  {
+    id: "hr-imports", category: "hr", moduleId: "hr", path: "/hr/imports",
+    labelKey: "tabs.imports", fallbackLabel: "استيراد بيانات الموظفين", icon: "upload",
+    permission: "hr.employee.import", order: 90, mode: "mutation",
+    keywords: ["استيراد موظفين", "employee import"]
+  }
+];
+
+export const PAYROLL_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "payroll-overview", category: "hr", moduleId: "payroll", path: "/payroll",
+    labelKey: "tabs.home", fallbackLabel: "نظرة عامة على الرواتب", icon: "banknotes",
+    permission: { anyOf: ["payroll.home.read", "payroll.run.read", "payroll.payslip.read_self", "payroll.payslip.read"] }, order: 10, isPrimary: true, mode: "read",
+    keywords: ["رواتب", "أجور", "payroll", "overview"]
+  },
+  {
+    id: "payroll-runs", category: "hr", moduleId: "payroll", path: "/payroll/runs",
+    labelKey: "tabs.runs", fallbackLabel: "مسيرات الرواتب", icon: "play",
+    permission: { anyOf: ["payroll.run.read", "payroll.run.create", "payroll.run.calculate", "payroll.run.review", "payroll.run.approve", "payroll.run.finalize"] }, order: 20, mode: "mixed",
+    keywords: ["مسير رواتب", "دورة رواتب", "payroll runs"]
+  },
+  {
+    id: "payroll-inputs", category: "hr", moduleId: "payroll", path: "/payroll/inputs",
+    labelKey: "tabs.inputs", fallbackLabel: "مدخلات الرواتب", icon: "edit",
+    permission: { anyOf: ["payroll.input.read", "payroll.input.create", "payroll.input.approve"] }, order: 30, mode: "mixed",
+    keywords: ["مدخلات", "بدلات", "استقطاعات", "payroll inputs"]
+  },
+  {
+    id: "payroll-loans", category: "hr", moduleId: "payroll", path: "/payroll/loans",
+    labelKey: "tabs.loans", fallbackLabel: "سلف وقروض الموظفين", icon: "account-balance",
+    permission: { anyOf: ["payroll.loan.read", "payroll.loan.create", "payroll.loan.approve", "payroll.loan.reschedule", "payroll.loan.writeoff"] }, order: 40, mode: "mixed",
+    keywords: ["سلف", "قروض", "employee loans"]
+  },
+  {
+    id: "payroll-payslips", category: "hr", moduleId: "payroll", path: "/payroll/payslips",
+    labelKey: "tabs.payslips", fallbackLabel: "قسائم الرواتب", icon: "receipt",
+    permission: { anyOf: ["payroll.payslip.read", "payroll.payslip.read_self", "payroll.payslip.export"] }, order: 50, mode: "read",
+    keywords: ["قسيمة راتب", "كشف راتب", "payslips"]
+  },
+  {
+    id: "payroll-reports", category: "hr", moduleId: "payroll", path: "/payroll/reports",
+    labelKey: "tabs.reports", fallbackLabel: "تقارير الرواتب والامتثال", icon: "reports",
+    permission: { anyOf: ["payroll.compliance_output.read", "payroll.accounting_preview.read", "payroll.audit.read", "payroll.compliance_output.generate"] }, order: 60, mode: "read",
+    keywords: ["تقارير رواتب", "امتثال", "payroll reports"]
+  },
+  {
+    id: "payroll-setup", category: "hr", moduleId: "payroll", path: "/payroll/setup",
+    labelKey: "tabs.setup", fallbackLabel: "إعدادات مسير الرواتب", icon: "settings",
+    permission: { anyOf: ["payroll.group.manage", "payroll.structure.manage", "payroll.component.manage", "payroll.assignment.manage"] }, order: 70, mode: "mutation",
+    keywords: ["إعداد الرواتب", "هيكل راتب", "payroll setup"]
+  },
+  {
+    id: "payroll-settings", category: "hr", moduleId: "payroll", path: "/payroll/settings",
+    labelKey: "tabs.settings", fallbackLabel: "إعدادات الرواتب النظامية", icon: "settings",
+    permission: { anyOf: ["payroll.settings.read", "payroll.settings.manage"] }, order: 80, mode: "mixed",
+    keywords: ["إعدادات الرواتب", "ضوابط نظامية", "payroll settings"]
+  },
+  {
+    id: "payroll-opening-balances", category: "hr", moduleId: "payroll", path: "/payroll/opening-balances",
+    labelKey: "tabs.openingBalances", fallbackLabel: "الأرصدة الافتتاحية للرواتب", icon: "account-balance",
+    permission: { anyOf: ["payroll.input.read", "payroll.input.create", "payroll.run.read"] }, order: 90, mode: "mixed",
+    keywords: ["أرصدة افتتاحية", "opening balances"]
+  }
+];
+
+export const PROJECTS_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "projects-overview", category: "inventory", moduleId: "projects", path: "/projects",
+    labelKey: "tabs.portfolio", fallbackLabel: "محفظة المشاريع", icon: "projects",
+    permission: { anyOf: ["projects.read", "projects.create", "projects.budget.read", "projects.cost.read"] }, order: 10, isPrimary: true, mode: "read",
+    keywords: ["مشاريع", "محفظة", "projects", "portfolio"]
+  },
+  {
+    id: "projects-resource-load", category: "inventory", moduleId: "projects", path: "/projects/resource-load",
+    labelKey: "tabs.resourceLoad", fallbackLabel: "تحميل الموارد", icon: "groups",
+    permission: { anyOf: ["projects.read", "projects.manage_team"] }, order: 20, mode: "read",
+    keywords: ["موارد", "تحميل الموارد", "resource load"]
+  },
+  {
+    id: "projects-templates", category: "inventory", moduleId: "projects", path: "/projects/templates",
+    labelKey: "tabs.templates", fallbackLabel: "قوالب المشاريع", icon: "description",
+    permission: { anyOf: ["projects.read", "projects.create", "projects.edit"] }, order: 30, mode: "mixed",
+    keywords: ["قوالب مشاريع", "project templates"]
+  }
+];
+
+export const SERVICE_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "service-overview", category: "inventory", moduleId: "service", path: "/service",
+    labelKey: "tabs.overview", fallbackLabel: "نظرة عامة على الخدمة", icon: "service",
+    permission: { anyOf: ["service.request.read", "service.work.read", "service.dispatch.read", "service.installed_base.read"] }, order: 10, isPrimary: true, mode: "read",
+    keywords: ["خدمة", "صيانة", "service", "overview"]
+  },
+  {
+    id: "service-requests", category: "inventory", moduleId: "service", path: "/service/requests",
+    labelKey: "tabs.requests", fallbackLabel: "طلبات الخدمة", icon: "inbox",
+    permission: { anyOf: ["service.request.read", "service.request.create", "service.request.triage", "service.request.resolve"] }, order: 20, mode: "mixed",
+    keywords: ["طلب خدمة", "بلاغ", "service requests"]
+  },
+  {
+    id: "service-work-orders", category: "inventory", moduleId: "service", path: "/service/work-orders",
+    labelKey: "tabs.workOrders", fallbackLabel: "أوامر العمل", icon: "assignment",
+    permission: { anyOf: ["service.work.read", "service.work.create", "service.work.plan", "service.work.schedule", "service.work.execute", "service.work.complete", "service.work.close"] }, order: 30, mode: "mixed",
+    keywords: ["أمر عمل", "work order"]
+  },
+  {
+    id: "service-dispatch", category: "inventory", moduleId: "service", path: "/service/dispatch",
+    labelKey: "tabs.dispatch", fallbackLabel: "جدولة وتوزيع الفنيين", icon: "route",
+    permission: { anyOf: ["service.dispatch.read", "service.dispatch.manage"] }, order: 40, mode: "mixed",
+    keywords: ["جدولة", "فنيين", "dispatch"]
+  },
+  {
+    id: "service-my-day", category: "inventory", moduleId: "service", path: "/service/my-day",
+    labelKey: "tabs.myDay", fallbackLabel: "يومي الميداني", icon: "today",
+    permission: { anyOf: ["service.work.read", "service.work.execute", "service.work.complete"] }, order: 50, mode: "mixed",
+    keywords: ["يومي", "تنفيذ ميداني", "technician day"]
+  },
+  {
+    id: "service-installed-base", category: "inventory", moduleId: "service", path: "/service/installed-base",
+    labelKey: "tabs.installedBase", fallbackLabel: "الأصول المركبة", icon: "inventory",
+    permission: { anyOf: ["service.installed_base.read", "service.installed_base.manage"] }, order: 60, mode: "mixed",
+    keywords: ["أصول مركبة", "installed base"]
+  },
+  {
+    id: "service-preventive", category: "inventory", moduleId: "service", path: "/service/preventive",
+    labelKey: "tabs.preventive", fallbackLabel: "الصيانة الوقائية", icon: "schedule",
+    permission: { anyOf: ["service.maintenance_plan.read", "service.maintenance_plan.manage", "service.meter.read", "service.meter.record"] }, order: 70, mode: "mixed",
+    keywords: ["صيانة وقائية", "خطة صيانة", "preventive maintenance"]
+  },
+  {
+    id: "service-contracts", category: "inventory", moduleId: "service", path: "/service/contracts-warranty",
+    labelKey: "tabs.contractsWarranty", fallbackLabel: "العقود والضمان", icon: "verified",
+    permission: { anyOf: ["service.contract.read", "service.contract.manage", "service.warranty.read", "service.warranty.manage"] }, order: 80, mode: "mixed",
+    keywords: ["عقد خدمة", "ضمان", "service contracts", "warranty"]
+  },
+  {
+    id: "service-billing", category: "inventory", moduleId: "service", path: "/service/billing",
+    labelKey: "tabs.billing", fallbackLabel: "فوترة الخدمة", icon: "receipt",
+    permission: { anyOf: ["service.billing.read", "service.billing.manage", "service.billing.request_invoice", "service.billing.writeoff"] }, order: 90, mode: "mixed",
+    keywords: ["فوترة خدمة", "service billing"]
+  }
+];
+
 export function isDestinationPermitted(
   dest: NavDestination,
   access: EffectiveAccess | null | undefined

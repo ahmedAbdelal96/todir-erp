@@ -1,6 +1,9 @@
 import React from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ModuleRouteRegistration } from "../../app/router/route-contract.ts";
+import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
+import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
+import { INVOICING_DESTINATIONS } from "../../app/router/destination-registry.ts";
 import { InvoiceListPage } from "./pages/invoice-list-page.tsx";
 import { InvoiceDraftWorkspace } from "./pages/invoice-draft-workspace.tsx";
 import { InvoiceDetailPage } from "./pages/invoice-detail-page.tsx";
@@ -19,32 +22,33 @@ function InvoicingRootRoute(): React.JSX.Element {
   return <InvoiceListPage />;
 }
 
-export const invoicingRoutes: ModuleRouteRegistration = {
-  navigation: {
+const invoicingNavigation = {
     id: "invoicing",
     moduleIds: ["invoicing"],
     path: "/invoicing",
     navigationKey: "invoicing",
-    permissions: {
-      anyOf: ["invoicing.customer_invoice.read", "invoicing.supplier_invoice.read"]
-    },
+    permissions: { anyOf: ["invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.finalize", "invoicing.supplier_invoice.read", "invoicing.supplier_invoice.create", "invoicing.supplier_invoice.edit", "invoicing.supplier_invoice.finalize"] },
+    destinations: INVOICING_DESTINATIONS,
     icon: "invoicing"
-  },
+} as const;
+
+export const invoicingRoutes: ModuleRouteRegistration = {
+  navigation: invoicingNavigation,
   routes: [
-    { path: "invoicing", element: <InvoicingRootRoute /> },
-    { path: "invoicing/customer-invoices", element: <InvoiceListPage initialTab="customer" /> },
-    { path: "invoicing/customer-invoices/new", element: <InvoiceDraftWorkspace direction="customer" /> },
-    { path: "invoicing/customer-invoices/:id/edit", element: <InvoiceDraftWorkspace direction="customer" /> },
-    { path: "invoicing/customer-invoices/:id", element: <InvoiceDetailPage direction="customer" /> },
-    { path: "invoicing/customer/new", element: <InvoiceDraftWorkspace direction="customer" /> },
-    { path: "invoicing/customer/:id/edit", element: <InvoiceDraftWorkspace direction="customer" /> },
-    { path: "invoicing/customer/:id", element: <InvoiceDetailPage direction="customer" /> },
-    { path: "invoicing/supplier-invoices", element: <InvoiceListPage initialTab="supplier" /> },
-    { path: "invoicing/supplier-invoices/new", element: <InvoiceDraftWorkspace direction="supplier" /> },
-    { path: "invoicing/supplier-invoices/:id/edit", element: <InvoiceDraftWorkspace direction="supplier" /> },
-    { path: "invoicing/supplier-invoices/:id", element: <InvoiceDetailPage direction="supplier" /> },
-    { path: "invoicing/supplier/new", element: <InvoiceDraftWorkspace direction="supplier" /> },
-    { path: "invoicing/supplier/:id/edit", element: <InvoiceDraftWorkspace direction="supplier" /> },
-    { path: "invoicing/supplier/:id", element: <InvoiceDetailPage direction="supplier" /> }
+    { path: "invoicing", element: <ModuleRootRoute module={invoicingNavigation} overviewPermission={{ anyOf: ["invoicing.customer_invoice.read", "invoicing.supplier_invoice.read"] }} defaultElement={<InvoicingRootRoute />} /> },
+    { path: "invoicing/customer-invoices", element: <PermissionGuard permission={{ anyOf: ["invoicing.customer_invoice.read", "invoicing.customer_invoice.create", "invoicing.customer_invoice.edit", "invoicing.customer_invoice.finalize"] }} moduleId="invoicing" mode="mixed"><InvoiceListPage initialTab="customer" /></PermissionGuard> },
+    { path: "invoicing/customer-invoices/new", element: <PermissionGuard permission={{ anyOf: ["invoicing.customer_invoice.create", "invoicing.customer_invoice.edit"] }} moduleId="invoicing" mode="mutation"><InvoiceDraftWorkspace direction="customer" /></PermissionGuard> },
+    { path: "invoicing/customer-invoices/:id/edit", element: <PermissionGuard permission="invoicing.customer_invoice.edit" moduleId="invoicing" mode="mutation"><InvoiceDraftWorkspace direction="customer" /></PermissionGuard> },
+    { path: "invoicing/customer-invoices/:id", element: <PermissionGuard permission="invoicing.customer_invoice.read" moduleId="invoicing" mode="read"><InvoiceDetailPage direction="customer" /></PermissionGuard> },
+    { path: "invoicing/customer/new", element: <PermissionGuard permission="invoicing.customer_invoice.create" moduleId="invoicing" mode="mutation"><InvoiceDraftWorkspace direction="customer" /></PermissionGuard> },
+    { path: "invoicing/customer/:id/edit", element: <PermissionGuard permission="invoicing.customer_invoice.edit" moduleId="invoicing" mode="mutation"><InvoiceDraftWorkspace direction="customer" /></PermissionGuard> },
+    { path: "invoicing/customer/:id", element: <PermissionGuard permission="invoicing.customer_invoice.read" moduleId="invoicing" mode="read"><InvoiceDetailPage direction="customer" /></PermissionGuard> },
+    { path: "invoicing/supplier-invoices", element: <PermissionGuard permission={{ anyOf: ["invoicing.supplier_invoice.read", "invoicing.supplier_invoice.create", "invoicing.supplier_invoice.edit", "invoicing.supplier_invoice.finalize"] }} moduleId="invoicing" mode="mixed"><InvoiceListPage initialTab="supplier" /></PermissionGuard> },
+    { path: "invoicing/supplier-invoices/new", element: <PermissionGuard permission="invoicing.supplier_invoice.create" moduleId="invoicing" mode="mutation"><InvoiceDraftWorkspace direction="supplier" /></PermissionGuard> },
+    { path: "invoicing/supplier-invoices/:id/edit", element: <PermissionGuard permission="invoicing.supplier_invoice.edit" moduleId="invoicing" mode="mutation"><InvoiceDraftWorkspace direction="supplier" /></PermissionGuard> },
+    { path: "invoicing/supplier-invoices/:id", element: <PermissionGuard permission="invoicing.supplier_invoice.read" moduleId="invoicing" mode="read"><InvoiceDetailPage direction="supplier" /></PermissionGuard> },
+    { path: "invoicing/supplier/new", element: <PermissionGuard permission="invoicing.supplier_invoice.create" moduleId="invoicing" mode="mutation"><InvoiceDraftWorkspace direction="supplier" /></PermissionGuard> },
+    { path: "invoicing/supplier/:id/edit", element: <PermissionGuard permission="invoicing.supplier_invoice.edit" moduleId="invoicing" mode="mutation"><InvoiceDraftWorkspace direction="supplier" /></PermissionGuard> },
+    { path: "invoicing/supplier/:id", element: <PermissionGuard permission="invoicing.supplier_invoice.read" moduleId="invoicing" mode="read"><InvoiceDetailPage direction="supplier" /></PermissionGuard> }
   ]
 };

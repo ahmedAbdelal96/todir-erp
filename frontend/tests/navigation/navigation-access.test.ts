@@ -22,6 +22,14 @@ import {
   SALES_DESTINATIONS,
   PURCHASING_DESTINATIONS,
   POS_DESTINATIONS,
+  FIXED_ASSETS_DESTINATIONS,
+  EXPENSES_DESTINATIONS,
+  INVOICING_DESTINATIONS,
+  PAYMENTS_DESTINATIONS,
+  HR_DESTINATIONS,
+  PAYROLL_DESTINATIONS,
+  PROJECTS_DESTINATIONS,
+  SERVICE_DESTINATIONS,
   NAVIGATION_CATEGORIES,
   resolveModuleLandingPath
 } from "../../app/router/destination-registry.ts";
@@ -633,6 +641,121 @@ describe("Permission-Driven Effective Access & Destination Architecture", () => 
       };
       assert.equal(isModuleOperational(unentitledCashierAccess, "pos"), false);
       assert.equal(isDestinationPermitted(checkoutDest, unentitledCashierAccess), false);
+    });
+  });
+
+  describe("P3 Waves 3–5: Finance, HR, Payroll, Projects & Service", () => {
+    it("isolates Wave 3 finance tasks by role and resolves narrow landings", () => {
+      const assetClerkAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["fixed-assets"],
+        permissions: ["assets.depreciation.post"],
+        moduleStatuses: { "fixed-assets": "Active" }
+      };
+      const expenseReviewerAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["expenses"],
+        permissions: ["expenses.approve"],
+        moduleStatuses: { expenses: "Active" }
+      };
+      const supplierInvoiceAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["invoicing"],
+        permissions: ["invoicing.supplier_invoice.read"],
+        moduleStatuses: { invoicing: "Active" }
+      };
+      const incomingPaymentAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["payments"],
+        permissions: ["payments.incoming.create"],
+        moduleStatuses: { payments: "Active" }
+      };
+
+      const assetRegistration: ModuleNavigationRegistration = {
+        id: "fixed-assets", moduleIds: ["fixed-assets"], path: "/fixed-assets", navigationKey: "fixedAssets",
+        destinations: FIXED_ASSETS_DESTINATIONS, icon: "fixed-assets"
+      };
+      const expenseRegistration: ModuleNavigationRegistration = {
+        id: "expenses", moduleIds: ["expenses"], path: "/expenses", navigationKey: "expenses",
+        destinations: EXPENSES_DESTINATIONS, icon: "expenses"
+      };
+      const invoicingRegistration: ModuleNavigationRegistration = {
+        id: "invoicing", moduleIds: ["invoicing"], path: "/invoicing", navigationKey: "invoicing",
+        destinations: INVOICING_DESTINATIONS, icon: "invoicing"
+      };
+      const paymentsRegistration: ModuleNavigationRegistration = {
+        id: "payments", moduleIds: ["payments"], path: "/payments", navigationKey: "payments",
+        destinations: PAYMENTS_DESTINATIONS, icon: "payments"
+      };
+
+      assert.equal(resolveModuleLandingPath(assetRegistration, assetClerkAccess), "/fixed-assets/depreciation");
+      assert.equal(isDestinationPermitted(FIXED_ASSETS_DESTINATIONS.find(d => d.id === "fixed-assets-depreciation")!, assetClerkAccess), true);
+      assert.equal(isDestinationPermitted(FIXED_ASSETS_DESTINATIONS.find(d => d.id === "fixed-assets-register")!, assetClerkAccess), false);
+      assert.equal(isDestinationPermitted(EXPENSES_DESTINATIONS.find(d => d.id === "expenses-review")!, expenseReviewerAccess), true);
+      assert.equal(isDestinationPermitted(EXPENSES_DESTINATIONS.find(d => d.id === "expenses-settings")!, expenseReviewerAccess), false);
+      assert.equal(isDestinationPermitted(INVOICING_DESTINATIONS.find(d => d.id === "invoicing-supplier")!, supplierInvoiceAccess), true);
+      assert.equal(isDestinationPermitted(INVOICING_DESTINATIONS.find(d => d.id === "invoicing-customer")!, supplierInvoiceAccess), false);
+      assert.equal(isDestinationPermitted(PAYMENTS_DESTINATIONS.find(d => d.id === "payments-incoming")!, incomingPaymentAccess), true);
+      assert.equal(isModulePermitted(paymentsRegistration, incomingPaymentAccess), true);
+      assert.equal(isModulePermitted(expenseRegistration, expenseReviewerAccess), true);
+    });
+
+    it("keeps Wave 4 HR and payroll task destinations separate", () => {
+      const employeeAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["hr"],
+        permissions: ["hr.leave.request_self"],
+        moduleStatuses: { hr: "Active" }
+      };
+      const payrollAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["payroll"],
+        permissions: ["payroll.run.read"],
+        moduleStatuses: { payroll: "Active" }
+      };
+      const hrRegistration: ModuleNavigationRegistration = {
+        id: "hr", moduleIds: ["hr"], path: "/hr", navigationKey: "hr", destinations: HR_DESTINATIONS, icon: "users"
+      };
+      const payrollRegistration: ModuleNavigationRegistration = {
+        id: "payroll", moduleIds: ["payroll"], path: "/payroll", navigationKey: "payroll", destinations: PAYROLL_DESTINATIONS, icon: "banknotes"
+      };
+
+      assert.equal(resolveModuleLandingPath(hrRegistration, employeeAccess), "/hr/leave");
+      assert.equal(isDestinationPermitted(HR_DESTINATIONS.find(d => d.id === "hr-self-service")!, employeeAccess), true);
+      assert.equal(isDestinationPermitted(HR_DESTINATIONS.find(d => d.id === "hr-directory")!, employeeAccess), false);
+      assert.equal(resolveModuleLandingPath(payrollRegistration, payrollAccess), "/payroll");
+      assert.equal(isDestinationPermitted(PAYROLL_DESTINATIONS.find(d => d.id === "payroll-runs")!, payrollAccess), true);
+      assert.equal(isDestinationPermitted(PAYROLL_DESTINATIONS.find(d => d.id === "payroll-setup")!, payrollAccess), false);
+    });
+
+    it("protects Wave 5 Projects and Field Service destinations with lifecycle rules", () => {
+      const projectPlannerAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["projects"],
+        permissions: ["projects.manage_team"],
+        moduleStatuses: { projects: "Active" }
+      };
+      const dispatcherAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["service"],
+        permissions: ["service.dispatch.read"],
+        moduleStatuses: { service: "Active" }
+      };
+      const readOnlyAssetAccess: EffectiveAccess = {
+        ...emptyAccess,
+        entitledModules: ["fixed-assets"],
+        permissions: ["assets.depreciation.post", "assets.audit.read"],
+        moduleStatuses: { "fixed-assets": "ReadOnly" }
+      };
+
+      assert.equal(isDestinationPermitted(PROJECTS_DESTINATIONS.find(d => d.id === "projects-resource-load")!, projectPlannerAccess), true);
+      assert.equal(isDestinationPermitted(PROJECTS_DESTINATIONS.find(d => d.id === "projects-templates")!, projectPlannerAccess), false);
+      assert.equal(resolveModuleLandingPath({ id: "service", moduleIds: ["service"], path: "/service", navigationKey: "service", destinations: SERVICE_DESTINATIONS, icon: "service" }, dispatcherAccess), "/service");
+      assert.equal(isDestinationPermitted(SERVICE_DESTINATIONS.find(d => d.id === "service-dispatch")!, dispatcherAccess), true);
+      assert.equal(isDestinationPermitted(SERVICE_DESTINATIONS.find(d => d.id === "service-billing")!, dispatcherAccess), false);
+      assert.equal(isDestinationPermitted(FIXED_ASSETS_DESTINATIONS.find(d => d.id === "fixed-assets-depreciation")!, readOnlyAssetAccess), true);
+      assert.equal(canPerformAction(readOnlyAssetAccess, "assets.depreciation.post"), false);
+      assert.equal(isDestinationPermitted(FIXED_ASSETS_DESTINATIONS.find(d => d.id === "fixed-assets-reports")!, readOnlyAssetAccess), true);
     });
   });
 });

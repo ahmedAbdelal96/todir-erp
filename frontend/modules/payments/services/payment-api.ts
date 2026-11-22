@@ -30,6 +30,23 @@ import type {
   PaymentStatusCheck
 } from "../types.ts";
 
+// The API may serialize PostgreSQL numeric values as JSON numbers in some
+// development responses. Keep the frontend money contract decimal-string based
+// at the module boundary so formatting never receives a runtime number.
+function normalizePaymentRecord(record: PaymentRecord): PaymentRecord {
+  return {
+    ...record,
+    amount: String(record.amount) as PaymentRecord["amount"]
+  };
+}
+
+function normalizePaymentPage(page: PaymentPage): PaymentPage {
+  return {
+    ...page,
+    items: page.items.map(normalizePaymentRecord)
+  };
+}
+
 export const paymentApi = {
   // Accounts
   listAccounts: async (legalEntityId: string, branchId?: string): Promise<readonly PaymentAccount[]> => {
@@ -72,14 +89,16 @@ export const paymentApi = {
     if (params.currencyCode) searchParams.set("currencyCode", params.currencyCode);
 
     const query = searchParams.toString() ? `?${searchParams.toString()}` : "";
-    return httpClient<PaymentPage>(`/api/v1/payments/legal-entities/${params.legalEntityId}${query}`);
+    const page = await httpClient<PaymentPage>(`/api/v1/payments/legal-entities/${params.legalEntityId}${query}`);
+    return normalizePaymentPage(page);
   },
 
   getPayment: async (legalEntityId: string, paymentId: string, branchId?: string): Promise<PaymentRecord> => {
     const searchParams = new URLSearchParams();
     if (branchId) searchParams.set("branchId", branchId);
     const query = searchParams.toString() ? `?${searchParams.toString()}` : "";
-    return httpClient<PaymentRecord>(`/api/v1/payments/legal-entities/${legalEntityId}/${paymentId}${query}`);
+    const record = await httpClient<PaymentRecord>(`/api/v1/payments/legal-entities/${legalEntityId}/${paymentId}${query}`);
+    return normalizePaymentRecord(record);
   },
 
   // Create Incoming Payment
@@ -89,12 +108,13 @@ export const paymentApi = {
     idempotencyKey?: string
   ): Promise<PaymentRecord> => {
     const key = idempotencyKey ?? generateKey();
-    return httpClient<PaymentRecord>(`/api/v1/payments/legal-entities/${legalEntityId}/incoming`, {
+    const record = await httpClient<PaymentRecord>(`/api/v1/payments/legal-entities/${legalEntityId}/incoming`, {
       method: "POST",
       headers: { "Idempotency-Key": key },
       idempotencyKey: key,
       body: JSON.stringify(request)
     });
+    return normalizePaymentRecord(record);
   },
 
   // Create Outgoing Payment
@@ -104,12 +124,13 @@ export const paymentApi = {
     idempotencyKey?: string
   ): Promise<PaymentRecord> => {
     const key = idempotencyKey ?? generateKey();
-    return httpClient<PaymentRecord>(`/api/v1/payments/legal-entities/${legalEntityId}/outgoing`, {
+    const record = await httpClient<PaymentRecord>(`/api/v1/payments/legal-entities/${legalEntityId}/outgoing`, {
       method: "POST",
       headers: { "Idempotency-Key": key },
       idempotencyKey: key,
       body: JSON.stringify(request)
     });
+    return normalizePaymentRecord(record);
   },
 
   // Complete Manual Payment
@@ -124,11 +145,12 @@ export const paymentApi = {
     if (branchId) searchParams.set("branchId", branchId);
     const query = searchParams.toString() ? `?${searchParams.toString()}` : "";
 
-    return httpClient<PaymentRecord>(`/api/v1/payments/legal-entities/${legalEntityId}/${paymentId}/complete${query}`, {
+    const record = await httpClient<PaymentRecord>(`/api/v1/payments/legal-entities/${legalEntityId}/${paymentId}/complete${query}`, {
       method: "POST",
       headers: { "Idempotency-Key": key },
       idempotencyKey: key
     });
+    return normalizePaymentRecord(record);
   },
 
   // Cancel Pending Payment
@@ -143,11 +165,12 @@ export const paymentApi = {
     if (branchId) searchParams.set("branchId", branchId);
     const query = searchParams.toString() ? `?${searchParams.toString()}` : "";
 
-    return httpClient<PaymentRecord>(`/api/v1/payments/legal-entities/${legalEntityId}/${paymentId}/cancel${query}`, {
+    const record = await httpClient<PaymentRecord>(`/api/v1/payments/legal-entities/${legalEntityId}/${paymentId}/cancel${query}`, {
       method: "POST",
       headers: { "Idempotency-Key": key },
       idempotencyKey: key
     });
+    return normalizePaymentRecord(record);
   },
 
   // Refunds
@@ -163,12 +186,13 @@ export const paymentApi = {
     if (branchId) searchParams.set("branchId", branchId);
     const query = searchParams.toString() ? `?${searchParams.toString()}` : "";
 
-    return httpClient<PaymentRecord>(`/api/v1/payments/legal-entities/${legalEntityId}/${paymentId}/refunds${query}`, {
+    const record = await httpClient<PaymentRecord>(`/api/v1/payments/legal-entities/${legalEntityId}/${paymentId}/refunds${query}`, {
       method: "POST",
       headers: { "Idempotency-Key": key },
       idempotencyKey: key,
       body: JSON.stringify(request)
     });
+    return normalizePaymentRecord(record);
   },
 
   createProviderRefund: async (
@@ -213,12 +237,13 @@ export const paymentApi = {
     if (branchId) searchParams.set("branchId", branchId);
     const query = searchParams.toString() ? `?${searchParams.toString()}` : "";
 
-    return httpClient<PaymentRecord>(`/api/v1/payments/legal-entities/${legalEntityId}/${paymentId}/reverse${query}`, {
+    const record = await httpClient<PaymentRecord>(`/api/v1/payments/legal-entities/${legalEntityId}/${paymentId}/reverse${query}`, {
       method: "POST",
       headers: { "Idempotency-Key": key },
       idempotencyKey: key,
       body: JSON.stringify(request)
     });
+    return normalizePaymentRecord(record);
   },
 
   // Fees
