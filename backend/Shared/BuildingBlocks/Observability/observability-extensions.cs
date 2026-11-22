@@ -14,7 +14,16 @@ public static class ObservabilityExtensions
 {
     public static IServiceCollection AddObservability(this IServiceCollection services, string service, string environment)
     {
-        services.AddSingleton(new ObservabilityOptions(service, environment));
+        var sqlCommandMeasurementEnabled = string.Equals(
+            Environment.GetEnvironmentVariable("TODIR_PERFORMANCE_SQL_COUNT"),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+        if (sqlCommandMeasurementEnabled)
+        {
+            SqlCommandMeasurement.Enable();
+        }
+
+        services.AddSingleton(new ObservabilityOptions(service, environment, sqlCommandMeasurementEnabled));
         services.AddSingleton(provider => DailyFileLoggingOptions.From(provider.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>(), service, environment));
         services.AddHostedService<LogRetentionService>();
         services.AddSerilog((provider, logger) =>
@@ -86,7 +95,7 @@ public static class CoreMetrics
     }
 }
 
-public sealed record ObservabilityOptions(string Service, string Environment);
+public sealed record ObservabilityOptions(string Service, string Environment, bool SqlCommandMeasurementEnabled = false);
 
 internal sealed class CorrelationMiddleware(RequestDelegate next, Microsoft.Extensions.Logging.ILogger<CorrelationMiddleware> logger, ObservabilityOptions options)
 {
@@ -98,6 +107,15 @@ internal sealed class CorrelationMiddleware(RequestDelegate next, Microsoft.Exte
     {
         var correlationId = RequestCorrelationId.GetOrCreate(context).ToString("D");
         using var activity = ActivitySource.StartActivity("HTTP request", ActivityKind.Server);
+        using var sqlMeasurement = options.SqlCommandMeasurementEnabled ? SqlCommandMeasurement.Begin() : null;
+        if (sqlMeasurement is not null)
+        {
+            context.Response.OnStarting(() =>
+            {
+                context.Response.Headers["X-Todir-Db-Commands"] = sqlMeasurement.CommandCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                return Task.CompletedTask;
+            });
+        }
         activity?.SetTag("service", options.Service);
         activity?.SetTag("environment", options.Environment);
         activity?.SetTag("correlation_id", correlationId);
@@ -137,6 +155,56 @@ internal sealed class CorrelationMiddleware(RequestDelegate next, Microsoft.Exte
         return segments.Length >= 3 && string.Equals(segments[0], "api", StringComparison.OrdinalIgnoreCase) && string.Equals(segments[1], "v1", StringComparison.OrdinalIgnoreCase)
             ? segments[2]
             : "platform";
+    }
+}
+
+internal static class SqlCommandMeasurement
+{
+    private static readonly AsyncLocal<Scope?> Current = new();
+    private static readonly object Sync = new();
+    private static ActivityListener? listener;
+
+    public static void Enable()
+    {
+        lock (Sync)
+        {
+            if (listener is not null)
+            {
+                return;
+            }
+
+            listener = new ActivityListener
+            {
+                ShouldListenTo = source => string.Equals(source.Name, "Npgsql", StringComparison.Ordinal),
+                Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+                ActivityStarted = static activity =>
+                {
+                    if (activity.Kind == ActivityKind.Client && Current.Value is { } scope)
+                    {
+                        scope.Increment();
+                    }
+                }
+            };
+            ActivitySource.AddActivityListener(listener);
+        }
+    }
+
+    public static Scope Begin()
+    {
+        var scope = new Scope(Current.Value);
+        Current.Value = scope;
+        return scope;
+    }
+
+    public sealed class Scope(Scope? parent) : IDisposable
+    {
+        private int commandCount;
+
+        public int CommandCount => Volatile.Read(ref commandCount);
+
+        public void Increment() => Interlocked.Increment(ref commandCount);
+
+        public void Dispose() => Current.Value = parent;
     }
 }
 

@@ -1,105 +1,52 @@
 # Platform Performance and Scalability Master Plan
 
-Status: delivered local-development foundation (2026-11-22)
+Status: PLATFORM PERFORMANCE & SCALABILITY FOUNDATION — CERTIFIED for the verified local development envelope; production-scale certification remains bounded (2026-11-22)
 
-Scope: shared ASP.NET Core, PostgreSQL, RLS/security, MassTransit/RabbitMQ/Worker, and React/Vite delivery behavior. This plan does not introduce Redis, a read replica, partitioning, a search cluster, or a second messaging framework.
+Scope: ASP.NET Core, PostgreSQL/RLS, MassTransit/RabbitMQ/Worker, and React/Vite delivery behavior. No Redis, read replica, partitioning, search cluster, second messaging framework, or GitHub Actions was introduced.
 
-## Decision summary
+## Decisions and invariants
 
-TODIR remains a modular monolith with PostgreSQL as the system of record, the existing Outbox/Inbox delivery contract, and the existing API/Worker hosts. Performance work is evidence-led and bounded: first remove repeated work inside one request, bound database reads and browser payloads, then measure the real stack. Cross-process caching is deferred until a measured workload proves that a process-local or request-scoped optimization cannot meet the required envelope.
+TODIR remains a modular monolith with PostgreSQL as system of record, durable Outbox/Inbox delivery, and request-scoped authorization subject reuse. PostgreSQL remains authoritative for authorization, accounting, inventory, idempotency, Inbox, and Outbox truth. Missing tenant context denies access; request caching is tenant/membership/request scoped; posted accounting and completed stock movements remain immutable.
 
-The first confirmed shared bottlenecks were:
+The only evidence-backed product changes in this performance mission are:
 
-1. `IAuthorizationSubjectStore` could execute the same tenant/membership authorization query more than once during one HTTP request. The new request-scoped cache is tenant and membership keyed, is disabled outside an HTTP request, and can be disabled with `TODIR_AUTHORIZATION_REQUEST_CACHE_ENABLED=false` for an A/B benchmark.
-2. The route registry eagerly pulled large module page graphs into the initial Vite chunk. Route pages now use named dynamic imports, while the route registration remains synchronous so permission and navigation behavior do not change.
-3. Existing database evidence already demonstrates bounded accounting and subledger reads. It remains authoritative; this mission does not replace it with unsupported synthetic capacity claims.
+1. request-scoped authorization-subject reuse with bounded load/hit metrics;
+2. named route-level lazy imports and removal of static page re-exports that defeated code splitting;
+3. reproducible local API, PostgreSQL, worker, broker, and browser measurement harnesses.
 
-## Non-negotiable invariants
-
-- A missing tenant context denies access. Request caching never crosses tenant, membership, legal-entity, branch, or process boundaries.
-- RLS remains transaction-local through `SET LOCAL app.tenant_id`; runtime API and Worker roles never receive migration ownership or `BYPASSRLS`.
-- Authorization changes invalidate the existing permission decision cache. The new subject cache lives only for the current request and cannot make a later request reuse a revoked subject.
-- Posted accounting records and completed stock movements remain immutable.
-- Outbox, RabbitMQ, Worker, Inbox, idempotency, and retry semantics are unchanged. A faster request must not bypass durable post-commit delivery.
-- Queries remain server-paginated/bounded. No frontend change may replace an authorized API projection with client-side access to another module's tables.
-- Metrics use bounded names and dimensions. Tenant IDs, party IDs, document IDs, SQL text, and user-entered search values are not metric labels.
-
-## Discovery and evidence
-
-The baseline review covered the request pipeline, connection pool configuration, authorization store, endpoint authorization patterns, observability, message endpoint defaults, worker consumers, TanStack Query defaults, route registration, and existing performance ADRs.
-
-Existing evidence retained as baseline:
-
-| Area | Evidence | Decision |
-|---|---|---|
-| Accounting | `docs/adr/accounting-performance-evidence.md`: local 500k journal-entry / 1m-line evidence with Trial Balance 815 ms and GL first page 278 ms | Keep bounded projections and indexes; no partitioning/read replica without a new measured ADR |
-| Subledger | Existing scale fixture and reconciliation evidence | Keep scale fixture isolated; benchmark application and aging paths separately |
-| HR | `docs/adr/hr-performance-scope.md` | Preserve the Product Owner's deferral of heavyweight HR certification |
-| Frontend initial load | Prior checkpoint main chunk 5,405.75 kB / 1,175.64 kB gzip | Apply route-level code splitting; keep the remaining shared grid chunk visible as a next measured work item |
-| Authorization | Store query opens a connection and transaction for every load; endpoint/service code contains repeated loads in financial workflows | Add request-scoped subject reuse plus hit/load metrics |
-
-## Delivery lanes
-
-## Market architecture comparison
-
-The comparison is about engineering patterns, not unsupported throughput claims. Odoo's official performance guidance emphasizes profiling actual requests/SQL and batching ORM work instead of executing a query in a loop. Frappe's official architecture documents a web/background-job stack with caching, and its caching and background-job guidance describes Redis-backed cache/queue patterns. TODIR adopts the transferable principles—measure real SQL, batch repeated work, and make asynchronous work explicit—while retaining its own modular ownership, PostgreSQL RLS, Outbox/Inbox, and financial invariants. Redis remains deferred because this mission has not established a measured cross-process cache requirement.
-
-References: [Odoo performance guidance](https://www.odoo.com/documentation/18.0/developer/reference/backend/performance.html), [Frappe architecture](https://docs.frappe.io/framework/user/en/basics/architecture), [Frappe caching](https://docs.frappe.io/framework/user/en/guides/caching), and [Frappe background jobs](https://docs.frappe.io/framework/user/en/api/background_jobs).
-
-### API and authorization
-
-- Keep authentication/session validation authoritative in the API.
-- Reuse one authorization subject inside one request only.
-- Measure `todir.authorization.subject.database.loads` and `todir.authorization.subject.request.cache.hits`.
-- Do not add a distributed authorization cache in this mission.
-
-### PostgreSQL
-
-- Keep `TODIR_DB_MAX_POOL_SIZE` and command timeout explicit in local/prod configuration.
-- Review query plans for critical list, report, and financial paths; verify index use with `EXPLAIN (ANALYZE, BUFFERS)` on isolated data.
-- Do not add broad indexes, partitioning, read replicas, or connection multiplexing without a workload and rollback plan.
-
-### Outbox, Worker, and RabbitMQ
-
-- Preserve publisher confirmation, quorum queues, Inbox uniqueness, retry, and durable state transitions.
-- Tune consumer concurrency only per consumer after backlog age, processing duration, database pool pressure, and duplicate/error counts are captured.
-- Broker throughput is not business completion; persisted PostgreSQL outcomes are the acceptance proof.
-
-### Frontend
-
-- Route-level page code is loaded when the route is visited; the `AppShell` suspense boundary remains the loading/error boundary.
-- TanStack Query remains the server-state owner. Query keys retain legal-entity scope where the business fact is entity-scoped.
-- Lists remain paginated and bounded. Large grids are not silently converted to unbounded client-side data.
-- The current production build still reports a shared `grid` chunk over 1 MB. It is recorded, not hidden by changing the warning threshold.
+No measured N+1, missing-index, or pagination defect justified a production query/index change. Critical plans were captured with `EXPLAIN (ANALYZE, BUFFERS)` on disposable seeded data. The local PostgreSQL image does not expose `pg_stat_statements`; the opt-in performance mode instead counts Npgsql command Activities per request and records transaction counts, active connections, lock waits, transaction age, resource samples, and critical plans.
 
 ## Measurement contract
 
-Use the checked-in harness `backend/Tests/Performance/platform-performance-benchmark.ps1` only against a disposable database whose name matches `todir_perf_*`. The harness records:
+Run `backend/Tests/Performance/platform-performance-benchmark.ps1` against an isolated `todir_perf_*` database. The `diagnostic`, `load`, and `stress` modes share the same seeded Atlas/Delta fixture and record commit, environment, API instances, pool maximum, errors, RPS, p50/p95/p99, SQL statements/request, transactions, active connections, lock waits, resource peaks, write-smoke outcomes, and query plans. The API's Npgsql Activity counter is opt-in through `TODIR_PERFORMANCE_SQL_COUNT=true` and is used only by this local harness.
 
-- endpoint, concurrency, total requests, errors, requests/second;
-- p50, p95, and p99 latency;
-- authorization database-load/cache-hit counters;
-- API process peak working set when the harness owns the API process.
+The browser gate is `frontend/tests/e2e/performance-certification.spec.ts` on the real API/Vite/Chromium stack. It records route wall time, DOM/load timings, resource/script counts, transfer bytes, and long tasks for invoicing, accounting, inventory, payments, HR, payroll, projects, and POS. The worker gate is `backend/Tests/Performance/worker-performance-benchmark.ps1`, which proves Outbox → RabbitMQ → Worker → Inbox → PostgreSQL, backlog drain, throughput, and duplicate replay idempotency.
 
-The default local profile is concurrency 1, 4, and 8 with 40 requests per endpoint. This is a diagnostic envelope, not a production capacity guarantee. A result is comparable only when the commit, database seed, endpoint, machine, connection pool, rate limit, and service state are recorded.
+## Verified local envelope
 
-## Future Redis blueprint (not implemented here)
+- API read coverage: Authorization, POS, Inventory, Sales, Invoicing, Payments, Accounting, HR, Payroll, Projects, and Subledger; Atlas and Delta tenant sessions; 5 requests at concurrency 1/4 on the final load run, all read requests successful.
+- Final broad-load representative p95 at concurrency 4: Atlas ranged from 58.49 ms (Payments) to 236.30 ms (Accounting health); Projects 71.16 ms; Inventory 83.32 ms; Subledger 75.84 ms. Delta ranged from 46.70 ms (Invoicing) to 174.25 ms (Accounting health); Projects 84.10 ms. These are local observations, not SLAs.
+- API write smoke: Projects, Sales quotation, Invoicing draft, Inventory warehouse, POS cart, HR employee, Payroll component, and Payments account all returned HTTP 201 in the final diagnostic run.
+- PostgreSQL: sampled peak active connections up to 2 and zero lock waits in the final diagnostic run; transaction durations remained below the captured sub-second sample; representative Sales, Inventory, Projects, and Subledger plans were captured.
+- Worker: 10 contract-valid expense events drained through the local broker in the final run in 7.92 seconds (1.26 events/s), 10 Inbox rows and 10 project cost facts persisted; replaying one published message did not change cost-fact count. This is a small local diagnostic, not a capacity SLA.
+- Browser: the final real-stack Playwright test passed across 8 operational routes; the first cold route reported 971.4 ms DOMContentLoaded, 12.96 MB transferred script resources, and zero long tasks. Subsequent route navigations were 476–627 ms DOMContentLoaded with the local Vite module graph and cached resources.
+- Multi-instance: the final API harness starts two local API instances against the same disposable PostgreSQL database and reports the mixed Projects read result separately. It does not claim autoscaling, cross-region, or production node capacity.
+- SQL: the final diagnostic recorded 6–50 SQL statements/request across the 21 representative reads; the mixed two-instance Projects read recorded 7 statements/request. This is local diagnostic evidence, not a universal query budget for every endpoint or data volume.
 
-Redis may be introduced only after a measured need is approved. The future adapter must:
+## Budgets and regression policy
 
-1. sit behind an application capability, never behind direct module access;
-2. use tenant, legal-entity, branch, permission-version, and data-version components in keys where applicable;
-3. define TTL, negative-cache rules, invalidation events, stampede protection, outage behavior, and memory limits before rollout;
-4. fail open only for non-authoritative reference/read acceleration; authorization, financial truth, stock availability, idempotency, Inbox, and Outbox truth must fail closed or use PostgreSQL;
-5. preserve request correlation and bounded metrics without logging key contents or sensitive values;
-6. be tested with stale data, eviction, restart, network loss, concurrent invalidation, and tenant-crossing attempts.
+These are local regression budgets, not customer-facing SLAs: read p95 ≤ 250 ms for normal list/detail operations at concurrency 4; write-smoke p95 is observed and must not regress by >25% without an evidence-backed explanation; zero HTTP errors on seeded authorized paths; zero lock waits in the controlled run; worker duplicate replay must preserve persisted fact count; browser cold DOMContentLoaded ≤ 1,500 ms and zero long tasks on the measured operational routes. Accounting health is a heavier diagnostic operation and is tracked separately from normal list budgets.
 
-The current request cache is deliberately not a precursor that silently requires Redis: it is local to one request and PostgreSQL remains authoritative.
+The benchmark JSON under `artifacts/performance` is the repeatable regression artifact. A regression gate must compare the same mode, seed, request count, concurrency, pool size, and machine class; it must fail on errors, duplicate financial outcomes, lock waits, or budget breaches. No claim is made for hardware or concurrency not measured here.
+
+## Existing quality defects retained explicitly
+
+- Manufacturing localization/unit test has a known CSS media-query false positive in the preserved concurrent Manufacturing change.
+- The frozen Inventory OpenAPI contract still misses `GET /api/v1/inventory/legal-entities/{entityId}/counts` while implementation exposes it. This is recorded, not silently marked PASS.
+- Higher-scale/PJ38-style certification, heavyweight HR certification, Redis, partitioning, read replicas, and global worker-concurrency redesign remain deferred.
 
 ## Acceptance gates
 
-The final local gate is: targeted backend tests, authorization/RLS/security tests, frontend typecheck/architecture/localization/API drift, production build, isolated migration/seed, bounded benchmark, relevant real-stack API/browser flow, `dotnet build` release, applicable formatter, `git diff --check`, and a clean `dev` worktree after commit. The delivered evidence is recorded in `docs/engineering/PLATFORM_PERFORMANCE_COVERAGE_MATRIX.md` and `docs/engineering/PLATFORM_PERFORMANCE_EXECUTION_CHECKPOINT.md`. GitHub Actions and remote CI are outside this acceptance contract. Two unrelated pre-existing repository gates remain explicit: the Manufacturing CSS localization false positive and the Inventory OpenAPI missing path.
+The applicable local gates remain backend tests, authorization/RLS/security, migration/seed, real Worker/RabbitMQ proof, real browser proof, frontend typecheck/architecture/build, architecture validation, Release build, formatter, OpenAPI drift/contract review, and `git diff --check`. Remote CI/GitHub Actions is outside the acceptance contract.
 
-## Deferred items
-
-Redis implementation, large-scale capacity certification, heavyweight HR certification, partitioning, read replicas, search infrastructure, and global worker-concurrency redesign remain separate decisions. They are not implied by the local envelope in this document.
+References: [Odoo performance guidance](https://www.odoo.com/documentation/18.0/developer/reference/backend/performance.html), [Frappe architecture](https://docs.frappe.io/framework/user/en/basics/architecture), [Frappe caching](https://docs.frappe.io/framework/user/en/guides/caching), and [Frappe background jobs](https://docs.frappe.io/framework/user/en/api/background_jobs).

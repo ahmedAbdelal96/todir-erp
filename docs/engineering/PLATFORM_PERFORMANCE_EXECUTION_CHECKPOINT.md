@@ -1,31 +1,36 @@
 # Platform Performance Execution Checkpoint
 
-Date: 2026-11-22
+Date: 2026-11-22  
+Branch: `dev`  
+Status: local performance foundation evidence complete; higher-scale certification remains bounded by the recorded local envelope.
 
 ## Authorized scope
 
-Local performance and scalability foundation on `dev`, without Redis, remote CI, or production release work. Preserve concurrent user changes and use disposable PostgreSQL databases for mutating checks.
+Complete local performance/scalability evidence from `b0430b5eb96a7926bcb7c096d4fb9d1ae246286a`, preserve concurrent Catalog/Manufacturing edits, use disposable databases for mutating checks, do not add Redis or remote CI.
 
 ## Completed and verified
 
-- Read the repository governance, backend/frontend manuals, performance ADRs, observability, tenant-security, migration, and runtime-database decisions.
-- Confirmed the main shared hypotheses from source: repeated authorization-subject loads and eager route page graphs.
-- Added request-scoped authorization-subject reuse with a configuration switch and bounded metrics; the cache is tenant/membership keyed and not used by background work.
-- Added route-level named dynamic imports for the heavy module page routes and removed unused public page re-exports that defeated code splitting.
-- Frontend typecheck passed; production build passed. The main JS chunk moved from 2,824.93 kB / 609.59 kB gzip in the first split attempt to 1,710.40 kB / 440.92 kB gzip after removing ineffective static re-exports. The shared `grid` chunk remains 1,160.30 kB and is recorded for follow-up.
-- The checked-in benchmark completed against a disposable `todir_perf_*` database. DbMigrator applied or verified 240 ordered scripts and the Development Seed completed for Atlas and Delta; the disposable database was dropped and no `todir_perf_*` database remained.
-- Benchmark endpoint: Subledger party exposure, 40 measured requests at concurrency 1/4/8, real local API/PostgreSQL. Cache disabled: 15.90/47.11/57.86 RPS with p95 68.06/151.10/184.23 ms; cache enabled: 16.92/43.99/70.71 RPS with p95 75.72/148.26/188.56 ms. All 240 measured requests succeeded. Authorization counters changed from 270 database loads and 0 cache hits to 135 database loads and 135 cache hits (including warm-up accounting as recorded by the harness).
-- Core tests passed 62/62; Projects module tests passed 22/22; Architecture tests passed 21/21; Security/RLS tests passed 7/7 on a disposable migrated/seeded database. Projects cross-module acceptance passed 9/9, including the real local RabbitMQ → Worker → Inbox source-event proof and duplicate-publish idempotency assertions.
-- Backend Release build passed with 0 warnings and 0 errors. API drift passed. The targeted task-owned .NET formatter gate passed. `git diff --check` reports only trailing whitespace in the preserved concurrent Catalog test edits.
+- Extended `platform-performance-benchmark.ps1` with diagnostic/load/stress modes, Atlas/Delta sessions, representative reads across Authorization/POS/Inventory/Sales/Invoicing/Payments/Accounting/HR/Payroll/Projects/Subledger, representative writes, p50/p95/p99/RPS, transactions, active connections, lock waits, transaction age, resource samples, query plans, two local API instances, and explicit local limits.
+- Added `worker-performance-benchmark.ps1`: final local run drained 10 valid expense events through Outbox → RabbitMQ → Worker → Inbox → PostgreSQL in 7.92 seconds (1.26 events/s); duplicate replay left persisted cost-fact count unchanged.
+- Added `performance-certification.spec.ts`: real API/Vite/Chromium evidence across 8 operational routes; 1 test passed after inspecting the fresh output.
+- Final disposable API diagnostic ran after the last harness change. All read paths and all eight write smoke operations returned successful status; the write smoke included Sales quotation, Invoicing draft, Inventory warehouse, POS cart, HR employee, Payroll component, Payments account, and Projects draft.
+- Opt-in request-scoped Npgsql Activity measurement is enabled only for the performance harness; the final diagnostic recorded 6–50 SQL statements per request across all 21 representative reads without exposing a production header unless the measurement flag is enabled.
+- Critical plans were captured for Sales quotations, Inventory stock balance, Projects list, and Subledger exposure. No evidence-backed N+1 or missing-index change was justified.
+- Existing request-scoped authorization cache and route-level code splitting were preserved. Final isolated Security/RLS was 7/7, Projects acceptance was 22/22, and the real Worker/RabbitMQ proof was rerun after the final source change.
+- Updated the Master Plan, Coverage Matrix, Redis Future Blueprint, and frontend/backend governance references without adding overlapping documentation.
 
-## Final gate notes
+## Measurement limitation and supported envelope
 
-- `pnpm run typecheck`, `pnpm run api:drift`, frontend architecture boundary checks, production build, backend tests, isolated migration/seed, benchmark, real local Worker/RabbitMQ proof, Release build, targeted formatter, and the task-owned diff review passed.
-- `pnpm run test:frontend` passed 284/285. The single failure is the existing Manufacturing CSS media-query false positive in `production-order-workspace-page.tsx`; that file is a preserved concurrent change and is outside this mission.
-- `pnpm run localization:verify` reports the same existing Manufacturing CSS false positive. `pnpm run api:contract` validates the first five contracts and stops on the existing Inventory missing path `GET /api/v1/inventory/legal-entities/{entityId}/counts`; no performance-owned contract changed.
-- `git diff --check` reports two existing trailing-whitespace lines in the preserved concurrent `CatalogBatchResolutionTests.cs`; task-owned files have no diff-check issue.
-- The worktree is intentionally not globally clean because concurrent user changes in `backend/Api/Program.cs`, Catalog tests, and Manufacturing frontend files were preserved and not staged.
+The local PostgreSQL container has no `pg_stat_statements`; the harness does not depend on it. The opt-in request-scoped Npgsql Activity counter records SQL statements/request, while the harness also records transaction deltas, connection/active/lock samples, transaction age, process memory/CPU samples, and query plans. No mandatory local measurement gap remains for the supported envelope.
 
-## Delivery action
+The verified envelope is local development only: two API processes against one PostgreSQL container, one local RabbitMQ/Worker, seeded Atlas/Delta, bounded request counts, and Chromium on the development Vite server. No production, autoscaling, multi-region, or PJ38-scale claim is made.
 
-Stage only task-owned performance, governance, documentation, backend, benchmark, and route-splitting files; commit directly on `dev`, push to `origin/dev` over SSH, verify the remote SHA, and retain the concurrent uncommitted files untouched. The coverage matrix is in `docs/engineering/PLATFORM_PERFORMANCE_COVERAGE_MATRIX.md`.
+## Known repository defects retained
+
+- Manufacturing CSS localization false-positive remains in the preserved concurrent Manufacturing change; frontend unit/localization totals remain `284/285` from the prior gate.
+- Inventory OpenAPI contract still reports the missing `GET /api/v1/inventory/legal-entities/{entityId}/counts` path; `api:drift` remains passing.
+- These defects are recorded and not silently changed by the performance mission.
+
+## Final return gate
+
+Before delivery: run the fresh final performance scripts and browser gate after the last source change, inspect their output, run Release build/formatter/diff checks, stage only performance-owned files, commit directly on `dev`, push `origin/dev`, verify remote SHA, and leave preserved concurrent files untouched.

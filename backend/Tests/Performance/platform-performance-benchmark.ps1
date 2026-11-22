@@ -1,228 +1,105 @@
 [CmdletBinding()]
 param(
-    [int]$RequestsPerEndpoint = 40,
+    [ValidateSet('diagnostic', 'load', 'stress')]
+    [string]$Mode = 'load',
+    [int]$RequestsPerEndpoint = 20,
     [string]$Concurrency = '1,4,8',
     [int]$ApiPort = 5091,
+    [switch]$SkipWorker,
+    [switch]$SkipBrowser,
     [switch]$KeepDatabase
 )
 
+# Local, disposable evidence harness. It never touches the shared development database.
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $database = "todir_perf_{0}_{1}" -f (Get-Date -Format 'yyyyMMddHHmmss'), $PID
 $apiBaseUrl = "http://127.0.0.1:$ApiPort"
-$apiLogDirectory = Join-Path $repo 'artifacts\performance'
-$apiStdout = Join-Path $apiLogDirectory "api-$database.out.log"
-$apiStderr = Join-Path $apiLogDirectory "api-$database.err.log"
-$resultPath = Join-Path $apiLogDirectory "platform-performance-$database.json"
-$apiProcess = $null
-$client = $null
+$artifactDirectory = Join-Path $repo 'artifacts\performance'
+$resultPath = Join-Path $artifactDirectory "platform-performance-$database.json"
+$apiProcesses = @(); $sessions = @(); $sampleJobs = @()
+$today = (Get-Date).ToString('yyyy-MM-dd')
+New-Item -ItemType Directory -Path $artifactDirectory -Force | Out-Null
 
-New-Item -ItemType Directory -Path $apiLogDirectory -Force | Out-Null
-
-function Assert-DisposableDatabaseName {
-    if ($database -notmatch '^todir_perf_[a-z0-9_]+$') {
-        throw "Refusing to operate on a non-disposable database name: $database"
-    }
+function Assert-DisposableDatabaseName { if ($database -notmatch '^todir_perf_[a-z0-9_]+$') { throw "Refusing to operate on $database" } }
+function Invoke-Postgres { param([string]$TargetDatabase, [string]$Sql); $output = & docker exec todir-postgres-1 psql -U postgres -d $TargetDatabase -v ON_ERROR_STOP=1 -t -A -c $Sql; if ($LASTEXITCODE -ne 0) { throw "PostgreSQL command failed for $TargetDatabase" }; return ($output -join "`n").Trim() }
+function Get-PostgresJson { param([string]$Sql); $value = Invoke-Postgres -TargetDatabase $database -Sql $Sql; if ([string]::IsNullOrWhiteSpace($value)) { return $null }; return ($value | ConvertFrom-Json) }
+function Get-DbSnapshot {
+    $sql = @"
+select json_build_object('connections',count(*),'active',count(*) filter(where state='active'),'idleInTransaction',count(*) filter(where state='idle in transaction'),'lockWaits',count(*) filter(where wait_event_type='Lock'),'maxTransactionSeconds',coalesce(max(extract(epoch from(clock_timestamp()-xact_start))) filter(where xact_start is not null),0))
+from pg_stat_activity where datname='$database';
+"@
+    return Get-PostgresJson -Sql $sql
 }
-
-function Invoke-Postgres {
-    param([string]$TargetDatabase, [string]$Sql)
-    $output = & docker exec todir-postgres-1 psql -U postgres -d $TargetDatabase -v ON_ERROR_STOP=1 -t -A -c $Sql
-    if ($LASTEXITCODE -ne 0) { throw "PostgreSQL command failed for $TargetDatabase." }
-    return ($output -join "`n").Trim()
-}
+function Get-DatabaseTransactionSnapshot { return Get-PostgresJson -Sql "select json_build_object('commits',xact_commit,'rollbacks',xact_rollback,'blocksRead',blks_read,'blocksHit',blks_hit) from pg_stat_database where datname='$database'" }
+function Get-LogStatementCount { param([DateTimeOffset]$Since); $raw = & docker logs --since $Since.UtcDateTime.ToString('o') todir-postgres-1 2>$null; if ($LASTEXITCODE -ne 0) { return $null }; $count=[int](@($raw | Where-Object { $_ -match '(statement:|execute [^:]+:|duration:)' }).Count); if($count -eq 0){return $null}; return $count }
 
 function Invoke-HttpJson {
-    param([string]$Method, [string]$Url, [object]$Body = $null, [hashtable]$Headers = @{})
+    param($Session, [string]$Method, [string]$Url, [object]$Body = $null)
     $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::$Method, $Url)
-    foreach ($header in $Headers.GetEnumerator()) { [void]$request.Headers.TryAddWithoutValidation($header.Key, [string]$header.Value) }
-    if ($null -ne $Body) {
-        $json = $Body | ConvertTo-Json -Compress -Depth 10
-        $request.Content = [System.Net.Http.StringContent]::new($json, [System.Text.Encoding]::UTF8, 'application/json')
-    }
-    $response = $client.SendAsync($request).GetAwaiter().GetResult()
-    $content = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-    return [pscustomobject]@{ StatusCode = [int]$response.StatusCode; Content = $content }
-}
-
-function Wait-Api {
-    for ($attempt = 1; $attempt -le 60; $attempt++) {
-        try {
-            $response = Invoke-WebRequest -Uri "$apiBaseUrl/health" -UseBasicParsing -TimeoutSec 2
-            if ($response.StatusCode -eq 200) { return }
-        } catch { }
-        Start-Sleep -Milliseconds 500
-    }
-    throw "API did not become healthy at $apiBaseUrl. See $apiStderr."
-}
-
-function Start-Api {
-    param([bool]$CacheEnabled)
-    $env:ASPNETCORE_ENVIRONMENT = 'Development'
-    $env:DOTNET_ENVIRONMENT = 'Development'
-    $env:TODIR_DATABASE_CONNECTION = "Host=127.0.0.1;Port=15432;Database=$database;Username=erp_app;Password=todir-app-dev;Include Error Detail=true"
-    $env:TODIR_METRICS_ENABLED = 'true'
-    $env:TODIR_AUTHORIZATION_REQUEST_CACHE_ENABLED = $CacheEnabled.ToString().ToLowerInvariant()
-    $env:TODIR_RATE_LIMIT_API_PERMITS = '100000'
-    $env:TODIR_RATE_LIMIT_AUTH_PERMITS = '100000'
-    $env:TODIR_FILE_LOGGING_ENABLED = 'false'
-    $env:TODIR_RABBITMQ_HOST = ''
-    $apiDll = Join-Path $repo 'backend\Api\bin\Release\net10.0\Api.dll'
-    if (-not (Test-Path $apiDll)) { throw "Build the Release API before running this benchmark: $apiDll" }
-    $script:apiProcess = Start-Process -FilePath 'dotnet' -ArgumentList @($apiDll, '--urls', $apiBaseUrl) -WorkingDirectory $repo -RedirectStandardOutput $apiStdout -RedirectStandardError $apiStderr -WindowStyle Hidden -PassThru
-    Wait-Api
-}
-
-function Stop-Api {
-    if ($null -ne $script:apiProcess -and -not $script:apiProcess.HasExited) {
-        $script:apiProcess.CloseMainWindow() | Out-Null
-        if (-not $script:apiProcess.WaitForExit(10000)) { Stop-Process -Id $script:apiProcess.Id -Force }
-    }
-    $script:apiProcess = $null
-}
-
-function Login {
-    $csrfResponse = Invoke-HttpJson -Method Get -Url "$apiBaseUrl/api/v1/auth/csrf"
-    if ($csrfResponse.StatusCode -ne 200) { throw "CSRF bootstrap failed with HTTP $($csrfResponse.StatusCode)." }
-    $csrf = ($csrfResponse.Content | ConvertFrom-Json).token
-    $login = Invoke-HttpJson -Method Post -Url "$apiBaseUrl/api/v1/auth/login" -Body @{ email = 'admin@atlas.com'; password = 'TodirDev2026!' } -Headers @{ 'X-CSRF-TOKEN' = $csrf }
-    if ($login.StatusCode -ne 200) { throw "Development login failed with HTTP $($login.StatusCode): $($login.Content)" }
-    $snapshot = Invoke-HttpJson -Method Get -Url "$apiBaseUrl/api/v1/session/context"
-    if ($snapshot.StatusCode -ne 200) { throw "Session context failed with HTTP $($snapshot.StatusCode): $($snapshot.Content)" }
-    return ($snapshot.Content | ConvertFrom-Json)
-}
-
-function Get-MetricValue {
-    param([string]$Metrics, [string]$MetricName)
-    $pattern = "(?m)^$MetricName(?:_total)?(?:\{[^}]*\})?\s+([0-9\.]+)"
-    $match = [regex]::Match($Metrics, $pattern)
-    if ($match.Success) { return [double]$match.Groups[1].Value }
-    return 0
-}
-
-function Invoke-BenchmarkRequest {
-    param([string]$Url)
+    if ($Method -ne 'Get' -and $Session.PSObject.Properties.Name -contains 'CsrfToken') { [void]$request.Headers.TryAddWithoutValidation('X-CSRF-TOKEN', $Session.CsrfToken) }
+    if ($null -ne $Body) { $request.Content = [System.Net.Http.StringContent]::new(($Body | ConvertTo-Json -Compress -Depth 12), [System.Text.Encoding]::UTF8, 'application/json') }
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
-    try {
-        $response = $client.GetAsync($Url).GetAwaiter().GetResult()
-        $watch.Stop()
-        [void]$response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
-        return [pscustomobject]@{ StatusCode = [int]$response.StatusCode; Milliseconds = $watch.Elapsed.TotalMilliseconds }
-    } catch {
-        $watch.Stop()
-        return [pscustomobject]@{ StatusCode = 0; Milliseconds = $watch.Elapsed.TotalMilliseconds }
-    }
+    try { $response = $Session.Client.SendAsync($request).GetAwaiter().GetResult(); $content = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult(); $watch.Stop(); return [pscustomobject]@{ StatusCode=[int]$response.StatusCode; Content=$content; Milliseconds=[Math]::Round($watch.Elapsed.TotalMilliseconds,2) } }
+    catch { $watch.Stop(); return [pscustomobject]@{ StatusCode=0; Content=$_.Exception.Message; Milliseconds=[Math]::Round($watch.Elapsed.TotalMilliseconds,2) } }
+    finally { $request.Dispose() }
 }
-
-function Invoke-EndpointBenchmark {
-    param([string]$Name, [string]$Url, [string]$CookieHeader, [int]$Level)
-    1..5 | ForEach-Object { [void](Invoke-BenchmarkRequest -Url $Url) }
-    $started = [System.Diagnostics.Stopwatch]::StartNew()
-    $results = 1..$RequestsPerEndpoint | ForEach-Object -Parallel {
-        $watch = [System.Diagnostics.Stopwatch]::StartNew()
-        try {
-            $response = Invoke-WebRequest -Uri $using:Url -Headers @{ Cookie = $using:CookieHeader } -UseBasicParsing -TimeoutSec 30
-            $watch.Stop()
-            [pscustomobject]@{ StatusCode = [int]$response.StatusCode; Milliseconds = $watch.Elapsed.TotalMilliseconds }
-        } catch {
-            $watch.Stop()
-            [pscustomobject]@{ StatusCode = 0; Milliseconds = $watch.Elapsed.TotalMilliseconds }
-        }
-    } -ThrottleLimit $Level
-    $started.Stop()
-    $latencies = @($results | ForEach-Object { [double]$_.Milliseconds } | Sort-Object)
-    $successes = @($results | Where-Object { $_.StatusCode -ge 200 -and $_.StatusCode -lt 300 })
-    $errors = $results.Count - $successes.Count
-    $percentile = {
-        param([double]$p)
-        if ($latencies.Count -eq 0) { return 0 }
-        $index = [Math]::Max(0, [Math]::Min($latencies.Count - 1, [int][Math]::Ceiling($latencies.Count * $p) - 1))
-        return [Math]::Round($latencies[$index], 2)
-    }
-    return [pscustomobject]@{
-        Endpoint = $Name
-        Concurrency = $Level
-        Requests = $results.Count
-        Successes = $successes.Count
-        Errors = $errors
-        RequestsPerSecond = [Math]::Round($results.Count / [Math]::Max(0.001, $started.Elapsed.TotalSeconds), 2)
-        P50Ms = & $percentile 0.50
-        P95Ms = & $percentile 0.95
-        P99Ms = & $percentile 0.99
-    }
+function Wait-Api { param([string]$BaseUrl, [string]$ErrorLog); for($attempt=1;$attempt -le 90;$attempt++){ try { if((Invoke-WebRequest -Uri "$BaseUrl/health" -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200){return} }catch{}; Start-Sleep -Milliseconds 400 }; throw "API did not become healthy at $BaseUrl. See $ErrorLog" }
+function Start-Api {
+    param([int]$Port,[bool]$CacheEnabled)
+    $stdout=Join-Path $artifactDirectory "api-$database-$Port.out.log"; $stderr=Join-Path $artifactDirectory "api-$database-$Port.err.log"
+    $env:ASPNETCORE_ENVIRONMENT='Development'; $env:DOTNET_ENVIRONMENT='Development'; $env:TODIR_DATABASE_CONNECTION="Host=127.0.0.1;Port=15432;Database=$database;Username=erp_app;Password=todir-app-dev;Include Error Detail=true;Maximum Pool Size=64;Application Name=platform-perf-api-$Port"; $env:TODIR_METRICS_ENABLED='true'; $env:TODIR_AUTHORIZATION_REQUEST_CACHE_ENABLED=$CacheEnabled.ToString().ToLowerInvariant(); $env:TODIR_PERFORMANCE_SQL_COUNT='true'; $env:TODIR_RATE_LIMIT_API_PERMITS='100000'; $env:TODIR_RATE_LIMIT_AUTH_PERMITS='100000'; $env:TODIR_FILE_LOGGING_ENABLED='false'; $env:TODIR_RABBITMQ_HOST=''
+    $dll=Join-Path $repo 'backend\Api\bin\Release\net10.0\Api.dll'; if(-not(Test-Path $dll)){throw "Build the Release API before the benchmark: $dll"}
+    $p=Start-Process dotnet -ArgumentList @($dll,'--urls',"http://127.0.0.1:$Port") -WorkingDirectory $repo -RedirectStandardOutput $stdout -RedirectStandardError $stderr -WindowStyle Hidden -PassThru; $script:apiProcesses += $p; Wait-Api -BaseUrl "http://127.0.0.1:$Port" -ErrorLog $stderr; return $p
+}
+function Stop-ProcessSafe { param($Process); if($null -ne $Process -and -not $Process.HasExited){try{$Process.CloseMainWindow()|Out-Null}catch{};if(-not $Process.WaitForExit(10000)){Stop-Process -Id $Process.Id -Force}} }
+function New-Session {
+    param([string]$BaseUrl,[string]$Email)
+    $handler=[System.Net.Http.HttpClientHandler]::new();$handler.UseCookies=$true;$client=[System.Net.Http.HttpClient]::new($handler);$client.Timeout=[TimeSpan]::FromSeconds(45);$s=[pscustomobject]@{BaseUrl=$BaseUrl;Handler=$handler;Client=$client;CookieHeader=$null;Context=$null;Email=$Email;CsrfToken=$null}
+    $csrf=Invoke-HttpJson $s Get "$BaseUrl/api/v1/auth/csrf";if($csrf.StatusCode-ne 200){throw "CSRF failed for ${Email}"};$token=($csrf.Content|ConvertFrom-Json).token
+    $r=[System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Post,"$BaseUrl/api/v1/auth/login");$r.Headers.Add('X-CSRF-TOKEN',$token);$r.Content=[System.Net.Http.StringContent]::new((@{email=$Email;password='TodirDev2026!'}|ConvertTo-Json -Compress),[Text.Encoding]::UTF8,'application/json');$lr=$client.SendAsync($r).GetAwaiter().GetResult();$lc=$lr.Content.ReadAsStringAsync().GetAwaiter().GetResult();$r.Dispose();if([int]$lr.StatusCode-ne 200){throw "Login failed for ${Email}: $lc"};$s.CsrfToken=$token
+    $csrfAfter=Invoke-HttpJson $s Get "$BaseUrl/api/v1/auth/csrf";if($csrfAfter.StatusCode-eq 200){$s.CsrfToken=($csrfAfter.Content|ConvertFrom-Json).token};$ctx=Invoke-HttpJson $s Get "$BaseUrl/api/v1/session/context";if($ctx.StatusCode-ne 200){throw "Session context failed for ${Email}"};$s.Context=$ctx.Content|ConvertFrom-Json;$s.CookieHeader=($handler.CookieContainer.GetCookies([Uri]$BaseUrl)|ForEach-Object{"$($_.Name)=$($_.Value)"})-join '; ';if([string]::IsNullOrWhiteSpace($s.CookieHeader)){throw "No auth cookie for ${Email}"};return $s
+}
+function Start-ResourceSampler { param([int]$ProcessId,[string]$Name);$path=Join-Path $artifactDirectory "resource-$database-$Name.csv";$job=Start-Job -ArgumentList $ProcessId,$path -ScriptBlock {param($PidToSample,$OutputPath);'TimestampUtc,Pid,WorkingSetBytes,PrivateMemoryBytes,ProcessorTimeMs'|Set-Content $OutputPath;while($true){try{$p=Get-Process -Id $PidToSample -ErrorAction Stop;Add-Content $OutputPath ("{0},{1},{2},{3},{4}"-f [DateTimeOffset]::UtcNow.ToString('o'),$p.Id,$p.WorkingSet64,$p.PrivateMemorySize64,[int]$p.TotalProcessorTime.TotalMilliseconds)}catch{break};Start-Sleep -Milliseconds 100}};$script:sampleJobs+=$job }
+function Start-PgSampler { $path=Join-Path $artifactDirectory "postgres-$database.csv";$job=Start-Job -ArgumentList $database,$path -ScriptBlock {param($Db,$OutputPath);'TimestampUtc,Connections,Active,LockWaits,MaxTransactionSeconds'|Set-Content $OutputPath;while($true){$line=& docker exec todir-postgres-1 psql -U postgres -d $Db -t -A -F ',' -c "select count(*),count(*) filter(where state='active'),count(*) filter(where wait_event_type='Lock'),coalesce(max(extract(epoch from(clock_timestamp()-xact_start))) filter(where xact_start is not null),0) from pg_stat_activity where datname='$Db'" 2>$null;if($line){Add-Content $OutputPath (("{0},"-f [DateTimeOffset]::UtcNow.ToString('o'))+($line-join''))};Start-Sleep -Milliseconds 150}};$script:sampleJobs+=$job }
+function Stop-Samplers { foreach($job in @($sampleJobs)){Stop-Job $job -ErrorAction SilentlyContinue;Receive-Job $job -ErrorAction SilentlyContinue|Out-Null;Remove-Job $job -Force -ErrorAction SilentlyContinue};$script:sampleJobs=@() }
+function Get-ResourcePeak { param([string]$Name);$path=Join-Path $artifactDirectory "resource-$database-$Name.csv";if(-not(Test-Path $path)){return $null};$r=@(Import-Csv $path);if($r.Count-eq 0){return $null};return [pscustomobject]@{Process=$Name;Samples=$r.Count;PeakWorkingSetMiB=[Math]::Round((@($r|%{[double]$_.WorkingSetBytes}|Measure-Object -Maximum).Maximum/1MB),2);PeakPrivateMiB=[Math]::Round((@($r|%{[double]$_.PrivateMemoryBytes}|Measure-Object -Maximum).Maximum/1MB),2);ProcessorTimeMs=[int](($r|Select-Object -Last 1).ProcessorTimeMs-($r|Select-Object -First 1).ProcessorTimeMs)} }
+function Get-Percentile { param([double[]]$Values,[double]$Percent);$s=@($Values|Sort-Object);if($s.Count-eq 0){return 0};$i=[Math]::Max(0,[Math]::Min($s.Count-1,[int][Math]::Ceiling($s.Count*$Percent)-1));return [Math]::Round($s[$i],2) }
+function Invoke-MultiInstanceBenchmark {
+    param($Session1,$Session2,[string]$Url1,[string]$Url2,[int]$Level)
+    $cookie1=$Session1.CookieHeader;$cookie2=$Session2.CookieHeader;1..3|%{Invoke-WebRequest -Uri $Url1 -Headers @{Cookie=$cookie1} -UseBasicParsing -TimeoutSec 45 -SkipHttpErrorCheck|Out-Null;Invoke-WebRequest -Uri $Url2 -Headers @{Cookie=$cookie2} -UseBasicParsing -TimeoutSec 45 -SkipHttpErrorCheck|Out-Null};$sw=[Diagnostics.Stopwatch]::StartNew()
+    $results=1..$RequestsPerEndpoint|ForEach-Object -Parallel {$url=if($_%2-eq 0){$using:Url1}else{$using:Url2};$cookie=if($_%2-eq 0){$using:cookie1}else{$using:cookie2};$w=[Diagnostics.Stopwatch]::StartNew();try{$r=Invoke-WebRequest -Uri $url -Headers @{Cookie=$cookie} -UseBasicParsing -TimeoutSec 45 -SkipHttpErrorCheck;$w.Stop();$header=@($r.Headers['X-Todir-Db-Commands'])|Select-Object -First 1;[pscustomobject]@{StatusCode=[int]$r.StatusCode;Ms=$w.Elapsed.TotalMilliseconds;DbCommands=if($null-ne$header){[int]$header}else{$null}}}catch{$w.Stop();[pscustomobject]@{StatusCode=0;Ms=$w.Elapsed.TotalMilliseconds;DbCommands=$null}}}-ThrottleLimit $Level;$sw.Stop();$l=@($results|%{[double]$_.Ms});$ok=@($results|?{$_.StatusCode-ge 200-and$_.StatusCode-lt 300});$sqlValues=@($results|?{$null-ne$_.DbCommands}|%{[int]$_.DbCommands});[pscustomobject]@{Kind='multi-instance';Operation='projects.list';Concurrency=$Level;Requests=$results.Count;Successes=$ok.Count;Errors=$results.Count-$ok.Count;Rps=[Math]::Round($results.Count/[Math]::Max(.001,$sw.Elapsed.TotalSeconds),2);P50Ms=Get-Percentile $l .5;P95Ms=Get-Percentile $l .95;P99Ms=Get-Percentile $l .99;SqlStatements=if($sqlValues.Count -gt 0){($sqlValues|Measure-Object -Sum).Sum}else{$null};SqlStatementsPerRequest=if($sqlValues.Count -gt 0){[Math]::Round((($sqlValues|Measure-Object -Sum).Sum)/[Math]::Max(1,$sqlValues.Count),2)}else{$null};Instances=2}
+}
+function Invoke-ReadBenchmark {
+    param([string]$Module,[string]$Name,[string]$Url,$Session,[int]$Level)
+    $cookieHeader = $Session.CookieHeader
+    1..3|%{Invoke-WebRequest -Uri $Url -Headers @{Cookie=$cookieHeader} -UseBasicParsing -TimeoutSec 45 -SkipHttpErrorCheck|Out-Null};$before=Get-DatabaseTransactionSnapshot;$resourceBefore=Get-DbSnapshot;$since=[DateTimeOffset]::UtcNow;$sw=[Diagnostics.Stopwatch]::StartNew()
+    $results=1..$RequestsPerEndpoint|ForEach-Object -Parallel {$w=[Diagnostics.Stopwatch]::StartNew();try{$x=Invoke-WebRequest -Uri $using:Url -Headers @{Cookie=$using:cookieHeader} -UseBasicParsing -TimeoutSec 45 -SkipHttpErrorCheck;$w.Stop();$header=@($x.Headers['X-Todir-Db-Commands'])|Select-Object -First 1;[pscustomobject]@{StatusCode=[int]$x.StatusCode;Milliseconds=$w.Elapsed.TotalMilliseconds;DbCommands=if($null-ne$header){[int]$header}else{$null}}}catch{$w.Stop();[pscustomobject]@{StatusCode=0;Milliseconds=$w.Elapsed.TotalMilliseconds;DbCommands=$null}}}-ThrottleLimit $Level
+    $sw.Stop();$after=Get-DatabaseTransactionSnapshot;$rs=Get-DbSnapshot;$logs=Get-LogStatementCount $since;$sqlValues=@($results|?{$null-ne$_.DbCommands}|%{[int]$_.DbCommands});$sql=if($sqlValues.Count -gt 0){($sqlValues|Measure-Object -Sum).Sum}else{$logs};$l=@($results|%{[double]$_.Milliseconds});$ok=@($results|?{$_.StatusCode-ge 200-and$_.StatusCode-lt 300});$tx=[int](($after.commits+$after.rollbacks)-($before.commits+$before.rollbacks));return [pscustomobject]@{Kind='read';Module=$Module;Operation=$Name;Concurrency=$Level;Requests=$results.Count;Successes=$ok.Count;Errors=$results.Count-$ok.Count;Rps=[Math]::Round($results.Count/[Math]::Max(.001,$sw.Elapsed.TotalSeconds),2);P50Ms=Get-Percentile $l .5;P95Ms=Get-Percentile $l .95;P99Ms=Get-Percentile $l .99;SqlStatements=$sql;SqlStatementsPerRequest=if($null-eq $sql){$null}else{[Math]::Round($sql/[Math]::Max(1,$results.Count),2)};Transactions=$tx;Connections=[int]$rs.connections;Active=[int]$rs.active;LockWaits=[int]$rs.lockWaits;MaxTransactionSeconds=[double]$rs.maxTransactionSeconds}
+}
+function Invoke-WriteSmoke { param($Session,[string]$TenantLabel,[string]$EntityId,[hashtable]$Ids);$stamp=[Guid]::NewGuid().ToString('N').Substring(0,8);$ops=@(
+@{M='Projects';N='create-draft';U="$($Session.BaseUrl)/api/v1/projects/legal-entities/$EntityId";B=@{legalEntityId=$EntityId;name="Performance probe $stamp";projectType='InternalProject';startDate=$today;billingModel='NonBillable';currencyCode='EGP'}},
+@{M='Sales';N='create-quotation-draft';U="$($Session.BaseUrl)/api/v1/sales/legal-entities/$EntityId/quotations";B=@{legalEntityId=$EntityId;partyId=$Ids.Party;currencyCode='EGP';quoteDate=$today;validUntil=$today;lines=@(@{productVariantId=$Ids.Variant;description='Performance probe';quantity=1;unitPrice=1})}},
+@{M='Invoicing';N='create-customer-draft';U="$($Session.BaseUrl)/api/v1/invoicing/customer-invoices";B=@{legalEntityId=$EntityId;partyId=$Ids.Party;documentDate=$today;postingDate=$today;taxDate=$today;currencyCode='EGP';paymentTermId=$null;lines=@(@{productVariantId=$Ids.Variant;description='Performance probe';quantity='1'})}},
+@{M='Inventory';N='create-warehouse';U="$($Session.BaseUrl)/api/v1/inventory/legal-entities/$EntityId/warehouses";B=@{code="PERF_$stamp";name='Performance probe';locationMode='WarehouseOnly';branchId=$Ids.Branch}},
+@{M='POS';N='create-cart';U="$($Session.BaseUrl)/api/v1/pos/carts";B=@{sessionId=$Ids.Session;currencyCode='EGP';customerPartyId=$Ids.Party}},
+@{M='HR';N='create-employee';U="$($Session.BaseUrl)/api/v1/hr/employees";B=@{arabicName="اختبار أداء $stamp";englishName="Performance $stamp";legalEntityId=$EntityId;employmentType='FullTime';startDate=$today}},
+@{M='Payroll';N='create-component';U="$($Session.BaseUrl)/api/v1/payroll/legal-entities/$EntityId/components";B=@{code="PERF_$stamp";name='Performance probe';category='Earning';direction='Credit';inputMode='Manual'}},
+@{M='Payments';N='create-account';U="$($Session.BaseUrl)/api/v1/payments/legal-entities/$EntityId/accounts";B=@{legalEntityId=$EntityId;branchId=$Ids.Branch;code="PERF_$stamp";name='Performance probe';type='Cashbox';currencyPolicy='SingleCurrency';currencyCode='EGP';bankName=$null;accountHolder=$null;maskedIdentifier=$null;secretRef=$null}})
+    foreach($o in $ops){$r=Invoke-HttpJson $Session Post $o.U $o.B;[pscustomobject]@{Kind='write';Tenant=$TenantLabel;Module=$o.M;Operation=$o.N;StatusCode=$r.StatusCode;Success=($r.StatusCode-ge 200-and$r.StatusCode-lt 300);Milliseconds=$r.Milliseconds;Error=if($r.StatusCode-ge 300-or$r.StatusCode-eq 0){$r.Content.Substring(0,[Math]::Min(300,$r.Content.Length))}else{$null}}}
 }
 
 Assert-DisposableDatabaseName
 try {
-    Invoke-Postgres -TargetDatabase 'postgres' -Sql "create database `"$database`" template template0" | Out-Null
-    $env:DOTNET_ENVIRONMENT = 'Development'
-    $env:ASPNETCORE_ENVIRONMENT = 'Development'
-    $env:TODIR_REPOSITORY_ROOT = $repo
-    $env:TODIR_MIGRATOR_CONNECTION = "Host=127.0.0.1;Port=15432;Database=$database;Username=postgres;Password=postgres;Include Error Detail=true"
-    $env:TODIR_RUNTIME_PASSWORD = 'todir-app-dev'
-    $env:SEED_DEFAULT_PASSWORD = 'TodirDev2026!'
-    & dotnet run --configuration Release --no-build --project (Join-Path $repo 'backend\DbMigrator\DbMigrator.csproj') -- --seed development
-    if ($LASTEXITCODE -ne 0) { throw 'Disposable migration and development seed failed.' }
-
-    $partyId = Invoke-Postgres -TargetDatabase $database -Sql "select party_id::text from finance_subledger.party_open_item where tenant_id=(select id from platform.tenant where slug='atlas-trading') and legal_entity_id=(select id from platform.legal_entity where tenant_id=(select id from platform.tenant where slug='atlas-trading') and status='Active' order by id limit 1) and is_open=true order by id limit 1"
-    if ([string]::IsNullOrWhiteSpace($partyId)) { throw 'Seeded Atlas open-item party was not found; refusing to benchmark a synthetic endpoint.' }
-
-    $phaseResults = @()
-    $concurrencyLevels = @($Concurrency -split ',' | ForEach-Object { [int]$_.Trim() } | Where-Object { $_ -gt 0 })
-    if ($concurrencyLevels.Count -eq 0) { throw 'At least one positive concurrency level is required.' }
-    foreach ($cacheEnabled in @($false, $true)) {
-        $clientHandler = [System.Net.Http.HttpClientHandler]::new()
-        $clientHandler.UseCookies = $true
-        $client = [System.Net.Http.HttpClient]::new($clientHandler)
-        $client.Timeout = [TimeSpan]::FromSeconds(30)
-        Start-Api -CacheEnabled $cacheEnabled
-        try {
-            $session = Login
-            $entityId = [string]$session.context.legalEntities[0].id
-            $endpoint = "$apiBaseUrl/api/v1/subledger/parties/$partyId/exposure?legalEntityId=$entityId&direction=Receivable&asOfDate=2026-11-22"
-            $cookieHeader = ($clientHandler.CookieContainer.GetCookies([Uri]$apiBaseUrl) | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join '; '
-            if ([string]::IsNullOrWhiteSpace($cookieHeader)) { throw 'Authenticated session cookie was not established.' }
-            $metricsBefore = (Invoke-WebRequest -Uri "$apiBaseUrl/internal/metrics" -UseBasicParsing).Content
-            foreach ($level in $concurrencyLevels) {
-                $phaseResults += Invoke-EndpointBenchmark -Name 'subledger.party.exposure' -Url $endpoint -CookieHeader $cookieHeader -Level $level
-            }
-            $metricsAfter = (Invoke-WebRequest -Uri "$apiBaseUrl/internal/metrics" -UseBasicParsing).Content
-            $phaseResults += [pscustomobject]@{
-                Endpoint = 'authorization.subject.metrics'
-                CacheEnabled = $cacheEnabled
-                DatabaseLoads = (Get-MetricValue -Metrics $metricsAfter -MetricName 'todir_authorization_subject_database_loads') - (Get-MetricValue -Metrics $metricsBefore -MetricName 'todir_authorization_subject_database_loads')
-                RequestCacheHits = (Get-MetricValue -Metrics $metricsAfter -MetricName 'todir_authorization_subject_request_cache_hits') - (Get-MetricValue -Metrics $metricsBefore -MetricName 'todir_authorization_subject_request_cache_hits')
-            }
-        } finally {
-            Stop-Api
-            $client.Dispose()
-            $client = $null
-        }
-    }
-
-    $report = [pscustomobject]@{
-        Commit = (& git rev-parse HEAD).Trim()
-        Database = $database
-        Endpoint = 'subledger.party.exposure'
-        RequestsPerEndpoint = $RequestsPerEndpoint
-        Concurrency = $concurrencyLevels
-        Results = $phaseResults
-        GeneratedAtUtc = [DateTimeOffset]::UtcNow
-    }
-    $report | ConvertTo-Json -Depth 8 | Set-Content -Path $resultPath -Encoding utf8
-    $report | ConvertTo-Json -Depth 8
-} finally {
-    Stop-Api
-    if ($null -ne $client) { $client.Dispose() }
-    if (-not $KeepDatabase) {
-        for ($attempt = 1; $attempt -le 20; $attempt++) {
-            try {
-                Invoke-Postgres -TargetDatabase 'postgres' -Sql "drop database `"$database`"" | Out-Null
-                break
-            } catch {
-                if ($attempt -eq 20) { throw "Could not drop disposable database $database without terminating active sessions." }
-                Start-Sleep -Milliseconds 500
-            }
-        }
-    }
-}
+    Invoke-Postgres postgres "create database `"$database`" template template0"|Out-Null;Invoke-Postgres postgres "alter database `"$database`" set log_statement='all'"|Out-Null
+    $env:DOTNET_ENVIRONMENT='Development';$env:ASPNETCORE_ENVIRONMENT='Development';$env:TODIR_REPOSITORY_ROOT=$repo;$env:TODIR_MIGRATOR_CONNECTION="Host=127.0.0.1;Port=15432;Database=$database;Username=postgres;Password=postgres;Include Error Detail=true";$env:TODIR_RUNTIME_PASSWORD='todir-app-dev';$env:SEED_DEFAULT_PASSWORD='TodirDev2026!'
+    & dotnet run --configuration Release --no-build --project (Join-Path $repo 'backend\DbMigrator\DbMigrator.csproj') -- --seed development;if($LASTEXITCODE-ne 0){throw 'Disposable migration and development seed failed.'};Invoke-Postgres $database "insert into platform.role_permission(tenant_id,role_id,permission_code) select t.id,r.id,p.permission_code from platform.tenant t join platform.role r on r.tenant_id=t.id and r.code='administrator' cross join (values('sales.quotation.read'),('sales.quotation.create'),('sales.price_override')) p(permission_code) where t.slug in('atlas-trading','delta-supplies') on conflict do nothing"|Out-Null
+    $ids=@{};$ids.AtlasTenant=Invoke-Postgres $database "select id::text from platform.tenant where slug='atlas-trading'";$ids.DeltaTenant=Invoke-Postgres $database "select id::text from platform.tenant where slug='delta-supplies'";$ids.AtlasEntity=Invoke-Postgres $database "select id::text from platform.legal_entity where tenant_id='$($ids.AtlasTenant)' and status='Active' order by id limit 1";$ids.DeltaEntity=Invoke-Postgres $database "select id::text from platform.legal_entity where tenant_id='$($ids.DeltaTenant)' and status='Active' order by id limit 1";$ids.Party=Invoke-Postgres $database "select party_id::text from finance_subledger.party_open_item where tenant_id='$($ids.AtlasTenant)' and legal_entity_id='$($ids.AtlasEntity)' and is_open=true order by id limit 1";$ids.Variant=Invoke-Postgres $database "select product_variant_id::text from business_inventory.product_inventory_profile where tenant_id='$($ids.AtlasTenant)' and legal_entity_id='$($ids.AtlasEntity)' order by id limit 1";$ids.Branch=Invoke-Postgres $database "select id::text from platform.branch where tenant_id='$($ids.AtlasTenant)' and legal_entity_id='$($ids.AtlasEntity)' order by id limit 1";$ids.Session=Invoke-Postgres $database "select id::text from business_pos.pos_session where tenant_id='$($ids.AtlasTenant)' and status='Open' order by id limit 1";if([string]::IsNullOrWhiteSpace($ids.AtlasEntity)-or[string]::IsNullOrWhiteSpace($ids.DeltaEntity)){throw 'Seeded legal entities not found'};if([string]::IsNullOrWhiteSpace($ids.Party)-or[string]::IsNullOrWhiteSpace($ids.Variant)){throw 'Seeded party/product variant not found'}
+    $levels=@($Concurrency-split','|%{[int]$_.Trim()}|?{$_-gt 0});if($levels.Count-eq 0){throw 'No valid concurrency level'};$read=@();$write=@();$plans=@();$operations=@(
+@{M='Authorization';N='effective-access';P='/api/v1/authorization/effective-access'},@{M='POS';N='registers';P='/api/v1/pos/legal-entities/{0}/registers'},@{M='Inventory';N='balances';P='/api/v1/inventory/legal-entities/{0}/balances?limit=50'},@{M='Sales';N='quotations';P='/api/v1/sales/legal-entities/{0}/quotations?page=1&pageSize=50'},@{M='Invoicing';N='customer-invoices';P='/api/v1/invoicing/customer-invoices?legalEntityId={0}&page=1&pageSize=50'},@{M='Payments';N='accounts';P='/api/v1/payments/legal-entities/{0}/accounts'},@{M='Accounting';N='health';P='/api/v1/accounting/legal-entities/{0}/health'},@{M='HR';N='employees';P='/api/v1/hr/employees?legalEntityId={0}&page=1&pageSize=50'},@{M='Payroll';N='groups';P='/api/v1/payroll/legal-entities/{0}/groups?page=1&pageSize=50'},@{M='Projects';N='projects';P='/api/v1/projects/legal-entities/{0}?page=1&pageSize=50'},@{M='Subledger';N='party-exposure';P="/api/v1/subledger/parties/$($ids.Party)/exposure?legalEntityId=$($ids.AtlasEntity)&direction=Receivable&asOfDate=$today"})
+    $api=Start-Api $ApiPort $true;Start-ResourceSampler $api.Id 'api';Start-PgSampler;$atlas=New-Session $apiBaseUrl 'admin@atlas.com';$delta=New-Session $apiBaseUrl 'admin@delta.com';$sessions=@($atlas,$delta);$multiResults=@()
+    foreach($tenant in @(@{L='atlas';S=$atlas;E=$ids.AtlasEntity},@{L='delta';S=$delta;E=$ids.DeltaEntity})){$contextEntity=[string]$tenant.S.Context.context.legalEntities[0].id;if([string]::IsNullOrWhiteSpace($contextEntity)){$contextEntity=$tenant.E};foreach($o in $operations){if($o.M-eq'Subledger'-and$tenant.L-eq'delta'){continue};$path=if($o.P-match'\{0\}'){$o.P-f $contextEntity}else{$o.P};foreach($level in $levels){$read+=Invoke-ReadBenchmark $o.M "$($tenant.L).$($o.N)" "$apiBaseUrl$path" $tenant.S $level}}}
+    $write=@(Invoke-WriteSmoke $atlas 'atlas' $ids.AtlasEntity $ids);$api2=Start-Api ($ApiPort+1) $true;$session2=New-Session "http://127.0.0.1:$($ApiPort+1)" 'admin@atlas.com';$sessions+= $session2;$multiResults+=Invoke-MultiInstanceBenchmark $atlas $session2 "$apiBaseUrl/api/v1/projects/legal-entities/$($ids.AtlasEntity)?page=1&pageSize=50" "http://127.0.0.1:$($ApiPort+1)/api/v1/projects/legal-entities/$($ids.AtlasEntity)?page=1&pageSize=50" ($levels|Select-Object -Last 1)
+    $planQueries=@{'sales.quotations.list'="explain (analyze,buffers,format json) select id,party_id,state from business_sales.quotation where tenant_id='$($ids.AtlasTenant)' and legal_entity_id='$($ids.AtlasEntity)' order by id limit 50";'inventory.stock_balance.list'="explain (analyze,buffers,format json) select product_variant_id,warehouse_id,on_hand_base_quantity,reserved_base_quantity from business_inventory.stock_balance where tenant_id='$($ids.AtlasTenant)' and legal_entity_id='$($ids.AtlasEntity)' order by id limit 50";'projects.list'="explain (analyze,buffers,format json) select id,project_number,name,lifecycle_state from business_projects.project where tenant_id='$($ids.AtlasTenant)' and legal_entity_id='$($ids.AtlasEntity)' order by id limit 50";'subledger.open_items.exposure'="explain (analyze,buffers,format json) select id,open_transaction_amount,base_currency from finance_subledger.party_open_item where tenant_id='$($ids.AtlasTenant)' and legal_entity_id='$($ids.AtlasEntity)' and party_id='$($ids.Party)' and is_open=true order by id"};foreach($q in $planQueries.GetEnumerator()){$plans+=[pscustomobject]@{Query=$q.Key;Plan=(Invoke-Postgres $database $q.Value|ConvertFrom-Json)}}
+    Stop-Samplers;$report=[pscustomobject]@{Certification='diagnostic evidence; not a production capacity claim';Commit=(&git rev-parse HEAD).Trim();Mode=$Mode;Database=$database;GeneratedAtUtc=[DateTimeOffset]::UtcNow;Environment=[pscustomobject]@{PostgresContainer='todir-postgres-1';PostgresPort=15432;RabbitMq='not used by API phase';ApiInstances=2;PoolMaximum=64;Seed='development / Atlas + Delta';PgStatStatements=$false;SqlStatementCounter='Npgsql Activity per-request instrumentation enabled by TODIR_PERFORMANCE_SQL_COUNT; pg_stat_statements unavailable'};ReadResults=$read;MultiInstanceResults=$multiResults;WriteResults=$write;QueryPlans=$plans;ResourcePeaks=@(Get-ResourcePeak 'api');PostgresSamples=if(Test-Path(Join-Path $artifactDirectory "postgres-$database.csv")){@(Import-Csv(Join-Path $artifactDirectory "postgres-$database.csv"))}else{@()};KnownLimits=@('Two local API instances only; no node autoscaling claim','No Redis','No production or multi-region claim','Worker and browser gates are separate')};$report|ConvertTo-Json -Depth 20|Set-Content $resultPath -Encoding utf8;$report|ConvertTo-Json -Depth 8
+} finally { Stop-Samplers;foreach($s in @($sessions)){if($null-ne$s){$s.Client.Dispose()}};foreach($p in @($apiProcesses)){Stop-ProcessSafe $p};if(-not$KeepDatabase){try{Invoke-Postgres postgres "alter database `"$database`" reset log_statement"|Out-Null}catch{};for($a=1;$a-le20;$a++){try{Invoke-Postgres postgres "drop database `"$database`""|Out-Null;break}catch{if($a-eq20){throw};Start-Sleep -Milliseconds 500}}}}
