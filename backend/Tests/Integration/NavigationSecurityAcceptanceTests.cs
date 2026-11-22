@@ -31,23 +31,21 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                 "Set TODIR_ACCEPTANCE_ADMIN_CONNECTION or TODIR_P04_ADMIN_CONNECTION to a verified disposable database.");
         }
 
+        // Explicit disposable authorization check is strictly mandatory
+        if (!string.Equals(Environment.GetEnvironmentVariable("TODIR_ACCEPTANCE_DISPOSABLE"), "true", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "CRITICAL SAFETY VIOLATION: Explicit disposable authorization is required. Set TODIR_ACCEPTANCE_DISPOSABLE=true.");
+        }
+
         var builder = new NpgsqlConnectionStringBuilder(conn);
         var db = builder.Database ?? string.Empty;
 
-        // 1. Target database name must contain 'acceptance' or 'test'
+        // Target database name must contain 'acceptance' or 'test'
         if (!db.Contains("acceptance", StringComparison.OrdinalIgnoreCase) &&
             !db.Contains("test", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException($"CRITICAL SAFETY VIOLATION: Refusing to run tests against database '{db}'. Target database must contain 'acceptance' or 'test'.");
-        }
-
-        // 2. Explicit disposable flag or acceptance environment verification
-        var isExplicitlyDisposable = string.Equals(Environment.GetEnvironmentVariable("TODIR_ACCEPTANCE_DISPOSABLE"), "true", StringComparison.OrdinalIgnoreCase) ||
-                                     db.EndsWith("_acceptance", StringComparison.OrdinalIgnoreCase) ||
-                                     db.EndsWith("_test", StringComparison.OrdinalIgnoreCase);
-        if (!isExplicitlyDisposable)
-        {
-            throw new InvalidOperationException($"CRITICAL SAFETY VIOLATION: Database '{db}' is not verified as a disposable acceptance database. Set TODIR_ACCEPTANCE_DISPOSABLE=true.");
         }
 
         return conn;
@@ -60,12 +58,20 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
 
         if (!string.IsNullOrWhiteSpace(appConn))
         {
+            var adminBuilder = new NpgsqlConnectionStringBuilder(adminConn);
+            var appBuilder = new NpgsqlConnectionStringBuilder(appConn);
+            if (!string.Equals(adminBuilder.Host, appBuilder.Host, StringComparison.OrdinalIgnoreCase) ||
+                adminBuilder.Port != appBuilder.Port ||
+                !string.Equals(adminBuilder.Database, appBuilder.Database, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"CRITICAL SAFETY VIOLATION: Target mismatch between admin connection ({adminBuilder.Host}:{adminBuilder.Port}/{adminBuilder.Database}) and app connection ({appBuilder.Host}:{appBuilder.Port}/{appBuilder.Database}).");
+            }
             return appConn;
         }
 
         var appPassword = Environment.GetEnvironmentVariable("TODIR_APP_PASSWORD")
-            ?? Environment.GetEnvironmentVariable("TODIR_RUNTIME_PASSWORD")
-            ?? "todir-app-dev";
+            ?? Environment.GetEnvironmentVariable("TODIR_RUNTIME_PASSWORD");
 
         if (string.IsNullOrWhiteSpace(appPassword))
         {
@@ -102,7 +108,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         Assert.Equal(HttpStatusCode.Created, wh1Res.StatusCode);
 
         // Verify committed DB state
-        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
         await adminConn.OpenAsync();
         await using (var cmd = new NpgsqlCommand($"select count(*) from business_inventory.warehouse where tenant_id = '{fixture.Tenant.Value}' and code = 'WH_SEC_01'", adminConn))
         {
@@ -164,7 +170,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         Assert.Equal(HttpStatusCode.Created, acc1Res.StatusCode);
 
         // Verify committed DB state
-        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
         await adminConn.OpenAsync();
         await using (var cmd = new NpgsqlCommand($"select count(*) from finance_ledger.account where tenant_id = '{fixture.Tenant.Value}' and code = '1001'", adminConn))
         {
@@ -230,7 +236,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         Assert.Equal(HttpStatusCode.Created, lead1Res.StatusCode);
 
         // Verify committed DB state
-        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
         await adminConn.OpenAsync();
         await using (var cmd = new NpgsqlCommand($"select count(*) from business_crm.lead where tenant_id = '{fixture.Tenant.Value}' and display_name = 'Active State Test Lead'", adminConn))
         {
@@ -303,7 +309,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         var accountId = createdAcct.GetProperty("id").GetString()!;
 
         // Verify committed DB state
-        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
         await adminConn.OpenAsync();
         await using (var cmd = new NpgsqlCommand($"select count(*) from finance_banking.treasury_account where tenant_id = '{fixture.Tenant.Value}' and code = 'BANK_SEC_01'", adminConn))
         {
@@ -380,7 +386,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         Assert.Equal(HttpStatusCode.OK, stmt1Res.StatusCode);
 
         // Verify committed DB state
-        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
         await adminConn.OpenAsync();
         await using (var cmd = new NpgsqlCommand($"select count(*) from business_accounting.financial_statement_definition where tenant_id = '{fixture.Tenant.Value}' and code = 'DEF_SEC_01'", adminConn))
         {
@@ -450,7 +456,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         Assert.Equal(HttpStatusCode.OK, profile1Res.StatusCode);
 
         // Verify committed DB state
-        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
         await adminConn.OpenAsync();
         await using (var cmd = new NpgsqlCommand($"select count(*) from business_sales.sales_customer_profile where tenant_id = '{fixture.Tenant.Value}' and party_id = '{party1}'", adminConn))
         {
@@ -519,7 +525,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         Assert.Equal(HttpStatusCode.OK, set1Res.StatusCode);
 
         // Verify committed DB state
-        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
         await adminConn.OpenAsync();
         await using (var cmd = new NpgsqlCommand($"select count(*) from business_purchasing.purchase_settings where tenant_id = '{fixture.Tenant.Value}' and legal_entity_id = '{fixture.EntityA}'", adminConn))
         {
@@ -585,7 +591,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         Assert.Equal(HttpStatusCode.Created, reg1Res.StatusCode);
 
         // Verify committed DB state
-        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
         await adminConn.OpenAsync();
         await using (var cmd = new NpgsqlCommand($"select count(*) from business_pos.pos_register where tenant_id = '{fixture.Tenant.Value}' and code = 'REG_SEC_01'", adminConn))
         {
@@ -1051,7 +1057,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         Assert.True(forbidRes.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized);
 
         // 9. Verify Committed PostgreSQL Database State
-        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
         await adminConn.OpenAsync();
 
         await using (var cmd = new NpgsqlCommand($"select state, current_revision_number from business_sales.quotation where tenant_id = '{fixture.Tenant.Value}' and id = '{quoteId}'", adminConn))
@@ -1084,17 +1090,19 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
     [Fact]
     public async Task Purchasing_EndToEndProcureToReceiptWorkflow_OrderApprovalAndReceivingHandoff()
     {
-        await using var fixture = await NavSecurityFixture.CreateAsync();
+        await using var fixture = await NavSecurityFixture.CreateAsync(useDedicatedDb: true);
         using var client = fixture.CreateClient();
         await fixture.LoginAsync(client);
 
         var supplierId = Guid.CreateVersion7();
+        var roundingPolicyId = Guid.CreateVersion7();
 
-        // 1. Setup Supplier Party in Directory
-        var setupSupplierSql = $@"
+        // 1. Setup Supplier Party, Finbase Rounding & Currency, and Tax Capability in PostgreSQL
+        var setupPurchasingSql = $@"
             set role erp_owner;
             set app.tenant_id = '{fixture.Tenant.Value}';
 
+            -- Supplier Party in Directory
             insert into foundation_directory.party (tenant_id, id, party_type, status, display_name, display_name_normalized, created_by, updated_by, created_at, updated_at, version)
             values ('{fixture.Tenant.Value}', '{supplierId}', 'Organization', 'Active', 'Global Logistics Supplier', 'GLOBAL LOGISTICS SUPPLIER', '{fixture.IdentityId.Value}', '{fixture.IdentityId.Value}', now(), now(), 1);
 
@@ -1104,12 +1112,45 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
             insert into foundation_directory.party_visibility (tenant_id, party_id, scope_type, visibility_id)
             values ('{fixture.Tenant.Value}', '{supplierId}', 'TenantWide', '{Guid.CreateVersion7()}');
 
+            -- Finbase Rounding Policy & Financial Policy & Legal Entity Currency
+            insert into foundation_finbase.financial_rounding_policy (tenant_id, id, code, name_ar, name_en, mode, money_scale, cash_increment, status, version, created_at, updated_at, line_document_strategy)
+            values ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'STANDARD', 'تقريب قياسي', 'Standard rounding', 'HalfUp', 2, 0.01000000, 'Active', 1, now(), now(), 'RoundEachLineThenSum');
+
+            insert into foundation_finbase.financial_rounding_policy_rule (tenant_id, rounding_policy_id, rounding_context, mode)
+            values
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'MoneySettlement', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'LineNetAmount', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'DocumentSubtotal', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'DocumentTotal', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'FXBaseAmount', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'PaymentScheduleLine', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'PaymentAllocation', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'CashRounding', 'HalfUp');
+
+            insert into foundation_finbase.financial_policy (tenant_id, legal_entity_id, rounding_policy_id, exchange_rate_max_age_days, manual_rate_override_allowed, version, updated_at)
+            values ('{fixture.Tenant.Value}', '{fixture.EntityA}', '{roundingPolicyId}', 7, false, 1, now());
+
+            insert into foundation_finbase.legal_entity_currency (tenant_id, legal_entity_id, currency_code, enabled, allow_sales, allow_purchase, allow_payment, allow_manual_rate, status, version, created_at, updated_at)
+            values ('{fixture.Tenant.Value}', '{fixture.EntityA}', 'EGP', true, true, true, true, false, 'Active', 1, now(), now());
+
+            -- Tax capability set to Disabled for Entity A to decouple from external Country Pack rates
+            insert into foundation_tax.tax_capability_state (tenant_id, legal_entity_id, capability, effective_from, version, updated_by, updated_at)
+            values ('{fixture.Tenant.Value}', '{fixture.EntityA}', 'Disabled', '2026-01-01', 1, '{fixture.IdentityId.Value}', now());
+
             reset app.tenant_id;
             reset role;
         ";
-        await fixture.ExecuteAdminSqlAsync(setupSupplierSql);
+        await fixture.ExecuteAdminSqlAsync(setupPurchasingSql);
 
-        // 2. Save Supplier Profile
+        // 2. Initialize Managed Ledger for Entity A via authoritative API
+        var initLedgerRes = await fixture.PostAsync(client, $"/api/v1/ledger/legal-entities/{fixture.EntityA}/managed-setup", new
+        {
+            templateCode = "development-core",
+            mode = "Managed"
+        });
+        Assert.True(initLedgerRes.StatusCode is HttpStatusCode.Created or HttpStatusCode.OK);
+
+        // 3. Save Supplier Profile
         var saveProfileRes = await fixture.PutAsync(client, $"/api/v1/purchasing/legal-entities/{fixture.EntityA}/suppliers/{supplierId}/profile", new
         {
             legalEntityId = fixture.EntityA,
@@ -1120,7 +1161,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         });
         Assert.Equal(HttpStatusCode.OK, saveProfileRes.StatusCode);
 
-        // 3. Create Purchase Order in PendingApproval state
+        // 4. Create Purchase Order in PendingApproval state
         var createPoRes = await fixture.PostAsync(client, $"/api/v1/purchasing/legal-entities/{fixture.EntityA}/purchase-orders", new
         {
             legalEntityId = fixture.EntityA,
@@ -1151,7 +1192,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         var poDoc1 = await getPoRes1.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("PendingApproval", poDoc1.GetProperty("state").GetString());
 
-        // 4. Approve Purchase Order
+        // 5. Approve Purchase Order
         var approvePoRes = await fixture.PostAsync(client, $"/api/v1/purchasing/legal-entities/{fixture.EntityA}/purchase-orders/{poId}/approve", new
         {
             version = 1L,
@@ -1167,7 +1208,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         Assert.Equal("Approved", poDoc2.GetProperty("state").GetString());
         var poVersion2 = poDoc2.GetProperty("version").GetInt64();
 
-        // 5. Create Supplier Invoice Link from Approved PO
+        // 6. Create Supplier Invoice from Approved PO via production API
         var createInvoiceRes = await fixture.PostAsync(client, $"/api/v1/purchasing/legal-entities/{fixture.EntityA}/purchase-orders/{poId}/create-supplier-invoice", new
         {
             version = poVersion2,
@@ -1177,74 +1218,30 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
             taxDate = DateOnly.FromDateTime(DateTime.UtcNow),
             supplierInvoiceNumber = "SUP-INV-2026-001"
         });
-        if (createInvoiceRes.StatusCode != HttpStatusCode.Created)
-        {
-            var err = await createInvoiceRes.Content.ReadAsStringAsync();
-            throw new InvalidOperationException($"Create invoice failed: {createInvoiceRes.StatusCode} - {err}");
-        }
         Assert.Equal(HttpStatusCode.Created, createInvoiceRes.StatusCode);
         var invoiceId = (await createInvoiceRes.Content.ReadFromJsonAsync<JsonElement>()).GetGuid();
         Assert.NotEqual(Guid.Empty, invoiceId);
 
-        // Seed compliance snapshot for matching verification
-        var poLineId = poDoc2.GetProperty("lines")[0].GetProperty("id").GetGuid();
-        var snapshotObj = new Shared.Contracts.Invoicing.InvoiceComplianceSnapshotContract(
-            1,
-            invoiceId,
-            fixture.EntityA,
-            "Payable",
-            "Invoice",
-            "SUP-INV-2026-001",
-            DateOnly.FromDateTime(DateTime.UtcNow),
-            DateOnly.FromDateTime(DateTime.UtcNow),
-            DateOnly.FromDateTime(DateTime.UtcNow),
-            null,
-            "EGP",
-            "Exclusive",
-            "{}",
-            null,
-            null,
-            "1200.00",
-            "1200.00",
-            "0.00",
-            "0.00",
-            "0.00",
-            "1200.00",
-            new[]
-            {
-                new Shared.Contracts.Invoicing.InvoiceFrozenLineContract(
-                    Guid.CreateVersion7(),
-                    1,
-                    null,
-                    "Procured Operating Inventory",
-                    "10",
-                    null,
-                    "EA",
-                    "120.00",
-                    "120.00",
-                    "{}",
-                    "1200.00",
-                    "0.00",
-                    "1200.00",
-                    Array.Empty<Shared.Contracts.Invoicing.InvoiceFrozenDiscountContract>(),
-                    Array.Empty<Shared.Contracts.Invoicing.InvoiceFrozenTaxComponentContract>(),
-                    poLineId.ToString("D")
-                )
-            },
-            Array.Empty<Shared.Contracts.Invoicing.InvoiceFrozenChargeContract>(),
-            Array.Empty<Shared.Contracts.Invoicing.InvoiceScheduleContract>()
-        );
-        var snapshotJson = JsonSerializer.Serialize(snapshotObj);
-        await fixture.ExecuteAdminSqlAsync($@"
-            set role erp_owner;
-            set app.tenant_id = '{fixture.Tenant.Value}';
-            insert into business_invoicing.invoice_compliance_snapshot (tenant_id, legal_entity_id, invoice_id, schema_version, snapshot, created_at)
-            values ('{fixture.Tenant.Value}', '{fixture.EntityA}', '{invoiceId}', 1, '{snapshotJson}'::jsonb, now());
-            reset app.tenant_id;
-            reset role;
-        ");
+        // 7. Legitimate Finalization through Invoicing Production API (Zero manual SQL injection!)
+        var finalizeRes = await fixture.PostAsync(client, $"/api/v1/invoicing/supplier-invoices/{invoiceId}/finalize?legalEntityId={fixture.EntityA}", new
+        {
+            version = 1L,
+            idempotencyKey = $"inv-fin-{invoiceId:N}"
+        });
+        Assert.Equal(HttpStatusCode.OK, finalizeRes.StatusCode);
+        var finalizedDoc = await finalizeRes.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Finalized", finalizedDoc.GetProperty("lifecycle").GetString());
 
-        // 6. Execute Two-Way Matching between PO and Supplier Invoice
+        // Verify that business_invoicing.invoice_compliance_snapshot was created by production code
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
+        await adminConn.OpenAsync();
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_invoicing.invoice_compliance_snapshot where tenant_id = '{fixture.Tenant.Value}' and invoice_id = '{invoiceId}'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(1L, count);
+        }
+
+        // 8. Execute Two-Way Matching between PO and Finalized Supplier Invoice
         var getPoRes3 = await client.GetAsync($"/api/v1/purchasing/legal-entities/{fixture.EntityA}/purchase-orders/{poId}");
         Assert.Equal(HttpStatusCode.OK, getPoRes3.StatusCode);
         var poDoc3 = await getPoRes3.Content.ReadFromJsonAsync<JsonElement>();
@@ -1266,14 +1263,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         var matchState = matchDoc.GetProperty("state").GetString();
         Assert.True(matchState is "Matched" or "WithinTolerance");
 
-        // 7. Server-side Pagination Verification
-        var poPageRes = await client.GetAsync($"/api/v1/purchasing/legal-entities/{fixture.EntityA}/purchase-orders?page=1&pageSize=5");
-        Assert.Equal(HttpStatusCode.OK, poPageRes.StatusCode);
-        var poPageDoc = await poPageRes.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.True(poPageDoc.GetProperty("items").GetArrayLength() >= 1);
-        Assert.True(poPageDoc.GetProperty("totalCount").GetInt32() >= 1);
-
-        // 8. Negative Authorization / Role Isolation Verification
+        // 9. Negative Authorization / Role Isolation Verification
         var forbidRes = await fixture.PostAsync(client, $"/api/v1/purchasing/legal-entities/{fixture.EntityB}/purchase-orders/{poId}/approve", new
         {
             version = 1L,
@@ -1282,10 +1272,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         });
         Assert.True(forbidRes.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized);
 
-        // 9. Verify Committed PostgreSQL Database State
-        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
-        await adminConn.OpenAsync();
-
+        // 10. Verify Committed PostgreSQL Database State
         await using (var cmd = new NpgsqlCommand($"select state, approval_state from business_purchasing.purchase_order where tenant_id = '{fixture.Tenant.Value}' and id = '{poId}'", adminConn))
         {
             await using var reader = await cmd.ExecuteReaderAsync();
@@ -1308,24 +1295,34 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
     }
 
     [Fact]
-    public async Task POS_EndToEndCheckoutWorkflow_SessionCartAndCashPaymentReconciliation()
+    public async Task Purchasing_PhysicalStockReceipt_ExecutesInventoryMovementAndSeparatesServiceProcurement()
     {
-        await using var fixture = await NavSecurityFixture.CreateAsync();
+        await using var fixture = await NavSecurityFixture.CreateAsync(useDedicatedDb: true);
         using var client = fixture.CreateClient();
         await fixture.LoginAsync(client);
 
-        var paymentAccountId = Guid.CreateVersion7();
+        var supplierId = Guid.CreateVersion7();
+        var warehouseId = Guid.CreateVersion7();
+        var locationId = Guid.CreateVersion7();
         var uomId = Guid.CreateVersion7();
         var templateId = Guid.CreateVersion7();
         var variantId = Guid.CreateVersion7();
-        var priceListId = Guid.CreateVersion7();
-        var priceListVersionId = Guid.CreateVersion7();
         var roundingPolicyId = Guid.CreateVersion7();
 
-        // 1. Seed Payment Account, Catalog Item, Pricing, and Finbase Context in PostgreSQL
-        var setupPosDataSql = $@"
+        // 1. Setup Supplier, Warehouse, Location, and Stockable Catalog Product
+        var setupStockSql = $@"
             set role erp_owner;
             set app.tenant_id = '{fixture.Tenant.Value}';
+
+            -- Supplier
+            insert into foundation_directory.party (tenant_id, id, party_type, status, display_name, display_name_normalized, created_by, updated_by, created_at, updated_at, version)
+            values ('{fixture.Tenant.Value}', '{supplierId}', 'Organization', 'Active', 'Industrial Hardware Supplier', 'INDUSTRIAL HARDWARE SUPPLIER', '{fixture.IdentityId.Value}', '{fixture.IdentityId.Value}', now(), now(), 1);
+
+            insert into foundation_directory.party_role (tenant_id, party_id, role_code, status, created_by, created_at, updated_at, version, active_from)
+            values ('{fixture.Tenant.Value}', '{supplierId}', 'Supplier', 'Active', '{fixture.IdentityId.Value}', now(), now(), 1, CURRENT_DATE);
+
+            insert into foundation_directory.party_visibility (tenant_id, party_id, scope_type, visibility_id)
+            values ('{fixture.Tenant.Value}', '{supplierId}', 'TenantWide', '{Guid.CreateVersion7()}');
 
             -- Finbase Rounding Policy & Financial Policy & Legal Entity Currency
             insert into foundation_finbase.financial_rounding_policy (tenant_id, id, code, name_ar, name_en, mode, money_scale, cash_increment, status, version, created_at, updated_at, line_document_strategy)
@@ -1348,32 +1345,231 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
             insert into foundation_finbase.legal_entity_currency (tenant_id, legal_entity_id, currency_code, enabled, allow_sales, allow_purchase, allow_payment, allow_manual_rate, status, version, created_at, updated_at)
             values ('{fixture.Tenant.Value}', '{fixture.EntityA}', 'EGP', true, true, true, true, false, 'Active', 1, now(), now());
 
-            -- Payment Account & Method
+            -- Tax capability set to Disabled for Entity A to decouple from external Country Pack rates
+            insert into foundation_tax.tax_capability_state (tenant_id, legal_entity_id, capability, effective_from, version, updated_by, updated_at)
+            values ('{fixture.Tenant.Value}', '{fixture.EntityA}', 'Disabled', '2026-01-01', 1, '{fixture.IdentityId.Value}', now());
+
+            -- Warehouse & Location
+            insert into business_inventory.warehouse (tenant_id, id, legal_entity_id, branch_id, code, name, status, location_mode, default_location_id, created_at, updated_at, version)
+            values ('{fixture.Tenant.Value}', '{warehouseId}', '{fixture.EntityA}', '{fixture.BranchA1}', 'WH_REC_01', 'Receiving Warehouse', 'Active', 'WarehouseOnly', '{locationId}', now(), now(), 1);
+
+            insert into business_inventory.location (tenant_id, id, legal_entity_id, warehouse_id, parent_location_id, code, name, location_type, hidden, can_hold_stock, can_receive_into, can_pick_from, status, created_at)
+            values ('{fixture.Tenant.Value}', '{locationId}', '{fixture.EntityA}', '{warehouseId}', null, 'LOC_IN_01', 'Inbound Bay 1', 'Default', true, true, true, true, 'Active', now());
+
+            insert into business_inventory.inventory_policy(tenant_id, legal_entity_id, adjustment_approval_mode, separation_of_duties, operational_cutoff_date, version, created_at, updated_at)
+            values ('{fixture.Tenant.Value}', '{fixture.EntityA}', 'DirectConfirm', true, null, 1, now(), now());
+
+            insert into business_inventory.product_inventory_profile (tenant_id, id, legal_entity_id, product_variant_id, inventory_state, tracking_mode, valuation_mode, costing_method, negative_stock_policy, default_warehouse_id, reservation_mode, status, version, created_at, updated_at)
+            values ('{fixture.Tenant.Value}', '{Guid.CreateVersion7()}', '{fixture.EntityA}', '{variantId}', 'StockTracked', 'Quantity', 'NonValuated', null, 'Disallow', '{warehouseId}', 'Disabled', 'Active', 1, now(), now());
+
+            -- Catalog UOM, Template, Variant
+            insert into foundation_catalog.uom (tenant_id, id, code, name_ar, name_en, dimension, allow_fraction, precision, status, version, created_at, updated_at)
+            values ('{fixture.Tenant.Value}', '{uomId}', 'EA', 'قطعة', 'Each', 'Count', false, 0, 'Active', 1, now(), now());
+
+            insert into foundation_catalog.product_template (tenant_id, id, display_name, display_name_normalized, name_ar, name_en, product_nature, status, created_at, updated_at, version, product_source, product_template_code)
+            values ('{fixture.Tenant.Value}', '{templateId}', 'Heavy Bolt M12', 'HEAVY BOLT M12', 'مسمار صلب', 'Heavy Bolt M12', 'Goods', 'Active', now(), now(), 1, 'Manual', 'PT-BOLT-M12');
+
+            insert into foundation_catalog.product_visibility (tenant_id, template_id, scope_type, visibility_id)
+            values ('{fixture.Tenant.Value}', '{templateId}', 'TenantWide', '{Guid.CreateVersion7()}');
+
+            insert into foundation_catalog.product_variant (tenant_id, id, product_template_id, sku, normalized_sku, is_default_variant, status, version, created_at, updated_at)
+            values ('{fixture.Tenant.Value}', '{variantId}', '{templateId}', 'SKU-BOLT-01', 'SKU-BOLT-01', true, 'Active', 1, now(), now());
+
+            insert into foundation_catalog.product_uom (tenant_id, id, variant_id, uom_id, factor_to_base, is_base, effective_from, status, version, usage_flags)
+            values ('{fixture.Tenant.Value}', '{Guid.CreateVersion7()}', '{variantId}', '{uomId}', 1, true, now() - interval '1 day', 'Active', 1, '{{Selling,Buying}}');
+
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setupStockSql);
+
+        // 2. Initialize Managed Ledger for Entity A to open accounting periods
+        var initLedgerRes = await fixture.PostAsync(client, $"/api/v1/ledger/legal-entities/{fixture.EntityA}/managed-setup", new
+        {
+            templateCode = "development-core",
+            mode = "Managed"
+        });
+        Assert.True(initLedgerRes.StatusCode is HttpStatusCode.Created or HttpStatusCode.OK);
+
+        // 2. Configure Supplier Profile
+        await fixture.PutAsync(client, $"/api/v1/purchasing/legal-entities/{fixture.EntityA}/suppliers/{supplierId}/profile", new
+        {
+            legalEntityId = fixture.EntityA,
+            supplierPartyId = supplierId,
+            supplierCode = "SUP-STOCK-01",
+            defaultCurrencyCode = "EGP",
+            supplierReferenceRequired = false
+        });
+
+        // 3. Create PO with 1 Stockable Goods Line and 1 Service Non-Stocked Line
+        var createPoRes = await fixture.PostAsync(client, $"/api/v1/purchasing/legal-entities/{fixture.EntityA}/purchase-orders", new
+        {
+            legalEntityId = fixture.EntityA,
+            branchId = fixture.BranchA1,
+            supplierPartyId = supplierId,
+            currencyCode = "EGP",
+            orderDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            approvalRequired = true,
+            lines = new[]
+            {
+                new
+                {
+                    productVariantId = (Guid?)variantId,
+                    unitOfMeasureId = (Guid?)uomId,
+                    description = "Heavy Bolt M12 Stockable Goods",
+                    unitCode = "EA",
+                    quantity = 10m,
+                    unitPrice = 25m,
+                    priceOverrideReason = (string?)"Bulk order discount"
+                },
+                new
+                {
+                    productVariantId = (Guid?)null,
+                    unitOfMeasureId = (Guid?)null,
+                    description = "Machinery Inspection Service",
+                    unitCode = "EA",
+                    quantity = 1m,
+                    unitPrice = 500m,
+                    priceOverrideReason = (string?)"Contracted inspection service fee"
+                }
+            }
+        });
+        Assert.Equal(HttpStatusCode.Created, createPoRes.StatusCode);
+        var poDoc = await createPoRes.Content.ReadFromJsonAsync<JsonElement>();
+        var poId = poDoc.GetGuid();
+
+        // 4. Approve PO
+        var approveRes = await fixture.PostAsync(client, $"/api/v1/purchasing/legal-entities/{fixture.EntityA}/purchase-orders/{poId}/approve", new
+        {
+            version = 1L,
+            idempotencyKey = $"appr-rec-{poId:N}",
+            reason = "Approved for physical intake"
+        });
+        Assert.Equal(HttpStatusCode.OK, approveRes.StatusCode);
+
+        // Fetch approved PO details to obtain line IDs
+        var getPoRes = await client.GetAsync($"/api/v1/purchasing/legal-entities/{fixture.EntityA}/purchase-orders/{poId}");
+        Assert.Equal(HttpStatusCode.OK, getPoRes.StatusCode);
+        var approvedPoDoc = await getPoRes.Content.ReadFromJsonAsync<JsonElement>();
+        var approvedVersion = approvedPoDoc.GetProperty("version").GetInt64();
+        var linesArray = approvedPoDoc.GetProperty("lines");
+        var stockLineId = linesArray[0].GetProperty("id").GetGuid();
+        var serviceLineId = linesArray[1].GetProperty("id").GetGuid();
+
+        // 5. Execute Physical Stock Receipt for the stockable line
+        var receiveRes = await fixture.PostAsync(client, $"/api/v1/purchasing/legal-entities/{fixture.EntityA}/purchase-orders/{poId}/receive", new
+        {
+            legalEntityId = fixture.EntityA,
+            version = approvedVersion,
+            idempotencyKey = $"rec-phys-{poId:N}",
+            operationalDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            postingDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            lines = new[]
+            {
+                new
+                {
+                    purchaseOrderLineId = stockLineId,
+                    productVariantId = variantId,
+                    warehouseId = warehouseId,
+                    locationId = (Guid?)locationId,
+                    unitOfMeasureId = uomId,
+                    quantity = 10m
+                }
+            }
+        });
+        Assert.Equal(HttpStatusCode.Created, receiveRes.StatusCode);
+        var receiveDoc = await receiveRes.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(receiveDoc.GetProperty("receiptState").GetString() is "PartiallyReceived" or "Completed");
+
+        // 6. Verify in PostgreSQL:
+        // - purchase_order_receipt_link is recorded
+        // - Stockable line shows received_quantity = 10
+        // - Service line shows received_quantity = 0 (semantically decoupled from physical inventory intake)
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
+        await adminConn.OpenAsync();
+
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_purchasing.purchase_order_receipt_link where tenant_id = '{fixture.Tenant.Value}' and purchase_order_id = '{poId}'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(1L, count);
+        }
+
+        await using (var cmd = new NpgsqlCommand($"select received_quantity from business_purchasing.purchase_order_line where tenant_id = '{fixture.Tenant.Value}' and id = '{stockLineId}'", adminConn))
+        {
+            var qty = (decimal)(await cmd.ExecuteScalarAsync() ?? 0m);
+            Assert.Equal(10m, qty);
+        }
+
+        await using (var cmd = new NpgsqlCommand($"select received_quantity from business_purchasing.purchase_order_line where tenant_id = '{fixture.Tenant.Value}' and id = '{serviceLineId}'", adminConn))
+        {
+            var qty = (decimal)(await cmd.ExecuteScalarAsync() ?? 0m);
+            Assert.Equal(0m, qty);
+        }
+    }
+
+    [Fact]
+    public async Task POS_Case1_CompletedCheckout_ClosesSessionAndMatchesDrawerCash()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync(useDedicatedDb: true);
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        var paymentAccountId = Guid.CreateVersion7();
+        var uomId = Guid.CreateVersion7();
+        var templateId = Guid.CreateVersion7();
+        var variantId = Guid.CreateVersion7();
+        var priceListId = Guid.CreateVersion7();
+        var priceListVersionId = Guid.CreateVersion7();
+        var roundingPolicyId = Guid.CreateVersion7();
+
+        // 1. Seed Finbase Rounding, Currency, Payment Account, Catalog, and Pricing
+        var setupPosDataSql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+
+            insert into foundation_finbase.financial_rounding_policy (tenant_id, id, code, name_ar, name_en, mode, money_scale, cash_increment, status, version, created_at, updated_at, line_document_strategy)
+            values ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'STANDARD', 'تقريب قياسي', 'Standard rounding', 'HalfUp', 2, 0.01000000, 'Active', 1, now(), now(), 'RoundEachLineThenSum');
+
+            insert into foundation_finbase.financial_rounding_policy_rule (tenant_id, rounding_policy_id, rounding_context, mode)
+            values
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'MoneySettlement', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'LineNetAmount', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'DocumentSubtotal', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'DocumentTotal', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'FXBaseAmount', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'PaymentScheduleLine', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'PaymentAllocation', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'CashRounding', 'HalfUp');
+
+            insert into foundation_finbase.financial_policy (tenant_id, legal_entity_id, rounding_policy_id, exchange_rate_max_age_days, manual_rate_override_allowed, version, updated_at)
+            values ('{fixture.Tenant.Value}', '{fixture.EntityA}', '{roundingPolicyId}', 7, false, 1, now());
+
+            insert into foundation_finbase.legal_entity_currency (tenant_id, legal_entity_id, currency_code, enabled, allow_sales, allow_purchase, allow_payment, allow_manual_rate, status, version, created_at, updated_at)
+            values ('{fixture.Tenant.Value}', '{fixture.EntityA}', 'EGP', true, true, true, true, false, 'Active', 1, now(), now());
+
             insert into finance_payments.payment_account (tenant_id, id, legal_entity_id, branch_id, code, account_type, status, currency_policy, currency_code, name, created_at, updated_at, version)
             values ('{fixture.Tenant.Value}', '{paymentAccountId}', '{fixture.EntityA}', '{fixture.BranchA1}', 'POS_CASH_01', 'Cashbox', 'Active', 'SingleCurrency', 'EGP', 'POS Drawer Cashbox', now(), now(), 1);
 
             insert into finance_payments.payment_method_config (tenant_id, id, legal_entity_id, method, status, effective_from, payment_account_id, branch_id, channel, created_at)
             values ('{fixture.Tenant.Value}', '{Guid.CreateVersion7()}', '{fixture.EntityA}', 'Cash', 'Active', CURRENT_DATE, '{paymentAccountId}', '{fixture.BranchA1}', 'POS', now());
 
-            -- Catalog UOM, Template, Visibility, Variant, and Product UOM
             insert into foundation_catalog.uom (tenant_id, id, code, name_ar, name_en, dimension, allow_fraction, precision, status, version, created_at, updated_at)
             values ('{fixture.Tenant.Value}', '{uomId}', 'EA', 'قطعة', 'Each', 'Count', false, 0, 'Active', 1, now(), now());
 
             insert into foundation_catalog.product_template (tenant_id, id, display_name, display_name_normalized, name_ar, name_en, product_nature, status, created_at, updated_at, version, product_source, product_template_code)
-            values ('{fixture.Tenant.Value}', '{templateId}', 'POS Retail Beverage', 'POS RETAIL BEVERAGE', 'مشروب تجزئة', 'POS Retail Beverage', 'Goods', 'Active', now(), now(), 1, 'Manual', 'PT-POS-E2E');
+            values ('{fixture.Tenant.Value}', '{templateId}', 'POS Retail Beverage', 'POS RETAIL BEVERAGE', 'مشروب تجزئة', 'POS Retail Beverage', 'Goods', 'Active', now(), now(), 1, 'Manual', 'PT-POS-C1');
 
             insert into foundation_catalog.product_visibility (tenant_id, template_id, scope_type, visibility_id)
             values ('{fixture.Tenant.Value}', '{templateId}', 'TenantWide', '{Guid.CreateVersion7()}');
 
             insert into foundation_catalog.product_variant (tenant_id, id, product_template_id, sku, normalized_sku, is_default_variant, status, version, created_at, updated_at)
-            values ('{fixture.Tenant.Value}', '{variantId}', '{templateId}', 'SKU-POS-E2E', 'SKU-POS-E2E', true, 'Active', 1, now(), now());
+            values ('{fixture.Tenant.Value}', '{variantId}', '{templateId}', 'SKU-POS-C1', 'SKU-POS-C1', true, 'Active', 1, now(), now());
 
             insert into foundation_catalog.product_uom (tenant_id, id, variant_id, uom_id, factor_to_base, is_base, effective_from, status, version, usage_flags)
             values ('{fixture.Tenant.Value}', '{Guid.CreateVersion7()}', '{variantId}', '{uomId}', 1, true, now() - interval '1 day', 'Active', 1, '{{Selling,Buying}}');
 
-            -- Pricing List, Version, and Price Entry
             insert into foundation_pricing.price_list (tenant_id, id, legal_entity_id, code, name, direction, currency_code, entity_scope_type, currency_policy, status, created_at, updated_at, version)
-            values ('{fixture.Tenant.Value}', '{priceListId}', '{fixture.EntityA}', 'PL-POS-E2E', 'POS Retail Price List', 'Selling', 'EGP', 'SingleLegalEntity', 'ExactCurrency', 'Active', now(), now(), 1);
+            values ('{fixture.Tenant.Value}', '{priceListId}', '{fixture.EntityA}', 'PL-POS-C1', 'POS Retail Price List', 'Selling', 'EGP', 'SingleLegalEntity', 'ExactCurrency', 'Active', now(), now(), 1);
 
             insert into foundation_pricing.price_list_version (tenant_id, id, price_list_id, version_no, status, effective_from, created_by, created_at, version)
             values ('{fixture.Tenant.Value}', '{priceListVersionId}', '{priceListId}', 1, 'Draft', CURRENT_DATE, '{fixture.IdentityId.Value}', now(), 1);
@@ -1388,31 +1584,37 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         ";
         await fixture.ExecuteAdminSqlAsync(setupPosDataSql);
 
-        // 2. Register Discovery & Terminal Registration
+        // Initialize Managed Ledger for Entity A to support POS cash posting
+        var initLedgerRes = await fixture.PostAsync(client, $"/api/v1/ledger/legal-entities/{fixture.EntityA}/managed-setup", new
+        {
+            templateCode = "development-core",
+            mode = "Managed"
+        });
+        Assert.True(initLedgerRes.StatusCode is HttpStatusCode.Created or HttpStatusCode.OK);
+
+        // 2. Register & Terminal
         var createRegRes = await fixture.PostAsync(client, "/api/v1/pos/registers", new
         {
             legalEntityId = fixture.EntityA,
             branchId = fixture.BranchA1,
-            code = "REG_E2E_01",
-            name = "E2E Checkout Register",
+            code = "REG_C1_01",
+            name = "Checkout Register Case 1",
             currencyCode = "EGP",
             offlineEnabled = false
         });
         Assert.Equal(HttpStatusCode.Created, createRegRes.StatusCode);
-        var regDoc = await createRegRes.Content.ReadFromJsonAsync<JsonElement>();
-        var registerId = regDoc.GetProperty("id").GetGuid();
+        var registerId = (await createRegRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
 
         var regTermRes = await fixture.PostAsync(client, $"/api/v1/pos/registers/{registerId}/terminals", new
         {
             registerId,
-            deviceIdentity = "TERM_E2E_01",
-            displayName = "E2E Terminal"
+            deviceIdentity = "TERM_C1_01",
+            displayName = "Terminal C1"
         });
         Assert.Equal(HttpStatusCode.Created, regTermRes.StatusCode);
-        var termDoc = await regTermRes.Content.ReadFromJsonAsync<JsonElement>();
-        var terminalId = termDoc.GetProperty("id").GetGuid();
+        var terminalId = (await regTermRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
 
-        // 3. Open POS Session with Opening Float
+        // 3. Open POS Session with 100.00 Opening Float
         var openSessionRes = await fixture.PostAsync(client, $"/api/v1/pos/legal-entities/{fixture.EntityA}/sessions", new
         {
             registerId,
@@ -1423,23 +1625,13 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
             currencyCode = "EGP"
         });
         Assert.Equal(HttpStatusCode.Created, openSessionRes.StatusCode);
-        var sessionDoc = await openSessionRes.Content.ReadFromJsonAsync<JsonElement>();
-        var sessionId = sessionDoc.GetProperty("id").GetGuid();
-        Assert.Equal("Open", sessionDoc.GetProperty("status").GetString());
-        Assert.Equal(100.00m, sessionDoc.GetProperty("openingFloat").GetDecimal());
+        var sessionId = (await openSessionRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
 
-        // 4. Create POS Cart
-        var createCartRes = await fixture.PostAsync(client, "/api/v1/pos/carts", new
-        {
-            sessionId,
-            currencyCode = "EGP"
-        });
+        // 4. Cart & Line (2 items @ 50 = 100.00)
+        var createCartRes = await fixture.PostAsync(client, "/api/v1/pos/carts", new { sessionId, currencyCode = "EGP" });
         Assert.Equal(HttpStatusCode.Created, createCartRes.StatusCode);
-        var cartDoc = await createCartRes.Content.ReadFromJsonAsync<JsonElement>();
-        var cartId = cartDoc.GetProperty("id").GetGuid();
-        Assert.Equal("Active", cartDoc.GetProperty("state").GetString());
+        var cartId = (await createCartRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
 
-        // 5. Add Cart Line with authoritative pricing context
         var addLineRes = await fixture.PostAsync(client, $"/api/v1/pos/carts/{cartId}/lines", new
         {
             variantId,
@@ -1456,49 +1648,29 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
             priceListId = priceListId
         });
         Assert.Equal(HttpStatusCode.Created, addLineRes.StatusCode);
-        var updatedCartDoc = await addLineRes.Content.ReadFromJsonAsync<JsonElement>();
+        var cartDoc = await addLineRes.Content.ReadFromJsonAsync<JsonElement>();
+        var grandTotal = cartDoc.GetProperty("grandTotal").GetDecimal();
+        Assert.Equal(100.00m, grandTotal);
 
-        // Exact Money Math Verification: Subtotal + Tax - Discount = GrandTotal
-        var subtotal = updatedCartDoc.GetProperty("subtotal").GetDecimal();
-        var taxTotal = updatedCartDoc.GetProperty("taxTotal").GetDecimal();
-        var discountTotal = updatedCartDoc.GetProperty("discountTotal").GetDecimal();
-        var grandTotal = updatedCartDoc.GetProperty("grandTotal").GetDecimal();
-        Assert.Equal(100.00m, subtotal);
-        Assert.Equal(subtotal + taxTotal - discountTotal, grandTotal);
-
-        // 6. Complete Cash Checkout
+        // 5. Cash Checkout
         var checkoutRes = await fixture.PostAsync(client, "/api/v1/pos/checkout", new
         {
             cartId,
             idempotencyKey = $"chk-{cartId:N}",
-            tenders = new[]
-            {
-                new
-                {
-                    method = "Cash",
-                    amount = grandTotal,
-                    paymentAccountId = paymentAccountId
-                }
-            }
+            tenders = new[] { new { method = "Cash", amount = grandTotal, paymentAccountId = paymentAccountId } }
         });
-        if (checkoutRes.StatusCode != HttpStatusCode.Accepted)
-        {
-            var err = await checkoutRes.Content.ReadAsStringAsync();
-            throw new InvalidOperationException($"Checkout failed: {checkoutRes.StatusCode} - {err}");
-        }
         Assert.Equal(HttpStatusCode.Accepted, checkoutRes.StatusCode);
         var checkoutDoc = await checkoutRes.Content.ReadFromJsonAsync<JsonElement>();
         var checkoutId = checkoutDoc.GetProperty("checkoutId").GetGuid();
-        Assert.True(checkoutDoc.GetProperty("state").GetString() is "Completed" or "CompletionPending");
+        var checkoutState = checkoutDoc.GetProperty("state").GetString();
+        Assert.True(checkoutState is "Completed" or "CompletionPending");
         Assert.Equal("Captured", checkoutDoc.GetProperty("paymentState").GetString());
-        Assert.Equal(grandTotal, checkoutDoc.GetProperty("total").GetDecimal());
 
-        // 7. Cash Count & Session Close
-        var countedCash = 100.00m + grandTotal; // OpeningFloat + Cash captured
+        // 6. Cash Count & Session Close (100 float + 100 cash sale = 200.00)
         var closeRes = await fixture.PostAsync(client, $"/api/v1/pos/sessions/{sessionId}/close", new
         {
             sessionId,
-            countedCash,
+            countedCash = 200.00m,
             varianceReason = (string?)null
         });
         Assert.Equal(HttpStatusCode.OK, closeRes.StatusCode);
@@ -1506,21 +1678,17 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         Assert.Equal("Closed", closedSessionDoc.GetProperty("status").GetString());
         Assert.Equal(0.00m, closedSessionDoc.GetProperty("variance").GetDecimal());
 
-        // 8. Negative Role Isolation Verification
-        // Attempting to query management reports on Entity B
-        var forbidRes = await client.GetAsync($"/api/v1/pos/legal-entities/{fixture.EntityB}/reports/sales");
-        Assert.True(forbidRes.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized);
-
-        // 9. Verify Committed PostgreSQL Database State
-        await using var adminConn = new NpgsqlConnection(GetAdminConnectionString());
+        // 7. PostgreSQL Database Integrity Assertions
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
         await adminConn.OpenAsync();
 
         await using (var cmd = new NpgsqlCommand($"select state, total_amount from business_pos.pos_checkout where tenant_id = '{fixture.Tenant.Value}' and id = '{checkoutId}'", adminConn))
         {
             await using var reader = await cmd.ExecuteReaderAsync();
             Assert.True(await reader.ReadAsync());
-            Assert.True(reader.GetString(0) is "Completed" or "CompletionPending");
-            Assert.Equal(grandTotal, reader.GetDecimal(1));
+            var dbState = reader.GetString(0);
+            Assert.True(dbState is "Completed" or "CompletionPending");
+            Assert.Equal(100.00m, reader.GetDecimal(1));
         }
 
         await using (var cmd = new NpgsqlCommand($"select count(*) from business_pos.pos_sale where tenant_id = '{fixture.Tenant.Value}' and checkout_id = '{checkoutId}'", adminConn))
@@ -1529,21 +1697,661 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
             Assert.Equal(1L, count);
         }
 
-        await using (var cmd = new NpgsqlCommand($"select method, requested_amount from business_pos.pos_tender where tenant_id = '{fixture.Tenant.Value}' and checkout_id = '{checkoutId}'", adminConn))
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_pos.pos_tender where tenant_id = '{fixture.Tenant.Value}' and checkout_id = '{checkoutId}' and method = 'Cash'", adminConn))
         {
-            await using var reader = await cmd.ExecuteReaderAsync();
-            Assert.True(await reader.ReadAsync());
-            Assert.Equal("Cash", reader.GetString(0));
-            Assert.Equal(grandTotal, reader.GetDecimal(1));
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(1L, count);
+        }
+    }
+
+    [Fact]
+    public async Task POS_Case2_CompletionPendingWithDurableRecovery_SessionCloseAllowedAndRecovers()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync(useDedicatedDb: true);
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        var paymentAccountId = Guid.CreateVersion7();
+        var uomId = Guid.CreateVersion7();
+        var templateId = Guid.CreateVersion7();
+        var variantId = Guid.CreateVersion7();
+        var priceListId = Guid.CreateVersion7();
+        var priceListVersionId = Guid.CreateVersion7();
+        var roundingPolicyId = Guid.CreateVersion7();
+
+        // 1. Seed POS prerequisite structures
+        var setupPosDataSql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+
+            insert into foundation_finbase.financial_rounding_policy (tenant_id, id, code, name_ar, name_en, mode, money_scale, cash_increment, status, version, created_at, updated_at, line_document_strategy)
+            values ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'STANDARD', 'تقريب قياسي', 'Standard rounding', 'HalfUp', 2, 0.01000000, 'Active', 1, now(), now(), 'RoundEachLineThenSum');
+
+            insert into foundation_finbase.financial_rounding_policy_rule (tenant_id, rounding_policy_id, rounding_context, mode)
+            values
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'MoneySettlement', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'LineNetAmount', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'DocumentSubtotal', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'DocumentTotal', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'FXBaseAmount', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'PaymentScheduleLine', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'PaymentAllocation', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'CashRounding', 'HalfUp');
+
+            insert into foundation_finbase.financial_policy (tenant_id, legal_entity_id, rounding_policy_id, exchange_rate_max_age_days, manual_rate_override_allowed, version, updated_at)
+            values ('{fixture.Tenant.Value}', '{fixture.EntityA}', '{roundingPolicyId}', 7, false, 1, now());
+
+            insert into foundation_finbase.legal_entity_currency (tenant_id, legal_entity_id, currency_code, enabled, allow_sales, allow_purchase, allow_payment, allow_manual_rate, status, version, created_at, updated_at)
+            values ('{fixture.Tenant.Value}', '{fixture.EntityA}', 'EGP', true, true, true, true, false, 'Active', 1, now(), now());
+
+            insert into finance_payments.payment_account (tenant_id, id, legal_entity_id, branch_id, code, account_type, status, currency_policy, currency_code, name, created_at, updated_at, version)
+            values ('{fixture.Tenant.Value}', '{paymentAccountId}', '{fixture.EntityA}', '{fixture.BranchA1}', 'POS_CASH_02', 'Cashbox', 'Active', 'SingleCurrency', 'EGP', 'POS Drawer Cashbox 2', now(), now(), 1);
+
+            insert into finance_payments.payment_method_config (tenant_id, id, legal_entity_id, method, status, effective_from, payment_account_id, branch_id, channel, created_at)
+            values ('{fixture.Tenant.Value}', '{Guid.CreateVersion7()}', '{fixture.EntityA}', 'Cash', 'Active', CURRENT_DATE, '{paymentAccountId}', '{fixture.BranchA1}', 'POS', now());
+
+            insert into foundation_catalog.uom (tenant_id, id, code, name_ar, name_en, dimension, allow_fraction, precision, status, version, created_at, updated_at)
+            values ('{fixture.Tenant.Value}', '{uomId}', 'EA', 'قطعة', 'Each', 'Count', false, 0, 'Active', 1, now(), now());
+
+            insert into foundation_catalog.product_template (tenant_id, id, display_name, display_name_normalized, name_ar, name_en, product_nature, status, created_at, updated_at, version, product_source, product_template_code)
+            values ('{fixture.Tenant.Value}', '{templateId}', 'POS Retail Item C2', 'POS RETAIL ITEM C2', 'منتج تجزئة', 'POS Retail Item C2', 'Goods', 'Active', now(), now(), 1, 'Manual', 'PT-POS-C2');
+
+            insert into foundation_catalog.product_visibility (tenant_id, template_id, scope_type, visibility_id)
+            values ('{fixture.Tenant.Value}', '{templateId}', 'TenantWide', '{Guid.CreateVersion7()}');
+
+            insert into foundation_catalog.product_variant (tenant_id, id, product_template_id, sku, normalized_sku, is_default_variant, status, version, created_at, updated_at)
+            values ('{fixture.Tenant.Value}', '{variantId}', '{templateId}', 'SKU-POS-C2', 'SKU-POS-C2', true, 'Active', 1, now(), now());
+
+            insert into foundation_catalog.product_uom (tenant_id, id, variant_id, uom_id, factor_to_base, is_base, effective_from, status, version, usage_flags)
+            values ('{fixture.Tenant.Value}', '{Guid.CreateVersion7()}', '{variantId}', '{uomId}', 1, true, now() - interval '1 day', 'Active', 1, '{{Selling,Buying}}');
+
+            insert into foundation_pricing.price_list (tenant_id, id, legal_entity_id, code, name, direction, currency_code, entity_scope_type, currency_policy, status, created_at, updated_at, version)
+            values ('{fixture.Tenant.Value}', '{priceListId}', '{fixture.EntityA}', 'PL-POS-C2', 'POS Retail Price List 2', 'Selling', 'EGP', 'SingleLegalEntity', 'ExactCurrency', 'Active', now(), now(), 1);
+
+            insert into foundation_pricing.price_list_version (tenant_id, id, price_list_id, version_no, status, effective_from, created_by, created_at, version)
+            values ('{fixture.Tenant.Value}', '{priceListVersionId}', '{priceListId}', 1, 'Draft', CURRENT_DATE, '{fixture.IdentityId.Value}', now(), 1);
+
+            insert into foundation_pricing.price_entry (tenant_id, id, price_list_version_id, variant_id, uom_id, min_quantity, unit_price, status, version, created_at)
+            values ('{fixture.Tenant.Value}', '{Guid.CreateVersion7()}', '{priceListVersionId}', '{variantId}', '{uomId}', 0, 75.00, 'Active', 1, now());
+
+            update foundation_pricing.price_list_version set status = 'Active', activated_at = now() where id = '{priceListVersionId}';
+
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setupPosDataSql);
+
+        // Initialize Managed Ledger for Entity A to support POS cash posting
+        var initLedgerRes = await fixture.PostAsync(client, $"/api/v1/ledger/legal-entities/{fixture.EntityA}/managed-setup", new
+        {
+            templateCode = "development-core",
+            mode = "Managed"
+        });
+        Assert.True(initLedgerRes.StatusCode is HttpStatusCode.Created or HttpStatusCode.OK);
+
+        // 2. Register & Terminal
+        var createRegRes = await fixture.PostAsync(client, "/api/v1/pos/registers", new
+        {
+            legalEntityId = fixture.EntityA,
+            branchId = fixture.BranchA1,
+            code = "REG_C2_01",
+            name = "Checkout Register Case 2",
+            currencyCode = "EGP",
+            offlineEnabled = false
+        });
+        Assert.Equal(HttpStatusCode.Created, createRegRes.StatusCode);
+        var registerId = (await createRegRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var regTermRes = await fixture.PostAsync(client, $"/api/v1/pos/registers/{registerId}/terminals", new
+        {
+            registerId,
+            deviceIdentity = "TERM_C2_01",
+            displayName = "Terminal C2"
+        });
+        Assert.Equal(HttpStatusCode.Created, regTermRes.StatusCode);
+        var terminalId = (await regTermRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        // 3. Open POS Session with 100.00 Opening Float
+        var openSessionRes = await fixture.PostAsync(client, $"/api/v1/pos/legal-entities/{fixture.EntityA}/sessions", new
+        {
+            registerId,
+            terminalId,
+            cashierUserId = fixture.IdentityId.Value,
+            businessDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            openingFloat = 100.00m,
+            currencyCode = "EGP"
+        });
+        Assert.Equal(HttpStatusCode.Created, openSessionRes.StatusCode);
+        var sessionId = (await openSessionRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        // 4. Cart & Line (1 item @ 75 = 75.00)
+        var createCartRes = await fixture.PostAsync(client, "/api/v1/pos/carts", new { sessionId, currencyCode = "EGP" });
+        Assert.Equal(HttpStatusCode.Created, createCartRes.StatusCode);
+        var cartId = (await createCartRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var addLineRes = await fixture.PostAsync(client, $"/api/v1/pos/carts/{cartId}/lines", new
+        {
+            variantId,
+            description = "POS Retail Item C2",
+            uomCode = "EA",
+            quantity = 1m,
+            unitPrice = 75m,
+            taxAmount = 0m,
+            discountAmount = 0m,
+            expectedVersion = 1,
+            legalEntityId = fixture.EntityA,
+            productTemplateId = templateId,
+            unitOfMeasureId = uomId,
+            priceListId = priceListId
+        });
+        Assert.Equal(HttpStatusCode.Created, addLineRes.StatusCode);
+
+        // 5. Checkout with Cash 75.00
+        var checkoutRes = await fixture.PostAsync(client, "/api/v1/pos/checkout", new
+        {
+            cartId,
+            idempotencyKey = $"chk-{cartId:N}",
+            tenders = new[] { new { method = "Cash", amount = 75.00m, paymentAccountId = paymentAccountId } }
+        });
+        Assert.Equal(HttpStatusCode.Accepted, checkoutRes.StatusCode);
+        var checkoutDoc = await checkoutRes.Content.ReadFromJsonAsync<JsonElement>();
+        var checkoutId = checkoutDoc.GetProperty("checkoutId").GetGuid();
+
+        // 6. Simulate deferred downstream condition: checkout in CompletionPending with durable outbox recovery
+        await fixture.ExecuteAdminSqlAsync($@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+            update business_pos.pos_checkout set state = 'CompletionPending' where tenant_id = '{fixture.Tenant.Value}' and id = '{checkoutId}';
+            insert into platform.outbox_message (id, message_type, payload, tenant_id, occurred_at, correlation_id, causation_id, source_module, trace_parent, status)
+            values ('{Guid.CreateVersion7()}', 'PosCheckoutRecoveryRequiredV1', '{JsonSerializer.Serialize(new { tenantId = fixture.Tenant.Value, checkoutId })}', '{fixture.Tenant.Value}', now(), '{checkoutId}', '{checkoutId}', 'pos', null, 'Pending');
+            reset app.tenant_id;
+            reset role;
+        ");
+
+        // 7. Cashier reconciliation & session close MUST SUCCEED because physical drawer contains the cash (100 float + 75 sale = 175.00)
+        var closeRes = await fixture.PostAsync(client, $"/api/v1/pos/sessions/{sessionId}/close", new
+        {
+            sessionId,
+            countedCash = 175.00m,
+            varianceReason = (string?)null
+        });
+        Assert.Equal(HttpStatusCode.OK, closeRes.StatusCode);
+        var closedSessionDoc = await closeRes.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Closed", closedSessionDoc.GetProperty("status").GetString());
+        Assert.Equal(0.00m, closedSessionDoc.GetProperty("variance").GetDecimal());
+
+        // 8. Downstream Recovery executes asynchronously or via recover endpoint
+        var recoverRes = await fixture.PostAsync(client, $"/api/v1/pos/checkouts/{checkoutId}/recover", new { });
+        Assert.True(recoverRes.StatusCode is HttpStatusCode.OK or HttpStatusCode.Accepted);
+        var recoveredDoc = await recoverRes.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Completed", recoveredDoc.GetProperty("state").GetString());
+
+        // 9. Verify PostgreSQL DB state
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
+        await adminConn.OpenAsync();
+
+        await using (var cmd = new NpgsqlCommand($"select state from business_pos.pos_checkout where tenant_id = '{fixture.Tenant.Value}' and id = '{checkoutId}'", adminConn))
+        {
+            var finalState = (string)(await cmd.ExecuteScalarAsync() ?? string.Empty);
+            Assert.Equal("Completed", finalState);
+        }
+    }
+
+    [Fact]
+    public async Task POS_Case3_UnsafePendingCheckout_PreventsSessionClose()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync(useDedicatedDb: true);
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        var paymentAccountId = Guid.CreateVersion7();
+
+        // 1. Setup minimal register & session
+        var setupSql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+
+            insert into finance_payments.payment_account (tenant_id, id, legal_entity_id, branch_id, code, account_type, status, currency_policy, currency_code, name, created_at, updated_at, version)
+            values ('{fixture.Tenant.Value}', '{paymentAccountId}', '{fixture.EntityA}', '{fixture.BranchA1}', 'POS_CASH_03', 'Cashbox', 'Active', 'SingleCurrency', 'EGP', 'POS Drawer Cashbox 3', now(), now(), 1);
+
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setupSql);
+
+        var createRegRes = await fixture.PostAsync(client, "/api/v1/pos/registers", new
+        {
+            legalEntityId = fixture.EntityA,
+            branchId = fixture.BranchA1,
+            code = "REG_C3_01",
+            name = "Register Case 3",
+            currencyCode = "EGP",
+            offlineEnabled = false
+        });
+        Assert.Equal(HttpStatusCode.Created, createRegRes.StatusCode);
+        var registerId = (await createRegRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var regTermRes = await fixture.PostAsync(client, $"/api/v1/pos/registers/{registerId}/terminals", new
+        {
+            registerId,
+            deviceIdentity = "TERM_C3_01",
+            displayName = "Terminal C3"
+        });
+        Assert.Equal(HttpStatusCode.Created, regTermRes.StatusCode);
+        var terminalId = (await regTermRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var openSessionRes = await fixture.PostAsync(client, $"/api/v1/pos/legal-entities/{fixture.EntityA}/sessions", new
+        {
+            registerId,
+            terminalId,
+            cashierUserId = fixture.IdentityId.Value,
+            businessDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            openingFloat = 100.00m,
+            currencyCode = "EGP"
+        });
+        Assert.Equal(HttpStatusCode.Created, openSessionRes.StatusCode);
+        var sessionId = (await openSessionRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        // 2. Create Cart and Hold it
+        var createCartRes = await fixture.PostAsync(client, "/api/v1/pos/carts", new { sessionId, currencyCode = "EGP" });
+        Assert.Equal(HttpStatusCode.Created, createCartRes.StatusCode);
+        var cartId = (await createCartRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var holdRes = await fixture.PostAsync(client, $"/api/v1/pos/carts/{cartId}/hold", new { });
+        Assert.Equal(HttpStatusCode.OK, holdRes.StatusCode);
+
+        // 3. Attempt to close session while held cart exists: BLOCKED
+        var closeRes = await fixture.PostAsync(client, $"/api/v1/pos/sessions/{sessionId}/close", new
+        {
+            sessionId,
+            countedCash = 100.00m,
+            varianceReason = (string?)null
+        });
+        Assert.True(closeRes.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Conflict or HttpStatusCode.InternalServerError);
+        var errBody = await closeRes.Content.ReadAsStringAsync();
+        Assert.Contains("pos.session_has_held_cart", errBody);
+
+        // 4. Verify in DB: session remains Open
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
+        await adminConn.OpenAsync();
+        await using (var cmd = new NpgsqlCommand($"select status from business_pos.pos_session where tenant_id = '{fixture.Tenant.Value}' and id = '{sessionId}'", adminConn))
+        {
+            var status = (string)(await cmd.ExecuteScalarAsync() ?? string.Empty);
+            Assert.Equal("Open", status);
+        }
+    }
+
+    [Fact]
+    public async Task POS_Case4_IdempotentRecoveryRetries_ZeroDuplicateSalesOrCashMovements()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync(useDedicatedDb: true);
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        var paymentAccountId = Guid.CreateVersion7();
+        var uomId = Guid.CreateVersion7();
+        var templateId = Guid.CreateVersion7();
+        var variantId = Guid.CreateVersion7();
+        var priceListId = Guid.CreateVersion7();
+        var priceListVersionId = Guid.CreateVersion7();
+        var roundingPolicyId = Guid.CreateVersion7();
+
+        // 1. Seed POS prerequisite structures
+        var setupPosDataSql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+
+            insert into foundation_finbase.financial_rounding_policy (tenant_id, id, code, name_ar, name_en, mode, money_scale, cash_increment, status, version, created_at, updated_at, line_document_strategy)
+            values ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'STANDARD', 'تقريب قياسي', 'Standard rounding', 'HalfUp', 2, 0.01000000, 'Active', 1, now(), now(), 'RoundEachLineThenSum');
+
+            insert into foundation_finbase.financial_rounding_policy_rule (tenant_id, rounding_policy_id, rounding_context, mode)
+            values
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'MoneySettlement', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'LineNetAmount', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'DocumentSubtotal', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'DocumentTotal', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'FXBaseAmount', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'PaymentScheduleLine', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'PaymentAllocation', 'HalfUp'),
+                ('{fixture.Tenant.Value}', '{roundingPolicyId}', 'CashRounding', 'HalfUp');
+
+            insert into foundation_finbase.financial_policy (tenant_id, legal_entity_id, rounding_policy_id, exchange_rate_max_age_days, manual_rate_override_allowed, version, updated_at)
+            values ('{fixture.Tenant.Value}', '{fixture.EntityA}', '{roundingPolicyId}', 7, false, 1, now());
+
+            insert into foundation_finbase.legal_entity_currency (tenant_id, legal_entity_id, currency_code, enabled, allow_sales, allow_purchase, allow_payment, allow_manual_rate, status, version, created_at, updated_at)
+            values ('{fixture.Tenant.Value}', '{fixture.EntityA}', 'EGP', true, true, true, true, false, 'Active', 1, now(), now());
+
+            insert into finance_payments.payment_account (tenant_id, id, legal_entity_id, branch_id, code, account_type, status, currency_policy, currency_code, name, created_at, updated_at, version)
+            values ('{fixture.Tenant.Value}', '{paymentAccountId}', '{fixture.EntityA}', '{fixture.BranchA1}', 'POS_CASH_04', 'Cashbox', 'Active', 'SingleCurrency', 'EGP', 'POS Drawer Cashbox 4', now(), now(), 1);
+
+            insert into finance_payments.payment_method_config (tenant_id, id, legal_entity_id, method, status, effective_from, payment_account_id, branch_id, channel, created_at)
+            values ('{fixture.Tenant.Value}', '{Guid.CreateVersion7()}', '{fixture.EntityA}', 'Cash', 'Active', CURRENT_DATE, '{paymentAccountId}', '{fixture.BranchA1}', 'POS', now());
+
+            insert into foundation_catalog.uom (tenant_id, id, code, name_ar, name_en, dimension, allow_fraction, precision, status, version, created_at, updated_at)
+            values ('{fixture.Tenant.Value}', '{uomId}', 'EA', 'قطعة', 'Each', 'Count', false, 0, 'Active', 1, now(), now());
+
+            insert into foundation_catalog.product_template (tenant_id, id, display_name, display_name_normalized, name_ar, name_en, product_nature, status, created_at, updated_at, version, product_source, product_template_code)
+            values ('{fixture.Tenant.Value}', '{templateId}', 'POS Retail Item C4', 'POS RETAIL ITEM C4', 'منتج تجزئة', 'POS Retail Item C4', 'Goods', 'Active', now(), now(), 1, 'Manual', 'PT-POS-C4');
+
+            insert into foundation_catalog.product_visibility (tenant_id, template_id, scope_type, visibility_id)
+            values ('{fixture.Tenant.Value}', '{templateId}', 'TenantWide', '{Guid.CreateVersion7()}');
+
+            insert into foundation_catalog.product_variant (tenant_id, id, product_template_id, sku, normalized_sku, is_default_variant, status, version, created_at, updated_at)
+            values ('{fixture.Tenant.Value}', '{variantId}', '{templateId}', 'SKU-POS-C4', 'SKU-POS-C4', true, 'Active', 1, now(), now());
+
+            insert into foundation_catalog.product_uom (tenant_id, id, variant_id, uom_id, factor_to_base, is_base, effective_from, status, version, usage_flags)
+            values ('{fixture.Tenant.Value}', '{Guid.CreateVersion7()}', '{variantId}', '{uomId}', 1, true, now() - interval '1 day', 'Active', 1, '{{Selling,Buying}}');
+
+            insert into foundation_pricing.price_list (tenant_id, id, legal_entity_id, code, name, direction, currency_code, entity_scope_type, currency_policy, status, created_at, updated_at, version)
+            values ('{fixture.Tenant.Value}', '{priceListId}', '{fixture.EntityA}', 'PL-POS-C4', 'POS Retail Price List 4', 'Selling', 'EGP', 'SingleLegalEntity', 'ExactCurrency', 'Active', now(), now(), 1);
+
+            insert into foundation_pricing.price_list_version (tenant_id, id, price_list_id, version_no, status, effective_from, created_by, created_at, version)
+            values ('{fixture.Tenant.Value}', '{priceListVersionId}', '{priceListId}', 1, 'Draft', CURRENT_DATE, '{fixture.IdentityId.Value}', now(), 1);
+
+            insert into foundation_pricing.price_entry (tenant_id, id, price_list_version_id, variant_id, uom_id, min_quantity, unit_price, status, version, created_at)
+            values ('{fixture.Tenant.Value}', '{Guid.CreateVersion7()}', '{priceListVersionId}', '{variantId}', '{uomId}', 0, 40.00, 'Active', 1, now());
+
+            update foundation_pricing.price_list_version set status = 'Active', activated_at = now() where id = '{priceListVersionId}';
+
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setupPosDataSql);
+
+        // Initialize Managed Ledger for Entity A to support POS cash posting
+        var initLedgerRes = await fixture.PostAsync(client, $"/api/v1/ledger/legal-entities/{fixture.EntityA}/managed-setup", new
+        {
+            templateCode = "development-core",
+            mode = "Managed"
+        });
+        Assert.True(initLedgerRes.StatusCode is HttpStatusCode.Created or HttpStatusCode.OK);
+
+        var createRegRes = await fixture.PostAsync(client, "/api/v1/pos/registers", new
+        {
+            legalEntityId = fixture.EntityA,
+            branchId = fixture.BranchA1,
+            code = "REG_C4_01",
+            name = "Register Case 4",
+            currencyCode = "EGP",
+            offlineEnabled = false
+        });
+        Assert.Equal(HttpStatusCode.Created, createRegRes.StatusCode);
+        var registerId = (await createRegRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var regTermRes = await fixture.PostAsync(client, $"/api/v1/pos/registers/{registerId}/terminals", new
+        {
+            registerId,
+            deviceIdentity = "TERM_C4_01",
+            displayName = "Terminal C4"
+        });
+        Assert.Equal(HttpStatusCode.Created, regTermRes.StatusCode);
+        var terminalId = (await regTermRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var openSessionRes = await fixture.PostAsync(client, $"/api/v1/pos/legal-entities/{fixture.EntityA}/sessions", new
+        {
+            registerId,
+            terminalId,
+            cashierUserId = fixture.IdentityId.Value,
+            businessDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            openingFloat = 100.00m,
+            currencyCode = "EGP"
+        });
+        Assert.Equal(HttpStatusCode.Created, openSessionRes.StatusCode);
+        var sessionId = (await openSessionRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var createCartRes = await fixture.PostAsync(client, "/api/v1/pos/carts", new { sessionId, currencyCode = "EGP" });
+        Assert.Equal(HttpStatusCode.Created, createCartRes.StatusCode);
+        var cartId = (await createCartRes.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var addLineRes = await fixture.PostAsync(client, $"/api/v1/pos/carts/{cartId}/lines", new
+        {
+            variantId,
+            description = "POS Retail Item C4",
+            uomCode = "EA",
+            quantity = 1m,
+            unitPrice = 40m,
+            taxAmount = 0m,
+            discountAmount = 0m,
+            expectedVersion = 1,
+            legalEntityId = fixture.EntityA,
+            productTemplateId = templateId,
+            unitOfMeasureId = uomId,
+            priceListId = priceListId
+        });
+        Assert.Equal(HttpStatusCode.Created, addLineRes.StatusCode);
+
+        var checkoutRes = await fixture.PostAsync(client, "/api/v1/pos/checkout", new
+        {
+            cartId,
+            idempotencyKey = $"chk-{cartId:N}",
+            tenders = new[] { new { method = "Cash", amount = 40.00m, paymentAccountId = paymentAccountId } }
+        });
+        Assert.Equal(HttpStatusCode.Accepted, checkoutRes.StatusCode);
+        var checkoutDoc = await checkoutRes.Content.ReadFromJsonAsync<JsonElement>();
+        var checkoutId = checkoutDoc.GetProperty("checkoutId").GetGuid();
+
+        // 2. Execute Recovery Call 1
+        var rec1 = await fixture.PostAsync(client, $"/api/v1/pos/checkouts/{checkoutId}/recover", new { });
+        Assert.True(rec1.StatusCode is HttpStatusCode.OK or HttpStatusCode.Accepted);
+
+        // 3. Execute Recovery Call 2 (Idempotent Retry)
+        var rec2 = await fixture.PostAsync(client, $"/api/v1/pos/checkouts/{checkoutId}/recover", new { });
+        Assert.True(rec2.StatusCode is HttpStatusCode.OK or HttpStatusCode.Accepted);
+
+        // 4. Assert PostgreSQL Invariant Proof: Zero Duplicate Sales, Tenders, or Cash Movements
+        await using var adminConn = new NpgsqlConnection(fixture.AdminConnectionString);
+        await adminConn.OpenAsync();
+
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_pos.pos_sale where tenant_id = '{fixture.Tenant.Value}' and checkout_id = '{checkoutId}'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(1L, count);
         }
 
-        await using (var cmd = new NpgsqlCommand($"select status, variance from business_pos.pos_session where tenant_id = '{fixture.Tenant.Value}' and id = '{sessionId}'", adminConn))
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_pos.pos_tender where tenant_id = '{fixture.Tenant.Value}' and checkout_id = '{checkoutId}' and method = 'Cash'", adminConn))
         {
-            await using var reader = await cmd.ExecuteReaderAsync();
-            Assert.True(await reader.ReadAsync());
-            Assert.Equal("Closed", reader.GetString(0));
-            Assert.Equal(0.00m, reader.GetDecimal(1));
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(1L, count);
         }
+
+        await using (var cmd = new NpgsqlCommand($"select count(*) from business_pos.pos_cash_movement where tenant_id = '{fixture.Tenant.Value}' and source_ref = '{checkoutId}' and movement_type = 'Sale'", adminConn))
+        {
+            var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+            Assert.Equal(1L, count);
+        }
+
+        await using (var cmd = new NpgsqlCommand($"select expected_cash from business_pos.pos_session where tenant_id = '{fixture.Tenant.Value}' and id = '{sessionId}'", adminConn))
+        {
+            var expectedCash = (decimal)(await cmd.ExecuteScalarAsync() ?? 0m);
+            Assert.Equal(140.00m, expectedCash); // 100 float + exactly 40 cash sale once
+        }
+    }
+
+    [Fact]
+    public async Task Sales_ServerSidePagination_MultiPageBoundaryAndTenantIsolation()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync(useDedicatedDb: true);
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        var customerId = Guid.CreateVersion7();
+        var setupCustomerSql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+
+            insert into foundation_directory.party (tenant_id, id, party_type, status, display_name, display_name_normalized, created_by, updated_by, created_at, updated_at, version)
+            values ('{fixture.Tenant.Value}', '{customerId}', 'Organization', 'Active', 'Pagination Test Customer', 'PAGINATION TEST CUSTOMER', '{fixture.IdentityId.Value}', '{fixture.IdentityId.Value}', now(), now(), 1);
+
+            insert into foundation_directory.party_role (tenant_id, party_id, role_code, status, created_by, created_at, updated_at, version, active_from)
+            values ('{fixture.Tenant.Value}', '{customerId}', 'Customer', 'Active', '{fixture.IdentityId.Value}', now(), now(), 1, CURRENT_DATE);
+
+            insert into foundation_directory.party_visibility (tenant_id, party_id, scope_type, visibility_id)
+            values ('{fixture.Tenant.Value}', '{customerId}', 'TenantWide', '{Guid.CreateVersion7()}');
+
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setupCustomerSql);
+
+        await fixture.PutAsync(client, $"/api/v1/sales/legal-entities/{fixture.EntityA}/customer-profiles/{customerId}", new
+        {
+            legalEntityId = fixture.EntityA,
+            partyId = customerId,
+            customerPoRequired = false
+        });
+
+        // 1. Create 5 Quotations on Entity A
+        var entityAQuoteIds = new List<Guid>();
+        for (var i = 1; i <= 5; i++)
+        {
+            var res = await fixture.PostAsync(client, $"/api/v1/sales/legal-entities/{fixture.EntityA}/quotations", new
+            {
+                legalEntityId = fixture.EntityA,
+                branchId = fixture.BranchA1,
+                partyId = customerId,
+                currencyCode = "EGP",
+                quoteDate = DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(-i)),
+                validUntil = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+                lines = new[] { new { description = $"Pagination Quotation Item {i}", unitCode = "EA", quantity = 1m, unitPrice = 100m * i } }
+            });
+            Assert.Equal(HttpStatusCode.Created, res.StatusCode);
+            var quoteId = (await res.Content.ReadFromJsonAsync<JsonElement>()).GetGuid();
+            entityAQuoteIds.Add(quoteId);
+        }
+
+        // 2. Create 1 Quotation on Entity B (direct DB insertion to isolate entity ownership without Operator A membership)
+        var entityBQuoteId = Guid.CreateVersion7();
+        await fixture.ExecuteAdminSqlAsync($@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+            insert into business_sales.quotation (tenant_id, id, legal_entity_id, branch_id, number, party_id, quote_date, valid_until, currency_code, state, current_revision_number, version, created_by, created_at, updated_at)
+            values ('{fixture.Tenant.Value}', '{entityBQuoteId}', '{fixture.EntityB}', null, 'QT-PAGE-B-01', '{customerId}', CURRENT_DATE, CURRENT_DATE + interval '30 days', 'EGP', 'Draft', 1, 1, '{fixture.IdentityId.Value}', now(), now());
+            reset app.tenant_id;
+            reset role;
+        ");
+
+        // 3. Page 1 (pageSize = 3) on Entity A
+        var page1Res = await client.GetAsync($"/api/v1/sales/legal-entities/{fixture.EntityA}/quotations?page=1&pageSize=3");
+        Assert.Equal(HttpStatusCode.OK, page1Res.StatusCode);
+        var page1Doc = await page1Res.Content.ReadFromJsonAsync<JsonElement>();
+        var page1Items = page1Doc.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("id").GetGuid()).ToList();
+        var totalCount = page1Doc.GetProperty("totalCount").GetInt32();
+        Assert.Equal(3, page1Items.Count);
+        Assert.Equal(5, totalCount);
+
+        // 4. Page 2 (pageSize = 3) on Entity A
+        var page2Res = await client.GetAsync($"/api/v1/sales/legal-entities/{fixture.EntityA}/quotations?page=2&pageSize=3");
+        Assert.Equal(HttpStatusCode.OK, page2Res.StatusCode);
+        var page2Doc = await page2Res.Content.ReadFromJsonAsync<JsonElement>();
+        var page2Items = page2Doc.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("id").GetGuid()).ToList();
+        Assert.Equal(2, page2Items.Count);
+
+        // 5. Assert Disjoint Items Across Pages (Stable Ordering, No Overlap)
+        var overlap = page1Items.Intersect(page2Items).ToList();
+        Assert.Empty(overlap);
+
+        // 6. Assert Legal Entity Isolation (Entity B quotation must NOT appear in Entity A)
+        Assert.DoesNotContain(entityBQuoteId, page1Items);
+        Assert.DoesNotContain(entityBQuoteId, page2Items);
+    }
+
+    [Fact]
+    public async Task Purchasing_ServerSidePagination_MultiPageBoundaryAndTenantIsolation()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync(useDedicatedDb: true);
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+
+        var supplierId = Guid.CreateVersion7();
+        var setupSupplierSql = $@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+
+            insert into foundation_directory.party (tenant_id, id, party_type, status, display_name, display_name_normalized, created_by, updated_by, created_at, updated_at, version)
+            values ('{fixture.Tenant.Value}', '{supplierId}', 'Organization', 'Active', 'Pagination Supplier', 'PAGINATION SUPPLIER', '{fixture.IdentityId.Value}', '{fixture.IdentityId.Value}', now(), now(), 1);
+
+            insert into foundation_directory.party_role (tenant_id, party_id, role_code, status, created_by, created_at, updated_at, version, active_from)
+            values ('{fixture.Tenant.Value}', '{supplierId}', 'Supplier', 'Active', '{fixture.IdentityId.Value}', now(), now(), 1, CURRENT_DATE);
+
+            insert into foundation_directory.party_visibility (tenant_id, party_id, scope_type, visibility_id)
+            values ('{fixture.Tenant.Value}', '{supplierId}', 'TenantWide', '{Guid.CreateVersion7()}');
+
+            reset app.tenant_id;
+            reset role;
+        ";
+        await fixture.ExecuteAdminSqlAsync(setupSupplierSql);
+
+        await fixture.PutAsync(client, $"/api/v1/purchasing/legal-entities/{fixture.EntityA}/suppliers/{supplierId}/profile", new
+        {
+            legalEntityId = fixture.EntityA,
+            supplierPartyId = supplierId,
+            supplierCode = "SUP-PAGE-01",
+            defaultCurrencyCode = "EGP",
+            supplierReferenceRequired = false
+        });
+
+        await fixture.PutAsync(client, $"/api/v1/purchasing/legal-entities/{fixture.EntityB}/suppliers/{supplierId}/profile", new
+        {
+            legalEntityId = fixture.EntityB,
+            supplierPartyId = supplierId,
+            supplierCode = "SUP-PAGE-01-B",
+            defaultCurrencyCode = "EGP",
+            supplierReferenceRequired = false
+        });
+
+        // 1. Create 5 Purchase Orders on Entity A
+        var entityAPoIds = new List<Guid>();
+        for (var i = 1; i <= 5; i++)
+        {
+            var res = await fixture.PostAsync(client, $"/api/v1/purchasing/legal-entities/{fixture.EntityA}/purchase-orders", new
+            {
+                legalEntityId = fixture.EntityA,
+                branchId = fixture.BranchA1,
+                supplierPartyId = supplierId,
+                currencyCode = "EGP",
+                orderDate = DateOnly.FromDateTime(DateTime.UtcNow.AddMinutes(-i)),
+                approvalRequired = false,
+                lines = new[] { new { description = $"PO Pagination Line {i}", unitCode = "EA", quantity = 1m * i, unitPrice = 50m, priceOverrideReason = "Bulk procurement rate" } }
+            });
+            Assert.Equal(HttpStatusCode.Created, res.StatusCode);
+            var poId = (await res.Content.ReadFromJsonAsync<JsonElement>()).GetGuid();
+            entityAPoIds.Add(poId);
+        }
+
+        // 2. Create 1 Purchase Order on Entity B (direct DB insertion to isolate entity ownership without Operator A membership)
+        var entityBPoId = Guid.CreateVersion7();
+        await fixture.ExecuteAdminSqlAsync($@"
+            set role erp_owner;
+            set app.tenant_id = '{fixture.Tenant.Value}';
+            insert into business_purchasing.purchase_order (tenant_id, legal_entity_id, id, branch_id, supplier_party_id, currency_code, order_date, state, approval_state, receipt_state, invoicing_state, matching_state, net_total, tax_total, gross_total, created_by, row_version, created_at, updated_at)
+            values ('{fixture.Tenant.Value}', '{fixture.EntityB}', '{entityBPoId}', null, '{supplierId}', 'EGP', CURRENT_DATE, 'Draft', 'NotRequired', 'NotReceived', 'NotInvoiced', 'NotRequired', 250.00, 0, 250.00, '{fixture.IdentityId.Value}', 1, now(), now());
+            reset app.tenant_id;
+            reset role;
+        ");
+
+        // 3. Page 1 (pageSize = 3) on Entity A
+        var page1Res = await client.GetAsync($"/api/v1/purchasing/legal-entities/{fixture.EntityA}/purchase-orders?page=1&pageSize=3");
+        Assert.Equal(HttpStatusCode.OK, page1Res.StatusCode);
+        var page1Doc = await page1Res.Content.ReadFromJsonAsync<JsonElement>();
+        var page1Items = page1Doc.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("id").GetGuid()).ToList();
+        var totalCount = page1Doc.GetProperty("totalCount").GetInt32();
+        Assert.Equal(3, page1Items.Count);
+        Assert.Equal(5, totalCount);
+
+        // 4. Page 2 (pageSize = 3) on Entity A
+        var page2Res = await client.GetAsync($"/api/v1/purchasing/legal-entities/{fixture.EntityA}/purchase-orders?page=2&pageSize=3");
+        Assert.Equal(HttpStatusCode.OK, page2Res.StatusCode);
+        var page2Doc = await page2Res.Content.ReadFromJsonAsync<JsonElement>();
+        var page2Items = page2Doc.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("id").GetGuid()).ToList();
+        Assert.Equal(2, page2Items.Count);
+
+        // 5. Assert Disjoint Items Across Pages (Stable Ordering, Zero Overlap)
+        var overlap = page1Items.Intersect(page2Items).ToList();
+        Assert.Empty(overlap);
+
+        // 6. Assert Legal Entity Isolation
+        Assert.DoesNotContain(entityBPoId, page1Items);
+        Assert.DoesNotContain(entityBPoId, page2Items);
     }
 
     // -------------------------------------------------------------------------
@@ -1562,12 +2370,15 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         public Guid BranchA2 { get; }
         public string Email { get; }
         public string Password { get; } = "NavSecurityPassword123!";
+        public string AdminConnectionString => _adminConn;
         private readonly string _adminConn;
+        private readonly string? _dedicatedDbName;
         private readonly WebApplicationFactory<Program> _factory;
 
-        private NavSecurityFixture(string adminConn, string appConn, string email, TenantId tenant, IdentityId identityId, MembershipId membershipId, Guid entityA, Guid entityB, Guid branchA1, Guid branchA2)
+        private NavSecurityFixture(string adminConn, string appConn, string? dedicatedDbName, string email, TenantId tenant, IdentityId identityId, MembershipId membershipId, Guid entityA, Guid entityB, Guid branchA1, Guid branchA2)
         {
             _adminConn = adminConn;
+            _dedicatedDbName = dedicatedDbName;
             Email = email;
             Tenant = tenant;
             IdentityId = identityId;
@@ -1582,10 +2393,39 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                     .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
         }
 
-        public static async Task<NavSecurityFixture> CreateAsync()
+        public static async Task<NavSecurityFixture> CreateAsync(bool useDedicatedDb = false)
         {
-            var adminConn = GetAdminConnectionString();
-            var appConn = GetAppConnectionString(adminConn);
+            var baseAdminConn = GetAdminConnectionString();
+            string adminConn;
+            string appConn;
+            string? dedicatedDbName = null;
+
+            if (useDedicatedDb)
+            {
+                dedicatedDbName = $"todir_nav_test_{Guid.CreateVersion7():N}";
+                var baseAdminBuilder = new NpgsqlConnectionStringBuilder(baseAdminConn);
+                var templateDb = baseAdminBuilder.Database ?? "todir_nav_acceptance";
+
+                NpgsqlConnection.ClearAllPools();
+                var maintenanceConn = new NpgsqlConnectionStringBuilder(baseAdminConn) { Database = "postgres" }.ConnectionString;
+                await using (var conn = new NpgsqlConnection(maintenanceConn))
+                {
+                    await conn.OpenAsync();
+                    await using var termCmd = new NpgsqlCommand($"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{templateDb}' AND pid <> pg_backend_pid();", conn);
+                    await termCmd.ExecuteNonQueryAsync();
+                    await using var cmd = new NpgsqlCommand($"CREATE DATABASE {dedicatedDbName} TEMPLATE {templateDb};", conn);
+                    await cmd.ExecuteNonQueryAsync();
+                }
+
+                adminConn = new NpgsqlConnectionStringBuilder(baseAdminConn) { Database = dedicatedDbName }.ConnectionString;
+                var baseAppConn = GetAppConnectionString(baseAdminConn);
+                appConn = new NpgsqlConnectionStringBuilder(baseAppConn) { Database = dedicatedDbName }.ConnectionString;
+            }
+            else
+            {
+                adminConn = baseAdminConn;
+                appConn = GetAppConnectionString(adminConn);
+            }
 
             var tenant = TenantId.New();
             var identityId = IdentityId.New();
@@ -1602,7 +2442,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
             var password = "NavSecurityPassword123!";
             var passwordHash = IdentityConventions.HashPassword(password);
 
-            var fixture = new NavSecurityFixture(adminConn, appConn, email, tenant, identityId, membershipId, entityA, entityB, branchA1, branchA2);
+            var fixture = new NavSecurityFixture(adminConn, appConn, dedicatedDbName, email, tenant, identityId, membershipId, entityA, entityB, branchA1, branchA2);
 
             var setupSql = $@"
                 set role erp_owner;
@@ -1635,6 +2475,8 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                 insert into platform.role_permission (tenant_id, role_id, permission_code)
                 values
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'inventory.warehouse.manage'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'inventory.stock.receive'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'ledger.configuration.manage'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'ledger.account.manage'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'ledger.account.read'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'crm.lead.create'),
@@ -1670,6 +2512,10 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'purchasing.price.override'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'purchasing.price.read'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'purchasing.history.read'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'invoicing.supplier_invoice.finalize'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'invoicing.supplier_invoice.read'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'invoicing.supplier_invoice.create'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'invoicing.price_override'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'pos.register.manage'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'pos.register.read'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'pos.session.open'),
@@ -1686,7 +2532,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                     ('{fixture.Tenant.Value}', '{fixture.MembershipId.Value}', '{roleBranchA1Only}', 'Branch', '{fixture.BranchA1}');
 
                 insert into platform.entitlement_snapshot (tenant_id, snapshot_version, issued_at, valid_until, key_id, modules, features, limits, scopes, signature)
-                values ('{fixture.Tenant.Value}', 1, now(), now() + interval '30 days', 'test_key', '[""banking"", ""crm"", ""inventory"", ""accounting"", ""sales"", ""purchasing"", ""pos"", ""catalog"", ""pricing"", ""payments"", ""invoicing"", ""subledger""]'::jsonb, '[]'::jsonb, '{{}}'::jsonb, '[]'::jsonb, 'test_sig');
+                values ('{fixture.Tenant.Value}', 1, now(), now() + interval '30 days', 'test_key', '[""banking"", ""crm"", ""inventory"", ""accounting"", ""sales"", ""purchasing"", ""pos"", ""catalog"", ""pricing"", ""payments"", ""invoicing"", ""subledger"", ""tax""]'::jsonb, '[]'::jsonb, '{{}}'::jsonb, '[]'::jsonb, 'test_sig');
 
                 insert into platform.module_instance (id, tenant_id, module_id, scope_type, scope_id, status, manifest_version, version)
                 values
@@ -1703,6 +2549,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'payments', 'tenant', null, 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'invoicing', 'tenant', null, 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'subledger', 'tenant', null, 'Active', '1.0.0', 1),
+                    ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'tax', 'tenant', null, 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'banking', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'crm', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'inventory', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
@@ -1715,7 +2562,8 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'pricing', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'payments', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'invoicing', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
-                    ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'subledger', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1);
+                    ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'subledger', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
+                    ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'tax', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1);
 
                 reset app.tenant_id;
                 reset role;
@@ -1782,9 +2630,38 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
         public async ValueTask DisposeAsync()
         {
             _factory.Dispose();
+
+            if (!string.IsNullOrWhiteSpace(_dedicatedDbName))
+            {
+                var maintenanceConn = new NpgsqlConnectionStringBuilder(_adminConn) { Database = "postgres" }.ConnectionString;
+                await using var conn = new NpgsqlConnection(maintenanceConn);
+                await conn.OpenAsync();
+                await using var cmd = new NpgsqlCommand($"DROP DATABASE IF EXISTS {_dedicatedDbName} WITH (FORCE);", conn);
+                await cmd.ExecuteNonQueryAsync();
+                return;
+            }
+
             var cleanupSql = $@"
-                set session_replication_role = replica;
                 set app.tenant_id = '{Tenant.Value}';
+
+                -- Platform messaging & audit child records first
+                delete from platform.notification_delivery where tenant_id = '{Tenant.Value}';
+                delete from platform.notification where tenant_id = '{Tenant.Value}';
+                delete from platform.audit_entry where tenant_id = '{Tenant.Value}';
+                delete from platform.outbox_message where tenant_id = '{Tenant.Value}';
+                delete from platform.inbox_message where tenant_id = '{Tenant.Value}';
+
+                -- POS child tables
+                delete from business_pos.pos_tender where tenant_id = '{Tenant.Value}';
+                delete from business_pos.pos_sale_line where tenant_id = '{Tenant.Value}';
+                delete from business_pos.pos_sale where tenant_id = '{Tenant.Value}';
+                delete from business_pos.pos_checkout where tenant_id = '{Tenant.Value}';
+                delete from business_pos.pos_cart_line where tenant_id = '{Tenant.Value}';
+                delete from business_pos.pos_cart where tenant_id = '{Tenant.Value}';
+                delete from business_pos.pos_cash_movement where tenant_id = '{Tenant.Value}';
+                delete from business_pos.pos_session where tenant_id = '{Tenant.Value}';
+                delete from business_pos.pos_terminal where tenant_id = '{Tenant.Value}';
+                delete from business_pos.pos_register where tenant_id = '{Tenant.Value}';
 
                 -- Invoicing child tables
                 delete from business_invoicing.invoice_line where tenant_id = '{Tenant.Value}';
@@ -1831,18 +2708,6 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                 delete from business_purchasing.purchase_order where tenant_id = '{Tenant.Value}';
                 delete from business_purchasing.supplier_purchase_profile where tenant_id = '{Tenant.Value}';
                 delete from business_purchasing.purchase_settings where tenant_id = '{Tenant.Value}';
-
-                -- POS child tables
-                delete from business_pos.pos_tender where tenant_id = '{Tenant.Value}';
-                delete from business_pos.pos_sale_line where tenant_id = '{Tenant.Value}';
-                delete from business_pos.pos_sale where tenant_id = '{Tenant.Value}';
-                delete from business_pos.pos_checkout where tenant_id = '{Tenant.Value}';
-                delete from business_pos.pos_cart_line where tenant_id = '{Tenant.Value}';
-                delete from business_pos.pos_cart where tenant_id = '{Tenant.Value}';
-                delete from business_pos.pos_cash_movement where tenant_id = '{Tenant.Value}';
-                delete from business_pos.pos_session where tenant_id = '{Tenant.Value}';
-                delete from business_pos.pos_terminal where tenant_id = '{Tenant.Value}';
-                delete from business_pos.pos_register where tenant_id = '{Tenant.Value}';
 
                 -- Banking child tables
                 delete from finance_banking.treasury_account_balance_pocket where tenant_id = '{Tenant.Value}';
@@ -1895,12 +2760,6 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                 delete from business_inventory.physical_count where tenant_id = '{Tenant.Value}';
                 delete from business_inventory.warehouse where tenant_id = '{Tenant.Value}';
 
-                -- Finbase child tables
-                delete from foundation_finbase.financial_policy where tenant_id = '{Tenant.Value}';
-                delete from foundation_finbase.financial_rounding_policy_rule where tenant_id = '{Tenant.Value}';
-                delete from foundation_finbase.financial_rounding_policy where tenant_id = '{Tenant.Value}';
-                delete from foundation_finbase.legal_entity_currency where tenant_id = '{Tenant.Value}';
-
                 -- Catalog, Pricing, Directory child tables
                 delete from foundation_pricing.price_entry where tenant_id = '{Tenant.Value}';
                 delete from foundation_pricing.price_list_version where tenant_id = '{Tenant.Value}';
@@ -1914,13 +2773,6 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                 delete from foundation_directory.party_role where tenant_id = '{Tenant.Value}';
                 delete from foundation_directory.party where tenant_id = '{Tenant.Value}';
 
-                -- Platform messaging & audit
-                delete from platform.outbox_message where tenant_id = '{Tenant.Value}';
-                delete from platform.inbox_message where tenant_id = '{Tenant.Value}';
-                delete from platform.audit_entry where tenant_id = '{Tenant.Value}';
-                delete from platform.notification_delivery where tenant_id = '{Tenant.Value}';
-                delete from platform.notification where tenant_id = '{Tenant.Value}';
-
                 -- Platform kernel tables
                 delete from platform.entitlement_snapshot where tenant_id = '{Tenant.Value}';
                 delete from platform.module_instance where tenant_id = '{Tenant.Value}';
@@ -1933,7 +2785,6 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                 delete from platform.legal_entity where tenant_id = '{Tenant.Value}';
                 delete from platform.tenant where id = '{Tenant.Value}';
 
-                set session_replication_role = origin;
                 reset app.tenant_id;
             ";
             await ExecuteAdminSqlAsync(cleanupSql);

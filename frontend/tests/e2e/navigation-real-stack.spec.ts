@@ -7,27 +7,24 @@ const SECONDARY_ENTITY_ID = 'd8eb39bb-b048-7c5d-bacd-e3a923eee21c';
 const DEV_PASSWORD = process.env.ERP_DEV_PASSWORD || 'TodirDev2026!';
 
 async function loginUser(page: Page, email: string) {
-  await page.goto('/');
   await page.context().clearCookies();
+  const csrfRes = await page.request.get('/api/v1/auth/csrf');
+  const { token } = await csrfRes.json();
+  const loginRes = await page.request.post('/api/v1/auth/login', {
+    data: { email, password: DEV_PASSWORD },
+    headers: { 'X-CSRF-TOKEN': token }
+  });
+  if (loginRes.status() !== 200) {
+    throw new Error(`Login failed for ${email}: status ${loginRes.status()} - ${await loginRes.text()}`);
+  }
+
+  await page.goto('/');
   await page.evaluate(() => {
     try {
-      localStorage.clear();
-      sessionStorage.clear();
       localStorage.setItem('i18nextLng', 'ar');
     } catch {}
   });
-
-  await page.goto('/auth');
   await page.waitForLoadState('networkidle');
-
-  const emailInput = page.locator('#login-email');
-  if (await emailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await emailInput.fill(email);
-    await page.locator('#login-password').fill(DEV_PASSWORD);
-    await page.getByRole('button', { name: /تسجيل الدخول|Sign in/i }).click();
-    await emailInput.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
-    await page.waitForLoadState('networkidle');
-  }
 }
 
 test.describe('TODIR ERP — Real-Stack Navigation & Authorization Acceptance Suite', () => {
@@ -261,18 +258,18 @@ test.describe('TODIR ERP — Real-Stack Navigation & Authorization Acceptance Su
     expect(accessRestored.moduleStatuses.inventory).toBe('Active');
   });
 
-  test('P3 Wave 2 Real-Stack: POS Cashier fast-lane vs Manager report administration', async ({ page }) => {
+  test('P3 Wave 2 Real-Stack: POS Cashier fast-lane workspace and Sessions management', async ({ page }) => {
     // 1. Login as POS Cashier
     await loginUser(page, 'pos-cashier@atlas.com');
     await page.goto('/pos');
     await page.waitForLoadState('networkidle');
 
     // POS Cashier has fast-lane cart access
-    const mainView = page.locator('main, [role="main"]').first();
-    await expect(mainView).toBeVisible({ timeout: 10000 });
+    const posPage = page.locator('[data-testid="pos-checkout-page"]');
+    await expect(posPage).toBeVisible({ timeout: 15000 });
     await expect(page.locator('body')).not.toContainText('غير مصرح لك بالوصول');
 
-    // Direct navigation to administrative reports route must be blocked
+    // Direct navigation to administrative reports route must be blocked for cashier
     await page.goto('/pos/reports');
     await page.waitForLoadState('networkidle');
 
@@ -282,23 +279,61 @@ test.describe('TODIR ERP — Real-Stack Navigation & Authorization Acceptance Su
 
     // 2. Login as POS Manager
     await loginUser(page, 'pos-manager@atlas.com');
-    await page.goto('/pos/reports');
-    await page.waitForLoadState('networkidle');
 
     // Reports page is accessible for POS Manager
-    await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
-    await expect(mainView).toBeVisible({ timeout: 10000 });
-  });
-
-  test('P3 Wave 2 Real-Stack: Administrator full task-driven access across Sales and Purchasing', async ({ page }) => {
-    await loginUser(page, 'admin@atlas.com');
-
-    // 1. Sales task routes
-    await page.goto('/sales/quotations');
+    await page.goto('/pos/reports');
     await page.waitForLoadState('networkidle');
     await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
     await expect(page.locator('main, [role="main"]').first()).toBeVisible({ timeout: 10000 });
 
+    // Sessions management route is accessible and interactive for Manager
+    await page.goto('/pos/sessions');
+    await page.waitForLoadState('networkidle');
+    const sessionsPage = page.locator('[data-testid="pos-sessions-page"]');
+    await expect(sessionsPage).toBeVisible({ timeout: 10000 });
+    const sessionHeading = sessionsPage.locator('h2');
+    await expect(sessionHeading.first()).toBeVisible({ timeout: 10000 });
+  });
+
+  test('P3 Wave 2 Real-Stack: Sales task-driven Quotation workflow and navigation', async ({ page }) => {
+    await loginUser(page, 'admin@atlas.com');
+
+    // 1. Navigate to /sales/quotations
+    await page.goto('/sales/quotations');
+    await page.waitForLoadState('networkidle');
+
+    const quotationsPage = page.locator('[data-testid="sales-quotations-page"]');
+    await expect(quotationsPage).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
+
+    // 2. Interact with Quotation search
+    const searchInput = quotationsPage.locator('input[type="text"], input[type="search"]').first();
+    if (await searchInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await searchInput.fill('QUO-TEST');
+      await expect(searchInput).toHaveValue('QUO-TEST');
+      await searchInput.fill('');
+    }
+
+    // 3. Click "+ إنشاء عرض سعر جديد" to trigger New Quotation Modal
+    const newQuoteBtn = quotationsPage.getByRole('button', { name: /إنشاء عرض سعر جديد|New Quotation/i }).first();
+    await expect(newQuoteBtn).toBeVisible({ timeout: 10000 });
+    await newQuoteBtn.click();
+
+    // 4. Verify modal opens
+    const modalDialog = page.getByRole('dialog').first();
+    await expect(modalDialog).toBeVisible({ timeout: 10000 });
+    await expect(modalDialog).toContainText(/عرض سعر|Quotation/i);
+
+    // 5. Close modal
+    const closeBtn = modalDialog.getByRole('button', { name: /إلغاء|Cancel|إغلاق|Close/i }).first();
+    if (await closeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await closeBtn.click();
+    } else {
+      await page.keyboard.press('Escape');
+    }
+    await expect(modalDialog).not.toBeVisible({ timeout: 5000 });
+
+    // 6. Verify other sales task routes are accessible
     await page.goto('/sales/orders');
     await page.waitForLoadState('networkidle');
     await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
@@ -306,12 +341,47 @@ test.describe('TODIR ERP — Real-Stack Navigation & Authorization Acceptance Su
     await page.goto('/sales/settings');
     await page.waitForLoadState('networkidle');
     await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
+  });
 
-    // 2. Purchasing task routes
+  test('P3 Wave 2 Real-Stack: Purchasing task-driven Orders workflow and navigation', async ({ page }) => {
+    await loginUser(page, 'admin@atlas.com');
+
+    // 1. Navigate to /purchasing/orders
     await page.goto('/purchasing/orders');
     await page.waitForLoadState('networkidle');
+
+    const ordersPage = page.locator('[data-testid="purchase-orders-page"]');
+    await expect(ordersPage).toBeVisible({ timeout: 15000 });
     await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
 
+    // 2. Interact with order search
+    const searchInput = ordersPage.locator('input[type="text"], input[type="search"]').first();
+    if (await searchInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await searchInput.fill('PO-TEST');
+      await expect(searchInput).toHaveValue('PO-TEST');
+      await searchInput.fill('');
+    }
+
+    // 3. Click "إنشاء أمر شراء جديد" to trigger New Order Modal
+    const newOrderBtn = ordersPage.getByRole('button', { name: /أمر شراء جديد|New.*Order/i }).first();
+    await expect(newOrderBtn).toBeVisible({ timeout: 10000 });
+    await newOrderBtn.click();
+
+    // 4. Verify modal opens
+    const modalDialog = page.getByRole('dialog').first();
+    await expect(modalDialog).toBeVisible({ timeout: 10000 });
+    await expect(modalDialog).toContainText(/أمر شراء|Purchase Order/i);
+
+    // 5. Close modal
+    const closeBtn = modalDialog.getByRole('button', { name: /إلغاء|Cancel|إغلاق|Close/i }).first();
+    if (await closeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await closeBtn.click();
+    } else {
+      await page.keyboard.press('Escape');
+    }
+    await expect(modalDialog).not.toBeVisible({ timeout: 5000 });
+
+    // 6. Verify other purchasing task routes are accessible
     await page.goto('/purchasing/receipts');
     await page.waitForLoadState('networkidle');
     await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();

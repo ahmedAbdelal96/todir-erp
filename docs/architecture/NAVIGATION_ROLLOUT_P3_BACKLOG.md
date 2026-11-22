@@ -60,7 +60,7 @@ This backlog tracks the phased transition of TODIR ERP SaaS from coarse single-p
   - 15/15 backend security acceptance tests in `NavigationSecurityAcceptanceTests.cs` verified using controlled Active-to-ReadOnly / Active-to-WindDown transitions.
   - Real-stack Playwright browser acceptance suite (`navigation-real-stack.spec.ts`) passing 4/4 against live ASP.NET Core API (`http://127.0.0.1:5080`) and PostgreSQL (`todir_nav_acceptance`).
 
-### Milestone P3 Wave 2: Sales, Purchasing & POS Delivery (COMPLETED)
+### Milestone P3 Wave 2: Sales, Purchasing & POS Delivery (COMPLETED & ACCEPTED)
 - [x] **Sales Module**:
   - Deconstructed monolithic tabs into 6 dedicated, directly addressable task routes:
     - `/sales`: `SalesOverviewPage`
@@ -72,6 +72,7 @@ This backlog tracks the phased transition of TODIR ERP SaaS from coarse single-p
   - Removed fabricated `sales.return.read` and aligned visibility strictly with manifest permissions: `{ anyOf: ["sales.return.create", "sales.return.approve", "sales.return.execute", "sales.history.read"] }`.
   - Quotation-only operators land directly on `/sales/quotations` with order and return operational views hidden. Settings route strictly guarded by `sales.channel.manage` / `sales.team.manage`.
   - All 24 backend Sales endpoints annotated with `.RequireModuleRead("sales")` or `.RequireModuleMutation("sales", permission)` and enforced with `.AddModuleLifecycleEnforcement()`.
+  - Full end-to-end quotation-to-order lifecycle proven via HTTP/PostgreSQL: quotation creation, acceptance, and conversion to order verified against live database.
 - [x] **Purchasing Module**:
   - Deconstructed monolithic tabs into 8 dedicated, directly addressable task routes:
     - `/purchasing`: `PurchasingOverviewPage`
@@ -86,6 +87,7 @@ This backlog tracks the phased transition of TODIR ERP SaaS from coarse single-p
   - PO clerk vs Receiving clerk vs Three-Way Matching role isolation proven: Receiving clerk lands on `/purchasing/receipts`; PO clerk cannot access matching or settings; Settings guarded by `purchasing.settings.manage`.
   - Added missing `"purchasing.return.create"`, `"purchasing.return.approve"`, `"purchasing.return.execute"` to JSON manifest to guarantee 100% manifest parity.
   - All 22 backend Purchasing endpoints annotated with `.RequireModuleRead("purchasing")` or `.RequireModuleMutation("purchasing", permission)` and enforced with `.AddModuleLifecycleEnforcement()`.
+  - Full end-to-end purchasing workflow proven: PO creation, physical warehouse stock receipt with inventory movement lines, authoritative supplier invoice finalization, and 2-way matching verification.
 - [x] **POS Module**:
   - Fast-lane cashier workflow delivered across 6 dedicated task routes:
     - `/pos`: `PosCheckoutPage` (Cashier Fast Lane)
@@ -98,6 +100,13 @@ This backlog tracks the phased transition of TODIR ERP SaaS from coarse single-p
   - Registered terminals and hardware management strictly guarded by `pos.register.manage`.
   - Commercial entitlement for POS (`purchasable: true`) strictly enforced: unentitled tenants are completely blocked (`403 module.unentitled`). In `ReadOnly`/`WindDown` states, checkout creation and cart mutations are rejected while reports remain readable.
   - All 47 backend POS endpoints annotated with `.RequireModuleRead("pos")` or `.RequireModuleMutation("pos", permission)` and enforced with `.AddModuleLifecycleEnforcement()`.
+  - Financial integrity and durability verified across all 4 critical cases: completed checkout with managed ledger journal posting, `CompletionPending` recovery with durable outbox events, unsafe pending checkout blocking session close, and idempotent recovery retries.
+- [x] **Final Targeted Release Blocker Closure (COMPLETED & VERIFIED)**:
+  - **Blocker A (PostgreSQL Disposable Environment Safety)**: Enforced strict `TODIR_ACCEPTANCE_DISPOSABLE=true`; removed hardcoded password fallbacks; eliminated all `session_replication_role` and `ALTER ROLE` commands; implemented clean template cloning with pool clearing (`NpgsqlConnection.ClearAllPools()`) and idle backend termination.
+  - **Blocker B (POS Financial Integrity & Recovery)**: All 4 POS financial durability cases verified end-to-end with managed ledger setup and outbox integration.
+  - **Blocker C (Purchasing Integration Truth)**: Authoritative invoice finalization via API; physical goods receipt into warehouse/location with inventory movements; clean semantic decoupling for service procurement.
+  - **Blocker D (Real Browser Journeys)**: 7/7 Playwright tests passing against live ASP.NET Core API and PostgreSQL with real task interactions (Sales Quotations modal, Purchasing Orders modal, POS cashier workspace and session management).
+  - **Blocker E (Evidence Accuracy & Multi-Page Server Pagination)**: Implemented multi-page boundary crossing, total count verification, stable ordering, and cross-entity isolation tests for Sales and Purchasing.
 
 ---
 
@@ -122,7 +131,7 @@ Per canonical architecture governance and explicit Product Owner instruction, th
 | **Frontend Unit Suite** | `pnpm run test:frontend` | **PASSED** | 274/274 tests passed (57 suites) |
 | **Permission Audit** | `node --test frontend/tests/navigation/permissions-manifest-audit.test.ts` | **PASSED** | 100% of permissions verified against 24 module manifests (12/12 test cases) |
 | **Lifecycle Coverage Audit** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~ModuleLifecycleCoverageAuditTests` | **PASSED** | 6/6 tests passed (Sales, Purchasing, POS, Banking, CRM, Accounting, Inventory verified) |
-| **Wave 2 Integration Suite** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~NavigationSecurityAcceptanceTests` | **PASSED** | 21/21 tests passed; Sales, Purchasing, POS complete E2E workflows verified; 0 leftover database rows |
+| **Wave 2 Integration Suite** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~NavigationSecurityAcceptanceTests` | **PASSED** | 27/27 tests passed; Disposable template isolation, POS durable recovery (4 cases), Purchasing physical stock receipt & invoice finalization, Sales quotation-to-order, and multi-page server pagination verified; 0 leftover database rows |
 | **Wave 2 Domain Suites** | `dotnet test backend/Tests/Modules/{POS,Purchasing,Sales}/` | **PASSED** | 44/44 tests passed (POS: 32, Purchasing: 10, Sales: 2) |
-| **Browser E2E UI Regression** | `pnpm --dir frontend exec playwright test tests/e2e/navigation-access.spec.ts` | **PASSED** | 9/9 browser journeys passed in Chromium (including Sales, Purchasing, POS narrow-role journeys) |
+| **Browser E2E Real-Stack Suite** | `pnpm --filter frontend exec playwright test tests/e2e/navigation-real-stack.spec.ts` | **PASSED** | 7/7 real-stack browser journeys passed against live ASP.NET Core API and PostgreSQL (Narrow Cashier, Narrow CRM Rep, Narrow Accountant, Legal Entity Switching with ReadOnly 403, POS Cashier fast-lane + Sessions, Sales Quotations interactive task workflow, Purchasing Orders interactive task workflow) |
 | **Frontend Production Build** | `pnpm --dir frontend build` | **PASSED** | Vite v8.3.3 built client with zero bundle errors |
