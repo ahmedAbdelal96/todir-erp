@@ -138,7 +138,12 @@ public sealed partial class ManufacturingRepository
         {
             var baseCurrency = await ScalarAsync<string?>(context,
                 "select base_currency_code from platform.legal_entity where tenant_id=$1 and id=$2",
-                token, tenant.Value, legalEntityId) ?? "EGP";
+                token, tenant.Value, legalEntityId);
+
+            if (string.IsNullOrWhiteSpace(baseCurrency))
+            {
+                throw new ManufacturingException("manufacturing.legal_entity_currency_missing", $"Authoritative base currency for legal entity '{legalEntityId}' is not configured.");
+            }
 
             var accumulatingCount = await ScalarAsync<int>(context,
                 "select count(*) from business_manufacturing.production_order where tenant_id=$1 and legal_entity_id=$2 and cost_state='Accumulating'",
@@ -159,7 +164,7 @@ public sealed partial class ManufacturingRepository
                     (select sum(p.final_value)
                      from business_manufacturing.production_output p
                      join business_manufacturing.production_order o on o.tenant_id=p.tenant_id and o.id=p.production_order_id
-                     where p.tenant_id=$1 and o.legal_entity_id=$2 and o.state <> 'Closed' and o.state <> 'Cancelled' and p.inventory_receipt_status='Committed' and (p.currency_code is null or p.currency_code=$3)), 0)",
+                     where p.tenant_id=$1 and o.legal_entity_id=$2 and o.state <> 'Closed' and o.state <> 'Cancelled' and p.inventory_receipt_status='Committed' and p.currency_code=$3), 0)",
                 token, tenant.Value, legalEntityId, baseCurrency);
 
             var completedOrderIds = new List<Guid>();

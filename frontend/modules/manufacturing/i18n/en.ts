@@ -170,7 +170,11 @@ export const en = {
     substituteMaterial: "Apply Approved Substitute",
     warehouse: "Issuing Warehouse",
     lotSerial: "Batch / Serial Number",
-    idempotencyNotice: "Material operations are secured with an idempotency key to prevent duplicate inventory transactions."
+    idempotencyNotice: "Material operations are secured with an idempotency key to prevent duplicate inventory transactions.",
+    shortageQty: "Required Shortage",
+    actionsMenu: "Material Actions",
+    stockStatus: "Stock Status",
+    fullyAccounted: "Fully Accounted & Consumed"
   },
 
   shopFloor: {
@@ -194,7 +198,16 @@ export const en = {
     completeOperation: "Complete Operation",
     blockedByQuality: "Operation blocked; an approved quality inspection is required before proceeding.",
     registeredCenters: "Registered Work Centers",
-    noOperationsScheduled: "No scheduled shop floor operations for this plant",
+    noOperationsScheduled: "No scheduled shop floor operations match the filter criteria",
+    filterHorizon: "Scheduling Horizon",
+    horizonActiveOverdue: "Active & Overdue Operations (All Previous)",
+    horizonToday: "Today Only",
+    horizonWeek: "Current Week (+7 Days)",
+    horizonMonth: "Current Month (+30 Days)",
+    filterState: "Filter Status",
+    allStates: "All States",
+    emptyFilterAdvice: "Check the selected plant, or broaden the date range to view earlier active operations.",
+    resetFilters: "Reset Filters",
     center: "Work Center",
     generalNotSpecified: "General / Unspecified",
     setupTime: "Standard Setup Time",
@@ -222,6 +235,8 @@ export const en = {
     plannedSupplyTitle: "Suggested Supply & Production Orders",
     supplyType: "Supply Action Type",
     firmProduction: "Firm as Production Order",
+    firmProductionOrder: "Firm as Production Order",
+    firmedOrderBadge: "Firmed Production Order",
     firmPurchase: "Convert to Purchase Requisition",
     firmTransfer: "Inter-Warehouse Transfer",
     pegging: "Demand Pegging Tree",
@@ -248,8 +263,7 @@ export const en = {
     targetProduct: "Target Product Variant ID",
     lastRun: "Last Completed Planning Run",
     noRuns: "No planning run has been executed yet",
-    to: "to",
-    firmProductionOrder: "Firm as Production Order"
+    to: "to"
   },
 
   definitions: {
@@ -440,6 +454,17 @@ export const en = {
       ledger_unposted: "Unposted cost entries in general ledger",
       quality_unreconciled: "Quality gates are pending or blocked",
       cost_unreconciled: "Costing is not finalized"
+    },
+    resolutions: {
+      output_incomplete: "Go to Outputs tab to report completion or scrap.",
+      material_unaccounted: "Go to Materials tab to record consumption or return surplus.",
+      operations_incomplete: "Go to Operations tab or Shop Floor to complete pending operations.",
+      output_unreconciled: "Post completed output inventory receipt to warehouse.",
+      wip_negative: "Review actual cost facts and valuation discrepancies.",
+      wip_unreconciled: "Execute variance clearance to balance the account.",
+      ledger_unposted: "Post relevant cost journals in General Ledger.",
+      quality_unreconciled: "Resolve quality inspection or lift quarantine before closing.",
+      cost_unreconciled: "Run cost calculation and approve cost allocations."
     }
   },
 
@@ -449,7 +474,16 @@ export const en = {
     decisionState: "Inspection Decision",
     updatePolicy: "Update Gate Policy",
     exemptReason: "Exemption Reason",
-    blockedMessage: "Blocked: Cannot bypass quality gate without an approved decision from QA."
+    blockedMessage: "Blocked: Cannot bypass quality gate without an approved decision from QA.",
+    noInspectionRequired: "Quality Inspection Not Required for this Item",
+    noInspectionRequiredDesc: "Based on the approved BOM and routing definitions, this product does not require mandatory quality gates or quarantine holds.",
+    inspectionPending: "Quality Inspection Pending",
+    inspectionPendingDesc: "Awaiting QA inspection decision before proceeding to completion.",
+    inspectionPassed: "Quality Inspection Passed",
+    inspectionBlocked: "Quality Inspection Blocked / Quarantined",
+    gateNotConfigured: "Mandatory Quality Gate Not Configured",
+    qualityDataUnavailable: "Quality data currently unavailable",
+    advancedPolicySetup: "Advanced Policy Configuration"
   },
 
   errors: {
@@ -465,6 +499,7 @@ export const en = {
   },
 
   common: {
+    sku: "SKU",
     id: "ID",
     code: "Code",
     name: "Name",

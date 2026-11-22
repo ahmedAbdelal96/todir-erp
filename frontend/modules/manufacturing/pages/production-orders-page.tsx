@@ -69,11 +69,12 @@ export function ProductionOrdersPage(): React.JSX.Element {
     <div
       data-testid="manufacturing-orders-page"
       style={{
-        padding: "1.25rem 1.5rem",
+        padding: "1rem",
         width: "100%",
         maxWidth: "1600px",
         margin: "0 auto",
-        boxSizing: "border-box"
+        boxSizing: "border-box",
+        overflowX: "hidden"
       }}
     >
       <ManufacturingHeader

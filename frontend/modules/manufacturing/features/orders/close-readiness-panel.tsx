@@ -24,9 +24,13 @@ export function CloseReadinessPanel({ orderId, onCloseClick }: CloseReadinessPan
 
   const isBlocked = !(readiness.canClose ?? (readiness.state === "Ready" || readiness.state === "Reconciled"));
 
-  const blockersText = (readiness.blockers && readiness.blockers.length > 0)
-    ? readiness.blockers.join(", ")
+  const rawBlocker = (readiness.blockers && readiness.blockers.length > 0)
+    ? readiness.blockers[0]
     : readiness.blockReason;
+
+  const blockerKey = rawBlocker?.replace(/^manufacturing\./, "");
+  const blockerTitle = blockerKey ? t(`costing.reasons.${blockerKey}`, blockerKey) : null;
+  const blockerResolution = blockerKey ? t(`costing.resolutions.${blockerKey}`, "") : null;
 
   return (
     <div
@@ -61,20 +65,27 @@ export function CloseReadinessPanel({ orderId, onCloseClick }: CloseReadinessPan
         </div>
       </div>
 
-      {blockersText ? (
+      {blockerTitle ? (
         <div
           data-testid="close-blocker-message"
           style={{
-            padding: "0.5rem 0.75rem",
+            padding: "0.75rem 0.875rem",
             background: "#ffffff",
             border: "1px solid #ef4444",
             borderRadius: "var(--radius-sm)",
-            color: "#b91c1c",
-            fontSize: "0.8125rem",
-            fontWeight: 600
+            display: "flex",
+            flexDirection: "column",
+            gap: "4px"
           }}
         >
-          {t("costing.closeBlockersTitle")}: {blockersText}
+          <div style={{ color: "#b91c1c", fontSize: "0.8125rem", fontWeight: 700 }}>
+            {t("costing.closeBlockersTitle")}: {blockerTitle}
+          </div>
+          {blockerResolution && (
+            <div style={{ color: "#475569", fontSize: "0.75rem", lineHeight: "1.4" }}>
+              💡 {blockerResolution}
+            </div>
+          )}
         </div>
       ) : null}
 

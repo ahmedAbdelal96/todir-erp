@@ -85,7 +85,11 @@ export function ManufacturingHeader({
           gap: "4px",
           borderTop: "1px solid #f1f5f9",
           paddingTop: "0.5rem",
-          overflowX: "auto"
+          paddingBottom: "4px",
+          overflowX: "auto",
+          WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "none",
+          msOverflowStyle: "none"
         }}
       >
         {TABS.map((tab) => {
@@ -95,13 +99,14 @@ export function ManufacturingHeader({
               key={tab.path}
               to={tab.path}
               style={{
-                padding: "8px 14px",
+                padding: "8px 12px",
                 fontSize: "0.875rem",
                 fontWeight: active ? 700 : 500,
                 color: active ? "#0284c7" : "#475569",
                 borderBottom: active ? "2px solid #0284c7" : "2px solid transparent",
                 textDecoration: "none",
                 whiteSpace: "nowrap",
+                flexShrink: 0,
                 transition: "all 0.15s ease-in-out"
               }}
             >

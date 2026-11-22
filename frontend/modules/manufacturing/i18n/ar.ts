@@ -170,7 +170,11 @@ export const ar = {
     substituteMaterial: "تطبيق مادة بديلة معتمدة",
     warehouse: "مستودع الصرف",
     lotSerial: "رقم التشغيلة / الصلاحية",
-    idempotencyNotice: "العمليات المخزنية مؤمنة بمفتاح إثبات فريد لمنع التكرار المالي."
+    idempotencyNotice: "العمليات المخزنية مؤمنة بمفتاح إثبات فريد لمنع التكرار المالي.",
+    shortageQty: "عجز الصرف المطلوب",
+    actionsMenu: "إجراءات الخامات",
+    stockStatus: "حالة التوفر",
+    fullyAccounted: "مكتمل الصرف والاستهلاك"
   },
 
   shopFloor: {
@@ -194,7 +198,16 @@ export const ar = {
     completeOperation: "إنهاء العملية",
     blockedByQuality: "العملية متوقفة؛ يلزم اعتماد بوابة الجودة قبل بدء أو إتمام هذه الخطوة.",
     registeredCenters: "مراكز العمل المسجلة",
-    noOperationsScheduled: "لا توجد عمليات تشغيلية مجدولة حالياً لهذا المصنع",
+    noOperationsScheduled: "لا توجد عمليات تشغيلية مجدولة حالياً تطابق معايير التصفية",
+    filterHorizon: "أفق العمليات المجدولة",
+    horizonActiveOverdue: "العمليات الحالية والمتأخرة (شاملة السابقة)",
+    horizonToday: "اليوم فقط",
+    horizonWeek: "الأسبوع الحالي (+7 أيام)",
+    horizonMonth: "الشهر الحالي (+30 يوماً)",
+    filterState: "تصفية الحالة",
+    allStates: "جميع الحالات",
+    emptyFilterAdvice: "تحقق من اختيار المصنع، أو قم بتوسيع النطاق الزمني لعرض العمليات السابقة والجارية.",
+    resetFilters: "إعادة ضبط التصفية",
     center: "مركز العمل",
     generalNotSpecified: "عام / غير محدد",
     setupTime: "وقت الإعداد المعياري",
@@ -222,6 +235,8 @@ export const ar = {
     plannedSupplyTitle: "أوامر الإمداد والإنتاج المقترحة",
     supplyType: "نوع الإمداد المقترح",
     firmProduction: "تثبيت كأمر إنتاج فعلي",
+    firmProductionOrder: "تثبيت كأمر إنتاج فعلي",
+    firmedOrderBadge: "أمر إنتاج مؤكد ومُثبَّت",
     firmPurchase: "تحويل لطلب شراء",
     firmTransfer: "تحويل مخزني بين الفروع",
     pegging: "شجرة الربط المصدري (Pegging)",
@@ -248,8 +263,7 @@ export const ar = {
     targetProduct: "معرف صنف المنتج المستهدف",
     lastRun: "آخر دورة تخطيط منجزة",
     noRuns: "لم يتم تشغيل دورة تخطيط بعد",
-    to: "إلى",
-    firmProductionOrder: "تثبيت كأمر إنتاج"
+    to: "إلى"
   },
 
   definitions: {
@@ -440,6 +454,17 @@ export const ar = {
       ledger_unposted: "توجد قيود تكاليف غير مرحلة لدفتر الأستاذ",
       quality_unreconciled: "بوابات الجودة معلقة أو محظورة",
       cost_unreconciled: "حساب التكاليف غير مكتمل"
+    },
+    resolutions: {
+      output_incomplete: "انتقل إلى تبويب المخرجات لتسجيل إتمام الإنتاج المتبقي أو إثبات الهالك.",
+      material_unaccounted: "انتقل إلى تبويب الخامات لإثبات استهلاك الكمية المنصرفة أو إرجاع الفائض للمخزن.",
+      operations_incomplete: "انتقل إلى تبويب العمليات أو صالة التشغيل لإكمال المراحل التشغيلية المتبقية.",
+      output_unreconciled: "يرجى اعتماد إذن استلام المخرجات التامة وترحيلها نهائياً للمستودع.",
+      wip_negative: "يرجى مراجعة قيود التكاليف الفعلية ومطابقة تسعير المخرجات.",
+      wip_unreconciled: "قم بإجراء تسوية فروق التكاليف (Variance Clearance) لإقفال الحساب.",
+      ledger_unposted: "تأكد من ترحيل قيود المصروفات والتشغيل المرتبطة بالأمر في الحسابات العامة.",
+      quality_unreconciled: "يرجى اعتماد نتائج فحص الجودة أو رفع الحظر من إدارة توكيد الجودة.",
+      cost_unreconciled: "قم بتشغيل دورة احتساب التكاليف واعتماد مصفوفة التكلفة."
     }
   },
 
@@ -449,7 +474,16 @@ export const ar = {
     decisionState: "قرار فحص الجودة",
     updatePolicy: "تعديل سياسة الفحص للأمر",
     exemptReason: "سبب الإعفاء من الفحص",
-    blockedMessage: "محظور: لا يمكن تجاوز بوابة الجودة دون قرار فحص معتمد من مسؤولي الجودة."
+    blockedMessage: "محظور: لا يمكن تجاوز بوابة الجودة دون قرار فحص معتمد من مسؤولي الجودة.",
+    noInspectionRequired: "فحص الجودة غير مطلوب لهذا الصنف",
+    noInspectionRequiredDesc: "استناداً إلى بطاقة الصنف ومسار التشغيل المعتمدين، لا يتطلب هذا المنتج بوابات حجر أو توكيد جودة إلزامية.",
+    inspectionPending: "فحص الجودة مطلوب وقيد المعاينة",
+    inspectionPendingDesc: "بانتظار قرار فريق توكيد الجودة لاعتماد النتائج أو الحجر الصناعي.",
+    inspectionPassed: "تم اجتياز فحص الجودة بنجاح",
+    inspectionBlocked: "فحص الجودة محظور / تم الرفض في الحجر الصناعي",
+    gateNotConfigured: "بوابة الفحص الإلزامية غير مهيأة بعد",
+    qualityDataUnavailable: "بيانات الجودة غير متاحة حالياً",
+    advancedPolicySetup: "تخصيص سياسة الجودة للأمر"
   },
 
   errors: {
@@ -465,6 +499,7 @@ export const ar = {
   },
 
   common: {
+    sku: "رمز الصنف (SKU)",
     id: "المعرف",
     code: "الكود",
     name: "الاسم",

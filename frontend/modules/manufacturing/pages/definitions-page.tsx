@@ -20,13 +20,16 @@ import {
   useDefinitionsQuery,
   useSubstitutionGroupsQuery
 } from "../hooks/use-manufacturing.ts";
+import { useCatalogProducts } from "../hooks/use-catalog-products.ts";
 import { Button } from "../../../components/primitives/button.tsx";
+import { BdiText } from "../../../components/formatting/bidi-text.tsx";
 
 type DefinitionTab = "plants" | "boms" | "formulas" | "routings" | "workCenters" | "definitions" | "substitutes";
 
 export function DefinitionsPage(): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
   const { legalEntityId, isReady } = useManufacturingScope();
+  const { getProductDisplayName, getProductSku } = useCatalogProducts();
 
   const [activeTab, setActiveTab] = useState<DefinitionTab>("definitions");
 
@@ -153,16 +156,26 @@ export function DefinitionsPage(): React.JSX.Element {
                   </tr>
                 </thead>
                 <tbody>
-                  {definitions.map((def) => (
-                    <tr key={def.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{def.plantId.slice(0, 8)}...</td>
-                      <td style={{ padding: "10px 12px" }}>{def.productVariantId.slice(0, 8)}...</td>
-                      <td style={{ padding: "10px 12px" }}>{def.manufacturingMode}</td>
-                      <td style={{ padding: "10px 12px" }}>{def.validFrom.slice(0, 10)}</td>
-                      <td style={{ padding: "10px 12px" }}>{((def.expectedYield ?? 1) * 100).toFixed(0)}%</td>
-                      <td style={{ padding: "10px 12px" }}><ManufacturingStatusBadge state={def.state} /></td>
-                    </tr>
-                  ))}
+                  {definitions.map((def) => {
+                    const plantName = plants.find((p) => p.id === def.plantId)?.name ?? def.plantId.slice(0, 8);
+                    const productName = getProductDisplayName(def.productVariantId);
+                    const sku = getProductSku(def.productVariantId);
+                    return (
+                      <tr key={def.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "10px 12px", fontWeight: 600 }}>{plantName}</td>
+                        <td style={{ padding: "10px 12px" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                            <span style={{ fontWeight: 600, color: "#102a43" }}>{productName}</span>
+                            {sku && <span style={{ fontSize: "11px", color: "#64748b" }}><BdiText>{`${t("common.sku")}: ${sku}`}</BdiText></span>}
+                          </div>
+                        </td>
+                        <td style={{ padding: "10px 12px" }}>{def.manufacturingMode}</td>
+                        <td style={{ padding: "10px 12px" }}>{def.validFrom.slice(0, 10)}</td>
+                        <td style={{ padding: "10px 12px" }}>{((def.expectedYield ?? 1) * 100).toFixed(0)}%</td>
+                        <td style={{ padding: "10px 12px" }}><ManufacturingStatusBadge state={def.state} /></td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
@@ -188,14 +201,23 @@ export function DefinitionsPage(): React.JSX.Element {
                   </tr>
                 </thead>
                 <tbody>
-                  {boms.map((b) => (
-                    <tr key={b.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "10px 12px", fontWeight: 700, color: "#0284c7" }}>{b.code}</td>
-                      <td style={{ padding: "10px 12px" }}>{b.name}</td>
-                      <td style={{ padding: "10px 12px" }}>{b.productVariantId.slice(0, 8)}...</td>
-                      <td style={{ padding: "10px 12px" }}><ManufacturingStatusBadge state={b.state} /></td>
-                    </tr>
-                  ))}
+                  {boms.map((b) => {
+                    const productName = getProductDisplayName(b.productVariantId);
+                    const sku = getProductSku(b.productVariantId);
+                    return (
+                      <tr key={b.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "10px 12px", fontWeight: 700, color: "#0284c7" }}>{b.code}</td>
+                        <td style={{ padding: "10px 12px" }}>{b.name}</td>
+                        <td style={{ padding: "10px 12px" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                            <span style={{ fontWeight: 600, color: "#102a43" }}>{productName}</span>
+                            {sku && <span style={{ fontSize: "11px", color: "#64748b" }}><BdiText>{`${t("common.sku")}: ${sku}`}</BdiText></span>}
+                          </div>
+                        </td>
+                        <td style={{ padding: "10px 12px" }}><ManufacturingStatusBadge state={b.state} /></td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
@@ -221,14 +243,23 @@ export function DefinitionsPage(): React.JSX.Element {
                   </tr>
                 </thead>
                 <tbody>
-                  {formulas.map((f) => (
-                    <tr key={f.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "10px 12px", fontWeight: 700, color: "#0284c7" }}>{f.code}</td>
-                      <td style={{ padding: "10px 12px" }}>{f.name}</td>
-                      <td style={{ padding: "10px 12px" }}>{f.productVariantId.slice(0, 8)}...</td>
-                      <td style={{ padding: "10px 12px" }}><ManufacturingStatusBadge state={f.state} /></td>
-                    </tr>
-                  ))}
+                  {formulas.map((f) => {
+                    const productName = getProductDisplayName(f.productVariantId);
+                    const sku = getProductSku(f.productVariantId);
+                    return (
+                      <tr key={f.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "10px 12px", fontWeight: 700, color: "#0284c7" }}>{f.code}</td>
+                        <td style={{ padding: "10px 12px" }}>{f.name}</td>
+                        <td style={{ padding: "10px 12px" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                            <span style={{ fontWeight: 600, color: "#102a43" }}>{productName}</span>
+                            {sku && <span style={{ fontSize: "11px", color: "#64748b" }}><BdiText>{`${t("common.sku")}: ${sku}`}</BdiText></span>}
+                          </div>
+                        </td>
+                        <td style={{ padding: "10px 12px" }}><ManufacturingStatusBadge state={f.state} /></td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}

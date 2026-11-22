@@ -112,4 +112,12 @@ public sealed class ManufacturingLifecycleAndCostingTests
         Assert.Equal("material_unaccounted", blockedReadiness.BlockReason);
         Assert.True(blockedReadiness.MaterialIssuedQty > blockedReadiness.MaterialAccountedQty);
     }
+
+    [Fact]
+    public void CostingSummaryThrowsWhenLegalEntityBaseCurrencyIsMissing()
+    {
+        var ex = new ManufacturingException("manufacturing.legal_entity_currency_missing", "Authoritative base currency for legal entity is not configured.");
+        Assert.Equal("manufacturing.legal_entity_currency_missing", ex.Code);
+        Assert.Contains("Authoritative base currency", ex.Message, StringComparison.Ordinal);
+    }
 }

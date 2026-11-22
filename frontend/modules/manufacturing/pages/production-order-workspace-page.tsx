@@ -290,16 +290,43 @@ export function ProductionOrderWorkspacePage(): React.JSX.Element {
           {/* Quality Gates Tab */}
           {activeTab === "quality" && (
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#102a43" }}>
-                  {t("quality.title")}
-                </h3>
-                <Button variant="secondary" onClick={() => setIsQualityGateOpen(true)}>
-                  {t("quality.updatePolicy")}
-                </Button>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#102a43" }}>
+                    {t("quality.title")}
+                  </h3>
+                  <ManufacturingStatusBadge state={order.qualityState} />
+                </div>
+                {canManagePolicy && order.qualityState !== "Exempt" && (
+                  <Button variant="secondary" size="small" onClick={() => setIsQualityGateOpen(true)}>
+                    {t("quality.updatePolicy")}
+                  </Button>
+                )}
+                {canManagePolicy && order.qualityState === "Exempt" && (
+                  <Button variant="secondary" size="small" onClick={() => setIsQualityGateOpen(true)}>
+                    {t("quality.advancedPolicySetup")}
+                  </Button>
+                )}
               </div>
-              {qualityGates.length === 0 ? (
-                <p style={{ color: "#64748b" }}>{t("orders.noQualityGates")}</p>
+
+              {order.qualityState === "Exempt" && qualityGates.length === 0 ? (
+                <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "20px", textAlign: "center" }}>
+                  <h4 style={{ margin: "0 0 6px", fontSize: "15px", fontWeight: 700, color: "#1e293b" }}>
+                    {t("quality.noInspectionRequired")}
+                  </h4>
+                  <p style={{ margin: 0, fontSize: "13px", color: "#64748b", maxWidth: "480px", marginInline: "auto" }}>
+                    {t("quality.noInspectionRequiredDesc")}
+                  </p>
+                </div>
+              ) : qualityGates.length === 0 ? (
+                <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "16px", color: "#b45309" }}>
+                  <div style={{ fontWeight: 700, fontSize: "14px", marginBottom: "4px" }}>
+                    {t("quality.gateNotConfigured")}
+                  </div>
+                  <div style={{ fontSize: "13px" }}>
+                    {t("quality.inspectionPendingDesc")}
+                  </div>
+                </div>
               ) : (
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "right" }}>
                   <thead>
