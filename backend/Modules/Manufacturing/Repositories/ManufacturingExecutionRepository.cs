@@ -136,6 +136,10 @@ public sealed partial class ManufacturingRepository
     public Task<ManufacturingCostingSummaryResponse> GetCostingSummaryAsync(TenantId tenant, Guid legalEntityId, CancellationToken ct) =>
         coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
+            var baseCurrency = await ScalarAsync<string?>(context,
+                "select base_currency_code from platform.legal_entity where tenant_id=$1 and id=$2",
+                token, tenant.Value, legalEntityId) ?? "EGP";
+
             var accumulatingCount = await ScalarAsync<int>(context,
                 "select count(*) from business_manufacturing.production_order where tenant_id=$1 and legal_entity_id=$2 and cost_state='Accumulating'",
                 token, tenant.Value, legalEntityId);
@@ -144,18 +148,19 @@ public sealed partial class ManufacturingRepository
                 "select count(*) from business_manufacturing.production_order where tenant_id=$1 and legal_entity_id=$2 and state='Closed'",
                 token, tenant.Value, legalEntityId);
 
+            // Compute WIP strictly for actual cost facts and committed outputs denominated in the authoritative base currency to prevent combining multi-currency figures
             var wip = await ScalarAsync<decimal>(context,
                 @"select coalesce(
                     (select sum(f.amount)
                      from business_manufacturing.production_actual_cost_fact f
                      join business_manufacturing.production_order o on o.tenant_id=f.tenant_id and o.id=f.production_order_id
-                     where f.tenant_id=$1 and o.legal_entity_id=$2 and o.state <> 'Closed' and o.state <> 'Cancelled'), 0)
+                     where f.tenant_id=$1 and o.legal_entity_id=$2 and o.state <> 'Closed' and o.state <> 'Cancelled' and f.currency_code=$3), 0)
                   - coalesce(
                     (select sum(p.final_value)
                      from business_manufacturing.production_output p
                      join business_manufacturing.production_order o on o.tenant_id=p.tenant_id and o.id=p.production_order_id
-                     where p.tenant_id=$1 and o.legal_entity_id=$2 and o.state <> 'Closed' and o.state <> 'Cancelled' and p.inventory_receipt_status='Committed'), 0)",
-                token, tenant.Value, legalEntityId);
+                     where p.tenant_id=$1 and o.legal_entity_id=$2 and o.state <> 'Closed' and o.state <> 'Cancelled' and p.inventory_receipt_status='Committed' and (p.currency_code is null or p.currency_code=$3)), 0)",
+                token, tenant.Value, legalEntityId, baseCurrency);
 
             var completedOrderIds = new List<Guid>();
             await using (var cmd = Command(context, "select id from business_manufacturing.production_order where tenant_id=$1 and legal_entity_id=$2 and state='Completed'", tenant.Value, legalEntityId))
@@ -186,7 +191,7 @@ public sealed partial class ManufacturingRepository
             return new ManufacturingCostingSummaryResponse(
                 accumulatingCount,
                 wip,
-                "EGP",
+                baseCurrency,
                 completedBlockedCount,
                 eligibleForCloseCount,
                 closedCount

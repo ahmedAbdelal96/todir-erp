@@ -15,7 +15,7 @@ export function ManufacturingCostingPage(): React.JSX.Element {
   const { legalEntityId, isReady } = useManufacturingScope();
 
   const { data: orders = [], isLoading: isOrdersLoading } = useOrdersQuery(legalEntityId);
-  const { data: costingSummary, isLoading: isSummaryLoading } = useCostingSummaryQuery(legalEntityId);
+  const { data: costingSummary, isLoading: isSummaryLoading, isError: isSummaryError } = useCostingSummaryQuery(legalEntityId);
   const [selectedOrderIdForCost, setSelectedOrderIdForCost] = useState<string | null>(null);
   const [inspectedOrderId, setInspectedOrderId] = useState<string | null>(null);
 
@@ -42,18 +42,27 @@ export function ManufacturingCostingPage(): React.JSX.Element {
       {/* Overview Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px", marginBottom: "16px" }}>
         <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "16px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>{t("costing.wipBalance", "رصيد التشغيل تحت التنفيذ (WIP)")}</div>
+          <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>{t("costing.operationalWipEstimate", "رصيد الـ WIP التشغيلي التقديري")}</div>
           <div data-testid="kpi-wip-balance" style={{ fontSize: "20px", fontWeight: 700, color: "#102a43", marginTop: "4px" }}>
             <BdiText>
               {costingSummary
                 ? `${costingSummary.totalWipAmount.toLocaleString()} ${costingSummary.currencyCode}`
                 : isSummaryLoading
-                ? t("common.loading")
-                : t("costing.zeroAmount", "0 EGP")}
+                ? t("common.loading", "جاري التحميل...")
+                : "—"}
             </BdiText>
           </div>
           <div style={{ fontSize: "12px", color: "#64748b", marginTop: "4px" }}>
-            {costingSummary?.accumulatingOrdersCount ?? 0} {t("costing.ordersCount", "أمر")} — {t("costing.accumulatingOrders", "أوامر قيد تجميع التكاليف")}
+            {costingSummary ? (
+              <>
+                <span>{costingSummary.accumulatingOrdersCount} {t("costing.ordersCount", "أمر")} — {t("costing.accumulatingOrders", "أوامر قيد تجميع التكاليف")}</span>
+                <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>
+                  {t("costing.operationalWipNote", "حساب تشغيلي تقديري (غير مطابق دفترياً حتى اكتمال قيود الأستاذ العام)")}
+                </div>
+              </>
+            ) : isSummaryError ? (
+              <span style={{ color: "#dc2626" }}>{t("costing.wipUnavailable", "غير متاح حالياً / تعذر جلب رصيد الـ WIP")}</span>
+            ) : null}
           </div>
         </div>
 

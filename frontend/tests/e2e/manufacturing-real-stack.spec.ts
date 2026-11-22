@@ -6,7 +6,10 @@ const LOCAL_ARTIFACTS_DIR = path.resolve('artifacts/manufacturing-acceptance/rea
 const AGENT_BRAIN_DIR = 'C:/Users/IT/.gemini/antigravity/brain/11ce24c9-e66d-46b8-95e8-fa43b74dced8/manufacturing-acceptance/real-stack';
 
 const ATLAS_ENTITY_ID = 'aad8a34b-344c-9e5b-8d58-57f182fc6528';
-const DEV_PASSWORD = process.env.ERP_DEV_PASSWORD || 'TodirDev2026!';
+const DEV_PASSWORD = process.env.ERP_DEV_PASSWORD || process.env.SEED_DEFAULT_PASSWORD;
+if (!DEV_PASSWORD) {
+  throw new Error('ERP_DEV_PASSWORD or SEED_DEFAULT_PASSWORD is required for real-stack acceptance execution. Fail-closed: hardcoded fallback passwords are strictly prohibited.');
+}
 
 // Live seeded Manufacturing records from PostgreSQL (ManufacturingSeed.cs)
 const SEEDED_ORDER_NUMBER = 'MO-SEED-0001';
@@ -17,7 +20,7 @@ const SEEDED_BOM_CODE = 'BOM-FG-001';
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('TODIR Module 26: Manufacturing & MRP — REAL-STACK End-to-End Acceptance Suite', () => {
+test.describe('TODIR Module 26: Manufacturing & MRP — REAL-STACK Read-Only & Browser Smoke Suite', () => {
   test.setTimeout(180_000);
 
   test.beforeAll(() => {
