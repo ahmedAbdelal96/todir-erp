@@ -232,10 +232,11 @@ order by case when $6::uuid is not null and v.id=$6 then 0 when v.normalized_sku
     public async Task<IReadOnlyList<ResolvedVariantIdentity>> ResolveBatchAsync(TenantId tenantId, IReadOnlyList<string> values, CancellationToken ct, Guid? legalEntityId = null)
     {
         if (values.Count == 0) return [];
+        if (values.Count > 500) throw new CatalogException("catalog.batch_size_exceeded", "Batch size exceeds maximum limit of 500 items.");
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await SetTenantAsync(connection, tenantId, ct);
-        var guids = new List<Guid>();
-        var texts = new List<string>();
+        var guids = new HashSet<Guid>();
+        var texts = new HashSet<string>(StringComparer.Ordinal);
         foreach (var v in values)
         {
             if (Guid.TryParse(v, out var g)) guids.Add(g);
@@ -244,6 +245,7 @@ order by case when $6::uuid is not null and v.id=$6 then 0 when v.normalized_sku
         const string sql = @"select c.variant_id, c.template_id, c.sku, c.display_name, c.name_ar, c.name_en, c.base_uom_code 
 from foundation_catalog.catalog_search_projection c 
 where c.tenant_id=$1 
+and c.status = 'Active'
 and (c.variant_id = any($2) or c.template_id = any($2) or c.normalized_sku = any($3)) 
 and exists(select 1 from foundation_catalog.product_visibility visibility where visibility.tenant_id=c.tenant_id and visibility.template_id=c.template_id and (visibility.scope_type='TenantWide' or (visibility.scope_type='LegalEntity' and $4::uuid is not null and visibility.legal_entity_id=$4)))";
         await using var command = new NpgsqlCommand(sql, connection);

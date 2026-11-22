@@ -166,6 +166,42 @@ app.MapGet("/health/ready", async (IServiceProvider services, CancellationToken 
         return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
     }
 });
+if (app.Environment.IsDevelopment())
+{
+    app.MapGet("/internal/acceptance/database-context", async (IServiceProvider services, CancellationToken cancellationToken) =>
+    {
+        var dataSource = services.GetService<NpgsqlDataSource>();
+        if (dataSource is null) return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        try
+        {
+            await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+            await using var command = new NpgsqlCommand("SELECT current_database(), current_user, coalesce(inet_server_addr()::text, 'localhost'), coalesce(inet_server_port(), 5432);", connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                var db = reader.GetString(0);
+                var user = reader.GetString(1);
+                var host = reader.GetString(2);
+                var port = reader.GetInt32(3);
+                var isDisposable = db.EndsWith("_acceptance", StringComparison.OrdinalIgnoreCase) || db.Contains("_test", StringComparison.OrdinalIgnoreCase);
+                return Results.Ok(new
+                {
+                    database = db,
+                    currentUser = user,
+                    host,
+                    port,
+                    environment = app.Environment.EnvironmentName,
+                    isDisposable
+                });
+            }
+            return Results.StatusCode(StatusCodes.Status500InternalServerError);
+        }
+        catch (Exception ex)
+        {
+            return Results.Problem(statusCode: StatusCodes.Status500InternalServerError, title: "Database context check failed", detail: ex.Message);
+        }
+    });
+}
 if (builder.Configuration.GetValue<bool>("TODIR_METRICS_ENABLED")) app.MapPrometheusScrapingEndpoint("/internal/metrics");
 app.MapCore();
 app.MapSampleModule();

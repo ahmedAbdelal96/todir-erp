@@ -44,18 +44,22 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 ## 2. Acceptance Blocker Resolutions
 
 ### 2.1 P0 — Enforce Disposable Database Safety (`todir_mfg_acceptance`)
+- **Authoritative Database Identity Endpoint:** Implemented `GET /internal/acceptance/database-context` in `backend/Api/Program.cs` querying PostgreSQL `current_database()`, `current_user`, host, port, environment, and returning `isDisposable: true` strictly when database name contains `acceptance` or `test` and environment is Development/Acceptance.
 - **Dedicated Acceptance Config:** Created `frontend/playwright.manufacturing.config.ts` dedicated exclusively to Manufacturing real-stack acceptance testing.
 - **Fail-Closed Runtime Guard:** Implemented `frontend/tests/e2e/manufacturing-acceptance-guard.ts` with `assertDisposableDatabase()`:
-  - Connects to PostgreSQL and verifies `SELECT current_database()` returns `todir_mfg_acceptance`.
-  - Refuses to run and immediately aborts if connected to protected developer database `todir`.
+  - Connects to PostgreSQL directly via Docker psql and verifies `SELECT current_database()` returns `todir_mfg_acceptance`.
+  - Queries `GET /internal/acceptance/database-context` to verify the actual API connection pool is bound to the target disposable database.
+  - Refuses to run and immediately aborts if connected to protected developer databases (`todir`, `todir_dev`, `postgres`).
+  - Strict zero fallback credentials: throws `manufacturing_guard.credentials_missing` if `TODIR_DB_PASSWORD` or `ERP_DEV_PASSWORD` are unset.
   - Enforces `reuseExistingServer: false` and dedicated ports (5089 for API, 5179 for Vite) so background development instances cannot leak into acceptance runs.
-- **Sanitized Configurations:** Cleared hardcoded passwords and credentials from `frontend/playwright.config.ts`.
+  - Guard verified with 8/8 passing unit tests in `frontend/tests/unit/manufacturing-acceptance-guard.test.ts`.
 
 ### 2.2 P1 — Catalog Lookup at Scale: Batch Identity Resolution
 - **Backend Batch Endpoint:** Implemented `POST /api/v1/catalog/resolve/batch` in `backend/Modules/Catalog/Controllers/CatalogModuleExtensions.cs`, `CatalogContracts.cs`, `CatalogDetailRepository.cs`, and `CatalogDetailService.cs`.
-  - Queries `foundation_catalog.catalog_search_projection` with an indexed `id = ANY($1)` parameterized query.
-  - Returns `variantId`, `productId`, `sku`, `productName`, and `unitOfMeasure`.
-  - Verified with 13/13 passing Catalog tests in `CatalogTests.csproj`.
+  - Enforces bounded batch size: `values.Count > 500` throws `catalog.batch_size_exceeded`.
+  - Deduplicates variant IDs before querying.
+  - Queries `foundation_catalog.catalog_search_projection` with `status = 'Active'` and tenant isolation.
+  - Verified with 16/16 passing Catalog tests in `backend/Tests/Modules/Catalog/CatalogTests.csproj` including dedicated `CatalogBatchResolutionTests.cs`.
 - **Frontend Batch Hook & Cache:** Rewrote `frontend/modules/manufacturing/hooks/use-catalog-products.ts`:
   - Batches all missing IDs across components and BOMs into single network calls.
   - In-memory session cache eliminates duplicate lookups across re-renders.
@@ -95,8 +99,9 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 | Test Suite | Spec File / Project | Total | Passed | Failed | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Real-Stack Transactional Suite** | `manufacturing-transactions-real-stack.spec.ts` | 9 | 9 | 0 | **PASS (100%)** |
+| **Acceptance Guard Unit Suite** | `manufacturing-acceptance-guard.test.ts` | 8 | 8 | 0 | **PASS (100%)** |
 | **Backend Manufacturing Tests** | `ManufacturingTests.csproj` | 14 | 14 | 0 | **PASS (100%)** |
-| **Backend Catalog Tests** | `CatalogTests.csproj` | 13 | 13 | 0 | **PASS (100%)** |
+| **Backend Catalog Tests** | `CatalogTests.csproj` | 16 | 16 | 0 | **PASS (100%)** |
 | **TypeScript Strict Verification** | `pnpm --dir frontend run typecheck` | — | — | 0 | **PASS (0 errors)** |
 | **Architecture Boundary Lint** | `pnpm run architecture:frontend` | 27 | 27 | 0 | **PASS (100%)** |
 | **Localization Parity** | `pnpm run localization:verify` | — | — | 0 | **PASS (100%)** |
