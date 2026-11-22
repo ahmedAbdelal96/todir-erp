@@ -1,5 +1,6 @@
 using Npgsql;
 using Core.Authorization;
+using Microsoft.AspNetCore.Http;
 using Shared.Primitives.Identifiers;
 using Xunit;
 
@@ -28,9 +29,12 @@ public sealed class AuthorizationIntegrationTests : DatabaseIntegrationTestBase
         {
             var appConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Username = "erp_app", Password = password }.ConnectionString;
             await using var dataSource = NpgsqlDataSource.Create(appConnectionString);
-            var store = new NpgsqlAuthorizationSubjectStore(dataSource);
+            var httpContextAccessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
+            var store = new NpgsqlAuthorizationSubjectStore(dataSource, httpContextAccessor, new AuthorizationSubjectCacheOptions(true));
             var subject = await store.LoadAsync(tenantId, membershipId.Value);
+            var cachedSubject = await store.LoadAsync(tenantId, membershipId.Value);
             Assert.NotNull(subject);
+            Assert.Same(subject, cachedSubject);
             var authorizer = new PermissionAuthorizer();
             Assert.True(authorizer.Authorize(subject!, "kernel.read", PermissionScope.ForBranch(tenantId, new(entityId), new(branchId))));
             Assert.False(authorizer.Authorize(subject!, "kernel.read", PermissionScope.ForLegalEntity(tenantId, new(entityId))));

@@ -1,13 +1,14 @@
 import React from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ModuleRouteRegistration } from "../../app/router/route-contract.ts";
+import { lazyNamed } from "../../app/router/lazy-route-component.ts";
 import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
 import { INVOICING_DESTINATIONS } from "../../app/router/destination-registry.ts";
-import { InvoiceListPage } from "./pages/invoice-list-page.tsx";
-import { InvoiceDraftWorkspace } from "./pages/invoice-draft-workspace.tsx";
-import { InvoiceDetailPage } from "./pages/invoice-detail-page.tsx";
-import { InvoiceDocumentPage } from "./pages/invoice-document-page.tsx";
+const InvoiceListPage = lazyNamed(() => import("./pages/invoice-list-page.tsx"), "InvoiceListPage");
+const InvoiceDraftWorkspace = lazyNamed(() => import("./pages/invoice-draft-workspace.tsx"), "InvoiceDraftWorkspace");
+const InvoiceDetailPage = lazyNamed(() => import("./pages/invoice-detail-page.tsx"), "InvoiceDetailPage");
+const InvoiceDocumentPage = lazyNamed(() => import("./pages/invoice-document-page.tsx"), "InvoiceDocumentPage");
 import { useInvoiceRecord } from "./hooks/invoice-queries.ts";
 
 function InvoicingRootRoute(): React.JSX.Element {

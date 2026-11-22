@@ -21,6 +21,16 @@ backend/
 
 The approved backend technology is the existing ASP.NET Core/.NET modular monolith, PostgreSQL, REST/JSON/OpenAPI, MassTransit/RabbitMQ, Quartz where approved, and the existing host/migration topology. Do not add parallel infrastructure.
 
+## 0.1 Performance and scalability foundation
+
+Performance decisions are evidence-led and local-first. Use the checked-in `backend/Tests/Performance/platform-performance-benchmark.ps1` only with a disposable `todir_perf_*` database, and record commit, seed, endpoint, concurrency, p50/p95/p99, errors, pool settings, and service state. A benchmark is diagnostic evidence, not a production capacity promise.
+
+Critical list, report, and financial queries must be bounded, tenant/legal-entity scoped, server-paginated where applicable, and reviewed with `EXPLAIN (ANALYZE, BUFFERS)` on isolated representative data. Avoid N+1 authorization or database work, per-row permission queries, unbounded exports, and long transactions. Add indexes only with a query-plan reason and a migration/rollback consideration.
+
+Request-scoped reuse is permitted only for immutable-in-request derived data and must retain tenant, membership, legal-entity, branch, permission-version, and invalidation boundaries. Authorization, financial truth, inventory availability, idempotency, Outbox, and Inbox state remain PostgreSQL-authoritative. Do not add Redis, read replicas, partitioning, a search cluster, or a global worker-concurrency rewrite without a new measured decision record.
+
+MassTransit/RabbitMQ tuning must preserve publisher confirmation, quorum queues, Inbox uniqueness, retry, and durable business outcomes. Tune one consumer at a time from backlog age, processing duration, duplicate/error counters, and database-pool pressure; broker delivery alone is not acceptance proof. Metrics use bounded dimensions and never expose tenant IDs, document IDs, SQL text, or search values.
+
 ## 1. New module start checklist
 
 Before writing code, record answers to these questions in the work plan or approved module documentation:

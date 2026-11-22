@@ -15,7 +15,6 @@ export * from "./features/opening-balances/opening-balances-view.tsx";
 export * from "./features/reports/trial-balance-view.tsx";
 export * from "./features/reports/general-ledger-view.tsx";
 export * from "./features/reports/reconciliation-view.tsx";
-export * from "./pages/accounting-page.tsx";
 export { accountingRoutes } from "./routes.tsx";
 export { ar } from "./i18n/ar.ts";
 export { en } from "./i18n/en.ts";

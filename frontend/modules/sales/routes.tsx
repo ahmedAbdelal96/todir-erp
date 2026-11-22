@@ -1,14 +1,15 @@
 import React from "react";
 import type { ModuleRouteRegistration, PermissionCondition } from "../../app/router/route-contract.ts";
+import { lazyNamed } from "../../app/router/lazy-route-component.ts";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
 import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { SALES_DESTINATIONS } from "../../app/router/destination-registry.ts";
-import { SalesOverviewPage } from "./pages/sales-overview-page.tsx";
-import { SalesQuotationsPage } from "./pages/sales-quotations-page.tsx";
-import { SalesOrdersPage } from "./pages/sales-orders-page.tsx";
-import { SalesReturnsPage } from "./pages/sales-returns-page.tsx";
-import { SalesHistoryPage } from "./pages/sales-history-page.tsx";
-import { SalesSettingsPage } from "./pages/sales-settings-page.tsx";
+const SalesOverviewPage = lazyNamed(() => import("./pages/sales-overview-page.tsx"), "SalesOverviewPage");
+const SalesQuotationsPage = lazyNamed(() => import("./pages/sales-quotations-page.tsx"), "SalesQuotationsPage");
+const SalesOrdersPage = lazyNamed(() => import("./pages/sales-orders-page.tsx"), "SalesOrdersPage");
+const SalesReturnsPage = lazyNamed(() => import("./pages/sales-returns-page.tsx"), "SalesReturnsPage");
+const SalesHistoryPage = lazyNamed(() => import("./pages/sales-history-page.tsx"), "SalesHistoryPage");
+const SalesSettingsPage = lazyNamed(() => import("./pages/sales-settings-page.tsx"), "SalesSettingsPage");
 
 const salesModulePermissions: PermissionCondition = {
   anyOf: [

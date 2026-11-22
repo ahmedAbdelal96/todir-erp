@@ -30,6 +30,7 @@ public static class PlatformHostingExtensions
     public static IServiceCollection AddCore(this IServiceCollection services, IConfiguration configuration, Action<IBusRegistrationConfigurator>? configureConsumers = null)
     {
         var connectionString = configuration.GetRuntimeConnectionString();
+        services.AddHttpContextAccessor();
         services.AddRabbitMq(configuration, configureConsumers);
         if (!string.IsNullOrWhiteSpace(connectionString))
         {
@@ -118,7 +119,10 @@ public static class PlatformHostingExtensions
         if (!string.IsNullOrWhiteSpace(connectionString)) services.AddSingleton<IEntitlementSnapshotStore, NpgsqlEntitlementSnapshotStore>();
         services.AddSingleton<ICapabilityResolver, CapabilityResolver>();
         services.AddSingleton<IPermissionAuthorizer, PermissionAuthorizer>();
-        services.AddSingleton<IAuthorizationSubjectStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlAuthorizationSubjectStore(dataSource) : new NullAuthorizationSubjectStore());
+        services.AddSingleton(new AuthorizationSubjectCacheOptions(configuration.GetValue("TODIR_AUTHORIZATION_REQUEST_CACHE_ENABLED", true)));
+        services.AddSingleton<IAuthorizationSubjectStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
+            ? new NpgsqlAuthorizationSubjectStore(dataSource, provider.GetRequiredService<IHttpContextAccessor>(), provider.GetRequiredService<AuthorizationSubjectCacheOptions>())
+            : new NullAuthorizationSubjectStore());
         services.AddSingleton<IModuleLifecycleEnforcer>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlModuleLifecycleEnforcer(dataSource, provider.GetService<IModuleRegistry>()) : new UnavailableModuleLifecycleEnforcer());
         var fileSigningSecret = configuration["TODIR_FILE_SIGNING_SECRET"];
         if (!string.IsNullOrWhiteSpace(fileSigningSecret)) services.AddSingleton<IFileAccessSigner>(_ => new HmacFileAccessSigner(fileSigningSecret));

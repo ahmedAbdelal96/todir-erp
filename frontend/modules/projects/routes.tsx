@@ -1,10 +1,11 @@
 import React from "react";
 import type { ModuleRouteRegistration } from "../../app/router/route-contract.ts";
+import { lazyNamed } from "../../app/router/lazy-route-component.ts";
 import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
 import { PROJECTS_DESTINATIONS } from "../../app/router/destination-registry.ts";
-import { ProjectsPage } from "./pages/projects-page.tsx";
-import { ProjectWorkspacePage } from "./pages/project-workspace-page.tsx";
+const ProjectsPage = lazyNamed(() => import("./pages/projects-page.tsx"), "ProjectsPage");
+const ProjectWorkspacePage = lazyNamed(() => import("./pages/project-workspace-page.tsx"), "ProjectWorkspacePage");
 
 const projectsNavigation = {
   id: "projects",

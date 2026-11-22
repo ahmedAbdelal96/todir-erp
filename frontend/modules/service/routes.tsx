@@ -1,9 +1,10 @@
 import React from "react";
 import type { ModuleRouteRegistration } from "../../app/router/route-contract.ts";
+import { lazyNamed } from "../../app/router/lazy-route-component.ts";
 import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
 import { SERVICE_DESTINATIONS } from "../../app/router/destination-registry.ts";
-import { ServicePage } from "./pages/service-page.tsx";
+const ServicePage = lazyNamed(() => import("./pages/service-page.tsx"), "ServicePage");
 
 const serviceNavigation = {
   id: "service",

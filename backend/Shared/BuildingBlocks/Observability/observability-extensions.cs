@@ -70,6 +70,8 @@ public static class CoreMetrics
     public static readonly Counter<long> InboxProcessed = Meter.CreateCounter<long>("todir.inbox.processed", "{message}");
     public static readonly Counter<long> InboxDuplicate = Meter.CreateCounter<long>("todir.inbox.duplicate", "{message}");
     public static readonly Counter<long> ImportChunksScheduled = Meter.CreateCounter<long>("todir.import.chunks.scheduled", "{chunk}");
+    public static readonly Counter<long> AuthorizationSubjectDatabaseLoads = Meter.CreateCounter<long>("todir.authorization.subject.database.loads", "{load}");
+    public static readonly Counter<long> AuthorizationSubjectRequestCacheHits = Meter.CreateCounter<long>("todir.authorization.subject.request.cache.hits", "{hit}");
     public static readonly Histogram<double> ModuleActivationDuration = Meter.CreateHistogram<double>("todir.module.activation.duration", "s");
     public static readonly Histogram<double> MessageProcessingDuration = Meter.CreateHistogram<double>("todir.message.processing.duration", "s");
     private static long outboxPending;

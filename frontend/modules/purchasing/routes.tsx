@@ -1,16 +1,17 @@
 import React from "react";
 import type { ModuleRouteRegistration, PermissionCondition } from "../../app/router/route-contract.ts";
+import { lazyNamed } from "../../app/router/lazy-route-component.ts";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
 import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { PURCHASING_DESTINATIONS } from "../../app/router/destination-registry.ts";
-import { PurchasingOverviewPage } from "./pages/purchasing-overview-page.tsx";
-import { PurchaseOrdersPage } from "./pages/purchase-orders-page.tsx";
-import { PurchasingReceiptsPage } from "./pages/purchasing-receipts-page.tsx";
-import { PurchasingMatchingPage } from "./pages/purchasing-matching-page.tsx";
-import { PurchasingReturnsPage } from "./pages/purchasing-returns-page.tsx";
-import { PurchasingSuppliersPage } from "./pages/purchasing-suppliers-page.tsx";
-import { PurchasingHistoryPage } from "./pages/purchasing-history-page.tsx";
-import { PurchasingSettingsPage } from "./pages/purchasing-settings-page.tsx";
+const PurchasingOverviewPage = lazyNamed(() => import("./pages/purchasing-overview-page.tsx"), "PurchasingOverviewPage");
+const PurchaseOrdersPage = lazyNamed(() => import("./pages/purchase-orders-page.tsx"), "PurchaseOrdersPage");
+const PurchasingReceiptsPage = lazyNamed(() => import("./pages/purchasing-receipts-page.tsx"), "PurchasingReceiptsPage");
+const PurchasingMatchingPage = lazyNamed(() => import("./pages/purchasing-matching-page.tsx"), "PurchasingMatchingPage");
+const PurchasingReturnsPage = lazyNamed(() => import("./pages/purchasing-returns-page.tsx"), "PurchasingReturnsPage");
+const PurchasingSuppliersPage = lazyNamed(() => import("./pages/purchasing-suppliers-page.tsx"), "PurchasingSuppliersPage");
+const PurchasingHistoryPage = lazyNamed(() => import("./pages/purchasing-history-page.tsx"), "PurchasingHistoryPage");
+const PurchasingSettingsPage = lazyNamed(() => import("./pages/purchasing-settings-page.tsx"), "PurchasingSettingsPage");
 
 const purchasingModulePermissions: PermissionCondition = {
   anyOf: [

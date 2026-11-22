@@ -1,17 +1,18 @@
 import React from "react";
 import type { ModuleRouteRegistration, PermissionCondition } from "../../app/router/route-contract.ts";
+import { lazyNamed } from "../../app/router/lazy-route-component.ts";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
 import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { BANKING_DESTINATIONS } from "../../app/router/destination-registry.ts";
-import { BankingPage } from "./pages/banking-page.tsx";
-import { BankingAccountsPage } from "./pages/banking-accounts-page.tsx";
-import { BankingStatementsPage } from "./pages/banking-statements-page.tsx";
-import { BankingReconciliationsPage } from "./pages/banking-reconciliations-page.tsx";
-import { ReconciliationWorkbenchPage } from "./pages/reconciliation-workbench-page.tsx";
-import { BankingCashPage } from "./pages/banking-cash-page.tsx";
-import { BankingTransfersPage } from "./pages/banking-transfers-page.tsx";
-import { BankingForecastPage } from "./pages/banking-forecast-page.tsx";
-import { BankingReportsPage } from "./pages/banking-reports-page.tsx";
+const BankingPage = lazyNamed(() => import("./pages/banking-page.tsx"), "BankingPage");
+const BankingAccountsPage = lazyNamed(() => import("./pages/banking-accounts-page.tsx"), "BankingAccountsPage");
+const BankingStatementsPage = lazyNamed(() => import("./pages/banking-statements-page.tsx"), "BankingStatementsPage");
+const BankingReconciliationsPage = lazyNamed(() => import("./pages/banking-reconciliations-page.tsx"), "BankingReconciliationsPage");
+const ReconciliationWorkbenchPage = lazyNamed(() => import("./pages/reconciliation-workbench-page.tsx"), "ReconciliationWorkbenchPage");
+const BankingCashPage = lazyNamed(() => import("./pages/banking-cash-page.tsx"), "BankingCashPage");
+const BankingTransfersPage = lazyNamed(() => import("./pages/banking-transfers-page.tsx"), "BankingTransfersPage");
+const BankingForecastPage = lazyNamed(() => import("./pages/banking-forecast-page.tsx"), "BankingForecastPage");
+const BankingReportsPage = lazyNamed(() => import("./pages/banking-reports-page.tsx"), "BankingReportsPage");
 
 const bankingModulePermissions: PermissionCondition = {
   anyOf: [

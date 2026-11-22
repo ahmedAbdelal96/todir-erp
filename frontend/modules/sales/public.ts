@@ -13,7 +13,6 @@ export * from "./components/sales-customer-picker.tsx";
 export * from "./components/sales-product-resolver.ts";
 export * from "./components/sales-product-display.tsx";
 export * from "./components/sales-product-picker.tsx";
-export * from "./pages/sales-page.tsx";
 export { salesRoutes } from "./routes.tsx";
 export { ar } from "./i18n/ar.ts";
 export { en } from "./i18n/en.ts";

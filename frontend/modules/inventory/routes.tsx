@@ -1,16 +1,17 @@
 import React from "react";
 import type { ModuleRouteRegistration, PermissionCondition } from "../../app/router/route-contract.ts";
+import { lazyNamed } from "../../app/router/lazy-route-component.ts";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
 import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { INVENTORY_DESTINATIONS } from "../../app/router/destination-registry.ts";
-import { InventoryPage } from "./pages/inventory-page.tsx";
-import { InventoryBalancesPage } from "./pages/inventory-balances-page.tsx";
-import { InventoryMovementsPage } from "./pages/inventory-movements-page.tsx";
-import { InventoryTransfersPage } from "./pages/inventory-transfers-page.tsx";
-import { InventoryCountsPage } from "./pages/inventory-counts-page.tsx";
-import { InventoryAdjustmentsPage } from "./pages/inventory-adjustments-page.tsx";
-import { InventoryWarehousesPage } from "./pages/inventory-warehouses-page.tsx";
-import { InventoryTraceabilityPage } from "./pages/inventory-traceability-page.tsx";
+const InventoryPage = lazyNamed(() => import("./pages/inventory-page.tsx"), "InventoryPage");
+const InventoryBalancesPage = lazyNamed(() => import("./pages/inventory-balances-page.tsx"), "InventoryBalancesPage");
+const InventoryMovementsPage = lazyNamed(() => import("./pages/inventory-movements-page.tsx"), "InventoryMovementsPage");
+const InventoryTransfersPage = lazyNamed(() => import("./pages/inventory-transfers-page.tsx"), "InventoryTransfersPage");
+const InventoryCountsPage = lazyNamed(() => import("./pages/inventory-counts-page.tsx"), "InventoryCountsPage");
+const InventoryAdjustmentsPage = lazyNamed(() => import("./pages/inventory-adjustments-page.tsx"), "InventoryAdjustmentsPage");
+const InventoryWarehousesPage = lazyNamed(() => import("./pages/inventory-warehouses-page.tsx"), "InventoryWarehousesPage");
+const InventoryTraceabilityPage = lazyNamed(() => import("./pages/inventory-traceability-page.tsx"), "InventoryTraceabilityPage");
 
 const inventoryModulePermissions: PermissionCondition = {
   anyOf: [

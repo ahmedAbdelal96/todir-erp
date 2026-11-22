@@ -1,11 +1,12 @@
 import React from "react";
 import type { ModuleRouteRegistration } from "../../app/router/route-contract.ts";
+import { lazyNamed } from "../../app/router/lazy-route-component.ts";
 import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
 import { PAYMENTS_DESTINATIONS } from "../../app/router/destination-registry.ts";
-import { PaymentListPage } from "./pages/payment-list-page.tsx";
-import { PaymentDetailPage } from "./pages/payment-detail-page.tsx";
-import { PublicPaymentLinkPage } from "./pages/public-payment-link-page.tsx";
+const PaymentListPage = lazyNamed(() => import("./pages/payment-list-page.tsx"), "PaymentListPage");
+const PaymentDetailPage = lazyNamed(() => import("./pages/payment-detail-page.tsx"), "PaymentDetailPage");
+const PublicPaymentLinkPage = lazyNamed(() => import("./pages/public-payment-link-page.tsx"), "PublicPaymentLinkPage");
 
 const paymentsNavigation = {
     id: "payments",

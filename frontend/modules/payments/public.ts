@@ -30,9 +30,6 @@ export {
   useCancelPaymentLink
 } from "./hooks/payment-queries.ts";
 
-export { PaymentListPage } from "./pages/payment-list-page.tsx";
-export { PaymentDetailPage } from "./pages/payment-detail-page.tsx";
-export { PublicPaymentLinkPage } from "./pages/public-payment-link-page.tsx";
 export { PaymentStatusBadge, ApplicationStatusBadge, ProviderStatusBadge, ReconciliationStatusBadge } from "./components/payment-status-badge.tsx";
 export { AccountPicker } from "./components/account-picker.tsx";
 export { PaymentReceiptModal } from "./components/payment-receipt-modal.tsx";

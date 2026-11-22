@@ -1,13 +1,14 @@
 import React from "react";
 import type { ModuleRouteRegistration, PermissionCondition } from "../../app/router/route-contract.ts";
+import { lazyNamed } from "../../app/router/lazy-route-component.ts";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
 import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { CRM_DESTINATIONS } from "../../app/router/destination-registry.ts";
-import { CrmPage } from "./pages/crm-page.tsx";
-import { CrmLeadsPage } from "./pages/crm-leads-page.tsx";
-import { CrmOpportunitiesPage } from "./pages/crm-opportunities-page.tsx";
-import { CrmActivitiesPage } from "./pages/crm-activities-page.tsx";
-import { CrmManagementPage } from "./pages/crm-management-page.tsx";
+const CrmPage = lazyNamed(() => import("./pages/crm-page.tsx"), "CrmPage");
+const CrmLeadsPage = lazyNamed(() => import("./pages/crm-leads-page.tsx"), "CrmLeadsPage");
+const CrmOpportunitiesPage = lazyNamed(() => import("./pages/crm-opportunities-page.tsx"), "CrmOpportunitiesPage");
+const CrmActivitiesPage = lazyNamed(() => import("./pages/crm-activities-page.tsx"), "CrmActivitiesPage");
+const CrmManagementPage = lazyNamed(() => import("./pages/crm-management-page.tsx"), "CrmManagementPage");
 
 const crmModulePermissions: PermissionCondition = {
   anyOf: [

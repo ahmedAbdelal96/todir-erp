@@ -34,6 +34,12 @@ Before writing or modifying any frontend code, the agent must strictly execute:
 5. **Quality Verification Ladder (Step 4)**:
    - Run typecheck, `pnpm run architecture:frontend`, `pnpm run localization:verify`, `pnpm run api:drift`, and real Playwright E2E workflows before declaring any task complete.
 
+### 00.1 Performance and scalability foundation
+
+Measure the initial route payload and the visited-route payload on a production Vite build before changing code. Prefer route-level dynamic imports for page graphs that are not needed by the shell; keep `AppShell` suspense, error boundaries, permissions, and URL state intact. Do not hide an oversized shared chunk by increasing the warning threshold.
+
+TanStack Query remains the server-state owner. Keep query keys scoped to the authorized legal entity where the business fact is entity-scoped, keep list queries paginated/bounded, and avoid duplicate requests caused by unstable keys or render effects. Do not move authorization, financial truth, inventory availability, or idempotency into client cache. Any performance change must preserve loading, empty, error, no-permission, partial, and stale-data states and must be verified through the affected real-stack journey.
+
 ---
 
 ## 0. Frontend Architecture Map & Directory Structure

@@ -17,6 +17,10 @@ Corrections come from three sources, and this skill eliminates each one:
 Precedence when instructions conflict:
 `User explicit instruction in this conversation > AGENTS.md / frontend/AGENTS.md > .erp-frontend/profile.md > This skill's defaults.`
 
+## Performance foundation rules
+
+For shared frontend performance work, measure a production Vite build and the affected real route before and after the change. Prefer route-level dynamic imports for page graphs that are not required by the shell, preserve the existing suspense/error boundary and permission behavior, and keep oversized shared chunks visible in build output. TanStack Query remains the server-state owner; lists stay bounded/paginated, query keys preserve legal-entity scope, and client caches never become authoritative for permissions, financial truth, inventory availability, or idempotency. Verify all six governed states after a performance change.
+
 ---
 
 ## Step 0 - Discovery Gate (Mandatory for every frontend task)

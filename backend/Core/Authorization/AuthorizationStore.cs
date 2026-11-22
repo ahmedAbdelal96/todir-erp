@@ -1,4 +1,6 @@
 using Npgsql;
+using Microsoft.AspNetCore.Http;
+using Shared.BuildingBlocks.Observability;
 using Shared.Primitives.Identifiers;
 
 namespace Core.Authorization;
@@ -13,10 +15,40 @@ public sealed class NullAuthorizationSubjectStore : IAuthorizationSubjectStore
     public Task<AuthorizationSubject?> LoadAsync(TenantId tenantId, Guid membershipId, CancellationToken cancellationToken = default) => Task.FromResult<AuthorizationSubject?>(null);
 }
 
-public sealed class NpgsqlAuthorizationSubjectStore(NpgsqlDataSource dataSource) : IAuthorizationSubjectStore
+public sealed record AuthorizationSubjectCacheOptions(bool Enabled);
+
+public sealed class NpgsqlAuthorizationSubjectStore : IAuthorizationSubjectStore
 {
+    private static readonly object RequestCacheKey = new();
+    private readonly NpgsqlDataSource dataSource;
+    private readonly IHttpContextAccessor? httpContextAccessor;
+    private readonly AuthorizationSubjectCacheOptions cacheOptions;
+
+    public NpgsqlAuthorizationSubjectStore(NpgsqlDataSource dataSource)
+        : this(dataSource, null, new AuthorizationSubjectCacheOptions(true))
+    {
+    }
+
+    public NpgsqlAuthorizationSubjectStore(
+        NpgsqlDataSource dataSource,
+        IHttpContextAccessor? httpContextAccessor,
+        AuthorizationSubjectCacheOptions cacheOptions)
+    {
+        this.dataSource = dataSource;
+        this.httpContextAccessor = httpContextAccessor;
+        this.cacheOptions = cacheOptions;
+    }
+
     public async Task<AuthorizationSubject?> LoadAsync(TenantId tenantId, Guid membershipId, CancellationToken cancellationToken = default)
     {
+        var httpContext = httpContextAccessor?.HttpContext;
+        if (cacheOptions.Enabled && httpContext?.Items.TryGetValue(RequestCacheKey, out var cachedValue) == true && cachedValue is CachedSubject cachedSubject && cachedSubject.TenantId == tenantId && cachedSubject.MembershipId == membershipId)
+        {
+            CoreMetrics.AuthorizationSubjectRequestCacheHits.Add(1);
+            return cachedSubject.Subject;
+        }
+
+        CoreMetrics.AuthorizationSubjectDatabaseLoads.Add(1);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using (var context = new NpgsqlCommand("select set_config('app.tenant_id', $1, true)", connection, transaction))
@@ -52,6 +84,10 @@ public sealed class NpgsqlAuthorizationSubjectStore(NpgsqlDataSource dataSource)
         await reader.DisposeAsync();
         await transaction.CommitAsync(cancellationToken);
         var version = roles.Values.Select(role => role.Version).DefaultIfEmpty().Max();
-        return new AuthorizationSubject(tenantId, membershipId, assignments, roles.Values.ToArray(), permissions.ToArray(), checked((int)Math.Min(version, int.MaxValue)));
+        var subject = new AuthorizationSubject(tenantId, membershipId, assignments, roles.Values.ToArray(), permissions.ToArray(), checked((int)Math.Min(version, int.MaxValue)));
+        if (cacheOptions.Enabled && httpContext is not null) httpContext.Items[RequestCacheKey] = new CachedSubject(tenantId, membershipId, subject);
+        return subject;
     }
+
+    private sealed record CachedSubject(TenantId TenantId, Guid MembershipId, AuthorizationSubject? Subject);
 }

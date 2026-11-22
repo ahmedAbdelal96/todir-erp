@@ -1,16 +1,17 @@
 import React from "react";
 import type { ModuleRouteRegistration, PermissionCondition } from "../../app/router/route-contract.ts";
+import { lazyNamed } from "../../app/router/lazy-route-component.ts";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
 import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { ACCOUNTING_DESTINATIONS } from "../../app/router/destination-registry.ts";
-import { AccountingPage } from "./pages/accounting-page.tsx";
-import { AccountingJournalsPage } from "./pages/accounting-journals-page.tsx";
-import { AccountingLedgerPage } from "./pages/accounting-ledger-page.tsx";
-import { AccountingTrialBalancePage } from "./pages/accounting-trial-balance-page.tsx";
-import { AccountingStatementsPage } from "./pages/accounting-statements-page.tsx";
-import { AccountingPeriodsPage } from "./pages/accounting-periods-page.tsx";
-import { AccountingReconciliationPage } from "./pages/accounting-reconciliation-page.tsx";
-import { AccountingRevaluationPage } from "./pages/accounting-revaluation-page.tsx";
+const AccountingPage = lazyNamed(() => import("./pages/accounting-page.tsx"), "AccountingPage");
+const AccountingJournalsPage = lazyNamed(() => import("./pages/accounting-journals-page.tsx"), "AccountingJournalsPage");
+const AccountingLedgerPage = lazyNamed(() => import("./pages/accounting-ledger-page.tsx"), "AccountingLedgerPage");
+const AccountingTrialBalancePage = lazyNamed(() => import("./pages/accounting-trial-balance-page.tsx"), "AccountingTrialBalancePage");
+const AccountingStatementsPage = lazyNamed(() => import("./pages/accounting-statements-page.tsx"), "AccountingStatementsPage");
+const AccountingPeriodsPage = lazyNamed(() => import("./pages/accounting-periods-page.tsx"), "AccountingPeriodsPage");
+const AccountingReconciliationPage = lazyNamed(() => import("./pages/accounting-reconciliation-page.tsx"), "AccountingReconciliationPage");
+const AccountingRevaluationPage = lazyNamed(() => import("./pages/accounting-revaluation-page.tsx"), "AccountingRevaluationPage");
 
 const accountingModulePermissions: PermissionCondition = {
   anyOf: [

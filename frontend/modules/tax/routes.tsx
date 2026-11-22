@@ -1,6 +1,7 @@
 import React from "react";
 import type { ModuleRouteRegistration } from "../../app/router/route-contract.ts";
-import { TaxPage } from "./pages/tax-page.tsx";
+import { lazyNamed } from "../../app/router/lazy-route-component.ts";
+const TaxPage = lazyNamed(() => import("./pages/tax-page.tsx"), "TaxPage");
 
 export const taxRoutes: ModuleRouteRegistration = {
   navigation: {

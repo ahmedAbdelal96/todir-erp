@@ -1,18 +1,19 @@
 import React from "react";
 import type { ModuleRouteRegistration, PermissionCondition } from "../../app/router/route-contract.ts";
+import { lazyNamed } from "../../app/router/lazy-route-component.ts";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
 import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { MANUFACTURING_DESTINATIONS } from "../../app/router/destination-registry.ts";
-import { ManufacturingPage } from "./pages/manufacturing-page.tsx";
-import { ProductionOrdersPage } from "./pages/production-orders-page.tsx";
-import { ProductionOrderWorkspacePage } from "./pages/production-order-workspace-page.tsx";
-import { ShopFloorPage } from "./pages/shop-floor-page.tsx";
-import { MaterialsPage } from "./pages/materials-page.tsx";
-import { MrpPage } from "./pages/mrp-page.tsx";
-import { DefinitionsPage } from "./pages/definitions-page.tsx";
-import { CapacityPage } from "./pages/capacity-page.tsx";
-import { GenealogyPage } from "./pages/genealogy-page.tsx";
-import { ManufacturingCostingPage } from "./pages/manufacturing-costing-page.tsx";
+const ManufacturingPage = lazyNamed(() => import("./pages/manufacturing-page.tsx"), "ManufacturingPage");
+const ProductionOrdersPage = lazyNamed(() => import("./pages/production-orders-page.tsx"), "ProductionOrdersPage");
+const ProductionOrderWorkspacePage = lazyNamed(() => import("./pages/production-order-workspace-page.tsx"), "ProductionOrderWorkspacePage");
+const ShopFloorPage = lazyNamed(() => import("./pages/shop-floor-page.tsx"), "ShopFloorPage");
+const MaterialsPage = lazyNamed(() => import("./pages/materials-page.tsx"), "MaterialsPage");
+const MrpPage = lazyNamed(() => import("./pages/mrp-page.tsx"), "MrpPage");
+const DefinitionsPage = lazyNamed(() => import("./pages/definitions-page.tsx"), "DefinitionsPage");
+const CapacityPage = lazyNamed(() => import("./pages/capacity-page.tsx"), "CapacityPage");
+const GenealogyPage = lazyNamed(() => import("./pages/genealogy-page.tsx"), "GenealogyPage");
+const ManufacturingCostingPage = lazyNamed(() => import("./pages/manufacturing-costing-page.tsx"), "ManufacturingCostingPage");
 
 const manufacturingModulePermissions: PermissionCondition = {
   anyOf: [

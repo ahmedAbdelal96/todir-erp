@@ -13,7 +13,6 @@ export * from "./components/purchasing-status-badge.tsx";
 export * from "./components/purchasing-tab-nav.tsx";
 export * from "./components/purchasing-kpi-card.tsx";
 export * from "./components/purchasing-data-table.tsx";
-export * from "./pages/purchasing-page.tsx";
 export { purchasingRoutes } from "./routes.tsx";
 export { ar } from "./i18n/ar.ts";
 export { en } from "./i18n/en.ts";

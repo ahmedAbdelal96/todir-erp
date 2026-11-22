@@ -7,6 +7,7 @@ using Core.Services;
 using Core.Transactions;
 using MassTransit;
 using MassTransit.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -711,6 +712,10 @@ public sealed class ProjectsCrossModuleAcceptanceTests
 
     private static WebApplicationFactory<Program> CreateFactory(string connectionString) => new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
         .UseEnvironment("Development")
+        .ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["TODIR_DATABASE_CONNECTION"] = connectionString
+        }))
         .UseSetting("TODIR_DATABASE_CONNECTION", connectionString)
         .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
 
@@ -723,7 +728,9 @@ public sealed class ProjectsCrossModuleAcceptanceTests
         if (repository is null) throw new InvalidOperationException("The repository root could not be located for the Projects Worker process.");
         var worker = new Process
         {
-            StartInfo = new ProcessStartInfo("dotnet", "run --project backend/Worker/Worker.csproj --no-build --no-restore --no-launch-profile")
+            StartInfo = new ProcessStartInfo(
+                "dotnet",
+                $"run --configuration Release --project backend/Worker/Worker.csproj --no-build --no-restore --no-launch-profile -- --TODIR_DATABASE_CONNECTION=\"{connectionString.Replace("\"", "\\\"", StringComparison.Ordinal)}\"")
             {
                 WorkingDirectory = repository.FullName,
                 UseShellExecute = false,

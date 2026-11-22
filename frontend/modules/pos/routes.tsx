@@ -1,14 +1,15 @@
 import React from "react";
 import type { ModuleRouteRegistration, PermissionCondition } from "../../app/router/route-contract.ts";
+import { lazyNamed } from "../../app/router/lazy-route-component.ts";
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
 import { ModuleRootRoute } from "../../app/router/module-root-route.tsx";
 import { POS_DESTINATIONS } from "../../app/router/destination-registry.ts";
-import { PosCheckoutPage } from "./pages/pos-checkout-page.tsx";
-import { PosSessionsPage } from "./pages/pos-sessions-page.tsx";
-import { PosRegistersPage } from "./pages/pos-registers-page.tsx";
-import { PosReturnsPage } from "./pages/pos-returns-page.tsx";
-import { PosOfflinePage } from "./pages/pos-offline-page.tsx";
-import { PosReportsPage } from "./pages/pos-reports-page.tsx";
+const PosCheckoutPage = lazyNamed(() => import("./pages/pos-checkout-page.tsx"), "PosCheckoutPage");
+const PosSessionsPage = lazyNamed(() => import("./pages/pos-sessions-page.tsx"), "PosSessionsPage");
+const PosRegistersPage = lazyNamed(() => import("./pages/pos-registers-page.tsx"), "PosRegistersPage");
+const PosReturnsPage = lazyNamed(() => import("./pages/pos-returns-page.tsx"), "PosReturnsPage");
+const PosOfflinePage = lazyNamed(() => import("./pages/pos-offline-page.tsx"), "PosOfflinePage");
+const PosReportsPage = lazyNamed(() => import("./pages/pos-reports-page.tsx"), "PosReportsPage");
 
 const posModulePermissions: PermissionCondition = {
   anyOf: [
