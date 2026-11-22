@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { PAYMENTS_DESTINATIONS } from "../../../app/router/destination-registry.ts";
+import { buildCanonicalTaskPath } from "../../../app/router/legacy-task-navigation.ts";
 import { ListPage } from "../../../components/pages/list-page.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
@@ -57,12 +59,12 @@ export function PaymentListPage({ initialTab }: PaymentListPageProps = {}): Reac
   const perms = usePaymentsPermissions();
 
   // Tab State: "all" | "incoming" | "outgoing" | "transfers" | "accounts" | "requests"
-  const activeTab = searchParams.get("tab") || initialTab || "all";
+  const activeTab = initialTab || searchParams.get("tab") || "all";
   const setActiveTab = (tab: string) => {
     const next = new URLSearchParams(searchParams);
-    next.set("tab", tab);
     next.set("page", "1");
-    setSearchParams(next);
+    const target = buildCanonicalTaskPath(PAYMENTS_DESTINATIONS, "/payments", tab, next.toString());
+    if (target) navigate(target);
   };
 
   // Filter State
@@ -238,7 +240,14 @@ export function PaymentListPage({ initialTab }: PaymentListPageProps = {}): Reac
     { id: "transfers", label: t("tabs.transfers") },
     { id: "accounts", label: t("tabs.accounts") },
     { id: "requests", label: t("tabs.requests") }
-  ];
+  ].filter(tab => Boolean(perms && (
+    tab.id === "all" ||
+    (tab.id === "incoming" && perms.canCreateIncoming) ||
+    (tab.id === "outgoing" && perms.canCreateOutgoing) ||
+    (tab.id === "transfers" && perms.canCreateTransfer) ||
+    (tab.id === "accounts" && perms.canManageAccounts) ||
+    (tab.id === "requests" && perms.canCreateIncoming)
+  )));
 
   const helpContent = {
     title: t("help.title"),

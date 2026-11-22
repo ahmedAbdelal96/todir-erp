@@ -43,6 +43,22 @@ test.describe('TODIR ERP — P3 Waves 3–5 direct navigation real-stack smoke',
       await expect(page.locator('[data-testid="permission-denied-view"]')).not.toBeVisible();
     }
 
+    // Legacy root links must canonicalize through the registered destination
+    // while preserving unrelated filters; a guarded route must ignore a
+    // conflicting query tab rather than render the requested protected task.
+    currentRoute = '/hr?tab=leave&view=compact';
+    await page.goto(currentRoute);
+    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveURL(/\/hr\/leave\?view=compact$/);
+    await expect(page.locator('[data-testid="hr-page"]')).toBeVisible();
+
+    currentRoute = '/hr/leave?tab=directory&view=compact';
+    await page.goto(currentRoute);
+    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveURL(/\/hr\/leave\?tab=directory&view=compact$/);
+    await expect(page.locator('[data-testid="hr-tab-leave"]')).toHaveCSS('font-weight', '600');
+    await expect(page.locator('[data-testid="hr-tab-directory"]')).toHaveCSS('font-weight', '500');
+
     expect(pageErrors, `No route should crash during Wave 3–5 navigation: ${pageErrors.join(' | ')}`).toEqual([]);
   });
 });

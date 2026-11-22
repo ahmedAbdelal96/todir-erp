@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext, useSearchParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { useOptionalLegalEntityContext, useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import { SERVICE_DESTINATIONS, isDestinationPermitted } from "../../../app/router/destination-registry.ts";
+import { buildCanonicalTaskPath } from "../../../app/router/legacy-task-navigation.ts";
 import { useIsMobile } from "../hooks/use-is-mobile.ts";
 import { ServiceOverviewTab } from "../features/overview/service-overview-tab.tsx";
 import { ServiceRequestsTab } from "../features/requests/service-requests-tab.tsx";
@@ -46,23 +48,20 @@ export function ServicePage({ initialTab }: ServicePageProps = {}): React.JSX.El
   const isMobile = useIsMobile(768);
 
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
+  const navigate = useNavigate();
   const runtimeContext = useOptionalLegalEntityContext();
   const permissions = outletCtx?.permissions ?? useOptionalPermissions();
 
-  const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = (searchParams.get("tab") as ServiceTabId | null) ?? initialTab ?? "overview";
+  const [searchParams] = useSearchParams();
+  const activeTab = initialTab ?? (searchParams.get("tab") as ServiceTabId | null) ?? "overview";
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
-  const queryEntityId = searchParams.get("legalEntityId");
-  const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || queryEntityId || null;
-  const effectiveEntityId = legalEntityId || "00000000-0000-0000-0000-000000000001";
+  const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || null;
+  const effectiveEntityId = legalEntityId ?? "";
 
   const handleTabChange = (newTab: string) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("tab", newTab);
-      return next;
-    });
+    const target = buildCanonicalTaskPath(SERVICE_DESTINATIONS, "/service", newTab, searchParams.toString());
+    if (target) navigate(target);
   };
 
   const tabs: readonly {
@@ -116,6 +115,11 @@ export function ServicePage({ initialTab }: ServicePageProps = {}): React.JSX.El
       icon: <FileSpreadsheetIcon size={16} />
     }
   ];
+
+  const visibleTabs = tabs.filter(tab => {
+    const destination = SERVICE_DESTINATIONS.find(item => item.path === `/service${tab.id === "overview" ? "" : `/${tab.id}`}`);
+    return Boolean(destination && outletCtx?.effectiveAccess && isDestinationPermitted(destination, outletCtx.effectiveAccess));
+  });
 
   if (!legalEntityId) {
     return (
@@ -285,7 +289,7 @@ export function ServicePage({ initialTab }: ServicePageProps = {}): React.JSX.El
             scrollbarWidth: "none"
           }}
         >
-          {tabs.map((tab) => {
+          {visibleTabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
               <button
@@ -331,22 +335,22 @@ export function ServicePage({ initialTab }: ServicePageProps = {}): React.JSX.El
         }}
       >
         {activeTab === "overview" && (
-          <ServiceOverviewTab legalEntityId={effectiveEntityId} onNavigateTab={handleTabChange} />
+          <ServiceOverviewTab legalEntityId={legalEntityId} onNavigateTab={handleTabChange} />
         )}
-        {activeTab === "requests" && <ServiceRequestsTab legalEntityId={effectiveEntityId} />}
-        {activeTab === "work-orders" && <WorkOrdersTab legalEntityId={effectiveEntityId} />}
-        {activeTab === "dispatch" && <DispatchTab legalEntityId={effectiveEntityId} />}
+        {activeTab === "requests" && <ServiceRequestsTab legalEntityId={legalEntityId} />}
+        {activeTab === "work-orders" && <WorkOrdersTab legalEntityId={legalEntityId} />}
+        {activeTab === "dispatch" && <DispatchTab legalEntityId={legalEntityId} />}
         {activeTab === "my-day" && (
           <MyDayTab
-            legalEntityId={effectiveEntityId}
+            legalEntityId={legalEntityId}
             tenantId={outletCtx?.tenantId}
             userId={outletCtx?.userId}
           />
         )}
-        {activeTab === "installed-base" && <InstalledBaseTab legalEntityId={effectiveEntityId} />}
-        {activeTab === "preventive" && <PreventiveTab legalEntityId={effectiveEntityId} />}
-        {activeTab === "contracts-warranty" && <ContractsWarrantyTab legalEntityId={effectiveEntityId} />}
-        {activeTab === "billing" && <ServiceBillingTab legalEntityId={effectiveEntityId} />}
+        {activeTab === "installed-base" && <InstalledBaseTab legalEntityId={legalEntityId} />}
+        {activeTab === "preventive" && <PreventiveTab legalEntityId={legalEntityId} />}
+        {activeTab === "contracts-warranty" && <ContractsWarrantyTab legalEntityId={legalEntityId} />}
+        {activeTab === "billing" && <ServiceBillingTab legalEntityId={legalEntityId} />}
       </main>
 
       {/* Contextual Guidance Drawer */}

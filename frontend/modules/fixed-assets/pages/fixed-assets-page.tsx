@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext, useSearchParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { useOptionalLegalEntityContext, useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import { FIXED_ASSETS_DESTINATIONS, isDestinationPermitted } from "../../../app/router/destination-registry.ts";
+import { buildCanonicalTaskPath } from "../../../app/router/legacy-task-navigation.ts";
 import { useIsMobile } from "../hooks/use-is-mobile.ts";
 import { FixedAssetsHeader } from "../components/fixed-assets-header.tsx";
 import { FixedAssetsKpiCard } from "../components/fixed-assets-kpi-card.tsx";
@@ -62,11 +64,12 @@ export function FixedAssetsPage({ initialTab }: FixedAssetsPageProps = {}): Reac
   const isMobile = useIsMobile(768);
 
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
+  const navigate = useNavigate();
   const runtimeContext = useOptionalLegalEntityContext();
   const permissions = outletCtx?.permissions ?? useOptionalPermissions();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = (searchParams.get("tab") as FixedAssetsTabId | null) ?? initialTab ?? "register";
+  const activeTab = initialTab ?? (searchParams.get("tab") as FixedAssetsTabId | null) ?? "register";
 
   const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || "";
   const legalEntityName = runtimeContext?.name;
@@ -151,11 +154,8 @@ export function FixedAssetsPage({ initialTab }: FixedAssetsPageProps = {}): Reac
   const [isNewCategoryOpen, setIsNewCategoryOpen] = useState(false);
 
   const handleTabChange = (newTab: FixedAssetsTabId) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("tab", newTab);
-      return next;
-    });
+    const target = buildCanonicalTaskPath(FIXED_ASSETS_DESTINATIONS, "/fixed-assets", newTab, searchParams.toString());
+    if (target) navigate(target);
   };
 
   const tabs: readonly {
@@ -171,7 +171,11 @@ export function FixedAssetsPage({ initialTab }: FixedAssetsPageProps = {}): Reac
     { id: "depreciation" as FixedAssetsTabId, label: t("tabs.depreciation", "الدفاتر والاستهلاك"), icon: <CalculatorIcon size={16} />, requiresElevated: true, hidden: !canFinancialRead },
     { id: "reports" as FixedAssetsTabId, label: t("tabs.reports", "المطابقة والتقارير"), icon: <FileSpreadsheetIcon size={16} />, requiresElevated: true, hidden: !canFinancialRead },
     { id: "my-assets" as FixedAssetsTabId, label: t("tabs.myAssets", "أصولي وعهد العمل"), icon: <UserIcon size={16} /> }
-  ].filter((tab) => !tab.hidden);
+  ].filter((tab) => {
+    if (tab.hidden) return false;
+    const destination = FIXED_ASSETS_DESTINATIONS.find(item => item.path === `/fixed-assets${tab.id === "register" ? "/register" : `/${tab.id}`}`);
+    return Boolean(destination && outletCtx?.effectiveAccess && isDestinationPermitted(destination, outletCtx.effectiveAccess));
+  });
 
   if (!legalEntityId) {
     return (

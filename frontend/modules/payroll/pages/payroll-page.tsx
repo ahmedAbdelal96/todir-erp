@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext, useSearchParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { PayrollTabNav, type PayrollTabId, type PayrollTabDef } from "../components/payroll-tab-nav.tsx";
 import { PayrollHomeTab } from "../features/home/payroll-home-tab.tsx";
 import { PayrollRunsTab } from "../features/runs/payroll-runs-tab.tsx";
@@ -16,6 +16,8 @@ import { Button } from "../../../components/primitives/button.tsx";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { useOptionalLegalEntityContext } from "../../../core/runtime/runtime-provider.tsx";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import { PAYROLL_DESTINATIONS, isDestinationPermitted } from "../../../app/router/destination-registry.ts";
+import { buildCanonicalTaskPath } from "../../../app/router/legacy-task-navigation.ts";
 
 export interface PayrollPageProps {
   readonly initialTab?: PayrollTabId | undefined;
@@ -24,6 +26,7 @@ export interface PayrollPageProps {
 export function PayrollPage({ initialTab }: PayrollPageProps = {}): React.JSX.Element {
   const { t } = useTranslation("payroll");
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const runtimeContext = useOptionalLegalEntityContext();
@@ -39,21 +42,15 @@ export function PayrollPage({ initialTab }: PayrollPageProps = {}): React.JSX.El
   }
 
   // Active tab & Run Workspace selection derived from searchParams
-  const activeTab = (searchParams.get("tab") as PayrollTabId | null) ?? initialTab ?? "home";
+  const activeTab = initialTab ?? (searchParams.get("tab") as PayrollTabId | null) ?? "home";
   const selectedRunId = searchParams.get("runId");
 
   // Help Modal State
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const handleTabChange = (tabId: PayrollTabId) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("tab", tabId);
-      if (tabId !== "runs") {
-        next.delete("runId");
-      }
-      return next;
-    });
+    const target = buildCanonicalTaskPath(PAYROLL_DESTINATIONS, "/payroll", tabId, searchParams.toString());
+    if (target) navigate(target);
   };
 
   const handleOpenRun = (runId: string) => {
@@ -84,6 +81,12 @@ export function PayrollPage({ initialTab }: PayrollPageProps = {}): React.JSX.El
     { id: "settings", label: t("tabs.settings") },
     { id: "openingBalances", label: t("tabs.openingBalances") }
   ];
+
+  const tabAliases: Record<PayrollTabId, string> = { home: "", runs: "runs", inputs: "inputs", loans: "loans", payslips: "payslips", reports: "reports", setup: "setup", settings: "settings", openingBalances: "opening-balances" };
+  const visibleTabs = tabs.filter(tab => {
+    const destination = PAYROLL_DESTINATIONS.find(item => item.path === "/payroll" + (tabAliases[tab.id] ? `/${tabAliases[tab.id]}` : ""));
+    return Boolean(destination && outletCtx?.effectiveAccess && isDestinationPermitted(destination, outletCtx.effectiveAccess));
+  });
 
   return (
     <div
@@ -165,7 +168,7 @@ export function PayrollPage({ initialTab }: PayrollPageProps = {}): React.JSX.El
       </div>
 
       {/* Tabs Navigation */}
-      <PayrollTabNav activeTab={activeTab} onTabChange={handleTabChange} tabs={tabs} />
+      <PayrollTabNav activeTab={activeTab} onTabChange={handleTabChange} tabs={visibleTabs} />
 
       {/* Tab Contents */}
       <div style={{ flex: 1 }}>

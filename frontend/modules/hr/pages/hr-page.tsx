@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext, useSearchParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { HrTabNav, type HrTabId, type HrTabDef } from "../components/hr-tab-nav.tsx";
 import { HrHomeTab } from "../features/home/hr-home-tab.tsx";
 import { EmployeeDirectoryTab } from "../features/directory/employee-directory-tab.tsx";
@@ -16,6 +16,8 @@ import { Button } from "../../../components/primitives/button.tsx";
 import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { useLegalEntityContext } from "../../../core/runtime/runtime-provider.tsx";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import { HR_DESTINATIONS, isDestinationPermitted } from "../../../app/router/destination-registry.ts";
+import { buildCanonicalTaskPath } from "../../../app/router/legacy-task-navigation.ts";
 
 export interface HrPageProps {
   readonly initialTab?: HrTabId | undefined;
@@ -24,6 +26,7 @@ export interface HrPageProps {
 export function HrPage({ initialTab }: HrPageProps = {}): React.JSX.Element {
   const { t } = useTranslation("hr");
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   let contextEntityId: string | undefined;
@@ -34,10 +37,10 @@ export function HrPage({ initialTab }: HrPageProps = {}): React.JSX.Element {
     // Outside RuntimeProvider
   }
 
-  const legalEntityId = outletCtx?.legalEntityId || contextEntityId || "00000000-0000-0000-0000-000000000001";
+  const legalEntityId = outletCtx?.legalEntityId || contextEntityId || null;
 
   // Tab & Employee State derived from searchParams (Single Source of Truth)
-  const activeTab = (searchParams.get("tab") as HrTabId | null) ?? initialTab ?? "home";
+  const activeTab = initialTab ?? (searchParams.get("tab") as HrTabId | null) ?? "home";
   const selectedEmployeeId = searchParams.get("employeeId");
 
   // Help Modal State
@@ -47,12 +50,10 @@ export function HrPage({ initialTab }: HrPageProps = {}): React.JSX.Element {
   const [isNewEmployeeOpen, setIsNewEmployeeOpen] = useState(false);
 
   const handleTabChange = (tabId: HrTabId) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("tab", tabId);
-      next.delete("employeeId");
-      return next;
-    });
+    const target = buildCanonicalTaskPath(HR_DESTINATIONS, "/hr", tabId, searchParams.toString());
+    if (target) {
+      navigate(target);
+    }
   };
 
   const handleSelectEmployee = (id: string) => {
@@ -64,12 +65,7 @@ export function HrPage({ initialTab }: HrPageProps = {}): React.JSX.Element {
   };
 
   const handleBackToDirectory = () => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete("employeeId");
-      next.set("tab", "directory");
-      return next;
-    });
+    navigate("/hr/directory");
   };
 
   const tabs: readonly HrTabDef[] = [
@@ -83,6 +79,15 @@ export function HrPage({ initialTab }: HrPageProps = {}): React.JSX.Element {
     { id: "reports", label: t("tabs.reports") },
     { id: "imports", label: t("tabs.imports") }
   ];
+
+  const visibleTabs = tabs.filter(tab => {
+    const destination = HR_DESTINATIONS.find(item => item.path.endsWith(`/${tab.id === "selfservice" ? "self-service" : tab.id}`) || (tab.id === "home" && item.path === "/hr"));
+    return Boolean(destination && outletCtx?.effectiveAccess && isDestinationPermitted(destination, outletCtx.effectiveAccess));
+  });
+
+  if (!legalEntityId) {
+    return <div role="alert" style={{ margin: "1.5rem", padding: "2rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-lg)", background: "var(--color-surface-card)", color: "var(--color-content-primary)" }}>{t("page.contextRequiredDescription", "اختر الكيان القانوني للمتابعة.")}</div>;
+  }
 
   return (
     <div data-testid="hr-page" style={{ padding: "1.5rem", maxWidth: "1400px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -114,7 +119,7 @@ export function HrPage({ initialTab }: HrPageProps = {}): React.JSX.Element {
         <HrTabNav
           activeTab={activeTab}
           onTabChange={handleTabChange}
-          tabs={tabs}
+          tabs={visibleTabs}
         />
       )}
 

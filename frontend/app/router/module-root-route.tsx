@@ -1,9 +1,10 @@
 import React from "react";
-import { Navigate, useOutletContext } from "react-router-dom";
+import { Navigate, useLocation, useOutletContext, useSearchParams } from "react-router-dom";
 import type { WorkspaceOutletContext, ModuleNavigationRegistration, PermissionCondition } from "./route-contract.ts";
 import { evaluateEffectivePermissionCondition, isModuleOperational } from "../../core/runtime/effective-access.ts";
-import { getPermittedDestinationsForModule } from "./destination-registry.ts";
+import { getPermittedDestinationsForModule, isDestinationPermitted } from "./destination-registry.ts";
 import { DefaultAccessDeniedView } from "../../core/runtime/permission-guard.tsx";
+import { removeLegacyTabQuery, resolveLegacyTaskDestination } from "./legacy-task-navigation.ts";
 
 export interface ModuleRootRouteProps {
   readonly module: ModuleNavigationRegistration;
@@ -20,6 +21,8 @@ export function ModuleRootRoute({
 }: ModuleRootRouteProps): React.JSX.Element {
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const effectiveAccess = outletCtx?.effectiveAccess;
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
 
   if (!effectiveAccess) {
     return <DefaultAccessDeniedView />;
@@ -29,6 +32,22 @@ export function ModuleRootRoute({
   const moduleIds = module.moduleIds && module.moduleIds.length > 0 ? module.moduleIds : [module.id];
   if (!moduleIds.some(m => isModuleOperational(effectiveAccess, m, allowReadOnly))) {
     return <DefaultAccessDeniedView />;
+  }
+
+  // `?tab=` is a legacy entry point only. Resolve it against the same
+  // destination registry used by the sidebar, then enforce that destination's
+  // permission before changing the URL. This prevents a query value from
+  // selecting a protected task inside an otherwise permitted module.
+  const legacyTab = searchParams.get("tab");
+  if (legacyTab) {
+    const destination = resolveLegacyTaskDestination(module, legacyTab);
+    if (destination && !isDestinationPermitted(destination, effectiveAccess)) {
+      return <DefaultAccessDeniedView />;
+    }
+
+    const canonicalPath = destination?.path ?? module.path;
+    const cleanedPath = removeLegacyTabQuery(canonicalPath, location.search);
+    return <Navigate to={cleanedPath} replace />;
   }
 
   // If user has permission for overview, render defaultElement

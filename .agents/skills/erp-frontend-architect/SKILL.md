@@ -110,6 +110,12 @@ Before writing any component or markup, answer these 10 points:
    - **Context Race Correlation & Protection**: Effective-access requests must use sequence correlation counters and abort stale in-flight requests to prevent out-of-order resolution during rapid scope switching.
    - **Tenant & Legal-Entity Cache Invalidation**: Switching organizations or legal entities must immediately flush the permissions and effective-access cache, triggering a clean refetch.
 
+### Permanent Contract — Canonical Task Navigation & Authorization
+
+For every registered module, use the destination registry as the only authority for task identity, canonical path, label, mode, and permission condition. Independent tasks must be addressable by a dedicated nested route. A legacy `?tab=` value is accepted only at the module root as a safe compatibility redirect: resolve it against registered destinations, evaluate the target with scoped effective access, preserve unrelated query parameters, remove `tab`, and use `replace`. An unauthorized target renders the fail-closed denied state; an unknown target is removed and follows the normal permitted landing. Never invent paths or let a query value bypass a canonical route's guarded `initialTab`.
+
+Query tabs are permitted only for filters or tabs inside the same record/workbench. Module task tabs and quick actions must be filtered from the same effective-access projection used by the sidebar and command palette. Never use `!isPermissionsLoaded` as an authorization grant, fabricate legal-entity IDs, or expose a task that lacks its registered route and guard. Every navigation change requires structural regression coverage plus narrow-role real-stack proof for the affected module; the final evidence must be captured after the last relevant change.
+
 ---
 
 ## Step 4 - Quality Gates & Verification Ladder

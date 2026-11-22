@@ -135,6 +135,15 @@ This backlog tracks the phased transition of TODIR ERP SaaS from coarse single-p
 | Manufacturing / Projects / Field Service | PASS | PASS | PASS | PASS | PASS |
 | Command Palette, favorites, recents, direct links | PASS | PASS | PASS | PASS | PASS |
 
+### Final Navigation Closure — Canonical Route Contract
+
+- [x] Added a shared legacy-task resolver that maps root `?tab=` values only to registered destinations and performs permission-aware canonical redirects.
+- [x] Preserved unrelated query parameters while removing the legacy selector; invalid selectors follow normal module landing and unauthorized selectors fail closed.
+- [x] Made guarded route inputs authoritative over query tabs and migrated Wave 3–5 in-page task navigation to canonical paths where the page owned the navigation.
+- [x] Removed frontend fabricated legal-entity fallbacks from the affected module scope paths and removed the permissive Projects permission-loaded fallback.
+- [x] Added `navigation-consistency.test.ts` for destination/route parity, legacy resolution, query preservation, unauthorized target behavior, unsafe tab precedence, and fabricated-scope regression.
+- [x] Codified the permanent contract in `frontend/AGENTS.md`, `.agents/skills/erp-frontend-architect/SKILL.md`, and `references/ux-laws.md`.
+
 ## 3. Deferred Scope
 
 The navigation rollout is complete for the authorized frontend scope. Dedicated heavyweight performance certification (including PJ38) and final human Product/UX approval remain outside this engineering delivery gate.
@@ -145,17 +154,17 @@ The navigation rollout is complete for the authorized frontend scope. Dedicated 
 
 | Quality Gate | Tool / Command | Status | Evidence |
 |---|---|---|---|
-| **TypeScript Typecheck** | `pnpm run typecheck` | **BLOCKED BY CONCURRENT WORK** | Navigation-owned code typechecks; the final workspace check reports 5 pre-existing errors in the concurrent manufacturing edit `frontend/modules/manufacturing/pages/materials-page.tsx` (number passed where the shared formatter requires a decimal string) |
+| **TypeScript Typecheck** | `pnpm run typecheck` | **PASSED** | Root and frontend TypeScript checks completed with zero errors after the final navigation change |
 | **Frontend Architecture** | `pnpm run architecture:frontend` | **PASSED** | Module boundaries, fixtures, and rules 100% clean |
 | **Localization Verification** | `pnpm run localization:verify` | **PASSED** | Zero missing keys, full Arabic/English parity |
-| **Frontend Unit Suite** | `pnpm run test:frontend` | **PASSED** | 278/278 tests passed across 58 suites, including Wave 3–5 navigation isolation and manifest parity |
+| **Frontend Unit Suite** | `pnpm run test:frontend` | **PASSED** | 283/283 tests passed across 59 suites, including canonical navigation consistency, Wave 3–5 isolation, and manifest parity |
 | **Permission Audit** | `node --test frontend/tests/navigation/permissions-manifest-audit.test.ts` | **PASSED** | 13/13 cases passed; Wave 3–5 destination permissions and all route files match authoritative manifests |
 | **Lifecycle Coverage Audit** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~ModuleLifecycleCoverageAuditTests` | **PASSED** | 6/6 tests passed (Sales, Purchasing, POS, Banking, CRM, Accounting, Inventory verified) |
 | **Wave 2 Integration Suite** | `dotnet test backend/Tests/Integration/ --filter FullyQualifiedName~NavigationSecurityAcceptanceTests` | **PASSED** | 27/27 tests passed; Disposable template isolation, POS durable recovery (4 cases), Purchasing physical stock receipt & invoice finalization, Sales quotation-to-order, and multi-page server pagination verified; 0 leftover database rows |
 | **Wave 2 Domain Suites** | `dotnet test backend/Tests/Modules/{POS,Purchasing,Sales}/` | **PASSED** | 44/44 tests passed (POS: 32, Purchasing: 10, Sales: 2) |
-| **Browser E2E Real-Stack Wave 3–5 Smoke** | `pnpm --filter frontend exec playwright test tests/e2e/navigation-waves-real-stack.spec.ts` | **PASSED** | 1/1 admin route journey passed across Fixed Assets, Expenses, Invoicing, Payments, HR, Payroll, Projects, and Service |
+| **Browser E2E Real-Stack Wave 3–5 Smoke** | `pnpm --dir frontend exec playwright test tests/e2e/navigation-waves-real-stack.spec.ts --reporter=line` | **PASSED** | 1/1 admin route journey passed across Fixed Assets, Expenses, Invoicing, Payments, HR, Payroll, Projects, and Service, plus legacy canonicalization and guarded-tab precedence |
 | **Frontend Production Build** | `pnpm --dir frontend build` | **PASSED** | Vite v8.3.3 built client with zero bundle errors |
 
 ### Local Acceptance Limitation
 
-The historical `navigation-real-stack.spec.ts` role-isolation suite was attempted locally but its first narrow-role login failed with `auth.invalid_credentials` for `cashier@atlas.com` and, in the focused retry, `crm@atlas.com`. The admin-backed Wave 3–5 route smoke passed; no navigation code failure was observed. The existing local development identity fixture/password state needs to be reseeded separately and is not changed by this frontend navigation delivery.
+The narrow-role portion of the historical `navigation-real-stack.spec.ts` suite was attempted locally. The local development seed intentionally contains only `admin@atlas.com` and `admin@delta.com`; `cashier@atlas.com` failed with `auth.invalid_credentials`, so CRM/accountant cases did not execute. The admin-backed Wave 3–5 smoke and canonicalization proof passed. Creating additional role identities belongs to the development-seed/identity mission and was not introduced into this frontend-only navigation closure.

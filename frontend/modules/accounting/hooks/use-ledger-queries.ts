@@ -192,7 +192,7 @@ export function useLedgerScope(props?: { legalEntityId?: string | undefined }) {
     // Rendered outside Outlet context
   }
 
-  const legalEntityId = props?.legalEntityId || outletEntityId || contextEntityId || "00000000-0000-0000-0000-000000000001";
+  const legalEntityId = props?.legalEntityId || outletEntityId || contextEntityId || "";
   const countryCode = contextCountryCode || "EG";
   const baseCurrency = contextBaseCurrency || "EGP";
 

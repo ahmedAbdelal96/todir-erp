@@ -79,10 +79,10 @@ export function CrmPage({ initialTab }: CrmPageProps = {}): React.JSX.Element {
 
   let activeTab: CrmTabId;
   const isExplicitRequest = Boolean(initialTab || rawParamTab);
-  if (rawParamTab) {
-    activeTab = rawParamTab;
-  } else if (initialTab) {
+  if (initialTab) {
     activeTab = initialTab;
+  } else if (rawParamTab) {
+    activeTab = rawParamTab;
   } else if (permittedTabs.some(tab => tab.id === "home")) {
     activeTab = "home";
   } else if (permittedTabs.length > 0) {
@@ -93,7 +93,7 @@ export function CrmPage({ initialTab }: CrmPageProps = {}): React.JSX.Element {
 
   const handleTabChange = (newTab: CrmTabId) => {
     const target = allTabs.find(t => t.id === newTab);
-    if (target && location.pathname !== "/crm") {
+    if (target) {
       navigate(target.routePath);
     } else {
       setSearchParams((prev) => {

@@ -2,7 +2,8 @@
 import { useTranslation } from "react-i18next";
 import { useParams, useNavigate, useSearchParams, useOutletContext } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
-import { useOptionalLegalEntityContext, useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
+import { useOptionalLegalEntityContext } from "../../../core/runtime/runtime-provider.tsx";
+import { hasAnyPermissionInAccess } from "../../../core/runtime/effective-access.ts";
 import { useIsMobile } from "../hooks/use-is-mobile.ts";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
@@ -131,14 +132,9 @@ export function ProjectWorkspacePage({
 
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const runtimeContext = useOptionalLegalEntityContext();
-  const permissions = outletCtx?.permissions ?? useOptionalPermissions();
+  const effectiveAccess = outletCtx?.effectiveAccess;
 
-  const isPermissionsLoaded = Boolean(permissions && permissions.toArray().length > 0);
-  const canRead = !isPermissionsLoaded || Boolean(
-    permissions?.hasPermission("projects.read") ||
-      permissions?.hasPermission("admin") ||
-      permissions?.hasPermission("*")
-  );
+  const canRead = hasAnyPermissionInAccess(effectiveAccess, "projects.read");
 
   // Queries
   const projectQuery = useProjectDetail(projectId);
@@ -211,8 +207,8 @@ export function ProjectWorkspacePage({
     }
   }, [activeTab, project?.projectType]);
 
-  // Fail closed if permissions exist, are loaded, and user cannot read
-  if (isPermissionsLoaded && !canRead) {
+  // Fail closed when the backend-authoritative access does not permit the module.
+  if (!canRead) {
     return (
       <Surface variant="card" padding="normal" style={{ textAlign: "center", margin: "2rem" }}>
         <h2 style={{ color: "var(--color-danger, #ef4444)" }}>{t("messages.unauthorized")}</h2>

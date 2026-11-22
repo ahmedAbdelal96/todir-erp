@@ -56,7 +56,7 @@ function isTabAllowed(tabId: BankingTabId, access?: EffectiveAccess, perms?: Per
     const required = TAB_PERMISSIONS[tabId];
     return required.some(p => perms.hasPermission(p));
   }
-  return true;
+  return false;
 }
 
 export interface BankingPageProps {
@@ -91,10 +91,10 @@ export function BankingPage({ initialTab }: BankingPageProps = {}): React.JSX.El
 
   let activeTab: BankingTabId;
   const isExplicitRequest = Boolean(initialTab || rawParamTab);
-  if (rawParamTab) {
-    activeTab = rawParamTab;
-  } else if (initialTab) {
+  if (initialTab) {
     activeTab = initialTab;
+  } else if (rawParamTab) {
+    activeTab = rawParamTab;
   } else if (permittedTabs.some(tab => tab.id === "overview")) {
     activeTab = "overview";
   } else if (permittedTabs.length > 0) {
@@ -107,7 +107,7 @@ export function BankingPage({ initialTab }: BankingPageProps = {}): React.JSX.El
 
   const handleTabChange = (newTab: BankingTabId) => {
     const target = allTabs.find(t => t.id === newTab);
-    if (target && location.pathname !== "/banking") {
+    if (target) {
       navigate(target.routePath);
     } else {
       setSearchParams((prev) => {

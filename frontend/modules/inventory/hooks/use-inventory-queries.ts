@@ -40,7 +40,7 @@ export function useInventoryScope(options?: InventoryScopeOptions) {
   } catch {
     // Rendered outside RuntimeProvider
   }
-  const legalEntityId = options?.legalEntityId ?? contextEntityId ?? "00000000-0000-0000-0000-000000000001";
+  const legalEntityId = options?.legalEntityId ?? contextEntityId ?? "";
   const today = new Date().toISOString().slice(0, 10);
   return {
     legalEntityId,

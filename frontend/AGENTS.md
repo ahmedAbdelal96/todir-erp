@@ -763,6 +763,19 @@ Export only the owning module's approved public contracts. Do not create a stand
 ---
 ## 8. Quality Verification & Completion Gates
 
+### 8.1 Canonical Task Navigation & Authorization Contract
+
+This contract is permanent and applies to every registered module and every future navigation change:
+
+1. The destination registry is the single source of truth for task IDs, canonical paths, labels, modes, and permission conditions. Sidebar, command palette, favorites, recents, in-page task navigation, and route guards must resolve from the same destination contract.
+2. Independent business workflows use canonical nested routes (`/<module>/<task>`). Query-string `tab` values are legacy entry points only; `ModuleRootRoute` resolves them against the registered destination, checks `isDestinationPermitted` using scoped effective access, removes only `tab`, preserves unrelated parameters, and redirects with `replace`.
+3. A valid but unauthorized legacy target renders the controlled denied state. An unknown legacy value is removed safely and follows normal module landing authorization. No legacy redirect may invent a route, bypass a guard, or loop.
+4. A guarded canonical route's `initialTab` is authoritative. A query `?tab=` must never replace it or expose another task. Query tabs are reserved for filters and same-record/workbench tabs, not independent module tasks.
+5. Task tabs and quick actions are filtered from the same effective-access projection as destinations. Missing access, missing legal-entity context, and missing scope identifiers fail closed; fabricated UUIDs and permissive `!isPermissionsLoaded` fallbacks are prohibited.
+6. Every registered destination must have a route, a matching permission guard, and a focused regression assertion. The navigation consistency test must cover legacy resolution, unrelated-query preservation, unauthorized-target denial, route parity, and unsafe source-pattern detection.
+
+The pre-code card for navigation work must state the module destination set, canonical route for each task, legacy aliases, permission source, guard boundary, record/workbench exceptions, and the regression/real-stack proof plan. Completion requires fresh verification after the last navigation or authorization change; an admin smoke alone is not sufficient for narrow-role acceptance.
+
 Before claiming `FRONTEND COMPLETE`, you MUST run and pass all 9 local verification gates:
 
 ```powershell

@@ -2,7 +2,10 @@
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams, useOutletContext } from "react-router-dom";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
-import { useOptionalLegalEntityContext, useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
+import { useOptionalLegalEntityContext } from "../../../core/runtime/runtime-provider.tsx";
+import { hasAnyPermissionInAccess } from "../../../core/runtime/effective-access.ts";
+import { PROJECTS_DESTINATIONS, isDestinationPermitted } from "../../../app/router/destination-registry.ts";
+import { buildCanonicalTaskPath } from "../../../app/router/legacy-task-navigation.ts";
 import { useIsMobile } from "../hooks/use-is-mobile.ts";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
@@ -37,36 +40,26 @@ export function ProjectsPage({ initialTab }: ProjectsPageProps = {}): React.JSX.
   const [searchParams, setSearchParams] = useSearchParams();
   const isMobile = useIsMobile();
 
-  const activeTab = (searchParams.get("tab") as ProjectsRootTabId | null) ?? initialTab ?? "portfolio";
+  const activeTab = initialTab ?? (searchParams.get("tab") as ProjectsRootTabId | null) ?? "portfolio";
 
   const handleTabChange = (tab: ProjectsRootTabId) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("tab", tab);
-      return next;
-    });
+    const target = buildCanonicalTaskPath(PROJECTS_DESTINATIONS, "/projects", tab, searchParams.toString());
+    if (target) navigate(target);
   };
 
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const runtimeContext = useOptionalLegalEntityContext();
-  const permissions = outletCtx?.permissions ?? useOptionalPermissions();
+  const effectiveAccess = outletCtx?.effectiveAccess;
 
   const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || "";
   const legalEntityName = runtimeContext?.name;
 
-  // Authorization checks (Fail closed once permissions are loaded)
-  const isPermissionsLoaded = Boolean(permissions && permissions.toArray().length > 0);
-  const canRead = !isPermissionsLoaded || Boolean(
-    permissions?.hasPermission("projects.read") ||
-      permissions?.hasPermission("admin") ||
-      permissions?.hasPermission("*")
-  );
-
-  const canCreate = !isPermissionsLoaded || Boolean(
-    permissions?.hasPermission("projects.create") ||
-      permissions?.hasPermission("admin") ||
-      permissions?.hasPermission("*")
-  );
+  // Authorization checks use the backend-authoritative effective access.
+  const canRead = hasAnyPermissionInAccess(effectiveAccess, "projects.read", "projects.budget.read", "projects.cost.read");
+  const canCreate = hasAnyPermissionInAccess(effectiveAccess, "projects.create");
+  const canViewPortfolio = Boolean(effectiveAccess && isDestinationPermitted(PROJECTS_DESTINATIONS[0]!, effectiveAccess));
+  const canViewResourceLoad = Boolean(effectiveAccess && isDestinationPermitted(PROJECTS_DESTINATIONS[1]!, effectiveAccess));
+  const canViewTemplates = Boolean(effectiveAccess && isDestinationPermitted(PROJECTS_DESTINATIONS[2]!, effectiveAccess));
 
   // Search & filter state
   const [search, setSearch] = useState("");
@@ -115,8 +108,8 @@ export function ProjectsPage({ initialTab }: ProjectsPageProps = {}): React.JSX.
   const [isFromSalesOpen, setIsFromSalesOpen] = useState(false);
   const [isNewTemplateOpen, setIsNewTemplateOpen] = useState(false);
 
-  // Fail closed if permissions are loaded and user cannot read
-  if (isPermissionsLoaded && !canRead) {
+  // Fail closed when the backend-authoritative access does not permit the module.
+  if (!canRead) {
     return (
       <Surface variant="card" padding="normal" style={{ textAlign: "center", margin: "2rem" }}>
         <h2 style={{ color: "var(--color-danger, #ef4444)" }}>{t("messages.unauthorized")}</h2>
@@ -256,7 +249,7 @@ export function ProjectsPage({ initialTab }: ProjectsPageProps = {}): React.JSX.
           overflowX: "auto"
         }}
       >
-        <button
+        {canViewPortfolio && <button
           type="button"
           onClick={() => handleTabChange("portfolio")}
           data-testid="tab-portfolio"
@@ -278,9 +271,9 @@ export function ProjectsPage({ initialTab }: ProjectsPageProps = {}): React.JSX.
         >
           <ProjectBriefcaseIcon size={16} />
           {t("tabs.portfolio")}
-        </button>
+          </button>}
 
-        <button
+        {canViewResourceLoad && <button
           type="button"
           onClick={() => handleTabChange("resourceLoad")}
           data-testid="tab-resource-load"
@@ -302,9 +295,9 @@ export function ProjectsPage({ initialTab }: ProjectsPageProps = {}): React.JSX.
         >
           <TeamUsersIcon size={16} />
           {t("tabs.resourceLoad")}
-        </button>
+          </button>}
 
-        <button
+        {canViewTemplates && <button
           type="button"
           onClick={() => handleTabChange("templates")}
           data-testid="tab-templates"
@@ -326,7 +319,7 @@ export function ProjectsPage({ initialTab }: ProjectsPageProps = {}): React.JSX.
         >
           <DocumentFolderIcon size={16} />
           {t("tabs.templates")}
-        </button>
+        </button>}
       </Surface>
 
       {/* Active Tab Panel */}

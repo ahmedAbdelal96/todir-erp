@@ -192,6 +192,12 @@ Accounting and Inventory (highest tab pressure), then Payroll/HR, Sales/Purchasi
 
 ## 9. Implementation & Acceptance Verification (P0 / P2 / P3 Waves 1–5 Complete)
 
+### 9.1 Final Canonical Task Navigation Closure
+
+Independent tasks now have one canonical nested route. Legacy root query links such as `/hr?tab=leave` are compatibility inputs only: the root resolver matches the registered destination, evaluates its scoped effective-access permission, preserves unrelated query values, removes `tab`, and redirects with replacement. Unauthorized legacy targets render the controlled denied state, while unknown values are cleaned and sent through normal module landing. Guarded routes treat `initialTab` as authoritative, so a query value cannot switch a protected route into another task. Record/workbench tabs remain query state only when they describe the same record or document.
+
+The frontend governance contract and regression gates are codified in `frontend/AGENTS.md`, `.agents/skills/erp-frontend-architect/SKILL.md`, `.agents/skills/erp-frontend-architect/references/ux-laws.md`, and `frontend/tests/navigation/navigation-consistency.test.ts`.
+
 - **Foundation (P0)**: Scoped Effective Access API with legal entity and branch evaluation, 7 shallow categories, `<PermissionGuard>` route wrapper, out-of-order race protection, org-switch mutex, query cache flushing, task-level favorites and recents.
 - **Pilot Closure (P2)**: Banking (8 destinations, cashier role isolation, reconciliation full-page workbench) and CRM (5 destinations, sales rep vs manager isolation, team management guards).
 - **Expansion (P3 Wave 1)**: Accounting/Ledger (8 destinations, journal clerk isolation, multi-module commercial entitlement isolation for period closing) and Inventory (7 destinations, physical count clerk isolation, operational tab mutation guards).

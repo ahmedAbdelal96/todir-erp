@@ -42,6 +42,13 @@ The local runtime path was verified with a real finalized Expenses outbox messag
 - Show source provenance and revision on project detail, but do not expose tenant, schema, or implementation identifiers as user fields.
 - Arabic copy must use the governed Projects vocabulary and remain RTL-native.
 
+### Navigation closure addendum
+
+- Projects portfolio, resource-load, and templates are canonical routes: `/projects`, `/projects/resource-load`, and `/projects/templates`.
+- The module root accepts legacy `/projects?tab=resourceLoad` only as a permission-checked replacement redirect to `/projects/resource-load`, preserving unrelated query parameters and removing `tab`.
+- Project record/workspace tabs remain query state because they describe one project record; a root query value cannot override a guarded route's `initialTab`.
+- The frontend destination/route/permission regression suite is `frontend/tests/navigation/navigation-consistency.test.ts`; the real-stack route smoke and legacy canonicalization proof is `frontend/tests/e2e/navigation-waves-real-stack.spec.ts`.
+
 ## Evidence
 
 - `ProjectsTests`: 16/16 persisted acceptance scenarios.

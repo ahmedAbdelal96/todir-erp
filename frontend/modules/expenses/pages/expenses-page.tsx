@@ -1,8 +1,10 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { useOutletContext, useSearchParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { useOptionalLegalEntityContext, useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
+import { EXPENSES_DESTINATIONS, isDestinationPermitted } from "../../../app/router/destination-registry.ts";
+import { buildCanonicalTaskPath } from "../../../app/router/legacy-task-navigation.ts";
 import { useIsMobile } from "../hooks/use-is-mobile.ts";
 import { ExpensesSelfServiceTab } from "../features/self-service/expenses-self-service-tab.tsx";
 import { ExpensesReviewTab } from "../features/review/expenses-review-tab.tsx";
@@ -39,11 +41,12 @@ export function ExpensesPage({ initialTab }: ExpensesPageProps = {}): React.JSX.
   const isMobile = useIsMobile(768);
 
   const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
+  const navigate = useNavigate();
   const runtimeContext = useOptionalLegalEntityContext();
   const permissions = outletCtx?.permissions ?? useOptionalPermissions();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = (searchParams.get("tab") as ExpensesTabId | null) ?? initialTab ?? "self-service";
+  const activeTab = initialTab ?? (searchParams.get("tab") as ExpensesTabId | null) ?? "self-service";
 
   const legalEntityId = outletCtx?.legalEntityId || runtimeContext?.legalEntityId || null;
 
@@ -60,11 +63,8 @@ export function ExpensesPage({ initialTab }: ExpensesPageProps = {}): React.JSX.
   );
 
   const handleTabChange = (newTab: ExpensesTabId) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("tab", newTab);
-      return next;
-    });
+    const target = buildCanonicalTaskPath(EXPENSES_DESTINATIONS, "/expenses", newTab, searchParams.toString());
+    if (target) navigate(target);
   };
 
   const tabs: readonly {
@@ -160,7 +160,10 @@ export function ExpensesPage({ initialTab }: ExpensesPageProps = {}): React.JSX.
     }
   ];
 
-  const visibleTabs = tabs.filter((tab) => !tab.requiresManager || (canManage && (tab.isPermitted ? tab.isPermitted() : true)));
+  const visibleTabs = tabs.filter((tab) => {
+    const destination = EXPENSES_DESTINATIONS.find(item => item.path === `/expenses${tab.id === "self-service" ? "/self-service" : `/${tab.id}`}`);
+    return Boolean(destination && outletCtx?.effectiveAccess && isDestinationPermitted(destination, outletCtx.effectiveAccess));
+  });
   const currentTab = visibleTabs.some((t) => t.id === activeTab) ? activeTab : "self-service";
 
   if (!legalEntityId) {

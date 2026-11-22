@@ -27,7 +27,7 @@ export function SalesPage(): React.JSX.Element {
     // Rendered outside RuntimeProvider
   }
 
-  const legalEntityId = outletCtx?.legalEntityId ?? contextEntityId ?? "00000000-0000-0000-0000-000000000001";
+  const legalEntityId = outletCtx?.legalEntityId ?? contextEntityId ?? "";
 
   // Tab State
   const tabParam = searchParams.get("tab") as SalesTabId | null;

@@ -987,7 +987,7 @@ export function useRecordMeterReadingMutation(_legalEntityId?: string) {
     mutationFn: (args: any) => {
       const subjectId = args.subjectId || args.installedBaseItemId || "00000000-0000-0000-0000-000000000000";
       const request = args.request ?? {
-        legalEntityId: args.legalEntityId || "00000000-0000-0000-0000-000000000001",
+        legalEntityId: args.legalEntityId || _legalEntityId || "",
         subjectId,
         meterCode: args.meterCode || "HOURS",
         value: Number(args.value) || 0,
@@ -1518,7 +1518,7 @@ export const useConvertDueToWorkOrderMutation = (legalEntityId?: string) => {
       (c.mutateAsync as any)({
         dueId: args.dueId,
         request: {
-          legalEntityId: args.legalEntityId || "00000000-0000-0000-0000-000000000001",
+          legalEntityId: args.legalEntityId || legalEntityId || "",
           context: "CustomerFieldService",
           title: args.title || ""
         }

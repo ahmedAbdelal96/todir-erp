@@ -94,7 +94,8 @@ Users interact with enterprise software by tasks, not by monolithic system modul
    - Never gate a module behind a single coarse permission. An employee with cash-count permission must never be blocked from the Banking module just because they lack bank-account management rights.
 3. **Dedicated Task URLs**:
    - Every major task must have a distinct, shareable URL route (e.g. `/banking/cash`, `/banking/statements`, `/crm/leads`, `/crm/opportunities`).
-4. **Dual-Mode Deep Linking**:
-   - Both direct nested path URLs (`/banking/cash`) and backward-compatible query strings (`/banking?tab=cash`) must resolve to the identical task tab and view.
+4. **Canonical Deep Linking and Safe Legacy Compatibility**:
+   - Direct nested paths (`/banking/cash`) are canonical for independent tasks. A legacy query entry (`/banking?tab=cash`) may be accepted only as a one-time redirect to the registered canonical path after destination permission evaluation.
+   - The redirect must remove only `tab`, preserve unrelated query parameters, fail closed for an unauthorized target, and never allow `?tab=` to override a protected `initialTab` on a guarded route. Query tabs remain valid only for the same-record/workbench context.
 5. **Fail-Closed Protection**:
    - Direct manual URL entry into an unauthorized task destination must fail closed and render `<DefaultAccessDeniedView>` with an explanation and clean fallback, never a blank screen, uncaught crash, or partial data leak.
