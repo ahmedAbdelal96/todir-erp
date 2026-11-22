@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { HrTabNav, type HrTabId, type HrTabDef } from "../components/hr-tab-nav.tsx";
@@ -18,6 +18,7 @@ import { useLegalEntityContext } from "../../../core/runtime/runtime-provider.ts
 import type { WorkspaceOutletContext } from "../../../app/router/route-contract.ts";
 import { HR_DESTINATIONS, isDestinationPermitted } from "../../../app/router/destination-registry.ts";
 import { buildCanonicalTaskPath } from "../../../app/router/legacy-task-navigation.ts";
+import { hasAnyPermissionInAccess } from "../../../core/runtime/effective-access.ts";
 
 export interface HrPageProps {
   readonly initialTab?: HrTabId | undefined;
@@ -41,7 +42,21 @@ export function HrPage({ initialTab }: HrPageProps = {}): React.JSX.Element {
 
   // Tab & Employee State derived from searchParams (Single Source of Truth)
   const activeTab = initialTab ?? (searchParams.get("tab") as HrTabId | null) ?? "home";
-  const selectedEmployeeId = searchParams.get("employeeId");
+  const canReadEmployeeDetails = hasAnyPermissionInAccess(
+    outletCtx?.effectiveAccess,
+    "hr.employee.read_basic",
+    "hr.employee.manage"
+  );
+  const canOpenEmployeeWorkspace = activeTab === "directory" && canReadEmployeeDetails;
+  const selectedEmployeeId = canOpenEmployeeWorkspace ? searchParams.get("employeeId") : null;
+
+  useEffect(() => {
+    if (!canOpenEmployeeWorkspace && searchParams.has("employeeId")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("employeeId");
+      setSearchParams(next, { replace: true });
+    }
+  }, [canOpenEmployeeWorkspace, searchParams, setSearchParams]);
 
   // Help Modal State
   const [isHelpOpen, setIsHelpOpen] = useState(false);

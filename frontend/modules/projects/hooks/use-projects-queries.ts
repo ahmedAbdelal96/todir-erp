@@ -77,12 +77,13 @@ export const projectKeys = {
 
 export function useProjectsList(
   legalEntityId: string | undefined,
-  params?: { search?: string; state?: string; projectType?: string; page?: number; pageSize?: number }
+  params?: { search?: string; state?: string; projectType?: string; page?: number; pageSize?: number },
+  options?: { enabled?: boolean }
 ) {
   return useQuery({
     queryKey: projectKeys.list(legalEntityId || "", params),
     queryFn: () => projectsApi.listProjects(legalEntityId!, params),
-    enabled: Boolean(legalEntityId)
+    enabled: Boolean(legalEntityId) && (options?.enabled ?? true)
   });
 }
 
@@ -233,30 +234,33 @@ export function useCloseExceptions(
 
 export function useProjectPortfolio(
   legalEntityId: string | undefined,
-  params?: { page?: number; pageSize?: number }
+  params?: { page?: number; pageSize?: number },
+  options?: { enabled?: boolean }
 ) {
   return useQuery({
     queryKey: projectKeys.portfolio(legalEntityId || "", params),
     queryFn: () => projectsApi.listPortfolio(legalEntityId!, params),
-    enabled: Boolean(legalEntityId)
+    enabled: Boolean(legalEntityId) && (options?.enabled ?? true)
   });
 }
 
-export function useResourceLoad(legalEntityId: string | undefined) {
+export function useResourceLoad(legalEntityId: string | undefined, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: projectKeys.resourceLoad(legalEntityId || ""),
     queryFn: () => projectsApi.listResourceLoad(legalEntityId!),
-    enabled: Boolean(legalEntityId)
+    enabled: Boolean(legalEntityId) && (options?.enabled ?? true)
   });
 }
 
 export function useProjectTemplates(
   legalEntityId?: string,
-  params?: { page?: number; pageSize?: number }
+  params?: { page?: number; pageSize?: number },
+  options?: { enabled?: boolean }
 ) {
   return useQuery({
     queryKey: projectKeys.templates(legalEntityId, params),
-    queryFn: () => projectsApi.listTemplates(legalEntityId, params)
+    queryFn: () => projectsApi.listTemplates(legalEntityId, params),
+    enabled: options?.enabled ?? true
   });
 }
 

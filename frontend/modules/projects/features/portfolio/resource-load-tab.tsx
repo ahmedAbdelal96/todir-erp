@@ -13,7 +13,7 @@ export function ResourceLoadTab({ resourceLoad, isLoading }: ResourceLoadTabProp
   const loadList = Array.isArray(resourceLoad) ? resourceLoad : [];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+    <div data-testid="projects-resource-load-tab" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       <Surface
         variant="card"
         style={{

@@ -139,4 +139,23 @@ describe("canonical task navigation contract", () => {
       assert.doesNotMatch(source, /legalEntityId[^\n]*00000000-0000-0000-0000-000000000001/, relativePath);
     }
   });
+
+  it("keeps Projects resource-load permission and data loading aligned", () => {
+    const destination = PROJECTS_DESTINATIONS.find((item) => item.id === "projects-resource-load");
+    assert.ok(destination);
+    const operatorAccess: EffectiveAccess = { ...emptyAccess, permissions: ["projects.manage_team"], entitledModules: ["projects"] };
+    assert.equal(isDestinationPermitted(destination!, operatorAccess), true);
+
+    const pageSource = fs.readFileSync(path.join(rootDir, "frontend/modules/projects/pages/projects-page.tsx"), "utf8");
+    assert.match(pageSource, /"projects\.manage_team"/);
+    assert.match(pageSource, /useResourceLoad\(legalEntityId, \{ enabled: canViewResourceLoad \}\)/);
+    assert.match(pageSource, /useProjectsList\(legalEntityId, queryParams, \{ enabled: canViewPortfolio \}\)/);
+  });
+
+  it("keeps HR employee identity details bound to the directory task", () => {
+    const pageSource = fs.readFileSync(path.join(rootDir, "frontend/modules/hr/pages/hr-page.tsx"), "utf8");
+    assert.match(pageSource, /activeTab === "directory"/);
+    assert.match(pageSource, /hr\.employee\.read_basic/);
+    assert.match(pageSource, /next\.delete\("employeeId"\)/);
+  });
 });

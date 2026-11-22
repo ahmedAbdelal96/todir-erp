@@ -18,7 +18,7 @@ export function SelfServiceTab({ legalEntityId }: SelfServiceTabProps): React.JS
   const currentEmployment = employmentsQuery.data?.[0];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+    <div data-testid="hr-self-service-tab" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
       <Surface title={t("selfservice.title")}>
         {profileQuery.isLoading ? (
           <p>{t("actions.loading")}</p>

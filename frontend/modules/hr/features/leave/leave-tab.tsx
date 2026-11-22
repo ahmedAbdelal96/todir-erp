@@ -56,7 +56,7 @@ export function LeaveTab({ legalEntityId, defaultEmploymentId }: LeaveTabProps):
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+    <div data-testid="hr-leave-tab" style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
       {/* Top Action Filter Bar */}
       <FilterBar>
         <div style={{ flex: 1 }}>

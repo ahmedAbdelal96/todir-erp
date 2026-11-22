@@ -164,7 +164,7 @@ export function EmployeeWorkspace({
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+    <div data-testid="employee-workspace" style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
       {/* 360-Degree Header Surface */}
       <Surface>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>

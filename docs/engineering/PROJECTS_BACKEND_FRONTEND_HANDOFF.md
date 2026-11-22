@@ -48,6 +48,7 @@ The local runtime path was verified with a real finalized Expenses outbox messag
 - The module root accepts legacy `/projects?tab=resourceLoad` only as a permission-checked replacement redirect to `/projects/resource-load`, preserving unrelated query parameters and removing `tab`.
 - Project record/workspace tabs remain query state because they describe one project record; a root query value cannot override a guarded route's `initialTab`.
 - The frontend destination/route/permission regression suite is `frontend/tests/navigation/navigation-consistency.test.ts`; the real-stack route smoke and legacy canonicalization proof is `frontend/tests/e2e/navigation-waves-real-stack.spec.ts`.
+- The restricted-role real-stack acceptance suite is `frontend/tests/e2e/navigation-restricted-roles-real-stack.spec.ts`. Its disposable fixture provisions scoped HR, Payroll, Projects, and Finance identities in a fresh database, verifies direct-route denial, query-identity tampering, command palette, favorites/recents filtering, bounded Projects API calls, Arabic/English direction, and a 390x844 viewport. Latest result: **4/4 PASS**. Projects resource-load is intentionally available to `projects.manage_team` without `projects.read`.
 
 ## Evidence
 
@@ -57,3 +58,4 @@ The local runtime path was verified with a real finalized Expenses outbox messag
 - Prior valid regressions: Invoicing 17/17, Payments 23/23, architecture 21/21, Release build, formatter, and OpenAPI contract.
 - DbMigrator applied/verified 206 scripts; Development Seed completed for Atlas and Delta.
 - PJ38 heavyweight load certification is explicitly deferred. Frontend/browser acceptance is a separate mission.
+- Restricted-role navigation acceptance is complete for the covered task routes; the fixture is disposable and does not mutate the shared Development database or seed source. Broader human Product/UX acceptance remains a separate approval gate.

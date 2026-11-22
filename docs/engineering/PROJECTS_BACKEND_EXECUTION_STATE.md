@@ -13,6 +13,10 @@ Authorized scope: canonical Module 23 backend/database, cross-module contracts, 
 - Last meaningful change: added authoritative Inventory valuation cost to the project source event, real finalized Expenses→Projects acceptance, real close-exception notification through the existing platform notification store, Sales-source linkage, and transactional approved Change Order application.
 - Final evidence: `ProjectsTests` passed 16/16; `ProjectsCrossModuleAcceptanceTests` passed 9/9 (Sales quotation linkage, Expenses finalization, local RabbitMQ/Worker/Inbox expense projection, Inventory valuation issue/reversal, close-exception notification, Fixed Assets accept/reject, Projects→Invoicing, Invoicing→Subledger→Payments settlement/reversal, and Purchasing→AP actual/correction); broker integration passed 2/2 against local RabbitMQ; architecture passed 21/21; Invoicing 17/17 and Payments 23/23 remain valid. DbMigrator applied/verified 206 scripts and Development Seed completed for Atlas and Delta. Release build, formatter, OpenAPI contract, and `git diff --check` passed after the final source and documentation changes.
 
+## Companion frontend navigation evidence
+
+The isolated restricted-role browser fixture is now reproducible without changing the shared development database or the canonical seed. It provisions four scoped identities, runs the real API/Vite stack, and passed 4/4 scenarios: HR self-service/leave identity binding, Payroll self payslips, Projects resource-load with `projects.manage_team` and no `projects.read`, and limited Finance Expenses/Payments. Direct forbidden routes, command palette, server-tampered favorites/recents, unnecessary Projects queries, Arabic/English direction, and 390x844 page overflow were verified. The Projects backend resource-load authorization accepts either `projects.read` or `projects.manage_team` for the requested legal entity.
+
 ## Coverage rule
 
 Track each MVP capability through requirement → business rule → persistence → API → seed → automated test → runtime evidence. All applicable Module 23 rows have current evidence after the final source change; deferred scope is explicitly recorded above.

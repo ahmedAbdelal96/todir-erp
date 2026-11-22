@@ -55,7 +55,13 @@ export function ProjectsPage({ initialTab }: ProjectsPageProps = {}): React.JSX.
   const legalEntityName = runtimeContext?.name;
 
   // Authorization checks use the backend-authoritative effective access.
-  const canRead = hasAnyPermissionInAccess(effectiveAccess, "projects.read", "projects.budget.read", "projects.cost.read");
+  const canRead = hasAnyPermissionInAccess(
+    effectiveAccess,
+    "projects.read",
+    "projects.budget.read",
+    "projects.cost.read",
+    "projects.manage_team"
+  );
   const canCreate = hasAnyPermissionInAccess(effectiveAccess, "projects.create");
   const canViewPortfolio = Boolean(effectiveAccess && isDestinationPermitted(PROJECTS_DESTINATIONS[0]!, effectiveAccess));
   const canViewResourceLoad = Boolean(effectiveAccess && isDestinationPermitted(PROJECTS_DESTINATIONS[1]!, effectiveAccess));
@@ -98,10 +104,10 @@ export function ProjectsPage({ initialTab }: ProjectsPageProps = {}): React.JSX.
   if (stateFilter !== "ALL") queryParams.state = stateFilter;
   if (typeFilter !== "ALL") queryParams.projectType = typeFilter;
 
-  const projectsQuery = useProjectsList(legalEntityId, queryParams);
-  const portfolioQuery = useProjectPortfolio(legalEntityId);
-  const resourceLoadQuery = useResourceLoad(legalEntityId);
-  const templatesQuery = useProjectTemplates(legalEntityId);
+  const projectsQuery = useProjectsList(legalEntityId, queryParams, { enabled: canViewPortfolio });
+  const portfolioQuery = useProjectPortfolio(legalEntityId, undefined, { enabled: canViewPortfolio });
+  const resourceLoadQuery = useResourceLoad(legalEntityId, { enabled: canViewResourceLoad });
+  const templatesQuery = useProjectTemplates(legalEntityId, undefined, { enabled: canViewTemplates });
 
   // Modals state
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
@@ -198,10 +204,12 @@ export function ProjectsPage({ initialTab }: ProjectsPageProps = {}): React.JSX.
             variant="secondary"
             size="compact"
             onClick={() => {
-              projectsQuery.refetch();
-              portfolioQuery.refetch();
-              resourceLoadQuery.refetch();
-              templatesQuery.refetch();
+              if (canViewPortfolio) {
+                void projectsQuery.refetch();
+                void portfolioQuery.refetch();
+              }
+              if (canViewResourceLoad) void resourceLoadQuery.refetch();
+              if (canViewTemplates) void templatesQuery.refetch();
             }}
             data-testid="btn-refresh-projects"
           >
