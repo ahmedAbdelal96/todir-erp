@@ -33,6 +33,9 @@ public sealed class HrService(HrRepository repository, HrImportRepository import
     public Task<EmployeeProfile> CreateEmployeeAsync(TenantId tenant, Guid actor, Guid membershipId, CreateEmployeeRequest request, Guid correlationId, CancellationToken ct) =>
         repository.CreateEmployeeAsync(tenant, actor, membershipId, request, correlationId, ct);
 
+    public Task<EmployeeProfile> UpdateEmployeeAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employeeId, Guid? legalEntityId, UpdateEmployeeRequest request, Guid correlationId, CancellationToken ct) =>
+        repository.UpdateEmployeeAsync(tenant, actor, membershipId, employeeId, legalEntityId, request, correlationId, ct);
+
     public Task<EmployeeMembershipLinkView> LinkEmployeeMembershipAsync(TenantId tenant, Guid actor, Guid actingMembershipId, Guid employeeId,
         EmployeeMembershipLinkRequest request, Guid correlationId, CancellationToken ct) =>
         repository.LinkMembershipAsync(tenant, actor, actingMembershipId, employeeId, request, correlationId, ct);

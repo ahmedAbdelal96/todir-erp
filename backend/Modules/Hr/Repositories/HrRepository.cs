@@ -74,6 +74,56 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
         }, ct);
     }
 
+    public async Task<EmployeeProfile> UpdateEmployeeAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employeeId, Guid? legalEntityId, UpdateEmployeeRequest request, Guid correlationId, CancellationToken ct)
+    {
+        var reason = request.Reason?.Trim();
+        if (request.ExpectedVersion < 1 || string.IsNullOrWhiteSpace(reason) || reason.Length > 500)
+            throw new HrException("hr.employee_profile_update_invalid");
+
+        return await transactions.ExecuteAsync<EmployeeProfile>(tenant, async (context, token) =>
+        {
+            Employee current;
+            await using (var read = new NpgsqlCommand("select e.id,e.arabic_name,e.english_name,e.preferred_name,e.display_name,e.status,e.membership_id,e.version from business_hr.employee e where e.tenant_id=$1 and e.id=$2 and e.status<>'Archived' and ($3::uuid is null or exists(select 1 from business_hr.employment em where em.tenant_id=e.tenant_id and em.employee_id=e.id and em.legal_entity_id=$3)) for update", context.Connection, context.Transaction))
+            {
+                read.Parameters.AddWithValue(tenant.Value);
+                read.Parameters.AddWithValue(employeeId);
+                read.Parameters.AddWithValue((object?)legalEntityId ?? DBNull.Value);
+                await using var reader = await read.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, token);
+                if (!await reader.ReadAsync(token)) throw new HrException("hr.employee_not_found");
+                current = new Employee(reader.GetGuid(0), tenant.Value, reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetString(4), Enum.Parse<EmployeeStatus>(reader.GetString(5)), reader.IsDBNull(6) ? null : reader.GetGuid(6), reader.GetInt64(7));
+            }
+
+            if (current.Version != request.ExpectedVersion) throw new HrException("hr.employee_concurrency_conflict");
+            var updated = current.UpdateNames(request.ArabicName, request.EnglishName, request.PreferredName);
+            await using (var update = new NpgsqlCommand("update business_hr.employee set arabic_name=$3,english_name=$4,preferred_name=$5,display_name=$6,display_name_normalized=$7,arabic_name_normalized=$8,english_name_normalized=$9,version=$10 where tenant_id=$1 and id=$2 and version=$11", context.Connection, context.Transaction))
+            {
+                update.Parameters.AddWithValue(tenant.Value);
+                update.Parameters.AddWithValue(employeeId);
+                update.Parameters.AddWithValue(updated.ArabicName);
+                update.Parameters.AddWithValue((object?)updated.EnglishName ?? DBNull.Value);
+                update.Parameters.AddWithValue((object?)updated.PreferredName ?? DBNull.Value);
+                update.Parameters.AddWithValue(updated.DisplayName);
+                update.Parameters.AddWithValue(HrSearchNormalization.Normalize(updated.DisplayName));
+                update.Parameters.AddWithValue(HrSearchNormalization.Normalize(updated.ArabicName));
+                update.Parameters.AddWithValue((object?)updated.EnglishName is null ? DBNull.Value : HrSearchNormalization.Normalize(updated.EnglishName));
+                update.Parameters.AddWithValue(updated.Version);
+                update.Parameters.AddWithValue(request.ExpectedVersion);
+                if (await update.ExecuteNonQueryAsync(token) != 1) throw new HrException("hr.employee_concurrency_conflict");
+            }
+
+            await RefreshEmployeeProjectionAsync(context.Connection, context.Transaction, updated, token);
+            var effectiveOn = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+            await AppendEventAsync(context.Connection, context.Transaction, tenant, employeeId, null, "EmployeeProfileCorrected", effectiveOn, actor,
+                new { previousArabicName = current.ArabicName, previousEnglishName = current.EnglishName, previousPreferredName = current.PreferredName, updated.ArabicName, updated.EnglishName, updated.PreferredName, reason }, correlationId, token);
+            await NpgsqlAuditWriter.WriteAsync(context.Connection, context.Transaction,
+                new AuditEntry(Guid.CreateVersion7(), tenant, legalEntityId, null, "Human", actor, membershipId, "hr", "employee.profile_corrected", "employee", employeeId,
+                    JsonSerializer.Serialize(new { current.ArabicName, current.EnglishName, current.PreferredName, current.Version }),
+                    JsonSerializer.Serialize(new { updated.ArabicName, updated.EnglishName, updated.PreferredName, updated.Version }), reason, "hr-api", correlationId,
+                    System.Diagnostics.Activity.Current?.TraceId.ToString(), clock.GetUtcNow(), null), token);
+            return new EmployeeProfile(updated.Id, updated.ArabicName, updated.EnglishName, updated.PreferredName, updated.Status, updated.Version, null);
+        }, ct);
+    }
+
     public Task<EmployeeMembershipLinkView> LinkMembershipAsync(TenantId tenant, Guid actor, Guid actingMembershipId, Guid employeeId,
         EmployeeMembershipLinkRequest request, Guid correlationId, CancellationToken ct) =>
         transactions.ExecuteAsync<EmployeeMembershipLinkView>(tenant, async (context, token) =>

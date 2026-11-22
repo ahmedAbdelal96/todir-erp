@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { hrApi } from "../services/hr-api.ts";
 import type {
   CreateEmployeeRequest,
+  UpdateEmployeeRequest,
   CreateEmploymentRequest,
   ChangeEmploymentStatusRequest,
   CreateAssignmentRequest,
@@ -103,7 +104,8 @@ export function useHrDirectoryFreshness(legalEntityId?: string, branchId?: strin
   const query = useQuery({
     queryKey: [...hrKeys.employees(), "freshness", legalEntityId ?? null, branchId ?? null],
     queryFn: () => hrApi.getEmployeeDirectoryFreshness(legalEntityId, branchId),
-    enabled: Boolean(legalEntityId),
+    // Tenant-wide HR views are a supported scope when no entity is selected.
+    enabled: true,
     staleTime: 0,
     refetchInterval: 10_000,
     refetchIntervalInBackground: false,
@@ -127,6 +129,17 @@ export function useCreateEmployeeMutation() {
     mutationFn: (request: CreateEmployeeRequest) => hrApi.createEmployee(request),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: hrKeys.employees() });
+    }
+  });
+}
+
+export function useUpdateEmployeeMutation(employeeId: string, legalEntityId?: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: UpdateEmployeeRequest) => hrApi.updateEmployee(employeeId, legalEntityId, request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: hrKeys.employees() });
+      queryClient.invalidateQueries({ queryKey: hrKeys.employeeDetail(employeeId, legalEntityId) });
     }
   });
 }

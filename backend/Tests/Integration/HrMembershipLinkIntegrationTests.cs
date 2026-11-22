@@ -101,6 +101,27 @@ public sealed class HrMembershipLinkIntegrationTests : DatabaseIntegrationTestBa
 
         using var actor = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false, HandleCookies = true });
         await LoginAsync(actor, actorEmail, password, tenantId);
+        var profileToken = await GetCsrfTokenAsync(actor);
+        using var profileCorrection = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/hr/employees/{employeeId:D}/profile?legalEntityId={legalEntityId:D}")
+        {
+            Content = JsonContent.Create(new { arabicName = "تصحيح ملف الموارد البشرية", englishName = "HR Profile Correction", preferredName = (string?)null, expectedVersion, reason = "Corrected canonical employee name" })
+        };
+        profileCorrection.Headers.Add("X-CSRF-TOKEN", profileToken);
+        using var profileResponse = await actor.SendAsync(profileCorrection);
+        Assert.Equal(HttpStatusCode.OK, profileResponse.StatusCode);
+        var profileResult = await profileResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(expectedVersion + 1, profileResult.GetProperty("version").GetInt64());
+        expectedVersion++;
+
+        var staleProfileToken = await GetCsrfTokenAsync(actor);
+        using var staleProfileCorrection = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/hr/employees/{employeeId:D}/profile?legalEntityId={legalEntityId:D}")
+        {
+            Content = JsonContent.Create(new { arabicName = "تصحيح قديم", englishName = (string?)null, preferredName = (string?)null, expectedVersion = expectedVersion - 1, reason = "Stale profile correction must be rejected" })
+        };
+        staleProfileCorrection.Headers.Add("X-CSRF-TOKEN", staleProfileToken);
+        using var staleProfileResponse = await actor.SendAsync(staleProfileCorrection);
+        Assert.Equal(HttpStatusCode.Conflict, staleProfileResponse.StatusCode);
+
         var csrfToken = await GetCsrfTokenAsync(actor);
         using var relink = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/hr/employees/{employeeId:D}/membership")
         {
@@ -129,15 +150,25 @@ public sealed class HrMembershipLinkIntegrationTests : DatabaseIntegrationTestBa
         Assert.Equal(employeeId, (await profile.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid());
         using var guessedEmployee = await target.GetAsync($"/api/v1/hr/employees/{otherEmployeeId:D}?legalEntityId={legalEntityId:D}");
         Assert.Equal(HttpStatusCode.Forbidden, guessedEmployee.StatusCode);
+        var targetProfileToken = await GetCsrfTokenAsync(target);
+        using var unauthorizedProfileCorrection = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/hr/employees/{employeeId:D}/profile?legalEntityId={legalEntityId:D}")
+        {
+            Content = JsonContent.Create(new { arabicName = "محاولة غير مصرح بها", englishName = (string?)null, preferredName = (string?)null, expectedVersion, reason = "Self-service must not edit another employee" })
+        };
+        unauthorizedProfileCorrection.Headers.Add("X-CSRF-TOKEN", targetProfileToken);
+        using var unauthorizedProfileResponse = await target.SendAsync(unauthorizedProfileCorrection);
+        Assert.Equal(HttpStatusCode.Forbidden, unauthorizedProfileResponse.StatusCode);
 
         await using var auditConnection = new NpgsqlConnection(adminConnectionString);
         await auditConnection.OpenAsync();
-        await using var evidence = new NpgsqlCommand("select (select count(*) from business_hr.employment_event where tenant_id=$1 and employee_id=$2 and event_type='EmployeeMembershipLinked'),(select count(*) from platform.audit_entry where tenant_id=$1 and module='hr' and action='employee.membership_link_changed' and entity_id=$2)", auditConnection);
+        await using var evidence = new NpgsqlCommand("select (select count(*) from business_hr.employment_event where tenant_id=$1 and employee_id=$2 and event_type='EmployeeMembershipLinked'),(select count(*) from business_hr.employment_event where tenant_id=$1 and employee_id=$2 and event_type='EmployeeProfileCorrected'),(select count(*) from platform.audit_entry where tenant_id=$1 and module='hr' and action='employee.membership_link_changed' and entity_id=$2),(select count(*) from platform.audit_entry where tenant_id=$1 and module='hr' and action='employee.profile_corrected' and entity_id=$2)", auditConnection);
         evidence.Parameters.AddWithValue(tenantId); evidence.Parameters.AddWithValue(employeeId);
         await using var evidenceReader = await evidence.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow);
         Assert.True(await evidenceReader.ReadAsync());
         Assert.Equal(1L, evidenceReader.GetInt64(0));
         Assert.Equal(1L, evidenceReader.GetInt64(1));
+        Assert.Equal(1L, evidenceReader.GetInt64(2));
+        Assert.Equal(1L, evidenceReader.GetInt64(3));
     }
 
     private static async Task<Guid> CreateAccountAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid tenantId, Guid legalEntityId, string email, string password, string roleCode, bool tenantScope = false)

@@ -182,11 +182,20 @@ export const ar = {
       employmentStatus: "حالة التوظيف"
     },
     actions: {
+      editProfile: "تعديل البيانات الأساسية",
       promoteTransfer: "ترقية / نقل",
       newContract: "عقد جديد",
       uploadDoc: "رفع مستند",
       terminate: "إنهاء خدمة",
       rehire: "إعادة تعيين"
+    },
+    profileEdit: {
+      title: "تعديل البيانات الأساسية للموظف",
+      arabicName: "الاسم باللغة العربية",
+      englishName: "الاسم باللغة الإنجليزية",
+      preferredName: "الاسم المفضل / الشهرة",
+      reason: "سبب التعديل",
+      submit: "حفظ التعديل"
     },
     tabs: {
       overview: "نظرة عامة",
@@ -499,6 +508,7 @@ export const ar = {
     adjustmentPayrollInputInvalid: "بيانات تسوية الأثر المالي غير صحيحة.",
     insuranceAlreadyActive: "يوجد اشتراك تأميني نشط بالفعل لهذا النظام.",
     fileScanFailed: "فشل الفحص الأمني للمستند أو تم رفض الملف بواسطة برنامج الفحص.",
-    employeeStale: "تم تحديث البيانات بواسطة مستخدم آخر، يرجى تحديث الصفحة والمحاولة مجدداً."
+    employeeStale: "تم تحديث البيانات بواسطة مستخدم آخر، يرجى تحديث الصفحة والمحاولة مجدداً.",
+    employeeProfileReasonRequired: "يجب إدخال سبب رسمي لتعديل بيانات الموظف."
   }
 } as const;

@@ -156,6 +156,14 @@ public static class HrModuleExtensions
             if (request.MembershipId is not null && (access.Subject is null || !authorizer.Authorize(access.Subject, "hr.employee.link_user", PermissionScope.ForTenant(access.Tenant)))) return Results.Forbid();
             return await Execute(http, () => service.CreateEmployeeAsync(access.Tenant, access.ActorId, access.MembershipId, request, Correlation(http), ct), StatusCodes.Status201Created);
         });
+        group.MapPut("/employees/{employeeId:guid}/profile", async (Guid employeeId, Guid? legalEntityId, UpdateEmployeeRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+        {
+            var requestedEntity = legalEntityId ?? accessEntity(http);
+            var access = await AccessAsync(http, subjects, authorizer, "hr.employee.manage", requestedEntity, ct);
+            if (access is null) return Results.Unauthorized();
+            if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.UpdateEmployeeAsync(access.Tenant, access.ActorId, access.MembershipId, employeeId, requestedEntity, request, Correlation(http), ct));
+        });
         group.MapPut("/employees/{employeeId:guid}/membership", async (Guid employeeId, EmployeeMembershipLinkRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
             var access = await AccessAsync(http, subjects, authorizer, "hr.employee.read_basic", null, ct);

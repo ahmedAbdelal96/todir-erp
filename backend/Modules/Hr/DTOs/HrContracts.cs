@@ -4,6 +4,7 @@ using Modules.Hr.Entities;
 namespace Modules.Hr.DTOs;
 
 public sealed record CreateEmployeeRequest(string ArabicName, string? EnglishName = null, string? PreferredName = null, Guid? MembershipId = null, Guid? LegalEntityId = null, EmploymentType? EmploymentType = null, DateOnly? StartDate = null, DateOnly? EndDate = null);
+public sealed record UpdateEmployeeRequest(string ArabicName, string? EnglishName, string? PreferredName, long ExpectedVersion, string Reason);
 public sealed record EmployeePageRequest(string? Search, Guid? LegalEntityId, int Page = 1, int PageSize = 25);
 public sealed record EmployeeListItem(Guid Id, string? EmploymentNumber, string DisplayName, string? EnglishName, EmployeeStatus Status, DateOnly? CurrentEmploymentStartDate, Guid? LegalEntityId);
 public sealed record EmployeePage(IReadOnlyList<EmployeeListItem> Items, int Page, int PageSize, long TotalCount);

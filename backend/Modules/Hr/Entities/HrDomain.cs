@@ -63,6 +63,21 @@ public sealed record Employee(
         return new(id, tenantId, arabic, english, preferred, preferred ?? arabic, EmployeeStatus.Active, membershipId, 1);
     }
 
+    public Employee UpdateNames(string arabicName, string? englishName, string? preferredName)
+    {
+        var arabic = NormalizeName(arabicName, "hr.employee_arabic_name_required");
+        var english = string.IsNullOrWhiteSpace(englishName) ? null : NormalizeName(englishName, "hr.employee_english_name_invalid");
+        var preferred = string.IsNullOrWhiteSpace(preferredName) ? null : NormalizeName(preferredName, "hr.employee_preferred_name_invalid");
+        return this with
+        {
+            ArabicName = arabic,
+            EnglishName = english,
+            PreferredName = preferred,
+            DisplayName = preferred ?? arabic,
+            Version = checked(Version + 1)
+        };
+    }
+
     private static string NormalizeName(string value, string requiredCode)
     {
         var normalized = (value ?? string.Empty).Trim().Normalize(System.Text.NormalizationForm.FormKC);

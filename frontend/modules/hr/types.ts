@@ -70,6 +70,14 @@ export interface EmployeeProfile {
   readonly initialEmployment?: EmploymentView | null;
 }
 
+export interface UpdateEmployeeRequest {
+  readonly arabicName: string;
+  readonly englishName?: string | null;
+  readonly preferredName?: string | null;
+  readonly expectedVersion: number;
+  readonly reason: string;
+}
+
 export interface OrganizationDefinition {
   readonly id: string;
   readonly legalEntityId: string;

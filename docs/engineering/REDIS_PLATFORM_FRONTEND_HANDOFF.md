@@ -1,6 +1,6 @@
 # Redis Platform Foundation Frontend Handoff
 
-Backend status: ready for frontend consumption.
+Backend/frontend consistency status: complete and locally verified for the Redis HR acceptance slice; the remaining product release and human UX approval gates are separate missions.
 
 The frontend contract is intentionally small:
 
@@ -12,4 +12,10 @@ The frontend contract is intentionally small:
 - Sensitive HR identifiers, documents, compensation, payroll, attendance, and leave balances are not cached by the backend and must not be treated as cacheable frontend reference data.
 - FinanceBase `/api/v1/finbase/currencies` is a permission-gated stable reference read; the backend uses a one-hour bounded-staleness policy in development.
 
-Verification completed for this backend handoff: HR API contract, freshness polling source review, and query invalidation boundaries. Frontend typecheck/Vite/UX acceptance remains part of the separate frontend mission and must be rerun after frontend integration changes.
+Real-stack acceptance evidence:
+
+- Two browser users on two Vite/API instances passed the HR directory/detail freshness journey against the seeded disposable database. User A's already-open workspace updated after User B corrected the employee profile, without manual refresh; the run also covered pagination, explicit legal-entity scope, search, Arabic RTL copy, and no technical leakage.
+- `PUT /api/v1/hr/employees/{id}/profile` is the canonical profile correction contract. It is versioned for optimistic concurrency and emits the same-transaction cache dependency revision consumed through Outbox → RabbitMQ → Worker → Inbox.
+- Redis outage/recovery was exercised with the local container. HR requests continued through PostgreSQL fallback and both API instances recovered Redis without restart.
+
+Verification completed: HR API contract, freshness polling, query invalidation boundaries, frontend typecheck, and real browser acceptance. Evidence is retained under `artifacts/test-results/redis-hr-real-consistency/` and is intentionally not committed.

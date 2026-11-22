@@ -1,3 +1,4 @@
+using System.Globalization;
 using Core.Caching;
 using Npgsql;
 using Shared.Primitives.Identifiers;
@@ -92,6 +93,51 @@ public sealed class RedisPlatformAcceptanceIntegrationTests : DatabaseIntegratio
         Assert.Equal("atlas", first);
         Assert.Equal("delta", second);
         Assert.Equal("recomputed", permissionChanged);
+    }
+
+    [Fact]
+    public async Task RealEmployeeProfileMutationAdvancesTenantWideRevisionAndPublishesInvalidation()
+    {
+        var tenant = RequiredTenant("TODIR_REDIS_ACCEPTANCE_TENANT_ID");
+        var legalEntity = RequiredGuid("TODIR_REDIS_ACCEPTANCE_LEGAL_ENTITY_ID");
+        await using var dataSource = NpgsqlDataSource.Create(Required("TODIR_REDIS_ACCEPTANCE_CONNECTION"));
+        var employeeId = Guid.Empty;
+        await using (var connection = await dataSource.OpenConnectionAsync())
+        await using (var transaction = await connection.BeginTransactionAsync())
+        {
+            await using (var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,true)", connection, transaction))
+            {
+                context.Parameters.AddWithValue(tenant.Value.ToString("D"));
+                await context.ExecuteNonQueryAsync();
+            }
+            await using var select = new NpgsqlCommand("select e.id from business_hr.employee e join business_hr.employment em on em.tenant_id=e.tenant_id and em.employee_id=e.id where e.tenant_id=$1 and em.legal_entity_id=$2 and e.status<>'Archived' order by e.created_at limit 1", connection, transaction);
+            select.Parameters.AddWithValue(tenant.Value);
+            select.Parameters.AddWithValue(legalEntity);
+            employeeId = (Guid?)await select.ExecuteScalarAsync() ?? throw new InvalidOperationException("The disposable acceptance database has no HR employee.");
+
+            await using var update = new NpgsqlCommand("update business_hr.employee set preferred_name=$3 where tenant_id=$1 and id=$2", connection, transaction);
+            update.Parameters.AddWithValue(tenant.Value);
+            update.Parameters.AddWithValue(employeeId);
+            update.Parameters.AddWithValue($"Redis acceptance {Guid.CreateVersion7():N}");
+            Assert.Equal(1, await update.ExecuteNonQueryAsync());
+            await transaction.CommitAsync();
+        }
+
+        await using var verification = await dataSource.OpenConnectionAsync();
+        await using (var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", verification))
+        {
+            context.Parameters.AddWithValue(tenant.Value.ToString("D"));
+            await context.ExecuteNonQueryAsync();
+        }
+        await using var revision = new NpgsqlCommand("select coalesce(max(revision),0) from platform.cache_dependency_revision where tenant_id=$1 and dependency=$2 and legal_entity_id is null and branch_id is null", verification);
+        revision.Parameters.AddWithValue(tenant.Value);
+        revision.Parameters.AddWithValue(PlatformCachePolicies.HrEmployeeDirectory.Name);
+        var revisionValue = Convert.ToInt64(await revision.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+        Assert.True(revisionValue > 0, "Employee profile mutation must advance the tenant-wide HR directory revision.");
+
+        await using var outbox = new NpgsqlCommand("select exists(select 1 from platform.outbox_message where tenant_id=$1 and message_type='PlatformCacheInvalidatedV1' and payload::text like '%hr.employee.directory%')", verification);
+        outbox.Parameters.AddWithValue(tenant.Value);
+        Assert.True((bool)(await outbox.ExecuteScalarAsync() ?? false), "Employee profile mutation must publish the platform cache invalidation through the Outbox.");
     }
 
     private static RedisPlatformCache CreateCache(IConnectionMultiplexer multiplexer, string redisConfiguration, NpgsqlDataSource? dataSource = null)

@@ -182,11 +182,20 @@ export const en = {
       employmentStatus: "Employment Status"
     },
     actions: {
+      editProfile: "Edit Basic Details",
       promoteTransfer: "Promote / Transfer",
       newContract: "New Contract",
       uploadDoc: "Upload Document",
       terminate: "Terminate",
       rehire: "Rehire"
+    },
+    profileEdit: {
+      title: "Edit Employee Basic Details",
+      arabicName: "Arabic Name",
+      englishName: "English Name",
+      preferredName: "Preferred Name",
+      reason: "Reason for Change",
+      submit: "Save Change"
     },
     tabs: {
       overview: "Overview",
@@ -499,6 +508,7 @@ export const en = {
     adjustmentPayrollInputInvalid: "Invalid payroll impact parameters for this HR adjustment.",
     insuranceAlreadyActive: "Active insurance enrollment already exists for this scheme.",
     fileScanFailed: "Document security scan failed or file rejected by antivirus scanner.",
-    employeeStale: "The record was modified by another user. Please refresh and try again."
+    employeeStale: "The record was modified by another user. Please refresh and try again.",
+    employeeProfileReasonRequired: "A formal reason is required to change employee details."
   }
 } as const;

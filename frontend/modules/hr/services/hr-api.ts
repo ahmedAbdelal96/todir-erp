@@ -43,6 +43,7 @@ import type {
   OffboardingCaseView,
   OrganizationDefinition,
   CreateEmployeeRequest,
+  UpdateEmployeeRequest,
   CreateEmploymentRequest,
   ChangeEmploymentStatusRequest,
   CreateAssignmentRequest,
@@ -102,6 +103,14 @@ export const hrApi = {
       method: "POST",
       body: JSON.stringify(request)
     }),
+
+  updateEmployee: (employeeId: string, legalEntityId: string | undefined, request: UpdateEmployeeRequest): Promise<EmployeeProfile> => {
+    const query = legalEntityId ? `?legalEntityId=${encodeURIComponent(legalEntityId)}` : "";
+    return httpClient<EmployeeProfile>(`${BASE}/employees/${encodeURIComponent(employeeId)}/profile${query}`, {
+      method: "PUT",
+      body: JSON.stringify(request)
+    });
+  },
 
   listEmployments: (employeeId: string, legalEntityId: string): Promise<readonly EmploymentView[]> =>
     httpClient<readonly EmploymentView[]>(`${BASE}/employees/${encodeURIComponent(employeeId)}/employments?legalEntityId=${encodeURIComponent(legalEntityId)}`),

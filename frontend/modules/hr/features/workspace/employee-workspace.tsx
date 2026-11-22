@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useOutletContext } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Surface } from "../../../../components/pages/surface.tsx";
 import { Button } from "../../../../components/primitives/button.tsx";
@@ -10,6 +11,7 @@ import { NewContractModal } from "./new-contract-modal.tsx";
 import { RenewContractModal } from "./renew-contract-modal.tsx";
 import { TerminationRehireModal } from "./termination-rehire-modal.tsx";
 import { UploadDocumentModal } from "./upload-document-modal.tsx";
+import { EmployeeProfileEditModal } from "./employee-profile-edit-modal.tsx";
 import {
   useEmployeeDetail,
   useEmployments,
@@ -26,6 +28,7 @@ import {
   useDocumentDownloadMutation
 } from "../../hooks/use-hr-queries.ts";
 import { usePermissions } from "../../../../core/runtime/runtime-provider.tsx";
+import type { WorkspaceOutletContext } from "../../../../app/router/route-contract.ts";
 import type { EmployeeDocumentView } from "../../types.ts";
 import { mapHrError } from "../../services/hr-error-map.ts";
 
@@ -59,7 +62,9 @@ export function EmployeeWorkspace({
   } catch {
     // Outside runtime provider
   }
+  const outletCtx = useOutletContext<WorkspaceOutletContext | undefined>();
   const effectiveSalaryPermission = userPerms ? userPerms.hasPermission("hr.compensation.read") : hasSalaryPermission;
+  const canManageEmployee = outletCtx?.permissions?.hasPermission("hr.employee.manage") ?? userPerms?.hasPermission("hr.employee.manage") ?? false;
 
   const [activeSection, setActiveSection] = useState<WorkspaceSection>("overview");
 
@@ -69,6 +74,7 @@ export function EmployeeWorkspace({
   const [renewContractId, setRenewContractId] = useState<string | null>(null);
   const [terminateMode, setTerminateMode] = useState<"terminate" | "rehire" | null>(null);
   const [isUploadDocOpen, setIsUploadDocOpen] = useState(false);
+  const [isProfileEditOpen, setIsProfileEditOpen] = useState(false);
   const [documentDownloadError, setDocumentDownloadError] = useState<string | null>(null);
 
   // Queries
@@ -201,6 +207,11 @@ export function EmployeeWorkspace({
 
           {/* Quick Lifecycle Action Buttons */}
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            {canManageEmployee && (
+              <Button data-testid="workspace-action-edit-profile" variant="secondary" onPress={() => setIsProfileEditOpen(true)}>
+                {t("workspace.actions.editProfile")}
+              </Button>
+            )}
             <Button data-testid="workspace-action-promote" variant="primary" onPress={() => setIsPromoteOpen(true)}>
               {t("workspace.actions.promoteTransfer")}
             </Button>
@@ -619,6 +630,13 @@ export function EmployeeWorkspace({
         employeeId={employeeId}
         legalEntityId={legalEntityId}
         employmentId={currentEmploymentId}
+      />
+
+      <EmployeeProfileEditModal
+        isOpen={isProfileEditOpen}
+        onClose={() => setIsProfileEditOpen(false)}
+        employee={employee}
+        legalEntityId={legalEntityId}
       />
     </div>
   );

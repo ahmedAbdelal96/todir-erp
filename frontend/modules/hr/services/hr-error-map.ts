@@ -75,6 +75,14 @@ const HR_ERROR_MAP: Record<string, { messageKey: string; defaultMessage: string 
     messageKey: "errors.employeeStale",
     defaultMessage: "The record was modified by another user. Please refresh and try again."
   },
+  "hr.employee_concurrency_conflict": {
+    messageKey: "errors.employeeStale",
+    defaultMessage: "The record was modified by another user. Please refresh and try again."
+  },
+  "hr.employee_profile_update_invalid": {
+    messageKey: "errors.generic",
+    defaultMessage: "Employee profile update is invalid."
+  },
   "hr.forbidden": {
     messageKey: "errors.forbidden",
     defaultMessage: "You do not have permission to perform this HR action."
