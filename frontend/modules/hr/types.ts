@@ -19,6 +19,10 @@ export interface EmployeePage {
   readonly totalCount: number;
 }
 
+export interface EmployeeDirectoryFreshness {
+  readonly revision: number;
+}
+
 /**
  * Authoritative manager-team projection returned by the paginated HR contract.
  * This intentionally contains organizational context rather than an inferred

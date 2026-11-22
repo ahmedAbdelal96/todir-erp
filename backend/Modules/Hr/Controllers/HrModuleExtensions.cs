@@ -171,6 +171,16 @@ public static class HrModuleExtensions
             if (!access.Allowed) return Results.Forbid();
             return await Execute(http, () => service.ListEmployeesAsync(access.Tenant, new(search, requestedEntity, page ?? 1, pageSize ?? 25), access.MembershipId, access.Subject?.Version ?? 0, ct));
         });
+        group.MapGet("/employees/freshness", async (Guid? legalEntityId, Guid? branchId, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
+        {
+            var requestedEntity = legalEntityId ?? accessEntity(http);
+            var requestedBranch = accessBranch(http);
+            if (branchId is not null && branchId != requestedBranch) return Results.Forbid();
+            var access = await AccessAsync(http, subjects, authorizer, "hr.employee.read_basic", requestedEntity, ct);
+            if (access is null) return Results.Unauthorized();
+            if (!access.Allowed) return Results.Forbid();
+            return await Execute(http, () => service.GetEmployeeDirectoryFreshnessAsync(access.Tenant, requestedEntity, requestedBranch, ct));
+        });
         group.MapPost("/imports/employees/preview", async (HrEmployeeImportRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
             var access = await AccessAsync(http, subjects, authorizer, "hr.employee.import", null, ct);
@@ -996,6 +1006,7 @@ public static class HrModuleExtensions
     }
 
     private static Guid? accessEntity(HttpContext http) => Guid.TryParse(http.User.FindFirstValue("legal_entity_id"), out var entity) ? entity : null;
+    private static Guid? accessBranch(HttpContext http) => Guid.TryParse(http.User.FindFirstValue("branch_id"), out var branch) ? branch : null;
 
     private static async Task<Access?> AccessAsync(HttpContext http, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, string permission, Guid? legalEntityId, CancellationToken ct)
     {

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { hrApi } from "../services/hr-api.ts";
 import type {
@@ -74,24 +75,50 @@ export function useHrHomeSummary(legalEntityId: string, asOfDate?: string) {
 }
 
 export function useEmployees(params?: { search?: string | null | undefined; legalEntityId?: string | null | undefined; page?: number | null | undefined; pageSize?: number | null | undefined } | undefined) {
+  useHrDirectoryFreshness(params?.legalEntityId ?? undefined);
   return useQuery({
     queryKey: hrKeys.employeeList(params),
     queryFn: () => hrApi.listEmployees(params),
     // The backend's HR directory cache is revisioned and permission-scoped;
     // keep the browser window aligned with that bounded-freshness contract.
-    staleTime: 30_000,
+    staleTime: 15_000,
     gcTime: 5 * 60_000
   });
 }
 
 export function useEmployeeDetail(id: string, legalEntityId?: string) {
+  useHrDirectoryFreshness(legalEntityId);
   return useQuery({
     queryKey: hrKeys.employeeDetail(id, legalEntityId),
     queryFn: () => hrApi.getEmployee(id, legalEntityId),
     enabled: Boolean(id),
-    staleTime: 30_000,
+    staleTime: 15_000,
     gcTime: 5 * 60_000
   });
+}
+
+export function useHrDirectoryFreshness(legalEntityId?: string, branchId?: string) {
+  const queryClient = useQueryClient();
+  const previousRevision = useRef<number | null>(null);
+  const query = useQuery({
+    queryKey: [...hrKeys.employees(), "freshness", legalEntityId ?? null, branchId ?? null],
+    queryFn: () => hrApi.getEmployeeDirectoryFreshness(legalEntityId, branchId),
+    enabled: Boolean(legalEntityId),
+    staleTime: 0,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+    gcTime: 60_000
+  });
+
+  useEffect(() => {
+    const revision = query.data?.revision;
+    if (revision === undefined) return;
+    if (previousRevision.current !== null && revision !== previousRevision.current)
+      void queryClient.invalidateQueries({ queryKey: hrKeys.employees() });
+    previousRevision.current = revision;
+  }, [query.data?.revision, queryClient]);
+
+  return query;
 }
 
 export function useCreateEmployeeMutation() {
@@ -117,6 +144,7 @@ export function useCreateEmploymentMutation(employeeId: string, legalEntityId: s
   return useMutation({
     mutationFn: (request: CreateEmploymentRequest) => hrApi.createEmployment(employeeId, request),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: hrKeys.employees() });
       queryClient.invalidateQueries({ queryKey: hrKeys.employments(employeeId, legalEntityId) });
       queryClient.invalidateQueries({ queryKey: hrKeys.employeeDetail(employeeId, legalEntityId) });
     }
@@ -128,6 +156,7 @@ export function useChangeEmploymentStatusMutation(employeeId: string, employment
   return useMutation({
     mutationFn: (request: ChangeEmploymentStatusRequest) => hrApi.changeEmploymentStatus(employeeId, employmentId, legalEntityId, request),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: hrKeys.employees() });
       queryClient.invalidateQueries({ queryKey: hrKeys.employments(employeeId, legalEntityId) });
       queryClient.invalidateQueries({ queryKey: hrKeys.employeeDetail(employeeId, legalEntityId) });
       queryClient.invalidateQueries({ queryKey: hrKeys.offboarding(employeeId, employmentId, legalEntityId) });

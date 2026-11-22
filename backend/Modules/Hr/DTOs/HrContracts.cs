@@ -7,6 +7,7 @@ public sealed record CreateEmployeeRequest(string ArabicName, string? EnglishNam
 public sealed record EmployeePageRequest(string? Search, Guid? LegalEntityId, int Page = 1, int PageSize = 25);
 public sealed record EmployeeListItem(Guid Id, string? EmploymentNumber, string DisplayName, string? EnglishName, EmployeeStatus Status, DateOnly? CurrentEmploymentStartDate, Guid? LegalEntityId);
 public sealed record EmployeePage(IReadOnlyList<EmployeeListItem> Items, int Page, int PageSize, long TotalCount);
+public sealed record EmployeeDirectoryFreshness(long Revision);
 public sealed record HrEmployeeImportRow(string RowReference, string LegacyEmployeeId, string ArabicName, string? EnglishName, string? PreferredName, Guid LegalEntityId, EmploymentType EmploymentType, DateOnly HireDate, DateOnly? EndDate, EmploymentStatus Status, string DataQuality, string? BranchCode = null, string? DepartmentCode = null, string? PositionCode = null, string? ManagerLegacyEmployeeId = null);
 public sealed record HrEmployeeImportRequest(string SourceSystem, string BatchReference, string FileSha256, IReadOnlyList<HrEmployeeImportRow> Rows);
 public sealed record HrEmployeeImportRowResult(string RowReference, string Status, Guid? EmployeeId, Guid? EmploymentId, IReadOnlyList<string> Issues, IReadOnlyList<string>? Warnings = null);

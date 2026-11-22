@@ -213,6 +213,10 @@ Use RabbitMQ/MassTransit only for genuine asynchronous integration. Use transact
 
 Before backend completion review query count, N+1 behavior, unnecessary includes, selected columns, indexes, list bounds, payload size, repeated round trips, transaction duration, and cache correctness. Caching must preserve tenant isolation. Measure before introducing special optimization.
 
+### Redis platform cache governance
+
+Redis is an optional acceleration layer only. PostgreSQL remains authoritative for business truth, authorization, revisions, Outbox, and Inbox state. Business modules must not reference StackExchange.Redis or create module-owned clients. A cache read must use an entry from the approved `PlatformCachePolicies` registry; dependency names, sensitive projections, mutable financial truth, inventory availability, idempotency, and authorization decisions are not cacheable by convention. Every approved policy declares its owning module, authorization boundary, consistency model, maximum TTL, and same-transaction invalidation/revision rule. Adding a policy requires the shared contract, a forward migration where applicable, duplicate/out-of-order and stale-fill tests, tenant/legal-entity/permission isolation proof, Redis-outage fallback proof, and an update to the Redis acceptance matrix. Redis markers are operational hints; PostgreSQL revisions decide whether an envelope is fresh. Production Redis requires TLS plus ACL credentials supplied through secret configuration and must never be written to logs.
+
 Use this verification order as applicable:
 
 1. domain/unit focused tests;

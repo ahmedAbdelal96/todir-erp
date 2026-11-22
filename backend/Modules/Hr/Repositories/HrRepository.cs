@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Core.Caching;
 using Core.Services;
@@ -126,10 +127,26 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
         if (!cacheOptions.HrDirectoryEnabled)
             return ListEmployeesUncachedAsync(tenant, request, ct);
         var fingerprint = CacheKeyFingerprint.For(JsonSerializer.Serialize(new { request.Search, request.LegalEntityId, request.Page, request.PageSize }));
-        return platformCache.GetOrCreateAsync(new CacheScope(tenant, request.LegalEntityId, null, membershipId, permissionVersion), "hr.employee.directory", fingerprint, TimeSpan.FromSeconds(30), token => ListEmployeesUncachedAsync(tenant, request, token), ct);
+        return platformCache.GetOrCreateAsync(new CacheScope(tenant, request.LegalEntityId, null, membershipId, permissionVersion), PlatformCachePolicies.HrEmployeeDirectory, fingerprint, TimeSpan.FromSeconds(30), token => ListEmployeesUncachedAsync(tenant, request, token), ct);
     }
 
     public Task<EmployeePage> ListEmployeesAsync(TenantId tenant, EmployeePageRequest request, CancellationToken ct) => ListEmployeesAsync(tenant, request, Guid.Empty, 0, ct);
+
+    public async Task<EmployeeDirectoryFreshness> GetEmployeeDirectoryFreshnessAsync(TenantId tenant, Guid? legalEntityId, Guid? branchId, CancellationToken ct)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await SetTenantAsync(connection, transaction, tenant, ct);
+        const string sql = "select coalesce(max(revision),0) from platform.cache_dependency_revision where tenant_id=$1 and dependency=$2 and ($3::uuid is null or legal_entity_id is null or legal_entity_id=$3) and ($4::uuid is null or branch_id is null or branch_id=$4)";
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue(tenant.Value);
+        command.Parameters.AddWithValue(PlatformCachePolicies.HrEmployeeDirectory.Name);
+        command.Parameters.AddWithValue((object?)legalEntityId ?? DBNull.Value);
+        command.Parameters.AddWithValue((object?)branchId ?? DBNull.Value);
+        var value = await command.ExecuteScalarAsync(ct);
+        await transaction.CommitAsync(ct);
+        return new(value is long revision ? revision : Convert.ToInt64(value ?? 0L, CultureInfo.InvariantCulture));
+    }
 
     private async Task<EmployeePage> ListEmployeesUncachedAsync(TenantId tenant, EmployeePageRequest request, CancellationToken ct)
     {
@@ -691,7 +708,7 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
         if (!cacheOptions.HrDirectoryEnabled)
             return GetEmployeeUncachedAsync(tenant, employeeId, legalEntityId, ct);
         var fingerprint = CacheKeyFingerprint.For($"employee:{employeeId:D}");
-        return platformCache.GetOrCreateAsync(new CacheScope(tenant, legalEntityId, null, membershipId, permissionVersion), "hr.employee.directory", fingerprint, TimeSpan.FromSeconds(30), token => GetEmployeeUncachedAsync(tenant, employeeId, legalEntityId, token), ct);
+        return platformCache.GetOrCreateAsync(new CacheScope(tenant, legalEntityId, null, membershipId, permissionVersion), PlatformCachePolicies.HrEmployeeDirectory, fingerprint, TimeSpan.FromSeconds(30), token => GetEmployeeUncachedAsync(tenant, employeeId, legalEntityId, token), ct);
     }
 
     private async Task<EmployeeProfile?> GetEmployeeUncachedAsync(TenantId tenant, Guid employeeId, Guid? legalEntityId, CancellationToken ct)

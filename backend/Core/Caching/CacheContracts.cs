@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
 using Core.Messaging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -21,33 +22,101 @@ public sealed record PlatformCacheOptions(
     TimeSpan LockTtl,
     int SchemaVersion)
 {
-    public static PlatformCacheOptions FromConfiguration(IConfiguration configuration) => new(
+    public bool TlsEnabled { get; init; }
+    public bool RequireSecureTransport { get; init; }
+    public string? Username { get; init; }
+    public string? Password { get; init; }
+
+    public static PlatformCacheOptions FromConfiguration(IConfiguration configuration, string? environmentName = null) => new(
         configuration.GetValue("TODIR_REDIS_ENABLED", false),
         configuration.GetValue("TODIR_CACHE_HR_DIRECTORY_ENABLED", false),
         configuration.GetValue("TODIR_CACHE_STABLE_REFERENCE_DATA_ENABLED", false),
-        configuration["TODIR_REDIS_CONFIGURATION"] ?? "localhost:6379,abortConnect=false",
+        string.IsNullOrWhiteSpace(configuration["TODIR_REDIS_CONFIGURATION"]) ? "localhost:6379,abortConnect=false" : configuration["TODIR_REDIS_CONFIGURATION"]!,
         Math.Clamp(configuration.GetValue("TODIR_REDIS_CONNECT_TIMEOUT_MS", 1000), 250, 10_000),
         Math.Clamp(configuration.GetValue("TODIR_REDIS_SYNC_TIMEOUT_MS", 1000), 250, 10_000),
         TimeSpan.FromSeconds(Math.Clamp(configuration.GetValue("TODIR_CACHE_DEFAULT_TTL_SECONDS", 60), 5, 3600)),
         TimeSpan.FromSeconds(Math.Clamp(configuration.GetValue("TODIR_CACHE_LOCK_TTL_SECONDS", 5), 1, 30)),
-        Math.Max(1, configuration.GetValue("TODIR_CACHE_SCHEMA_VERSION", 1)));
+        Math.Max(1, configuration.GetValue("TODIR_CACHE_SCHEMA_VERSION", 1)))
+    {
+        TlsEnabled = configuration.GetValue("TODIR_REDIS_TLS", false),
+        RequireSecureTransport = configuration.GetValue("TODIR_REDIS_REQUIRE_TLS", false)
+            || (configuration.GetValue("TODIR_REDIS_ENABLED", false)
+                && !string.IsNullOrWhiteSpace(environmentName)
+                && !string.Equals(environmentName, "Development", StringComparison.OrdinalIgnoreCase)),
+        Username = configuration["TODIR_REDIS_USERNAME"],
+        Password = configuration["TODIR_REDIS_PASSWORD"]
+    };
+}
+
+public enum CacheConsistencyModel { BoundedStaleness, StableReference }
+
+public sealed record CacheDependencyPolicy(
+    string Name,
+    CacheConsistencyModel Consistency,
+    string OwningModule,
+    string AuthorizationRule,
+    string InvalidationRule,
+    bool ContainsSensitiveData,
+    TimeSpan MaximumTtl);
+
+public static class PlatformCachePolicies
+{
+    public static readonly CacheDependencyPolicy HrEmployeeDirectory = new(
+        "hr.employee.directory",
+        CacheConsistencyModel.BoundedStaleness,
+        "hr",
+        "hr.employee.read_basic authorization plus membership and permission version scope",
+        "PostgreSQL employee/employment revision in the writer transaction and durable Outbox invalidation",
+        false,
+        TimeSpan.FromSeconds(30));
+
+    public static readonly CacheDependencyPolicy FinanceBaseCurrencyReference = new(
+        "finbase.currency.reference",
+        CacheConsistencyModel.StableReference,
+        "finbase",
+        "finbase.currency.read authorization",
+        "migration-owned reference dataset and schema-version invalidation",
+        false,
+        TimeSpan.FromHours(1));
+
+    private static readonly Dictionary<string, CacheDependencyPolicy> Approved =
+        new Dictionary<string, CacheDependencyPolicy>(StringComparer.Ordinal)
+        {
+            [HrEmployeeDirectory.Name] = HrEmployeeDirectory,
+            [FinanceBaseCurrencyReference.Name] = FinanceBaseCurrencyReference
+        };
+
+    public static bool TryGet(string name, out CacheDependencyPolicy policy) => Approved.TryGetValue(name, out policy!);
+
+    public static void EnsureApproved(CacheDependencyPolicy policy, TimeSpan ttl)
+    {
+        if (!TryGet(policy.Name, out var approved) || approved != policy || policy.ContainsSensitiveData || ttl > approved.MaximumTtl)
+            throw new InvalidOperationException("platform.cache_policy_not_approved");
+    }
 }
 
 public sealed record CacheScope(TenantId TenantId, Guid? LegalEntityId, Guid? BranchId, Guid? MembershipId, int PermissionVersion);
 public sealed record CacheInvalidation(TenantId TenantId, string Dependency, Guid? LegalEntityId, Guid? BranchId, long Revision);
+public enum CacheInvalidationResult { Applied, Disabled, Unavailable }
 
 public interface IPlatformCache
 {
     bool IsEnabled { get; }
-    Task<T> GetOrCreateAsync<T>(CacheScope scope, string dependency, string queryFingerprint, TimeSpan ttl, Func<CancellationToken, Task<T>> loader, CancellationToken cancellationToken = default);
-    Task InvalidateAsync(CacheInvalidation invalidation, CancellationToken cancellationToken = default);
+    Task<T> GetOrCreateAsync<T>(CacheScope scope, CacheDependencyPolicy policy, string queryFingerprint, TimeSpan ttl, Func<CancellationToken, Task<T>> loader, CancellationToken cancellationToken = default);
+    Task<CacheInvalidationResult> InvalidateAsync(CacheInvalidation invalidation, CancellationToken cancellationToken = default);
 }
 
 public sealed class NoopPlatformCache : IPlatformCache
 {
     public bool IsEnabled => false;
-    public Task<T> GetOrCreateAsync<T>(CacheScope scope, string dependency, string queryFingerprint, TimeSpan ttl, Func<CancellationToken, Task<T>> loader, CancellationToken cancellationToken = default) => loader(cancellationToken);
-    public Task InvalidateAsync(CacheInvalidation invalidation, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task<T> GetOrCreateAsync<T>(CacheScope scope, CacheDependencyPolicy policy, string queryFingerprint, TimeSpan ttl, Func<CancellationToken, Task<T>> loader, CancellationToken cancellationToken = default)
+    {
+        PlatformCachePolicies.EnsureApproved(policy, ttl);
+        return loader(cancellationToken);
+    }
+
+    public Task<CacheInvalidationResult> InvalidateAsync(CacheInvalidation invalidation, CancellationToken cancellationToken = default) =>
+        Task.FromResult(CacheInvalidationResult.Disabled);
 }
 
 public sealed class RedisPlatformCache(
@@ -55,19 +124,23 @@ public sealed class RedisPlatformCache(
     NpgsqlDataSource dataSource,
     PlatformCacheOptions options,
     TimeProvider clock,
-    ILogger<RedisPlatformCache> logger) : IPlatformCache
+    IPlatformCachePolicyRegistry policyRegistry,
+    ILogger<RedisPlatformCache> logger) : IPlatformCache, IDisposable
 {
     private static readonly Action<ILogger, string, Exception?> RedisFallbackLog = LoggerMessage.Define<string>(LogLevel.Warning, new EventId(2301, "RedisFallback"), "Redis cache unavailable; falling back to PostgreSQL for {Dependency}");
     private static readonly Action<ILogger, string, Exception?> InvalidationFallbackLog = LoggerMessage.Define<string>(LogLevel.Warning, new EventId(2302, "RedisInvalidationFallback"), "Redis invalidation unavailable; PostgreSQL revision remains authoritative for {Dependency}");
     private static readonly Action<ILogger, string, bool, Exception?> FirstUseLog = LoggerMessage.Define<string, bool>(LogLevel.Information, new EventId(2304, "RedisCacheFirstUse"), "Platform cache first use for {Dependency}; redisConnected={RedisConnected}");
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const string InvalidationPrefix = "platform:cache:invalidation:";
+    private const string MonotonicRevisionScript = "local current=redis.call('GET',KEYS[1]); local incoming=tonumber(ARGV[1]); if (not current) or (incoming > tonumber(current)) then redis.call('SET',KEYS[1],ARGV[1],'EX',ARGV[2]); return 1 end return 0";
     private int firstUseLogged;
 
     public bool IsEnabled => options.Enabled && multiplexer.IsConnected;
 
-    public async Task<T> GetOrCreateAsync<T>(CacheScope scope, string dependency, string queryFingerprint, TimeSpan ttl, Func<CancellationToken, Task<T>> loader, CancellationToken cancellationToken = default)
+    public async Task<T> GetOrCreateAsync<T>(CacheScope scope, CacheDependencyPolicy policy, string queryFingerprint, TimeSpan ttl, Func<CancellationToken, Task<T>> loader, CancellationToken cancellationToken = default)
     {
+        PlatformCachePolicies.EnsureApproved(policy, ttl);
+        var dependency = policy.Name;
         if (!options.Enabled) return await loader(cancellationToken);
 
         if (Interlocked.Exchange(ref firstUseLogged, 1) == 0)
@@ -123,22 +196,23 @@ public sealed class RedisPlatformCache(
         }
     }
 
-    public async Task InvalidateAsync(CacheInvalidation invalidation, CancellationToken cancellationToken = default)
+    public async Task<CacheInvalidationResult> InvalidateAsync(CacheInvalidation invalidation, CancellationToken cancellationToken = default)
     {
-        if (!options.Enabled) return;
+        if (!options.Enabled) return CacheInvalidationResult.Disabled;
+        if (!policyRegistry.IsApproved(invalidation.Dependency)) throw new InvalidOperationException("platform.cache_policy_not_approved");
         try
         {
             var marker = BuildInvalidationKey(invalidation);
             var database = multiplexer.GetDatabase();
-            var current = await database.StringGetAsync(marker);
-            if (!long.TryParse(current.ToString(), out var currentRevision) || invalidation.Revision > currentRevision)
-                await database.StringSetAsync(marker, invalidation.Revision, TimeSpan.FromHours(1), When.Always);
+            await database.ScriptEvaluateAsync(MonotonicRevisionScript, [marker], [invalidation.Revision, 3600]);
             CacheMetrics.Invalidations.Add(1, new KeyValuePair<string, object?>("dependency", invalidation.Dependency));
+            return CacheInvalidationResult.Applied;
         }
         catch (Exception exception) when (IsRedisFailure(exception))
         {
             CacheMetrics.Failures.Add(1, new KeyValuePair<string, object?>("dependency", invalidation.Dependency));
             InvalidationFallbackLog(logger, invalidation.Dependency, exception);
+            return CacheInvalidationResult.Unavailable;
         }
     }
 
@@ -151,13 +225,13 @@ public sealed class RedisPlatformCache(
             context.Parameters.AddWithValue(tenantId.Value.ToString("D"));
             await context.ExecuteNonQueryAsync(cancellationToken);
         }
-        var scopeKey = $"{legalEntityId?.ToString("D") ?? "all"}";
-        await using var command = new NpgsqlCommand("select revision from platform.cache_dependency_revision where tenant_id=$1 and dependency=$2 and scope_key=$3", connection, transaction);
+        const string revisionSql = "select coalesce(max(revision),0) from platform.cache_dependency_revision where tenant_id=$1 and dependency=$2 and ($3::uuid is null or legal_entity_id is null or legal_entity_id=$3) and ($4::uuid is null or branch_id is null or branch_id=$4)";
+        await using var command = new NpgsqlCommand(revisionSql, connection, transaction);
         command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(dependency);
-        command.Parameters.AddWithValue(scopeKey);
+        command.Parameters.AddWithValue((object?)legalEntityId ?? DBNull.Value); command.Parameters.AddWithValue((object?)branchId ?? DBNull.Value);
         var result = await command.ExecuteScalarAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return result is long revision ? revision : result is int integer ? integer : 0;
+        return result is long revision ? revision : result is int integer ? integer : Convert.ToInt64(result ?? 0L, CultureInfo.InvariantCulture);
     }
 
     private string BuildKey(CacheScope scope, string dependency, string queryFingerprint) =>
@@ -166,12 +240,12 @@ public sealed class RedisPlatformCache(
     private static string BuildInvalidationKey(CacheInvalidation invalidation) =>
         $"{InvalidationPrefix}{invalidation.TenantId.Value:D}:{invalidation.Dependency}:{invalidation.LegalEntityId?.ToString("D") ?? "all"}:{invalidation.BranchId?.ToString("D") ?? "all"}";
 
-    private static bool TryDeserialize<T>(RedisValue value, long revision, out T? result)
+    private bool TryDeserialize<T>(RedisValue value, long revision, out T? result)
     {
         try
         {
             var envelope = JsonSerializer.Deserialize<CacheEnvelope<T>>(value.ToString(), JsonOptions);
-            if (envelope is not null && envelope.Revision >= revision)
+            if (envelope is not null && envelope.SchemaVersion == options.SchemaVersion && envelope.Revision == revision)
             {
                 result = envelope.Value;
                 return true;
@@ -184,6 +258,18 @@ public sealed class RedisPlatformCache(
 
     private static bool IsRedisFailure(Exception exception) => exception is RedisException or RedisConnectionException or RedisTimeoutException or TimeoutException or IOException;
     private sealed record CacheEnvelope<T>(int SchemaVersion, long Revision, DateTimeOffset CachedAt, T Value);
+
+    public void Dispose() => multiplexer.Dispose();
+}
+
+public interface IPlatformCachePolicyRegistry
+{
+    bool IsApproved(string dependency);
+}
+
+public sealed class PlatformCachePolicyRegistry : IPlatformCachePolicyRegistry
+{
+    public bool IsApproved(string dependency) => PlatformCachePolicies.TryGet(dependency, out _);
 }
 
 public static class CacheKeyFingerprint

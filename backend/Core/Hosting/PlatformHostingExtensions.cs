@@ -46,7 +46,7 @@ public static class PlatformHostingExtensions
             platformDataSource = dataSourceBuilder.Build();
             services.AddSingleton(platformDataSource);
         }
-        services.AddPlatformCaching(configuration, platformDataSource);
+        services.AddPlatformCaching(configuration, platformDataSource, configuration["ASPNETCORE_ENVIRONMENT"] ?? configuration["DOTNET_ENVIRONMENT"]);
         services.AddSingleton<IIdentityStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlIdentityStore(dataSource) : new NullIdentityStore());
         services.AddSingleton<IUserNavigationPreferencesStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
             ? new NpgsqlUserNavigationPreferencesStore(dataSource)

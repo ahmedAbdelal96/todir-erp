@@ -22,7 +22,8 @@ services:
   redis:
     image: redis:7.4-alpine
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
-    ports: ["6380:6379"]
+    # Memurai owns the local 6380 port; keep the Docker Redis listener loopback-only on 6381.
+    ports: ["127.0.0.1:6381:6379"]
     volumes:
       - redis-data:/data
     healthcheck:

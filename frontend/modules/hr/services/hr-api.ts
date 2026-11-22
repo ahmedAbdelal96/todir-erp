@@ -1,6 +1,7 @@
 import { ApiError, httpClient } from "../../../core/api/http-client.ts";
 import type {
   EmployeePage,
+  EmployeeDirectoryFreshness,
   EmployeeListItem,
   HrTeamPage,
   EmployeeProfile,
@@ -81,6 +82,14 @@ export const hrApi = {
     if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
     const query = searchParams.toString();
     return httpClient<EmployeePage>(`${BASE}/employees${query ? `?${query}` : ""}`);
+  },
+
+  getEmployeeDirectoryFreshness: (legalEntityId?: string | undefined, branchId?: string | undefined): Promise<EmployeeDirectoryFreshness> => {
+    const params = new URLSearchParams();
+    if (legalEntityId) params.set("legalEntityId", legalEntityId);
+    if (branchId) params.set("branchId", branchId);
+    const query = params.toString();
+    return httpClient<EmployeeDirectoryFreshness>(`${BASE}/employees/freshness${query ? `?${query}` : ""}`);
   },
 
   getEmployee: (employeeId: string, legalEntityId?: string | undefined): Promise<EmployeeProfile> => {

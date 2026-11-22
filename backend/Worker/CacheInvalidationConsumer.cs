@@ -5,7 +5,7 @@ using MassTransit;
 
 namespace Worker;
 
-public sealed class CacheInvalidationConsumer(IPlatformCache cache, IInboxStore inboxStore) : IConsumer<OutboxPublishedMessage>
+public sealed class CacheInvalidationConsumer(IPlatformCache cache, IInboxStore inboxStore, IPlatformCachePolicyRegistry policyRegistry) : IConsumer<OutboxPublishedMessage>
 {
     public const string EndpointName = "platform-cache-invalidation";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -20,8 +20,9 @@ public sealed class CacheInvalidationConsumer(IPlatformCache cache, IInboxStore 
         {
             var payload = JsonSerializer.Deserialize<CacheInvalidationPayload>(message.Payload, JsonOptions)
                 ?? throw new InvalidDataException("platform.cache_invalidation_payload_invalid");
-            if (string.IsNullOrWhiteSpace(payload.Dependency) || payload.Revision < 1) throw new InvalidDataException("platform.cache_invalidation_payload_invalid");
-            await cache.InvalidateAsync(new(message.TenantId, payload.Dependency, payload.LegalEntityId, payload.BranchId, payload.Revision), context.CancellationToken);
+            if (string.IsNullOrWhiteSpace(payload.Dependency) || payload.Revision < 1 || !policyRegistry.IsApproved(payload.Dependency)) throw new InvalidDataException("platform.cache_invalidation_payload_invalid");
+            var result = await cache.InvalidateAsync(new(message.TenantId, payload.Dependency, payload.LegalEntityId, payload.BranchId, payload.Revision), context.CancellationToken);
+            if (result == CacheInvalidationResult.Unavailable) throw new InvalidOperationException("platform.cache_invalidation_redis_unavailable");
             await inboxStore.MarkProcessedAsync(EndpointName, message.MessageId, message.TenantId, context.CancellationToken);
         }
         catch
