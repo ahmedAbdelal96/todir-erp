@@ -19,6 +19,17 @@ services:
       RABBITMQ_DEFAULT_PASS: todir-dev-only
       RABBITMQ_DEFAULT_VHOST: /erp-dev
     ports: ["5672:5672", "15672:15672"]
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports: ["6380:6379"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
   minio:
     # The upstream community image is no longer pullable from Docker Hub or Quay.
     # This public mirror preserves the exact release and is pinned by digest.
@@ -37,3 +48,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 3m
+
+volumes:
+  redis-data:

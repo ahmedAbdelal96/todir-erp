@@ -79,8 +79,8 @@ public sealed class HrService(HrRepository repository, HrImportRepository import
     public Task<HrGoLiveConfigurationView> SaveGoLiveConfigurationAsync(TenantId tenant, Guid actor, Guid membershipId, Guid legalEntityId, HrGoLiveConfigurationRequest request, Guid correlationId, CancellationToken ct) =>
         goLiveConfigurations.SaveAsync(tenant, actor, membershipId, legalEntityId, request, correlationId, ct);
 
-    public Task<EmployeePage> ListEmployeesAsync(TenantId tenant, EmployeePageRequest request, CancellationToken ct) =>
-        repository.ListEmployeesAsync(tenant, request, ct);
+    public Task<EmployeePage> ListEmployeesAsync(TenantId tenant, EmployeePageRequest request, Guid membershipId, int permissionVersion, CancellationToken ct) =>
+        repository.ListEmployeesAsync(tenant, request, membershipId, permissionVersion, ct);
 
     public Task<EmployeeIdentifierView> CreateIdentifierAsync(TenantId tenant, Guid actor, Guid membershipId, Guid employeeId, CreateEmployeeIdentifierRequest request, Guid correlationId, CancellationToken ct) =>
         repository.CreateIdentifierAsync(tenant, actor, membershipId, employeeId, request, correlationId, ct);
@@ -124,8 +124,8 @@ public sealed class HrService(HrRepository repository, HrImportRepository import
     public Task<IReadOnlyList<EmployeeDuplicateSuggestion>> FindPossibleDuplicatesAsync(TenantId tenant, string arabicName, string? englishName, CancellationToken ct) =>
         repository.FindPossibleDuplicatesAsync(tenant, arabicName, englishName, ct);
 
-    public Task<EmployeeProfile?> GetEmployeeAsync(TenantId tenant, Guid employeeId, Guid? legalEntityId, CancellationToken ct) =>
-        repository.GetEmployeeAsync(tenant, employeeId, legalEntityId, ct);
+    public Task<EmployeeProfile?> GetEmployeeAsync(TenantId tenant, Guid employeeId, Guid? legalEntityId, Guid membershipId, int permissionVersion, CancellationToken ct) =>
+        repository.GetEmployeeAsync(tenant, employeeId, legalEntityId, membershipId, permissionVersion, ct);
 
     public Task<EmployeeProfile?> GetMyEmployeeAsync(TenantId tenant, Guid membershipId, Guid legalEntityId, CancellationToken ct) =>
         repository.GetMyEmployeeAsync(tenant, membershipId, legalEntityId, ct);

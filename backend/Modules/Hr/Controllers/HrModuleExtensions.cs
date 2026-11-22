@@ -169,7 +169,7 @@ public static class HrModuleExtensions
             var access = await AccessAsync(http, subjects, authorizer, "hr.employee.read_basic", requestedEntity, ct);
             if (access is null) return Results.Unauthorized();
             if (!access.Allowed) return Results.Forbid();
-            return await Execute(http, () => service.ListEmployeesAsync(access.Tenant, new(search, requestedEntity, page ?? 1, pageSize ?? 25), ct));
+            return await Execute(http, () => service.ListEmployeesAsync(access.Tenant, new(search, requestedEntity, page ?? 1, pageSize ?? 25), access.MembershipId, access.Subject?.Version ?? 0, ct));
         });
         group.MapPost("/imports/employees/preview", async (HrEmployeeImportRequest request, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
         {
@@ -350,7 +350,7 @@ public static class HrModuleExtensions
             var access = await AccessAsync(http, subjects, authorizer, "hr.employee.read_basic", requestedEntity, ct);
             if (access is null) return Results.Unauthorized();
             if (!access.Allowed) return Results.Forbid();
-            var result = await service.GetEmployeeAsync(access.Tenant, employeeId, requestedEntity, ct);
+            var result = await service.GetEmployeeAsync(access.Tenant, employeeId, requestedEntity, access.MembershipId, access.Subject?.Version ?? 0, ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
         });
         group.MapGet("/employees/{employeeId:guid}/employments", async (Guid employeeId, Guid legalEntityId, HttpContext http, HrService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, CancellationToken ct) =>
@@ -379,7 +379,7 @@ public static class HrModuleExtensions
             var access = await AccessAsync(http, subjects, authorizer, "hr.offboarding.read", legalEntityId, ct);
             if (access is null) return Results.Unauthorized();
             if (!access.Allowed) return Results.Forbid();
-            if (await service.GetEmployeeAsync(access.Tenant, employeeId, legalEntityId, ct) is null) return Results.NotFound();
+            if (await service.GetEmployeeAsync(access.Tenant, employeeId, legalEntityId, access.MembershipId, access.Subject?.Version ?? 0, ct) is null) return Results.NotFound();
             var result = await service.GetOffboardingCaseAsync(access.Tenant, employeeId, employmentId, legalEntityId, ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
         });

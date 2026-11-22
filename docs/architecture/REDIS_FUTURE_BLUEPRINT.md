@@ -1,15 +1,16 @@
-# Redis Future Blueprint
+# Redis Future Blueprint — superseded by the Platform Foundation
 
-Redis is intentionally not part of the current platform performance foundation. The final local evidence used two API instances, a real Worker/RabbitMQ path, and a browser gate without Redis; no measured result established a cross-process cache requirement. PostgreSQL remains the source of truth and the existing request-scoped authorization cache is sufficient for the measured in-request duplication.
+The former performance-only Redis proposal is now implemented as the shared Platform Redis Foundation. The authoritative design is [REDIS_PLATFORM_FOUNDATION_DESIGN.md](REDIS_PLATFORM_FOUNDATION_DESIGN.md).
 
-The performance harness records the absence of `pg_stat_statements` but measures per-request SQL through an opt-in Npgsql Activity counter. This keeps query evidence independent of Redis; it is not a reason to introduce Redis or to claim a cache benefit.
+Redis remains an acceleration and coordination layer only. PostgreSQL owns business truth, cache dependency revisions, durable invalidation intent, authorization, accounting, inventory availability, idempotency, Outbox, and Inbox state. Any future cache candidate must extend the policy registry and acceptance matrix; it must not introduce a module-owned Redis client or bypass the Platform cache contract.
 
-Before implementation, a future Redis proposal must include a measured workload, ownership, key/version design, TTL and invalidation rules, stampede protection, bounded memory policy, outage behavior, security review, and a rollback plan. Redis cannot become the source of truth for authorization, accounting, inventory availability, idempotency, Outbox, or Inbox state.
+Implemented baseline:
 
-Approved future candidates are limited to:
+- local Redis 7.4 with AOF, bounded 256 MB memory, and `allkeys-lru` development eviction policy;
+- revisioned keys/envelopes with schema versioning, tenant/legal-entity/branch/membership/permission boundaries, and SHA-256 query fingerprints;
+- PostgreSQL revision increments and `PlatformCacheInvalidatedV1` Outbox records in the same transaction as HR employee/employment writes;
+- Worker Inbox idempotency and monotonic Redis invalidation markers;
+- bounded-freshness HR employee directory/basic detail integration, with sensitive HR records explicitly non-cacheable;
+- timeout-bounded Redis failure fallback to PostgreSQL.
 
-- read acceleration for safe, versioned reference data;
-- distributed ephemeral coordination where PostgreSQL row locking is demonstrably insufficient;
-- shared session/draft acceleration only when the authoritative state and recovery path are explicit.
-
-Every candidate must preserve tenant and legal-entity isolation in keys and invalidation. A broker is not a cache, and a cache hit is never financial or inventory proof.
+Deferred by policy: distributed locks for business correctness, authorization truth, financial data, inventory availability, legal documents, personal identifiers, compensation, payroll, and unrestricted report caching.

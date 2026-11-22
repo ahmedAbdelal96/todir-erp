@@ -58,6 +58,7 @@ builder.Services.AddCore(builder.Configuration, bus =>
     bus.AddConsumer<ProjectsSourceEventConsumer, ProjectsSourceEventConsumerDefinition>();
     bus.AddConsumer<ProjectCapitalHandoffConsumer, ProjectCapitalHandoffConsumerDefinition>();
     bus.AddConsumer<ManufacturingIntegrationConsumer, ManufacturingIntegrationConsumerDefinition>();
+    bus.AddConsumer<CacheInvalidationConsumer, CacheInvalidationConsumerDefinition>();
 });
 builder.Services.AddSampleModule();
 builder.Services.AddCatalogModule();

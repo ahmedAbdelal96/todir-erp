@@ -76,7 +76,11 @@ export function useHrHomeSummary(legalEntityId: string, asOfDate?: string) {
 export function useEmployees(params?: { search?: string | null | undefined; legalEntityId?: string | null | undefined; page?: number | null | undefined; pageSize?: number | null | undefined } | undefined) {
   return useQuery({
     queryKey: hrKeys.employeeList(params),
-    queryFn: () => hrApi.listEmployees(params)
+    queryFn: () => hrApi.listEmployees(params),
+    // The backend's HR directory cache is revisioned and permission-scoped;
+    // keep the browser window aligned with that bounded-freshness contract.
+    staleTime: 30_000,
+    gcTime: 5 * 60_000
   });
 }
 
@@ -84,7 +88,9 @@ export function useEmployeeDetail(id: string, legalEntityId?: string) {
   return useQuery({
     queryKey: hrKeys.employeeDetail(id, legalEntityId),
     queryFn: () => hrApi.getEmployee(id, legalEntityId),
-    enabled: Boolean(id)
+    enabled: Boolean(id),
+    staleTime: 30_000,
+    gcTime: 5 * 60_000
   });
 }
 

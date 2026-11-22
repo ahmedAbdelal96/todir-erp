@@ -22,6 +22,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Cryptography;
 using MassTransit;
+using Core.Caching;
 
 namespace Core.Hosting;
 
@@ -30,6 +31,7 @@ public static class PlatformHostingExtensions
     public static IServiceCollection AddCore(this IServiceCollection services, IConfiguration configuration, Action<IBusRegistrationConfigurator>? configureConsumers = null)
     {
         var connectionString = configuration.GetRuntimeConnectionString();
+        NpgsqlDataSource? platformDataSource = null;
         services.AddHttpContextAccessor();
         services.AddRabbitMq(configuration, configureConsumers);
         if (!string.IsNullOrWhiteSpace(connectionString))
@@ -41,8 +43,10 @@ public static class PlatformHostingExtensions
             }
             var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
             dataSourceBuilder.ConnectionStringBuilder.CommandTimeout = int.TryParse(configuration["TODIR_DB_COMMAND_TIMEOUT_SECONDS"], out var commandTimeout) && commandTimeout > 0 ? commandTimeout : 15;
-            services.AddSingleton(dataSourceBuilder.Build());
+            platformDataSource = dataSourceBuilder.Build();
+            services.AddSingleton(platformDataSource);
         }
+        services.AddPlatformCaching(configuration, platformDataSource);
         services.AddSingleton<IIdentityStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlIdentityStore(dataSource) : new NullIdentityStore());
         services.AddSingleton<IUserNavigationPreferencesStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
             ? new NpgsqlUserNavigationPreferencesStore(dataSource)

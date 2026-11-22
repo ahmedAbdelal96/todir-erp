@@ -87,7 +87,7 @@ public sealed class HrTenantIsolationIntegrationTests : DatabaseIntegrationTestB
         Assert.Equal(0L, Convert.ToInt64(await foreignRows.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture));
         await transaction.RollbackAsync();
 
-        var repository = new HrRepository(null!, dataSource, null!, null!, null!, null!, null!);
+        var repository = new HrRepository(null!, dataSource, null!, null!, null!, null!, null!, new Core.Caching.NoopPlatformCache(), new Core.Caching.PlatformCacheOptions(false, false, false, string.Empty, 1000, 1000, TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(1), 1));
         var tenant = new TenantId(tenantId);
         var scopedCodeSearch = await repository.ListEmployeesAsync(tenant, new EmployeePageRequest("EMP-000001", legalEntityId, 1, 10), CancellationToken.None);
         Assert.Contains(scopedCodeSearch.Items, employee => employee.EmploymentNumber == "EMP-000001");

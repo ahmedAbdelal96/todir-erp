@@ -8,6 +8,7 @@ using Modules.FinanceBase.Entities;
 using Core.Authorization;
 using Shared.Primitives.Financial;
 using Core.Modules;
+using Core.Caching;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.FinanceBase;
@@ -29,7 +30,9 @@ public static class FinanceBaseModuleExtensions
     public static WebApplication MapFinanceBaseModule(this WebApplication app)
     {
         var group = app.MapGroup("/api/v1/finbase").WithTags("FinBase").RequireAuthorization().RequireRateLimiting("api");
-        group.MapGet("/currencies", async (HttpContext http, FinanceBaseService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Authorized(http, subjects, auth, "finbase.currency.read", ct) is { } access ? await Execute(access, () => service.ListCurrenciesAsync(ct)) : Results.Unauthorized()).Produces<IReadOnlyList<CurrencyDto>>();
+        group.MapGet("/currencies", async (HttpContext http, FinanceBaseService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, IPlatformCache cache, PlatformCacheOptions cacheOptions, CancellationToken ct) => await Authorized(http, subjects, auth, "finbase.currency.read", ct) is { } access ? await Execute(access, () => cacheOptions.StableReferenceDataEnabled
+            ? cache.GetOrCreateAsync(new CacheScope(access.Tenant, null, null, null, 0), "finbase.currency.reference", CacheKeyFingerprint.For("active-currencies:v1"), TimeSpan.FromHours(1), _ => service.ListCurrenciesAsync(ct), ct)
+            : service.ListCurrenciesAsync(ct)) : Results.Unauthorized()).Produces<IReadOnlyList<CurrencyDto>>();
         group.MapGet("/legal-entities/{entityId:guid}/currencies", async (Guid entityId, HttpContext http, FinanceBaseService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Authorized(http, subjects, auth, "finbase.currency.read", ct, entityId) is { } access ? await Execute(access, () => service.ListEntityCurrenciesAsync(access.Tenant, new(entityId), ct)) : Results.Unauthorized()).Produces<IReadOnlyList<EntityCurrencyDto>>();
         group.MapPost("/legal-entities/{entityId:guid}/currencies/{code}/enable", async (Guid entityId, string code, EnableCurrencyRequest request, HttpContext http, FinanceBaseService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Authorized(http, subjects, auth, "finbase.currency.enable", ct, entityId) is { } access ? await Execute(access, () => service.EnableCurrencyAsync(access.Tenant, access.ActorId, access.MembershipId, new(entityId), code, request, Correlation(http), ct), StatusCodes.Status201Created) : Results.Unauthorized()).Produces<EntityCurrencyDto>(StatusCodes.Status201Created);
         group.MapGet("/legal-entities/{entityId:guid}/exchange-rates", async (Guid entityId, HttpContext http, FinanceBaseService service, IAuthorizationSubjectStore subjects, IPermissionAuthorizer auth, CancellationToken ct) => await Authorized(http, subjects, auth, "finbase.rate.read", ct, entityId) is { } access ? await Execute(access, () => service.ListRatesAsync(access.Tenant, new(entityId), ct)) : Results.Unauthorized()).Produces<IReadOnlyList<ExchangeRateDto>>();

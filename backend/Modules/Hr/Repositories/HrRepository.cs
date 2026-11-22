@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Core.Caching;
 using Core.Services;
 using Core.Transactions;
 using Modules.Hr.DTOs;
@@ -9,7 +10,7 @@ using Shared.Primitives.Identifiers;
 
 namespace Modules.Hr.Repositories;
 
-public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDataSource dataSource, TimeProvider clock, ITransactionalSequenceAllocator sequences, HrIdentifierCrypto identifierCrypto, Shared.Contracts.Platform.IPlatformFileReferenceCapability files, Shared.Contracts.Platform.IPlatformFileUploadCapability fileUploads) : Shared.Contracts.Hr.IHumanResourcesLifecycleCapability
+public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDataSource dataSource, TimeProvider clock, ITransactionalSequenceAllocator sequences, HrIdentifierCrypto identifierCrypto, Shared.Contracts.Platform.IPlatformFileReferenceCapability files, Shared.Contracts.Platform.IPlatformFileUploadCapability fileUploads, IPlatformCache platformCache, PlatformCacheOptions cacheOptions) : Shared.Contracts.Hr.IHumanResourcesLifecycleCapability
 {
     public Task<bool> ShouldDeactivateMembershipAsync(TenantId tenantId, Guid employeeId, Guid membershipId, DateOnly asOfDate, CancellationToken cancellationToken = default) =>
         transactions.ExecuteAsync(tenantId, async (context, token) =>
@@ -120,7 +121,17 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
             return new(employeeId, request.MembershipId is not null, version);
         }, ct);
 
-    public async Task<EmployeePage> ListEmployeesAsync(TenantId tenant, EmployeePageRequest request, CancellationToken ct)
+    public Task<EmployeePage> ListEmployeesAsync(TenantId tenant, EmployeePageRequest request, Guid membershipId, int permissionVersion, CancellationToken ct)
+    {
+        if (!cacheOptions.HrDirectoryEnabled)
+            return ListEmployeesUncachedAsync(tenant, request, ct);
+        var fingerprint = CacheKeyFingerprint.For(JsonSerializer.Serialize(new { request.Search, request.LegalEntityId, request.Page, request.PageSize }));
+        return platformCache.GetOrCreateAsync(new CacheScope(tenant, request.LegalEntityId, null, membershipId, permissionVersion), "hr.employee.directory", fingerprint, TimeSpan.FromSeconds(30), token => ListEmployeesUncachedAsync(tenant, request, token), ct);
+    }
+
+    public Task<EmployeePage> ListEmployeesAsync(TenantId tenant, EmployeePageRequest request, CancellationToken ct) => ListEmployeesAsync(tenant, request, Guid.Empty, 0, ct);
+
+    private async Task<EmployeePage> ListEmployeesUncachedAsync(TenantId tenant, EmployeePageRequest request, CancellationToken ct)
     {
         var page = Math.Clamp(request.Page, 1, 100_000);
         var pageSize = Math.Clamp(request.PageSize, 1, 100);
@@ -675,7 +686,15 @@ public sealed class HrRepository(ITransactionCoordinator transactions, NpgsqlDat
         };
     }
 
-    public async Task<EmployeeProfile?> GetEmployeeAsync(TenantId tenant, Guid employeeId, Guid? legalEntityId, CancellationToken ct)
+    public Task<EmployeeProfile?> GetEmployeeAsync(TenantId tenant, Guid employeeId, Guid? legalEntityId, Guid membershipId, int permissionVersion, CancellationToken ct)
+    {
+        if (!cacheOptions.HrDirectoryEnabled)
+            return GetEmployeeUncachedAsync(tenant, employeeId, legalEntityId, ct);
+        var fingerprint = CacheKeyFingerprint.For($"employee:{employeeId:D}");
+        return platformCache.GetOrCreateAsync(new CacheScope(tenant, legalEntityId, null, membershipId, permissionVersion), "hr.employee.directory", fingerprint, TimeSpan.FromSeconds(30), token => GetEmployeeUncachedAsync(tenant, employeeId, legalEntityId, token), ct);
+    }
+
+    private async Task<EmployeeProfile?> GetEmployeeUncachedAsync(TenantId tenant, Guid employeeId, Guid? legalEntityId, CancellationToken ct)
     {
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await using var tx = await connection.BeginTransactionAsync(ct);
