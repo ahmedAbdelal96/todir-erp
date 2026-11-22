@@ -219,7 +219,7 @@ export function ProductionOrdersPage(): React.JSX.Element {
                         {order.orderNumber ?? order.number}
                       </td>
                       <td style={{ padding: "12px 16px", color: "#334155" }}>
-                        {plant ? `${plant.code} - ${plant.name}` : order.plantId.slice(0, 8)}
+                        {plant ? `${plant.code} - ${plant.name}` : "—"}
                       </td>
                       <td style={{ padding: "12px 16px", fontWeight: 600 }}>
                         {order.orderedQty} {order.uomCode}

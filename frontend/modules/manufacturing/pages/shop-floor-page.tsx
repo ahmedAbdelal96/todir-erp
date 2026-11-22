@@ -68,7 +68,7 @@ export function ShopFloorPage(): React.JSX.Element {
 
   const getOrderNumber = (orderId: string): string => {
     const found = orders.find((o) => o.id === orderId);
-    return found?.orderNumber ?? found?.number ?? orderId.slice(0, 8);
+    return found?.orderNumber ?? found?.number ?? "—";
   };
 
   return (

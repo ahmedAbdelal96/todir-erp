@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { ManufacturingHeader } from "../components/manufacturing-header.tsx";
 import { ManufacturingStatusBadge } from "../components/manufacturing-status-badge.tsx";
@@ -9,11 +9,11 @@ import { useOrdersQuery, useOrderMaterialsQuery } from "../hooks/use-manufacturi
 import { useCatalogProducts } from "../hooks/use-catalog-products.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 import { BdiText } from "../../../components/formatting/bidi-text.tsx";
+import { formatQuantity } from "../../../components/formatting/quantity-formatter.ts";
 
 export function MaterialsPage(): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
   const { legalEntityId, isReady } = useManufacturingScope();
-  const { getProductDisplayName, getProductSku } = useCatalogProducts();
 
   const { data: orders = [] } = useOrdersQuery(legalEntityId);
   const activeOrders = orders.filter((o) => o.state === "Released" || o.state === "InProgress" || o.state === "Draft");
@@ -22,6 +22,12 @@ export function MaterialsPage(): React.JSX.Element {
   const effectiveOrderId = selectedOrderId || activeOrders[0]?.id || "";
 
   const { data: materials = [], isLoading: materialsLoading } = useOrderMaterialsQuery(effectiveOrderId);
+
+  const materialVariantIds = useMemo(
+    () => materials.map((m) => m.preferredProductVariantId || m.productVariantId).filter(Boolean),
+    [materials]
+  );
+  const { getProductDisplayName, getProductSku } = useCatalogProducts(materialVariantIds);
 
   const [selectedAction, setSelectedAction] = useState<{
     orderId: string;
@@ -139,7 +145,7 @@ export function MaterialsPage(): React.JSX.Element {
                   <th style={{ padding: "12px 14px" }}>{t("materials.reserved")}</th>
                   <th style={{ padding: "12px 14px" }}>{t("materials.issued")}</th>
                   <th style={{ padding: "12px 14px" }}>{t("materials.consumed")}</th>
-                  <th style={{ padding: "12px 14px" }}>{t("materials.shortageQty")}</th>
+                  <th style={{ padding: "12px 14px" }}>{t("materials.unissuedQty")}</th>
                   <th style={{ padding: "12px 14px", textAlign: "center" }}>{t("common.actions")}</th>
                 </tr>
               </thead>
@@ -151,6 +157,7 @@ export function MaterialsPage(): React.JSX.Element {
                   const unreserved = Math.max(0, mat.requiredQty - mat.reservedQty);
                   const unissued = Math.max(0, mat.requiredQty - mat.issuedQty);
                   const unconsumed = Math.max(0, mat.issuedQty - mat.consumedQty);
+                  const isShort = mat.state === "Short";
 
                   return (
                     <tr key={mat.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
@@ -174,21 +181,26 @@ export function MaterialsPage(): React.JSX.Element {
                         <ManufacturingStatusBadge state={mat.state} />
                       </td>
                       <td style={{ padding: "12px 14px", fontWeight: 600 }}>
-                        <BdiText>{`${mat.requiredQty} ${mat.uomCode}`}</BdiText>
+                        <BdiText>{formatQuantity({ value: String(mat.requiredQty), unitOfMeasure: mat.uomCode })}</BdiText>
                       </td>
                       <td style={{ padding: "12px 14px" }}>
-                        <BdiText>{`${mat.reservedQty} ${mat.uomCode}`}</BdiText>
+                        <BdiText>{formatQuantity({ value: String(mat.reservedQty), unitOfMeasure: mat.uomCode })}</BdiText>
                       </td>
                       <td style={{ padding: "12px 14px", color: mat.issuedQty > 0 ? "#15803d" : undefined, fontWeight: mat.issuedQty > 0 ? 600 : 400 }}>
-                        <BdiText>{`${mat.issuedQty} ${mat.uomCode}`}</BdiText>
+                        <BdiText>{formatQuantity({ value: String(mat.issuedQty), unitOfMeasure: mat.uomCode })}</BdiText>
                       </td>
                       <td style={{ padding: "12px 14px", color: mat.consumedQty > 0 ? "#0284c7" : undefined, fontWeight: mat.consumedQty > 0 ? 600 : 400 }}>
-                        <BdiText>{`${mat.consumedQty} ${mat.uomCode}`}</BdiText>
+                        <BdiText>{formatQuantity({ value: String(mat.consumedQty), unitOfMeasure: mat.uomCode })}</BdiText>
                       </td>
                       <td style={{ padding: "12px 14px" }}>
+                        {isShort && (
+                          <span style={{ color: "#b91c1c", fontWeight: 700, background: "#fee2e2", padding: "2px 6px", borderRadius: "4px", marginInlineEnd: "6px", display: "inline-block" }}>
+                            {t("materials.actualShortage")}
+                          </span>
+                        )}
                         {unissued > 0 ? (
                           <span style={{ color: "#d97706", fontWeight: 600, background: "#fef3c7", padding: "2px 6px", borderRadius: "4px" }}>
-                            <BdiText>{`${unissued} ${mat.uomCode}`}</BdiText>
+                            <BdiText>{formatQuantity({ value: String(unissued), unitOfMeasure: mat.uomCode })}</BdiText>
                           </span>
                         ) : (
                           <span style={{ color: "#15803d", fontWeight: 600 }}>

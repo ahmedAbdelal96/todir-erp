@@ -34,7 +34,7 @@ export default defineConfig({
           reuseExistingServer: true,
           timeout: 120 * 1000,
           env: {
-            TODIR_DATABASE_CONNECTION: 'Host=localhost;Port=15432;Database=todir;Username=erp_app;Password=todir-app-dev',
+            TODIR_DATABASE_CONNECTION: process.env['TODIR_DATABASE_CONNECTION'] || `Host=${process.env['TODIR_DB_HOST'] || 'localhost'};Port=${process.env['TODIR_DB_PORT'] || '15432'};Database=${process.env['TODIR_DB_NAME'] || 'todir'};Username=${process.env['TODIR_DB_USER'] || 'erp_app'};Password=${process.env['TODIR_DB_PASSWORD'] || process.env['ERP_DEV_PASSWORD'] || 'todir-app-dev'}`,
             TODIR_CORS_ORIGINS: 'http://127.0.0.1:5173,http://localhost:5173',
             ASPNETCORE_ENVIRONMENT: 'Development'
           }

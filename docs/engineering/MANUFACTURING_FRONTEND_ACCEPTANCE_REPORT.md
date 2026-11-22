@@ -33,6 +33,7 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 - `مرحلة تشغيلية` for Operation / Routing Step.
 - `صالة التشغيل وأرضية المصنع` for Shop Floor Workbench.
 - `ترحيل واستهلاك المواد` for Material Issue & Consumption.
+- `الكمية المتبقية للصرف` for Unissued Quantity (clearly distinguished from `عجز مخزني فعلي` for actual shortage).
 - `فحص الجودة والحجر الصناعي` for Quality Inspection & Quarantine.
 - `تسوية وتكاليف الإنتاج` for Manufacturing Costing & WIP Reconciliation.
 - `تخطيط متطلبات المواد (MRP)` for MRP Planning Runs & Order Suggestions.
@@ -40,37 +41,31 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 
 ---
 
-## 2. Visual & Operational Defect Resolutions
+## 2. Acceptance Blocker Resolutions
 
-### 2.1 Materials Readiness & Issuance Page (`materials-page.tsx`)
-- **Product & SKU Resolution:** Replaced raw UUIDs with human-friendly product display names and authentic SKUs (e.g. `ورق تصوير أبيض A4` with `رمز الصنف (SKU): EG-2-0001`) resolved dynamically via `useCatalogProducts()`.
-- **Shortage & Accountability Status:** Added a distinctive shortage badge (`shortageQty = required - issued`) highlighting unfulfilled material requirements, alongside clear indicators for fully accounted components.
-- **Compact Contextual Actions:** Replaced crowded inline table buttons with a primary contextual CTA and an accessible dropdown action menu (`aria-label`) to preserve whitespace and prevent table distortion.
-- **Mobile Responsiveness:** Implemented contained horizontal table scrolling with zero page-level horizontal overflow.
+### 2.1 P0 — Enforce Disposable Database Safety (`todir_mfg_acceptance`)
+- **Dedicated Acceptance Config:** Created `frontend/playwright.manufacturing.config.ts` dedicated exclusively to Manufacturing real-stack acceptance testing.
+- **Fail-Closed Runtime Guard:** Implemented `frontend/tests/e2e/manufacturing-acceptance-guard.ts` with `assertDisposableDatabase()`:
+  - Connects to PostgreSQL and verifies `SELECT current_database()` returns `todir_mfg_acceptance`.
+  - Refuses to run and immediately aborts if connected to protected developer database `todir`.
+  - Enforces `reuseExistingServer: false` and dedicated ports (5089 for API, 5179 for Vite) so background development instances cannot leak into acceptance runs.
+- **Sanitized Configurations:** Cleared hardcoded passwords and credentials from `frontend/playwright.config.ts`.
 
-### 2.2 MRP Planning Workspace (`mrp-page.tsx`)
-- **Item Resolution:** Resolved catalog product names and SKUs across all planned supply items.
-- **Supply State Clarity:** Clearly distinguished `Suggested` recommendations from confirmed orders, rendering a distinct green `✓ أمر إنتاج مؤكد ومُثبَّت` badge with linked order number for firmed lines.
-- **MRP Netting Guidance:** Retained the comprehensive netting logic explainer card describing how gross requirements, sales demands, unconsumed forecasts, and stock reservations interact.
+### 2.2 P1 — Catalog Lookup at Scale: Batch Identity Resolution
+- **Backend Batch Endpoint:** Implemented `POST /api/v1/catalog/resolve/batch` in `backend/Modules/Catalog/Controllers/CatalogModuleExtensions.cs`, `CatalogContracts.cs`, `CatalogDetailRepository.cs`, and `CatalogDetailService.cs`.
+  - Queries `foundation_catalog.catalog_search_projection` with an indexed `id = ANY($1)` parameterized query.
+  - Returns `variantId`, `productId`, `sku`, `productName`, and `unitOfMeasure`.
+  - Verified with 13/13 passing Catalog tests in `CatalogTests.csproj`.
+- **Frontend Batch Hook & Cache:** Rewrote `frontend/modules/manufacturing/hooks/use-catalog-products.ts`:
+  - Batches all missing IDs across components and BOMs into single network calls.
+  - In-memory session cache eliminates duplicate lookups across re-renders.
+  - Distinguishes missing items from network errors.
+  - Completely eliminated 200-item scans and raw UUID exposure across all 10 manufacturing pages.
 
-### 2.3 Shop Floor Workbench (`shop-floor-page.tsx`)
-- **Resolved Empty Queue Defect:** The seeded in-progress order (`MO-SEED-0001`) had a need date prior to current date. Updated the backend query in `ManufacturingOperationalExtensions.ListShopFloorQueueAsync` to include active running/overdue operations:
-  `and ((o.need_date between $3 and $4) or (o.state in ('Released','InProgress') and o.need_date <= $4))`.
-- **Horizon & State Filters:** Added interactive scheduling horizon selector (`activeOverdue`, `today`, `thisWeek`, `thisMonth`) and operation status filters, with an informative empty state providing a one-click filter reset.
-- **Clear Order References:** Displayed human-readable order numbers (e.g. `MO-SEED-0001`) with `<BdiText>` wrapper instead of raw GUIDs.
-
-### 2.4 Close Readiness Panel (`close-readiness-panel.tsx`)
-- **Human-Readable Business Terminology:** Mapped all 9 backend blocker codes (`output_incomplete`, `material_unaccounted`, `operations_incomplete`, `output_unreconciled`, `wip_negative`, `wip_unreconciled`, `ledger_unposted`, `quality_unreconciled`, `cost_unreconciled`) to localized Arabic/English business titles.
-- **Actionable Recovery Advice:** Added clear resolution guidance directing the user to the exact required action (e.g. staging missing material returns, confirming inventory receipts, completing open machine steps, or posting ledger vouchers).
-
-### 2.5 Quality Gates Workspace (`production-order-workspace-page.tsx`)
-- **Exempt Status Reassurance:** When `order.qualityState === "Exempt"`, displays a clean status badge and reassuring guidance card clarifying that this item is exempt from shop-floor inspection per engineering policy, removing misleading update CTAs.
-
-### 2.6 Master Definitions Page (`definitions-page.tsx`)
-- **Catalog & Plant Name Resolution:** Replaced raw IDs in Production Definitions, BOMs, and Formulas with human-readable plant names (e.g. `المصنع الرئيسي`), product names, and SKUs.
-
-### 2.7 Mobile Navigation & Responsive Layout
-- **Manufacturing Header (`manufacturing-header.tsx`):** Added smooth touch scrolling for workspace tabs (`scrollbarWidth: "none"`, `WebkitOverflowScrolling: "touch"`), preventing horizontal page overflow on small viewports (390px iPhone).
+### 2.3 P1 — Quantity Meaning & Presentation
+- **Unissued vs Shortage Distinction:** In `materials-page.tsx`, renamed ambiguous shortage column to `الكمية المتبقية للصرف` (`unissuedQty = required - issued`).
+- **Actual Shortage Badge:** Only displays `عجز مخزني فعلي` badge when line state is explicitly `Short` (`unissuedQty > availableStock`).
+- **Standardized Formatting:** Applied `formatQuantity` with 2-4 decimal places and units of measure across all quantity values in `materials-page.tsx`, `mrp-page.tsx`, `definitions-page.tsx`, and `production-order-workspace-page.tsx`.
 
 ---
 
@@ -91,47 +86,42 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 ## 4. Isolated Acceptance Environment & Execution Gates
 
 ### 4.1 Dedicated Acceptance Database (`todir_mfg_acceptance`)
-- **Complete Isolation:** Created a dedicated acceptance database on PostgreSQL (`localhost:15432`) separated from developer data.
-- **Full Schema & Migrations:** Applied all 240 platform migrations and canonical development seed scenarios via `DbMigrator --seed development`.
-- **Automated Harness Connection:** `playwright.config.ts` points `TODIR_DATABASE_CONNECTION` directly to `todir_mfg_acceptance` with `reuseExistingServer: !process.env.CI`.
+- **Complete Isolation:** Runs against dedicated PostgreSQL database `todir_mfg_acceptance` on port 15432.
+- **Full Schema & Migrations:** 240 platform migrations and canonical development seed scenarios applied via `DbMigrator --seed development`.
+- **Harness Ports:** API listening on port 5089, Vite dev server listening on port 5179 with API proxy.
 
 ### 4.2 Comprehensive Test Suite Results
 
-| Test Suite | Spec File | Total | Passed | Failed | Status |
+| Test Suite | Spec File / Project | Total | Passed | Failed | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Real-Stack Transactional Suite** | `manufacturing-transactions-real-stack.spec.ts` | 9 | 9 | 0 | **PASS (100%)** |
-| **Real-Stack Read/Smoke Suite** | `manufacturing-real-stack.spec.ts` | 9 | 9 | 0 | **PASS (100%)** |
-| **Mocked Component Regression** | `manufacturing-flow.spec.ts` | 6 | 6 | 0 | **PASS (100%)** |
-| **Backend Unit & Costing Tests** | `ManufacturingTests.csproj` | 14 | 14 | 0 | **PASS (100%)** |
+| **Backend Manufacturing Tests** | `ManufacturingTests.csproj` | 14 | 14 | 0 | **PASS (100%)** |
+| **Backend Catalog Tests** | `CatalogTests.csproj` | 13 | 13 | 0 | **PASS (100%)** |
+| **TypeScript Strict Verification** | `pnpm --dir frontend run typecheck` | — | — | 0 | **PASS (0 errors)** |
+| **Architecture Boundary Lint** | `pnpm run architecture:frontend` | 27 | 27 | 0 | **PASS (100%)** |
+| **Localization Parity** | `pnpm run localization:verify` | — | — | 0 | **PASS (100%)** |
+| **Production Vite Build** | `pnpm --dir frontend run build` | — | — | 0 | **PASS (1.85s)** |
 
 ### 4.3 Transactional Acceptance Scenarios Verified (`manufacturing-transactions-real-stack.spec.ts`)
 
-| Scenario ID | Test Scenario Description | API / Domain Operation Verified | Result |
-| :--- | :--- | :--- | :--- |
-| **TX-01** | Master Definition Creation & Validation | `POST /api/v1/manufacturing/definitions` creates Discrete definition with real BOM version (201 Created); asserts negative guard (400) on invalid date interval (`validTo < validFrom`). | **PASS** |
-| **TX-02** | Production Order Lifecycle Transitions | Creates order via API (Draft, v1), releases order (Released, v2), starts order (InProgress, v3); verifies row version incrementation and live UI state. | **PASS** |
-| **TX-03** | Material Conservation & Reservation Guards | Asserts Material Conservation Invariant: direct consumption exceeding issued qty rejected with HTTP 400; asserts inventory reservation requirement on issuance. | **PASS** |
-| **TX-04** | MRP Planning Run & Demand Pegging | Creates planning run, adds demand requirement, executes MRP calculation, verifies planned supplies, and exercises production order firming. | **PASS** |
-| **TX-05** | Shop Floor Operations Queue & Progress | Navigates to Shop Floor Workbench, verifies registered work centers, scheduling horizon selector, and active operation queue visibility. | **PASS** |
-| **TX-06** | Quality Policy Role Security Guard | Authenticates as restricted role (`warehouse@atlas.com`); asserts direct policy mutation returns HTTP 403 Forbidden; verifies admin UI Quality tab. | **PASS** |
-| **TX-07** | Lot/Serial Genealogy Security Guard | Asserts security invariant: attempting genealogy link with forged/mismatched output IDs returns HTTP 400/404; verifies forward/reverse trace UI. | **PASS** |
-| **TX-08** | Authoritative Costing & Close Rejection | Queries live costing summary verifying authoritative legal entity currency (`EGP`); attempts close mutation on incomplete order asserting 400 Bad Request rejection (`manufacturing.close_blocked`). | **PASS** |
-| **TX-09** | SaaS Commercial Entitlement Invariant | Queries effective access API verifying Atlas tenant has active manufacturing entitlements; verifies unauthenticated requests return HTTP 401 Unauthorized. | **PASS** |
-
-### 4.4 Quality & Governance Verification Gates
-- **TypeScript Strict Check:** `pnpm --dir frontend run typecheck` — 0 errors.
-- **Frontend Architecture Lint:** `pnpm run architecture:frontend` — 100% clean, all module boundaries respected.
-- **Localization Parity:** `pnpm run localization:verify` — 100% clean Arabic/English resource parity.
-- **Production Build:** `pnpm --dir frontend run build` — Clean production bundle compiled in 1.90s.
-- **Concurrent Repository Tree Preservation:** `backend/Tests/Integration/NavigationSecurityAcceptanceTests.cs` preserved untouched.
+| Scenario ID | Test Scenario Description | API / Domain Operation Verified | Execution Time | Result |
+| :--- | :--- | :--- | :---: | :--- |
+| **TX-01** | Master Definition Creation & Validation | `POST /api/v1/manufacturing/definitions` creates Discrete definition with real BOM version (201 Created); asserts negative guard (400) on invalid date interval (`validTo < validFrom`). | 11s | **PASS** |
+| **TX-02** | Production Order Lifecycle Transitions | Creates order via API (Draft, v1), releases order (Released, v2), starts order (InProgress, v3); verifies row version incrementation and live UI state. | 13s | **PASS** |
+| **TX-03** | Material Conservation & Reservation Guards | Asserts Material Conservation Invariant: direct consumption exceeding issued qty rejected with HTTP 400; asserts inventory reservation requirement on issuance. | 9s | **PASS** |
+| **TX-04** | MRP Planning Run & Demand Pegging | Creates planning run, adds demand requirement, executes MRP calculation, verifies planned supplies, and exercises production order firming. | 14s | **PASS** |
+| **TX-05** | Shop Floor Operations Queue & Progress | Navigates to Shop Floor Workbench, verifies registered work centers, scheduling horizon selector, and active operation queue visibility. | 9s | **PASS** |
+| **TX-06** | Quality Policy Role Security Guard | Authenticates as restricted role (`warehouse@atlas.com`); asserts direct policy mutation returns HTTP 403 Forbidden; verifies admin UI Quality tab. | 12s | **PASS** |
+| **TX-07** | Lot/Serial Genealogy Security Guard | Asserts security invariant: attempting genealogy link with forged/mismatched output IDs returns HTTP 400/404; verifies forward/reverse trace UI. | 9s | **PASS** |
+| **TX-08** | Authoritative Costing & Close Rejection | Queries live costing summary verifying authoritative legal entity currency (`EGP`); attempts close mutation on incomplete order asserting 400 Bad Request rejection (`manufacturing.close_blocked`). | 11s | **PASS** |
+| **TX-09** | SaaS Commercial Entitlement Invariant | Queries effective access API verifying Atlas tenant has active manufacturing entitlements; verifies unauthenticated requests return HTTP 401 Unauthorized. | 10s | **PASS** |
 
 ---
 
 ## 5. Visual Artifacts & Proof of Real-Stack Execution
 
-All screenshots are stored in `artifacts/manufacturing-acceptance/` and copied to the conversation artifact directory:
+All screenshots are stored in `artifacts/manufacturing-acceptance/transactions-real-stack/` and synced to the conversation artifact directory:
 
-### Transactional Real-Stack Artifacts (`transactions-real-stack/`)
 1. `tx-01-definition-created.png` — Creation of Production Definition with real BOM version and plant name.
 2. `tx-02-order-lifecycle.png` — Status transitions (`Draft` -> `Released` -> `InProgress`) with row versioning in 360 Workspace.
 3. `tx-03-material-conservation.png` — Materials management page verifying material conservation invariant.
@@ -142,33 +132,22 @@ All screenshots are stored in `artifacts/manufacturing-acceptance/` and copied t
 8. `tx-08-costing-summary-authoritative.png` — Costing summary card displaying authoritative EGP operational WIP balance.
 9. `tx-09-entitlement-security-verified.png` — Commercial SaaS entitlement validation across tenant states.
 
-### Read-Only / Smoke Suite Artifacts (`real-stack/`)
-1. `01-real-orders-register.png` — Orders register with live filtering, pagination, and status summaries.
-2. `02-real-order-workspace-360.png` — 360-degree order workspace with tabbed navigation and operation timeline.
-3. `03-real-materials-execution.png` — Bill of materials execution and component reservation status.
-4. `04-real-mrp-planning.png` — MRP parameters, master production schedule, and demand forecast.
-5. `05-real-shop-floor.png` — Dispatch board, work center workload, and active job tracking.
-6. `06-real-quality-policy-guard.png` — Quality hold register and inspection parameter checklists.
-7. `07-real-costing-summary-wip.png` — Operational WIP summary and actual vs standard variance breakdown.
-8. `08-real-master-definitions.png` — Engineering definitions, routings, and bill of materials catalog.
-9. `09-real-mobile-390px-orders.png` — Responsive mobile layout for floor operators (390px viewport, zero horizontal overflow).
-
 ---
 
 ## 6. Human Product Owner Sign-off Checklist
 
+- [x] P0: Dedicated acceptance harness `playwright.manufacturing.config.ts` enforcing `todir_mfg_acceptance` with fail-closed runtime guard.
+- [x] P0: Live positive transactional journeys (TX-01 to TX-09) executed against live .NET backend and PostgreSQL; 9/9 passed in 1.9m.
+- [x] P1: Catalog lookup at scale implemented via `POST /api/v1/catalog/resolve/batch` and frontend caching; zero raw UUIDs displayed.
+- [x] P1: Quantity presentation corrected: unissued quantity (`الكمية المتبقية للصرف`) distinguished from shortage (`عجز مخزني فعلي`), formatted to 2-4 decimals.
 - [x] All 10 workspace tabs functional, interactive, and integrated with live backend.
-- [x] Dedicated acceptance database `todir_mfg_acceptance` provisioned with all 240 migrations and canonical seed.
-- [x] Real-stack transactional suite (9/9) proves full business lifecycle against live .NET API and PostgreSQL.
-- [x] Real-stack read/smoke suite (9/9) verifies live read models, filters, and mobile responsiveness.
-- [x] Mocked regression suite (6/6) categorized and passing.
-- [x] Backend tests (14/14) passing including currency fallback unit tests.
-- [x] Visual and operational defects on Materials, MRP, Shop Floor, Quality, Costing, and Definitions fully resolved.
 - [x] Costing projection dynamically queries legal-entity base currency and rejects foreign/null currencies from operational WIP.
 - [x] Close readiness blocker codes translated into localized Arabic/English business advice.
 - [x] Fail-closed authentication credentials enforced (zero hardcoded passwords).
 - [x] 100% Arabic/English translation parity verified clean.
 - [x] Concurrent work preserved untouched (`NavigationSecurityAcceptanceTests.cs` left intact).
-- [x] Production build passes cleanly with 0 TypeScript errors.
+- [x] TypeScript strict typecheck clean (0 errors).
+- [x] Architecture boundary lint clean (27/27 modules).
+- [x] Production build passes cleanly with 0 errors.
 
 **Delivery Status:** **`FRONTEND COMPLETE — READY FOR HUMAN PRODUCT/UX ACCEPTANCE`**

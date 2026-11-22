@@ -19,6 +19,8 @@ public sealed record AddBarcodeRequest(Guid? UomId, BarcodeType BarcodeType, str
 public sealed record CatalogVersionRequest(long Version);
 public sealed class CatalogException(string code, string message) : Exception(message) { public string Code { get; } = code; }
 public sealed record ProductVariantSnapshot(Guid VariantId, Guid TemplateId, string? Sku, string DisplayName, Guid BaseUomId, decimal ConversionFactor, Guid? ResolvedUomId = null, string? ResolvedUomCode = null, DateTimeOffset? EffectiveAt = null);
+public sealed record ResolveBatchRequest(IReadOnlyList<string> Values);
+public sealed record ResolvedVariantIdentity(Guid VariantId, Guid TemplateId, string? Sku, string DisplayName, string? NameAr, string? NameEn, string? BaseUomCode);
 public sealed record CreateVariantRequest(string? Sku, string? DisplaySuffix, IReadOnlyDictionary<Guid, Guid>? AttributeValues = null);
 public sealed record VariantDto(Guid Id, Guid TemplateId, string? Sku, string? DisplaySuffix, bool IsDefaultVariant, CatalogStatus Status, long Version);
 public sealed record AddProductUomRequest(Guid UomId, decimal FactorToBase, DateTimeOffset EffectiveFrom, DateTimeOffset? EffectiveTo = null, IReadOnlyList<string>? UsageFlags = null, int? RoundingPrecision = null);

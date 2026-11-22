@@ -11,6 +11,7 @@ import {
   useCostQuery,
   useCloseReadinessQuery
 } from "../../hooks/use-manufacturing.ts";
+import { useCatalogProducts } from "../../hooks/use-catalog-products.ts";
 import type { ProductionOrder } from "../../types.ts";
 
 export interface ProductionOrderDetailDrawerProps {
@@ -34,6 +35,12 @@ export function ProductionOrderDetailDrawer({
   const { data: qualityGates = [] } = useQualityGatesQuery(orderId);
   const { data: cost } = useCostQuery(orderId);
   const { data: closeReadiness } = useCloseReadinessQuery(orderId);
+
+  const materialVariantIds = React.useMemo(
+    () => materials.map((m) => m.preferredProductVariantId || m.productVariantId).filter(Boolean),
+    [materials]
+  );
+  const { getProductDisplayName } = useCatalogProducts(materialVariantIds);
 
   if (!isOpen || !order) return null;
 
@@ -182,7 +189,7 @@ export function ProductionOrderDetailDrawer({
             <div style={{ fontSize: "0.8125rem", border: "1px solid var(--color-border-default)", borderRadius: "var(--radius-sm)", overflow: "hidden" }}>
               {materials.slice(0, 4).map((m) => (
                 <div key={m.id} style={{ padding: "0.5rem 0.75rem", borderBottom: "1px solid var(--color-border-default)", display: "flex", justifyContent: "space-between" }}>
-                  <span>{(m.componentProductVariantId ?? m.productVariantId).slice(0, 8)}...</span>
+                  <span>{getProductDisplayName(m.preferredProductVariantId || m.componentProductVariantId || m.productVariantId)}</span>
                   <span><BdiText>{`${m.consumedQty} / ${m.requiredQty} ${m.uomCode}`}</BdiText></span>
                 </div>
               ))}

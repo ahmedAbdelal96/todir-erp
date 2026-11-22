@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { ManufacturingHeader } from "../components/manufacturing-header.tsx";
 import { ManufacturingStatusBadge } from "../components/manufacturing-status-badge.tsx";
@@ -29,7 +29,6 @@ type DefinitionTab = "plants" | "boms" | "formulas" | "routings" | "workCenters"
 export function DefinitionsPage(): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
   const { legalEntityId, isReady } = useManufacturingScope();
-  const { getProductDisplayName, getProductSku } = useCatalogProducts();
 
   const [activeTab, setActiveTab] = useState<DefinitionTab>("definitions");
 
@@ -50,6 +49,16 @@ export function DefinitionsPage(): React.JSX.Element {
   const { data: workCenters = [] } = useWorkCentersQuery();
   const { data: definitions = [] } = useDefinitionsQuery(legalEntityId);
   const { data: subGroups = [] } = useSubstitutionGroupsQuery();
+
+  const definitionVariantIds = useMemo(() => {
+    const ids = new Set<string>();
+    boms.forEach((b) => { if (b.productVariantId) ids.add(b.productVariantId); });
+    definitions.forEach((d) => { if (d.productVariantId) ids.add(d.productVariantId); });
+    formulas.forEach((f) => { if (f.productVariantId) ids.add(f.productVariantId); });
+    return Array.from(ids);
+  }, [boms, definitions, formulas]);
+
+  const { getProductDisplayName, getProductSku } = useCatalogProducts(definitionVariantIds);
 
   if (!isReady) {
     return <NoLegalEntityPrompt />;
@@ -157,7 +166,7 @@ export function DefinitionsPage(): React.JSX.Element {
                 </thead>
                 <tbody>
                   {definitions.map((def) => {
-                    const plantName = plants.find((p) => p.id === def.plantId)?.name ?? def.plantId.slice(0, 8);
+                    const plantName = plants.find((p) => p.id === def.plantId)?.name ?? "—";
                     const productName = getProductDisplayName(def.productVariantId);
                     const sku = getProductSku(def.productVariantId);
                     return (

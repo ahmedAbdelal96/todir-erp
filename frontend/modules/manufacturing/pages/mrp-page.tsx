@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { ManufacturingHeader } from "../components/manufacturing-header.tsx";
 import { ManufacturingStatusBadge } from "../components/manufacturing-status-badge.tsx";
@@ -11,12 +11,12 @@ import { usePlanningRunsQuery, usePlannedSuppliesQuery, useMpsPlansQuery } from 
 import { useCatalogProducts } from "../hooks/use-catalog-products.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 import { BdiText } from "../../../components/formatting/bidi-text.tsx";
+import { formatQuantity } from "../../../components/formatting/quantity-formatter.ts";
 import type { PlannedSupply } from "../types.ts";
 
 export function MrpPage(): React.JSX.Element {
   const { t } = useTranslation("manufacturing");
   const { legalEntityId, isReady } = useManufacturingScope();
-  const { getProductDisplayName, getProductSku } = useCatalogProducts();
 
   const [isRunOpen, setIsRunOpen] = useState(false);
   const [isMpsOpen, setIsMpsOpen] = useState(false);
@@ -28,6 +28,12 @@ export function MrpPage(): React.JSX.Element {
 
   const { data: supplies = [], isLoading: suppliesLoading } = usePlannedSuppliesQuery(activeRunId);
   const { data: mpsPlans = [] } = useMpsPlansQuery(legalEntityId);
+
+  const supplyVariantIds = useMemo(
+    () => supplies.map((s) => s.productVariantId).filter(Boolean),
+    [supplies]
+  );
+  const { getProductDisplayName, getProductSku } = useCatalogProducts(supplyVariantIds);
 
   if (!isReady) {
     return <NoLegalEntityPrompt />;
@@ -123,7 +129,7 @@ export function MrpPage(): React.JSX.Element {
             >
               {runs.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.runNumber ?? r.id.slice(0, 8)} ({r.horizonStart.slice(0, 10)} {t("mrp.to", "إلى")} {r.horizonEnd.slice(0, 10)})
+                  {r.runNumber ?? t("mrp.planningCycle")} ({r.horizonStart.slice(0, 10)} {t("mrp.to", "إلى")} {r.horizonEnd.slice(0, 10)})
                 </option>
               ))}
             </select>
@@ -184,24 +190,20 @@ export function MrpPage(): React.JSX.Element {
                             <span style={{ fontSize: "11px", color: "#64748b" }}>
                               <BdiText>{`${t("common.sku")}: ${sku}`}</BdiText>
                             </span>
-                          ) : (
-                            <span style={{ fontSize: "11px", color: "#94a3b8" }}>
-                              <BdiText>{sup.productVariantId.slice(0, 8)}</BdiText>
-                            </span>
-                          )}
+                          ) : null}
                         </div>
                       </td>
                       <td style={{ padding: "12px 14px", fontWeight: 600 }}>
-                        <BdiText>{`${sup.quantity} ${sup.uomCode}`}</BdiText>
+                        <BdiText>{formatQuantity({ value: String(sup.quantity), unitOfMeasure: sup.uomCode })}</BdiText>
                       </td>
                       <td style={{ padding: "12px 14px", color: "#475569" }}>
                         {(sup.dueDate ?? sup.needDate).slice(0, 10)}
                       </td>
                       <td style={{ padding: "12px 14px" }}>
                         <ManufacturingStatusBadge state={sup.state} />
-                        {isFirmed && sup.firmedOrderId && (
+                        {isFirmed && (
                           <div style={{ fontSize: "11px", color: "#047857", fontWeight: 600, marginTop: "2px" }}>
-                            {t("mrp.firmedOrderBadge")}: <BdiText>{sup.firmedOrderId.slice(0, 8)}</BdiText>
+                            ✓ {t("mrp.firmedOrderBadge")}
                           </div>
                         )}
                       </td>

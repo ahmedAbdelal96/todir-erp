@@ -172,6 +172,8 @@ export const ar = {
     lotSerial: "رقم التشغيلة / الصلاحية",
     idempotencyNotice: "العمليات المخزنية مؤمنة بمفتاح إثبات فريد لمنع التكرار المالي.",
     shortageQty: "عجز الصرف المطلوب",
+    unissuedQty: "الكمية المتبقية للصرف",
+    actualShortage: "عجز مخزني فعلي",
     actionsMenu: "إجراءات الخامات",
     stockStatus: "حالة التوفر",
     fullyAccounted: "مكتمل الصرف والاستهلاك"

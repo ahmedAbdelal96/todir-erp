@@ -197,23 +197,75 @@ public sealed class CatalogDetailRepository(ITransactionCoordinator coordinator,
 
     public async Task<ProductVariantSnapshot> ResolveAsync(TenantId tenantId, string value, CancellationToken ct, Guid? legalEntityId = null)
     {
+        var isGuid = Guid.TryParse(value, out var parsedId);
         var normalizedSku = CatalogNormalization.Text(value);
         var normalizedBarcode = IdentifierRules.RequireBarcode(value);
         var resolvedAt = DateTimeOffset.UtcNow;
         await using var connection = await dataSource.OpenConnectionAsync(ct);
         await SetTenantAsync(connection, tenantId, ct);
-        const string sql = "select v.id,p.id,v.sku,p.display_name,base.uom_id,base.factor_to_base,barcode.uom_id,coalesce(scan_uom.code,base_uom.code),coalesce(scan_unit.factor_to_base,base.factor_to_base),scan_unit.id from foundation_catalog.product_variant v join foundation_catalog.product_template p on p.tenant_id=v.tenant_id and p.id=v.product_template_id left join foundation_catalog.product_uom base on base.tenant_id=v.tenant_id and base.variant_id=v.id and base.is_base and base.status='Active' and base.effective_from <= $4 and (base.effective_to is null or base.effective_to > $4) left join foundation_catalog.uom base_uom on base_uom.tenant_id=base.tenant_id and base_uom.id=base.uom_id left join foundation_catalog.product_barcode barcode on barcode.tenant_id=v.tenant_id and barcode.variant_id=v.id and barcode.normalized_value=$3 and barcode.status='Active' left join foundation_catalog.product_uom scan_unit on scan_unit.tenant_id=v.tenant_id and scan_unit.variant_id=v.id and scan_unit.uom_id=barcode.uom_id and scan_unit.status='Active' and scan_unit.effective_from <= $4 and (scan_unit.effective_to is null or scan_unit.effective_to > $4) left join foundation_catalog.uom scan_uom on scan_uom.tenant_id=scan_unit.tenant_id and scan_uom.id=scan_unit.uom_id where v.tenant_id=$1 and v.status='Active' and p.status='Active' and (v.normalized_sku=$2 or barcode.id is not null) and exists(select 1 from foundation_catalog.product_visibility visibility where visibility.tenant_id=p.tenant_id and visibility.template_id=p.id and (visibility.scope_type='TenantWide' or (visibility.scope_type='LegalEntity' and $5::uuid is not null and visibility.legal_entity_id=$5))) order by case when v.normalized_sku=$2 then 0 else 1 end limit 1";
+        const string sql = @"select v.id,p.id,v.sku,p.display_name,base.uom_id,base.factor_to_base,barcode.uom_id,coalesce(scan_uom.code,base_uom.code),coalesce(scan_unit.factor_to_base,base.factor_to_base),scan_unit.id 
+from foundation_catalog.product_variant v 
+join foundation_catalog.product_template p on p.tenant_id=v.tenant_id and p.id=v.product_template_id 
+left join foundation_catalog.product_uom base on base.tenant_id=v.tenant_id and base.variant_id=v.id and base.is_base and base.status='Active' and base.effective_from <= $4 and (base.effective_to is null or base.effective_to > $4) 
+left join foundation_catalog.uom base_uom on base_uom.tenant_id=base.tenant_id and base_uom.id=base.uom_id 
+left join foundation_catalog.product_barcode barcode on barcode.tenant_id=v.tenant_id and barcode.variant_id=v.id and barcode.normalized_value=$3 and barcode.status='Active' 
+left join foundation_catalog.product_uom scan_unit on scan_unit.tenant_id=v.tenant_id and scan_unit.variant_id=v.id and scan_unit.uom_id=barcode.uom_id and scan_unit.status='Active' and scan_unit.effective_from <= $4 and (scan_unit.effective_to is null or scan_unit.effective_to > $4) 
+left join foundation_catalog.uom scan_uom on scan_uom.tenant_id=scan_unit.tenant_id and scan_uom.id=scan_unit.uom_id 
+where v.tenant_id=$1 and v.status='Active' and p.status='Active' 
+and (v.normalized_sku=$2 or barcode.id is not null or ($6::uuid is not null and (v.id=$6 or p.id=$6))) 
+and exists(select 1 from foundation_catalog.product_visibility visibility where visibility.tenant_id=p.tenant_id and visibility.template_id=p.id and (visibility.scope_type='TenantWide' or (visibility.scope_type='LegalEntity' and $5::uuid is not null and visibility.legal_entity_id=$5))) 
+order by case when $6::uuid is not null and v.id=$6 then 0 when v.normalized_sku=$2 then 1 else 2 end limit 1";
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(tenantId.Value);
         command.Parameters.AddWithValue(normalizedSku);
         command.Parameters.AddWithValue(normalizedBarcode);
         command.Parameters.AddWithValue(resolvedAt);
         command.Parameters.AddWithValue(legalEntityId ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue(isGuid ? parsedId : (object)DBNull.Value);
         await using var reader = await command.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) throw new CatalogException("catalog.identifier_not_found", "No active product matches this SKU or barcode.");
         if (reader.IsDBNull(4) || reader.IsDBNull(5)) throw new CatalogException("catalog.base_uom_unavailable", "The product has no effective base unit conversion.");
         if (!reader.IsDBNull(6) && reader.IsDBNull(9)) throw new CatalogException("catalog.barcode_uom_conversion_unavailable", "The barcode unit has no effective conversion.");
         return new ProductVariantSnapshot(reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.GetString(3), reader.GetGuid(4), reader.GetDecimal(8), reader.IsDBNull(6) ? reader.GetGuid(4) : reader.GetGuid(6), reader.IsDBNull(7) ? null : reader.GetString(7), resolvedAt);
+    }
+
+    public async Task<IReadOnlyList<ResolvedVariantIdentity>> ResolveBatchAsync(TenantId tenantId, IReadOnlyList<string> values, CancellationToken ct, Guid? legalEntityId = null)
+    {
+        if (values.Count == 0) return [];
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await SetTenantAsync(connection, tenantId, ct);
+        var guids = new List<Guid>();
+        var texts = new List<string>();
+        foreach (var v in values)
+        {
+            if (Guid.TryParse(v, out var g)) guids.Add(g);
+            else if (!string.IsNullOrWhiteSpace(v)) texts.Add(CatalogNormalization.Text(v));
+        }
+        const string sql = @"select c.variant_id, c.template_id, c.sku, c.display_name, c.name_ar, c.name_en, c.base_uom_code 
+from foundation_catalog.catalog_search_projection c 
+where c.tenant_id=$1 
+and (c.variant_id = any($2) or c.template_id = any($2) or c.normalized_sku = any($3)) 
+and exists(select 1 from foundation_catalog.product_visibility visibility where visibility.tenant_id=c.tenant_id and visibility.template_id=c.template_id and (visibility.scope_type='TenantWide' or (visibility.scope_type='LegalEntity' and $4::uuid is not null and visibility.legal_entity_id=$4)))";
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(tenantId.Value);
+        command.Parameters.AddWithValue(guids.ToArray());
+        command.Parameters.AddWithValue(texts.ToArray());
+        command.Parameters.AddWithValue(legalEntityId ?? (object)DBNull.Value);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var list = new List<ResolvedVariantIdentity>();
+        while (await reader.ReadAsync(ct))
+        {
+            list.Add(new ResolvedVariantIdentity(
+                reader.GetGuid(0),
+                reader.GetGuid(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6)
+            ));
+        }
+        return list;
     }
 
     public async Task<ProductReadinessDto> ReadinessAsync(TenantId tenantId, Guid templateId, CancellationToken ct, Guid? legalEntityId = null)

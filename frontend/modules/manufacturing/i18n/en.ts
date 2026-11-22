@@ -172,6 +172,8 @@ export const en = {
     lotSerial: "Batch / Serial Number",
     idempotencyNotice: "Material operations are secured with an idempotency key to prevent duplicate inventory transactions.",
     shortageQty: "Required Shortage",
+    unissuedQty: "Unissued Quantity",
+    actualShortage: "Actual Inventory Shortage",
     actionsMenu: "Material Actions",
     stockStatus: "Stock Status",
     fullyAccounted: "Fully Accounted & Consumed"

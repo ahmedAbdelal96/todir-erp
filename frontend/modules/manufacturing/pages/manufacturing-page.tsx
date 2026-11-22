@@ -173,7 +173,7 @@ export function ManufacturingPage(): React.JSX.Element {
             {runs[0] ? (
               <div>
                 <div style={{ fontSize: "14px", fontWeight: 600, color: "#0f172a" }}>
-                  {runs[0].runNumber ?? runs[0].id.slice(0, 8)}
+                  {runs[0].runNumber ?? t("mrp.plan")}
                 </div>
                 <div style={{ fontSize: "12px", color: "#64748b" }}>
                   {runs[0].horizonStart.slice(0, 10)} {t("mrp.to")} {runs[0].horizonEnd.slice(0, 10)}

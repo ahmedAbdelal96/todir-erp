@@ -28,6 +28,7 @@ import type {
   ProductReference,
   ProductUom,
   ProductVariantSnapshot,
+  ResolvedVariantIdentity,
   ProductVisibility,
   ProductVisibilityInput,
   TemplateAttribute,
@@ -111,6 +112,12 @@ export const catalogApi = {
 
   resolve: (value: string, legalEntityId?: string): Promise<ProductVariantSnapshot> =>
     httpClient<ProductVariantSnapshot>(`${basePath}/resolve/${encodeURIComponent(value)}`, opts(legalEntityId)),
+
+  resolveBatch: (values: readonly string[], legalEntityId?: string): Promise<readonly ResolvedVariantIdentity[]> =>
+    httpClient<readonly ResolvedVariantIdentity[]>(`${basePath}/resolve/batch`, opts(legalEntityId, {
+      method: "POST",
+      body: JSON.stringify({ values })
+    })),
 
   createVariant: (productId: string, input: CreateVariantRequest, legalEntityId?: string): Promise<VariantDto> =>
     httpClient<VariantDto>(`${basePath}/products/${encodeURIComponent(productId)}/variants`, opts(legalEntityId, {

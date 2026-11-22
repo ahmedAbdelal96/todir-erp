@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ManufacturingStatusBadge } from "../components/manufacturing-status-badge.tsx";
@@ -17,6 +17,7 @@ import {
   useQualityGatesQuery,
   useCostQuery
 } from "../hooks/use-manufacturing.ts";
+import { useCatalogProducts } from "../hooks/use-catalog-products.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 import { useOptionalPermissions } from "../../../core/runtime/runtime-provider.tsx";
 import type { ProductionMaterial } from "../types.ts";
@@ -43,6 +44,13 @@ export function ProductionOrderWorkspacePage(): React.JSX.Element {
   const { data: operations = [] } = useOperationsQuery(orderId ?? "");
   const { data: qualityGates = [] } = useQualityGatesQuery(orderId ?? "");
   const { data: cost } = useCostQuery(orderId ?? "");
+
+  const materialVariantIds = useMemo(() => {
+    const ids = materials.map((m) => m.componentProductVariantId ?? m.productVariantId).filter(Boolean);
+    if (order?.productVariantId) ids.push(order.productVariantId);
+    return ids;
+  }, [materials, order]);
+  const { getProductDisplayName } = useCatalogProducts(materialVariantIds);
 
   if (orderLoading) {
     return (
@@ -198,7 +206,7 @@ export function ProductionOrderWorkspacePage(): React.JSX.Element {
                 <tbody>
                   {materials.map((mat) => (
                     <tr key={mat.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{(mat.componentProductVariantId ?? mat.productVariantId).slice(0, 8)}...</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{getProductDisplayName(mat.componentProductVariantId ?? mat.productVariantId)}</td>
                       <td style={{ padding: "10px 12px" }}>{mat.requiredQty} {mat.uomCode}</td>
                       <td style={{ padding: "10px 12px" }}>{mat.reservedQty}</td>
                       <td style={{ padding: "10px 12px", color: "#0284c7" }}>{mat.issuedQty}</td>
@@ -337,9 +345,9 @@ export function ProductionOrderWorkspacePage(): React.JSX.Element {
                     </tr>
                   </thead>
                   <tbody>
-                    {qualityGates.map((qg) => (
+                    {qualityGates.map((qg, idx) => (
                       <tr key={qg.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                        <td style={{ padding: "10px 12px" }}>{qg.id.slice(0, 8)}</td>
+                        <td style={{ padding: "10px 12px" }}>{qg.sourceRef || `${t("orders.gateLabel")} #${idx + 1}`}</td>
                         <td style={{ padding: "10px 12px" }}>{qg.required ? t("orders.mandatory") : t("orders.optional")}</td>
                         <td style={{ padding: "10px 12px" }}><ManufacturingStatusBadge state={qg.decisionState} /></td>
                       </tr>

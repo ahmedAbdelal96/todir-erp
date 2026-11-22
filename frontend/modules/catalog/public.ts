@@ -16,6 +16,7 @@ export type {
   CatalogAttributeValue,
   TemplateAttribute,
   ProductVariantSnapshot,
+  ResolvedVariantIdentity,
   ProductVisibility,
   CatalogImportSummary
 } from "./types.ts";

@@ -160,6 +160,16 @@ export interface ProductVariantSnapshot {
   readonly effectiveAt?: string | null;
 }
 
+export interface ResolvedVariantIdentity {
+  readonly variantId: string;
+  readonly templateId: string;
+  readonly sku?: string | null;
+  readonly displayName: string;
+  readonly nameAr?: string | null;
+  readonly nameEn?: string | null;
+  readonly baseUomCode?: string | null;
+}
+
 export interface ProductVisibility {
   readonly scopeType: VisibilityScope;
   readonly legalEntityId?: string | null;
