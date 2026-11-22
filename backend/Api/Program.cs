@@ -1,3 +1,6 @@
+using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using Shared.BuildingBlocks.Observability;
 using Core.Hosting;
 using Modules.Sample;
@@ -166,41 +169,53 @@ app.MapGet("/health/ready", async (IServiceProvider services, CancellationToken 
         return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
     }
 });
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("TODIR_ENABLE_ACCEPTANCE_DIAGNOSTICS"))
 {
-    app.MapGet("/internal/acceptance/database-context", async (IServiceProvider services, CancellationToken cancellationToken) =>
+    var expectedToken = builder.Configuration["TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN"];
+    if (!string.IsNullOrWhiteSpace(expectedToken))
     {
-        var dataSource = services.GetService<NpgsqlDataSource>();
-        if (dataSource is null) return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
-        try
+        app.MapGet("/internal/acceptance/database-context", async (HttpContext context, IServiceProvider services, CancellationToken cancellationToken) =>
         {
-            await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-            await using var command = new NpgsqlCommand("SELECT current_database(), current_user, coalesce(inet_server_addr()::text, 'localhost'), coalesce(inet_server_port(), 5432);", connection);
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            if (await reader.ReadAsync(cancellationToken))
+            // Enforce loopback caller restriction
+            if (context.Connection.RemoteIpAddress is not null && !IPAddress.IsLoopback(context.Connection.RemoteIpAddress))
             {
-                var db = reader.GetString(0);
-                var user = reader.GetString(1);
-                var host = reader.GetString(2);
-                var port = reader.GetInt32(3);
-                var isDisposable = db.EndsWith("_acceptance", StringComparison.OrdinalIgnoreCase) || db.Contains("_test", StringComparison.OrdinalIgnoreCase);
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            // Enforce diagnostic token authentication
+            var suppliedToken = context.Request.Headers["X-Acceptance-Diagnostic-Token"].ToString();
+            if (string.IsNullOrWhiteSpace(suppliedToken) ||
+                !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expectedToken), Encoding.UTF8.GetBytes(suppliedToken)))
+            {
+                return Results.StatusCode(StatusCodes.Status401Unauthorized);
+            }
+
+            var dataSource = services.GetService<NpgsqlDataSource>();
+            if (dataSource is null) return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+            try
+            {
+                await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+                await using var command = new NpgsqlCommand("SELECT current_database();", connection);
+                var dbObj = await command.ExecuteScalarAsync(cancellationToken);
+                var db = dbObj?.ToString() ?? string.Empty;
+                var isDisposable = (db.EndsWith("_acceptance", StringComparison.OrdinalIgnoreCase) || db.Contains("_test", StringComparison.OrdinalIgnoreCase))
+                    && !string.Equals(db, "todir", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(db, "todir_dev", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(db, "postgres", StringComparison.OrdinalIgnoreCase);
+
                 return Results.Ok(new
                 {
                     database = db,
-                    currentUser = user,
-                    host,
-                    port,
                     environment = app.Environment.EnvironmentName,
                     isDisposable
                 });
             }
-            return Results.StatusCode(StatusCodes.Status500InternalServerError);
-        }
-        catch (Exception ex)
-        {
-            return Results.Problem(statusCode: StatusCodes.Status500InternalServerError, title: "Database context check failed", detail: ex.Message);
-        }
-    });
+            catch (Exception ex)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: ex.Message);
+            }
+        });
+    }
 }
 if (builder.Configuration.GetValue<bool>("TODIR_METRICS_ENABLED")) app.MapPrometheusScrapingEndpoint("/internal/metrics");
 app.MapCore();

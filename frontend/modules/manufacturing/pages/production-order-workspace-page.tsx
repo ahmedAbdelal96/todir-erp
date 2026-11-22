@@ -82,6 +82,14 @@ export function ProductionOrderWorkspacePage(): React.JSX.Element {
         boxSizing: "border-box"
       }}
     >
+      <style>{`
+        @media (max-width: 1024px) {
+          .manufacturing-workspace-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
+
       {/* Workspace Header */}
       <header
         style={{
@@ -179,9 +187,19 @@ export function ProductionOrderWorkspacePage(): React.JSX.Element {
       </header>
 
       {/* Main Tab Content */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "16px", alignItems: "flex-start" }}>
+      <div
+        className="manufacturing-workspace-grid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) minmax(300px, 340px)",
+          gap: "16px",
+          alignItems: "flex-start",
+          width: "100%",
+          boxSizing: "border-box"
+        }}
+      >
         {/* Left Column: Tab Panels */}
-        <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "16px", minHeight: "400px" }}>
+        <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "16px", minHeight: "400px", minWidth: 0, overflow: "hidden" }}>
           {/* Materials Tab */}
           {activeTab === "materials" && (
             <div>
@@ -190,46 +208,60 @@ export function ProductionOrderWorkspacePage(): React.JSX.Element {
                   {t("materials.title")}
                 </h3>
               </div>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "right" }}>
-                <thead>
-                  <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#475569" }}>
-                    <th style={{ padding: "8px 12px" }}>{t("orders.component")}</th>
-                    <th style={{ padding: "8px 12px" }}>{t("materials.required")}</th>
-                    <th style={{ padding: "8px 12px" }}>{t("materials.reserved")}</th>
-                    <th style={{ padding: "8px 12px" }}>{t("materials.issued")}</th>
-                    <th style={{ padding: "8px 12px" }}>{t("materials.consumed")}</th>
-                    <th style={{ padding: "8px 12px" }}>{t("materials.returned")}</th>
-                    <th style={{ padding: "8px 12px" }}>{t("orders.stateLabel")}</th>
-                    <th style={{ padding: "8px 12px", textAlign: "center" }}>{t("common.actions")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {materials.map((mat) => (
-                    <tr key={mat.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{getProductDisplayName(mat.componentProductVariantId ?? mat.productVariantId)}</td>
-                      <td style={{ padding: "10px 12px" }}>{mat.requiredQty} {mat.uomCode}</td>
-                      <td style={{ padding: "10px 12px" }}>{mat.reservedQty}</td>
-                      <td style={{ padding: "10px 12px", color: "#0284c7" }}>{mat.issuedQty}</td>
-                      <td style={{ padding: "10px 12px", color: "#15803d" }}>{mat.consumedQty}</td>
-                      <td style={{ padding: "10px 12px", color: "#b45309" }}>{mat.returnedQty}</td>
-                      <td style={{ padding: "10px 12px" }}><ManufacturingStatusBadge state={mat.state} /></td>
-                      <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                        <div style={{ display: "inline-flex", gap: "4px" }}>
-                          <Button variant="secondary" onClick={() => setSelectedMaterial({ material: mat, action: "Issued" })}>
-                            {t("materials.stageIssue")}
-                          </Button>
-                          <Button variant="secondary" onClick={() => setSelectedMaterial({ material: mat, action: "Consumed" })}>
-                            {t("materials.directConsume")}
-                          </Button>
-                          <Button variant="secondary" onClick={() => setSelectedMaterial({ material: mat, action: "Returned" })}>
-                            {t("materials.returnMaterial")}
-                          </Button>
-                        </div>
-                      </td>
+              <div style={{ overflowX: "auto", width: "100%" }}>
+                <table style={{ width: "100%", minWidth: "750px", borderCollapse: "collapse", fontSize: "13px", textAlign: "right" }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#475569" }}>
+                      <th style={{ padding: "8px 12px" }}>{t("orders.component")}</th>
+                      <th style={{ padding: "8px 12px" }}>{t("materials.required")}</th>
+                      <th style={{ padding: "8px 12px" }}>{t("materials.reserved")}</th>
+                      <th style={{ padding: "8px 12px" }}>{t("materials.issued")}</th>
+                      <th style={{ padding: "8px 12px" }}>{t("materials.consumed")}</th>
+                      <th style={{ padding: "8px 12px" }}>{t("materials.returned")}</th>
+                      <th style={{ padding: "8px 12px" }}>{t("orders.stateLabel")}</th>
+                      <th style={{ padding: "8px 12px", textAlign: "center" }}>{t("common.actions")}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {materials.map((mat) => (
+                      <tr key={mat.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        <td
+                          style={{
+                            padding: "10px 12px",
+                            fontWeight: 600,
+                            maxWidth: "220px",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap"
+                          }}
+                          title={getProductDisplayName(mat.componentProductVariantId ?? mat.productVariantId)}
+                        >
+                          {getProductDisplayName(mat.componentProductVariantId ?? mat.productVariantId)}
+                        </td>
+                        <td style={{ padding: "10px 12px" }}>{mat.requiredQty} {mat.uomCode}</td>
+                        <td style={{ padding: "10px 12px" }}>{mat.reservedQty}</td>
+                        <td style={{ padding: "10px 12px", color: "#0284c7" }}>{mat.issuedQty}</td>
+                        <td style={{ padding: "10px 12px", color: "#15803d" }}>{mat.consumedQty}</td>
+                        <td style={{ padding: "10px 12px", color: "#b45309" }}>{mat.returnedQty}</td>
+                        <td style={{ padding: "10px 12px" }}><ManufacturingStatusBadge state={mat.state} /></td>
+                        <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                          <div style={{ display: "inline-flex", gap: "4px" }}>
+                            <Button variant="secondary" onClick={() => setSelectedMaterial({ material: mat, action: "Issued" })}>
+                              {t("materials.stageIssue")}
+                            </Button>
+                            <Button variant="secondary" onClick={() => setSelectedMaterial({ material: mat, action: "Consumed" })}>
+                              {t("materials.directConsume")}
+                            </Button>
+                            <Button variant="secondary" onClick={() => setSelectedMaterial({ material: mat, action: "Returned" })}>
+                              {t("materials.returnMaterial")}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -241,30 +273,32 @@ export function ProductionOrderWorkspacePage(): React.JSX.Element {
                   {t("shopFloor.title")}
                 </h3>
               </div>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "right" }}>
-                <thead>
-                  <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#475569" }}>
-                    <th style={{ padding: "8px 12px" }}>{t("shopFloor.sequence")}</th>
-                    <th style={{ padding: "8px 12px" }}>{t("common.code")}</th>
-                    <th style={{ padding: "8px 12px" }}>{t("shopFloor.operationName")}</th>
-                    <th style={{ padding: "8px 12px" }}>{t("shopFloor.standardMinutes")}</th>
-                    <th style={{ padding: "8px 12px" }}>{t("shopFloor.actualMinutes")}</th>
-                    <th style={{ padding: "8px 12px" }}>{t("orders.stateLabel")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {operations.map((op) => (
-                    <tr key={op.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>#{op.sequenceNo}</td>
-                      <td style={{ padding: "10px 12px" }}>{op.code ?? `#${op.sequenceNo}`}</td>
-                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{op.name}</td>
-                      <td style={{ padding: "10px 12px" }}>{(op.standardSetupMinutes ?? 0) + (op.standardRunMinutesPerUnit ?? 0)} {t("shopFloor.minutesUnit")}</td>
-                      <td style={{ padding: "10px 12px" }}>{(op.actualLaborMinutes ?? op.actualMinutes ?? 0) + (op.actualMachineMinutes ?? 0)} {t("shopFloor.minutesUnit")}</td>
-                      <td style={{ padding: "10px 12px" }}><ManufacturingStatusBadge state={op.state} /></td>
+              <div style={{ overflowX: "auto", width: "100%" }}>
+                <table style={{ width: "100%", minWidth: "600px", borderCollapse: "collapse", fontSize: "13px", textAlign: "right" }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#475569" }}>
+                      <th style={{ padding: "8px 12px" }}>{t("shopFloor.sequence")}</th>
+                      <th style={{ padding: "8px 12px" }}>{t("common.code")}</th>
+                      <th style={{ padding: "8px 12px" }}>{t("shopFloor.operationName")}</th>
+                      <th style={{ padding: "8px 12px" }}>{t("shopFloor.standardMinutes")}</th>
+                      <th style={{ padding: "8px 12px" }}>{t("shopFloor.actualMinutes")}</th>
+                      <th style={{ padding: "8px 12px" }}>{t("orders.stateLabel")}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {operations.map((op) => (
+                      <tr key={op.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "10px 12px", fontWeight: 700 }}>#{op.sequenceNo}</td>
+                        <td style={{ padding: "10px 12px" }}>{op.code ?? `#${op.sequenceNo}`}</td>
+                        <td style={{ padding: "10px 12px", fontWeight: 600 }}>{op.name}</td>
+                        <td style={{ padding: "10px 12px" }}>{(op.standardSetupMinutes ?? 0) + (op.standardRunMinutesPerUnit ?? 0)} {t("shopFloor.minutesUnit")}</td>
+                        <td style={{ padding: "10px 12px" }}>{(op.actualLaborMinutes ?? op.actualMinutes ?? 0) + (op.actualMachineMinutes ?? 0)} {t("shopFloor.minutesUnit")}</td>
+                        <td style={{ padding: "10px 12px" }}><ManufacturingStatusBadge state={op.state} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
@@ -336,24 +370,26 @@ export function ProductionOrderWorkspacePage(): React.JSX.Element {
                   </div>
                 </div>
               ) : (
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "right" }}>
-                  <thead>
-                    <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                      <th style={{ padding: "8px 12px" }}>{t("orders.gateLabel")}</th>
-                      <th style={{ padding: "8px 12px" }}>{t("orders.mandatoryLabel")}</th>
-                      <th style={{ padding: "8px 12px" }}>{t("orders.decisionLabel")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {qualityGates.map((qg, idx) => (
-                      <tr key={qg.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                        <td style={{ padding: "10px 12px" }}>{qg.sourceRef || `${t("orders.gateLabel")} #${idx + 1}`}</td>
-                        <td style={{ padding: "10px 12px" }}>{qg.required ? t("orders.mandatory") : t("orders.optional")}</td>
-                        <td style={{ padding: "10px 12px" }}><ManufacturingStatusBadge state={qg.decisionState} /></td>
+                <div style={{ overflowX: "auto", width: "100%" }}>
+                  <table style={{ width: "100%", minWidth: "500px", borderCollapse: "collapse", fontSize: "13px", textAlign: "right" }}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                        <th style={{ padding: "8px 12px" }}>{t("orders.gateLabel")}</th>
+                        <th style={{ padding: "8px 12px" }}>{t("orders.mandatoryLabel")}</th>
+                        <th style={{ padding: "8px 12px" }}>{t("orders.decisionLabel")}</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {qualityGates.map((qg, idx) => (
+                        <tr key={qg.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "10px 12px" }}>{qg.sourceRef || `${t("orders.gateLabel")} #${idx + 1}`}</td>
+                          <td style={{ padding: "10px 12px" }}>{qg.required ? t("orders.mandatory") : t("orders.optional")}</td>
+                          <td style={{ padding: "10px 12px" }}><ManufacturingStatusBadge state={qg.decisionState} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           )}

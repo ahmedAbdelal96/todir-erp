@@ -1,10 +1,7 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 export interface DatabaseContextResponse {
   database: string;
-  currentUser: string;
-  host: string;
-  port: number;
   environment: string;
   isDisposable: boolean;
 }
@@ -16,9 +13,17 @@ export interface DatabaseContextResponse {
  * 2. Rejects execution if the target database is missing, unknown, or points to protected databases ("todir", "todir_dev", "postgres").
  * 3. Never swallows docker or psql verification errors.
  * 4. Asserts that the connected database name matches the target disposable database exactly.
+ * 5. Uses strict identifier validation and argument-array execution (no shell string interpolation).
  */
 export function assertDisposableDatabase(): void {
   const targetDb = process.env['TODIR_ACCEPTANCE_DB'] || 'todir_mfg_acceptance';
+
+  // Strict identifier validation: only alphanumeric and underscores, length 3-63
+  if (!/^[a-zA-Z0-9_]{3,63}$/.test(targetDb)) {
+    throw new Error(
+      `FATAL SAFETY INVARIANT VIOLATION: Database name "${targetDb}" is invalid or contains prohibited characters.`
+    );
+  }
 
   // Invariant 1: Database name safety check - must be disposable
   if (
@@ -60,9 +65,10 @@ export function assertDisposableDatabase(): void {
     );
   }
 
-  // Invariant 4: Live PostgreSQL execution verification (never swallow errors!)
-  const rawOutput = execSync(
-    `docker exec todir-postgres-1 psql -U erp_app -d ${targetDb} -t -A -c "SELECT current_database();"`,
+  // Invariant 4: Live PostgreSQL execution verification using argument array (no shell interpolation)
+  const rawOutput = execFileSync(
+    'docker',
+    ['exec', 'todir-postgres-1', 'psql', '-U', 'erp_app', '-d', targetDb, '-t', '-A', '-c', 'SELECT current_database();'],
     { encoding: 'utf-8', timeout: 10_000 }
   ).trim();
 
@@ -87,44 +93,63 @@ export function assertDisposableDatabase(): void {
 
 /**
  * Authoritative running API database identity verification.
- * Verifies that the running API instance itself is connected to the exact disposable acceptance database.
+ * Verifies that the running API instance itself is connected to the exact disposable acceptance database
+ * using an authorized diagnostic token.
  */
 export async function assertApiDatabaseContext(apiBaseUrl: string): Promise<DatabaseContextResponse> {
   const targetDb = process.env['TODIR_ACCEPTANCE_DB'] || 'todir_mfg_acceptance';
+  const token = process.env['TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN'] || 'mfg-acceptance-diagnostic-token-2026';
   const url = `${apiBaseUrl.replace(/\/+$/, '')}/internal/acceptance/database-context`;
 
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: { 'Accept': 'application/json' },
-    signal: AbortSignal.timeout(10_000)
-  });
+  let lastResponse: Response | null = null;
+  let lastError: any = null;
 
-  if (!response.ok) {
-    const errorBody = await response.text().catch(() => '');
-    throw new Error(
-      `FATAL SAFETY INVARIANT VIOLATION: Authoritative API database check failed with status ${response.status}: ${errorBody}`
-    );
+  for (let attempt = 0; attempt < 15; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'X-Acceptance-Diagnostic-Token': token
+        },
+        signal: AbortSignal.timeout(10_000)
+      });
+
+      if (response.ok) {
+        const data = (await response.json()) as DatabaseContextResponse;
+
+        if (data.database !== targetDb) {
+          throw new Error(
+            `FATAL SAFETY INVARIANT VIOLATION: Running API is connected to database "${data.database}", expected disposable database "${targetDb}"!`
+          );
+        }
+
+        if (!data.isDisposable) {
+          throw new Error(
+            `FATAL SAFETY INVARIANT VIOLATION: Running API database "${data.database}" is not flagged as disposable.`
+          );
+        }
+
+        if (data.environment !== 'Development' && data.environment !== 'Acceptance') {
+          throw new Error(
+            `FATAL SAFETY INVARIANT VIOLATION: Running API environment "${data.environment}" is not Development or Acceptance.`
+          );
+        }
+
+        return data;
+      }
+
+      lastResponse = response;
+      await new Promise((r) => setTimeout(r, 1000));
+    } catch (err: any) {
+      if (err?.message?.includes('FATAL SAFETY INVARIANT VIOLATION')) throw err;
+      lastError = err;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
   }
 
-  const data = (await response.json()) as DatabaseContextResponse;
-
-  if (data.database !== targetDb) {
-    throw new Error(
-      `FATAL SAFETY INVARIANT VIOLATION: Running API is connected to database "${data.database}", expected disposable database "${targetDb}"!`
-    );
-  }
-
-  if (!data.isDisposable) {
-    throw new Error(
-      `FATAL SAFETY INVARIANT VIOLATION: Running API database "${data.database}" is not flagged as disposable.`
-    );
-  }
-
-  if (data.environment !== 'Development' && data.environment !== 'Acceptance') {
-    throw new Error(
-      `FATAL SAFETY INVARIANT VIOLATION: Running API environment "${data.environment}" is not Development or Acceptance.`
-    );
-  }
-
-  return data;
+  const errorBody = lastResponse ? await lastResponse.text().catch(() => '') : '';
+  throw new Error(
+    `FATAL SAFETY INVARIANT VIOLATION: Authoritative API database check failed with status ${lastResponse?.status ?? 'ERR'}: ${errorBody} ${lastError?.message ?? ''}`
+  );
 }

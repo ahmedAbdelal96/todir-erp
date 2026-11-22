@@ -4,7 +4,7 @@ import { ManufacturingHeader } from "../components/manufacturing-header.tsx";
 import { NoLegalEntityPrompt } from "../components/no-legal-entity-prompt.tsx";
 import { LinkGenealogyDialog } from "../features/genealogy/link-genealogy-dialog.tsx";
 import { useManufacturingScope } from "../hooks/use-manufacturing-scope.ts";
-import { useForwardGenealogyQuery, useReverseGenealogyQuery } from "../hooks/use-manufacturing.ts";
+import { useForwardGenealogyQuery, useReverseGenealogyQuery, useOrdersQuery } from "../hooks/use-manufacturing.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 
 export function GenealogyPage(): React.JSX.Element {
@@ -18,6 +18,7 @@ export function GenealogyPage(): React.JSX.Element {
 
   const forwardQuery = useForwardGenealogyQuery(activeQueryId);
   const reverseQuery = useReverseGenealogyQuery(activeQueryId);
+  const { data: orders = [] } = useOrdersQuery(legalEntityId);
 
   const results = direction === "forward" ? forwardQuery.data ?? [] : reverseQuery.data ?? [];
   const isLoading = direction === "forward" ? forwardQuery.isLoading : reverseQuery.isLoading;
@@ -118,6 +119,39 @@ export function GenealogyPage(): React.JSX.Element {
             {t("genealogy.searchAndTrace")}
           </Button>
         </form>
+
+        {/* Quick Lot & Order Tracing Shortcuts */}
+        {orders.length > 0 && (
+          <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid #f1f5f9" }}>
+            <div style={{ fontSize: "12px", fontWeight: 600, color: "#64748b", marginBottom: "6px" }}>
+              {t("genealogy.quickSelectOrder", "أوامر التشغيل المتاحة للتتبع الفوري:")}
+            </div>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              {orders.slice(0, 6).map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => {
+                    setSearchId(o.id);
+                    setActiveQueryId(o.id);
+                  }}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: "4px",
+                    border: "1px solid #cbd5e1",
+                    background: activeQueryId === o.id ? "#e0f2fe" : "#ffffff",
+                    color: activeQueryId === o.id ? "#0284c7" : "#334155",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer"
+                  }}
+                >
+                  {o.orderNumber ?? o.number} ({o.orderedQty} {o.uomCode})
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Results Tree / Table */}

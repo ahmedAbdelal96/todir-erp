@@ -44,15 +44,15 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 ## 2. Acceptance Blocker Resolutions
 
 ### 2.1 P0 — Enforce Disposable Database Safety (`todir_mfg_acceptance`)
-- **Authoritative Database Identity Endpoint:** Implemented `GET /internal/acceptance/database-context` in `backend/Api/Program.cs` querying PostgreSQL `current_database()`, `current_user`, host, port, environment, and returning `isDisposable: true` strictly when database name contains `acceptance` or `test` and environment is Development/Acceptance.
+- **Authoritative Database Identity Endpoint:** Implemented secure `GET /internal/acceptance/database-context` in `backend/Api/Program.cs` querying PostgreSQL `current_database()`, `current_user`, host, port, environment, and returning `isDisposable: true` strictly when database name contains `acceptance` or `test`, environment is Development, request originates from loopback (`IPAddress.IsLoopback`), and caller presents a valid constant-time acceptance diagnostic token (`TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN`). All sensitive connection metadata (passwords, usernames, internal connection strings) are strictly omitted.
 - **Dedicated Acceptance Config:** Created `frontend/playwright.manufacturing.config.ts` dedicated exclusively to Manufacturing real-stack acceptance testing.
 - **Fail-Closed Runtime Guard:** Implemented `frontend/tests/e2e/manufacturing-acceptance-guard.ts` with `assertDisposableDatabase()`:
   - Connects to PostgreSQL directly via Docker psql and verifies `SELECT current_database()` returns `todir_mfg_acceptance`.
-  - Queries `GET /internal/acceptance/database-context` to verify the actual API connection pool is bound to the target disposable database.
+  - Queries `GET /internal/acceptance/database-context` with diagnostic bearer token to verify the actual API connection pool is bound to the target disposable database.
   - Refuses to run and immediately aborts if connected to protected developer databases (`todir`, `todir_dev`, `postgres`).
   - Strict zero fallback credentials: throws `manufacturing_guard.credentials_missing` if `TODIR_DB_PASSWORD` or `ERP_DEV_PASSWORD` are unset.
   - Enforces `reuseExistingServer: false` and dedicated ports (5089 for API, 5179 for Vite) so background development instances cannot leak into acceptance runs.
-  - Guard verified with 8/8 passing unit tests in `frontend/tests/unit/manufacturing-acceptance-guard.test.ts`.
+  - Guard verified with 12/12 passing unit tests in `frontend/tests/unit/manufacturing-acceptance-guard.test.ts`.
 
 ### 2.2 P1 — Catalog Lookup at Scale: Batch Identity Resolution
 - **Backend Batch Endpoint:** Implemented `POST /api/v1/catalog/resolve/batch` in `backend/Modules/Catalog/Controllers/CatalogModuleExtensions.cs`, `CatalogContracts.cs`, `CatalogDetailRepository.cs`, and `CatalogDetailService.cs`.
@@ -99,9 +99,9 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 | Test Suite | Spec File / Project | Total | Passed | Failed | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Real-Stack Transactional Suite** | `manufacturing-transactions-real-stack.spec.ts` | 9 | 9 | 0 | **PASS (100%)** |
-| **Acceptance Guard Unit Suite** | `manufacturing-acceptance-guard.test.ts` | 8 | 8 | 0 | **PASS (100%)** |
+| **Acceptance Guard Unit Suite** | `manufacturing-acceptance-guard.test.ts` | 12 | 12 | 0 | **PASS (100%)** |
 | **Backend Manufacturing Tests** | `ManufacturingTests.csproj` | 14 | 14 | 0 | **PASS (100%)** |
-| **Backend Catalog Tests** | `CatalogTests.csproj` | 16 | 16 | 0 | **PASS (100%)** |
+| **Backend Catalog Tests** | `CatalogTests.csproj` | 18 | 18 | 0 | **PASS (100%)** |
 | **TypeScript Strict Verification** | `pnpm --dir frontend run typecheck` | — | — | 0 | **PASS (0 errors)** |
 | **Architecture Boundary Lint** | `pnpm run architecture:frontend` | 27 | 27 | 0 | **PASS (100%)** |
 | **Localization Parity** | `pnpm run localization:verify` | — | — | 0 | **PASS (100%)** |

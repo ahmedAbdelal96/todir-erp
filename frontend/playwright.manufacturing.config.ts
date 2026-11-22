@@ -10,6 +10,9 @@ if (!dbPassword || dbPassword.trim().length === 0) {
   throw new Error('FATAL: Database password not provided in environment (TODIR_DB_PASSWORD or ERP_DEV_PASSWORD).');
 }
 
+const diagnosticToken = process.env['TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN'] || 'mfg-acceptance-diagnostic-token-2026';
+process.env['TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN'] = diagnosticToken;
+
 const connectionString =
   process.env['TODIR_ACCEPTANCE_DB_CONNECTION'] ||
   `Host=${dbHost};Port=${dbPort};Database=${acceptanceDb};Username=${dbUser};Password=${dbPassword}`;
@@ -67,6 +70,8 @@ export default defineConfig({
         TODIR_DATABASE_CONNECTION: connectionString,
         TODIR_CORS_ORIGINS: 'http://127.0.0.1:5179,http://localhost:5179',
         ASPNETCORE_ENVIRONMENT: 'Development',
+        TODIR_ENABLE_ACCEPTANCE_DIAGNOSTICS: 'true',
+        TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN: diagnosticToken,
       },
     },
     {

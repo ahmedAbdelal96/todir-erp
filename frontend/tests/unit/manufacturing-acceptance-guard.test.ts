@@ -45,6 +45,18 @@ describe('Manufacturing Acceptance Guard: Fail-Closed Protection Tests', () => {
     restoreEnv();
   });
 
+  it('rejects execution if database name contains invalid characters or injection attempt', () => {
+    process.env['TODIR_ACCEPTANCE_DB'] = 'todir_mfg_acceptance; rm -rf /';
+    process.env['TODIR_DB_PASSWORD'] = 'test-pass';
+    process.env['SEED_DEFAULT_PASSWORD'] = 'test-user-pass';
+
+    assert.throws(
+      () => assertDisposableDatabase(),
+      /Database name ".*" is invalid or contains prohibited characters/
+    );
+    restoreEnv();
+  });
+
   it('rejects execution if database connection string targets "todir"', () => {
     process.env['TODIR_ACCEPTANCE_DB'] = 'todir_mfg_acceptance';
     process.env['TODIR_ACCEPTANCE_DB_CONNECTION'] = 'Host=localhost;Database=todir;Username=erp_app';
@@ -133,6 +145,72 @@ describe('Manufacturing Acceptance Guard: Fail-Closed Protection Tests', () => {
       await assert.rejects(
         async () => assertApiDatabaseContext('http://127.0.0.1:5089'),
         /Running API environment "Production" is not Development or Acceptance/
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      restoreEnv();
+    }
+  });
+
+  it('rejects API check if API reports isDisposable is false', async () => {
+    process.env['TODIR_ACCEPTANCE_DB'] = 'todir_mfg_acceptance';
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({
+        database: 'todir_mfg_acceptance',
+        environment: 'Development',
+        isDisposable: false
+      })
+    } as any);
+
+    try {
+      await assert.rejects(
+        async () => assertApiDatabaseContext('http://127.0.0.1:5089'),
+        /Running API database "todir_mfg_acceptance" is not flagged as disposable/
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      restoreEnv();
+    }
+  });
+
+  it('rejects API check if diagnostic request returns 401 Unauthorized', async () => {
+    process.env['TODIR_ACCEPTANCE_DB'] = 'todir_mfg_acceptance';
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({
+      ok: false,
+      status: 401,
+      text: async () => 'Unauthorized'
+    } as any);
+
+    try {
+      await assert.rejects(
+        async () => assertApiDatabaseContext('http://127.0.0.1:5089'),
+        /Authoritative API database check failed with status 401/
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      restoreEnv();
+    }
+  });
+
+  it('rejects API check if diagnostic request returns 403 Forbidden', async () => {
+    process.env['TODIR_ACCEPTANCE_DB'] = 'todir_mfg_acceptance';
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({
+      ok: false,
+      status: 403,
+      text: async () => 'Forbidden'
+    } as any);
+
+    try {
+      await assert.rejects(
+        async () => assertApiDatabaseContext('http://127.0.0.1:5089'),
+        /Authoritative API database check failed with status 403/
       );
     } finally {
       globalThis.fetch = originalFetch;
