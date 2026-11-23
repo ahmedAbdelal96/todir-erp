@@ -27,6 +27,9 @@ public sealed class RedisArchitectureGovernanceTests
         var guide = File.ReadAllText(guidePath);
         Assert.Contains("IPlatformCache", guide, StringComparison.Ordinal);
         Assert.Contains("PostgreSQL remains the source of truth", guide, StringComparison.Ordinal);
+        Assert.Contains("CacheKeyFingerprint.For", guide, StringComparison.Ordinal);
+        Assert.Contains("lowercase 64-character SHA-256", guide, StringComparison.Ordinal);
+        Assert.Contains("leader cancellation", guide, StringComparison.Ordinal);
         Assert.Contains("TODIR_CACHE_MAX_ENTRY_BYTES", guide, StringComparison.Ordinal);
     }
 

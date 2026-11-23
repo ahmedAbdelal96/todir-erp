@@ -131,6 +131,133 @@ public sealed class RedisPlatformAcceptanceIntegrationTests : DatabaseIntegratio
     }
 
     [Fact]
+    public async Task RealRedisDoesNotShareAFillAcrossACommittedRevision()
+    {
+        var tenant = RequiredTenant("TODIR_REDIS_ACCEPTANCE_TENANT_ID");
+        var legalEntity = RequiredGuid("TODIR_REDIS_ACCEPTANCE_LEGAL_ENTITY_ID");
+        var redisConfiguration = Required("TODIR_REDIS_ACCEPTANCE_REDIS");
+        await using var dataSource = NpgsqlDataSource.Create(Required("TODIR_REDIS_ACCEPTANCE_CONNECTION"));
+        using var multiplexer = await ConnectAsync(redisConfiguration);
+        using var cache = CreateCache(multiplexer, redisConfiguration, dataSource);
+        var scope = new CacheScope(tenant, legalEntity, null, Guid.CreateVersion7(), 23);
+        var fingerprint = CacheKeyFingerprint.For($"commit-during-coalescing:{Guid.CreateVersion7():D}");
+        var loaderStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseLoader = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var loaderCalls = 0;
+
+        var leader = cache.GetOrCreateAsync(scope, PlatformCachePolicies.HrEmployeeDirectory, fingerprint, TimeSpan.FromSeconds(30), async _ =>
+        {
+            if (Interlocked.Increment(ref loaderCalls) == 1)
+            {
+                loaderStarted.SetResult();
+                await releaseLoader.Task;
+                return "revision-n";
+            }
+
+            return "revision-n-plus-one";
+        });
+
+        await loaderStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await AdvanceRevisionAsync(dataSource, tenant, legalEntity);
+        var follower = cache.GetOrCreateAsync(scope, PlatformCachePolicies.HrEmployeeDirectory, fingerprint, TimeSpan.FromSeconds(30), _ =>
+        {
+            Interlocked.Increment(ref loaderCalls);
+            return Task.FromResult("revision-n-plus-one");
+        });
+
+        releaseLoader.SetResult();
+        Assert.Equal("revision-n", await leader);
+        Assert.Equal("revision-n-plus-one", await follower);
+        Assert.Equal(2, loaderCalls);
+    }
+
+    [Fact]
+    public async Task RealRedisLeaderCancellationDoesNotCancelIndependentWaiter()
+    {
+        var tenant = RequiredTenant("TODIR_REDIS_ACCEPTANCE_TENANT_ID");
+        var redisConfiguration = Required("TODIR_REDIS_ACCEPTANCE_REDIS");
+        await using var dataSource = NpgsqlDataSource.Create(Required("TODIR_REDIS_ACCEPTANCE_CONNECTION"));
+        using var multiplexer = await ConnectAsync(redisConfiguration);
+        using var cache = CreateCache(multiplexer, redisConfiguration, dataSource);
+        var scope = new CacheScope(tenant, null, null, Guid.CreateVersion7(), 29);
+        var fingerprint = CacheKeyFingerprint.For($"leader-cancellation:{Guid.CreateVersion7():D}");
+        var loaderStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseLoader = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var loaderCalls = 0;
+        async Task<string> Loader(CancellationToken _)
+        {
+            Interlocked.Increment(ref loaderCalls);
+            loaderStarted.SetResult();
+            await releaseLoader.Task;
+            return "shared-result";
+        }
+
+        using var leaderCancellation = new CancellationTokenSource();
+        var leader = cache.GetOrCreateAsync(scope, PlatformCachePolicies.HrEmployeeDirectory, fingerprint, TimeSpan.FromSeconds(30), Loader, leaderCancellation.Token);
+        await loaderStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var waiter = cache.GetOrCreateAsync(scope, PlatformCachePolicies.HrEmployeeDirectory, fingerprint, TimeSpan.FromSeconds(30), Loader);
+        leaderCancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => leader);
+        releaseLoader.SetResult();
+        Assert.Equal("shared-result", await waiter);
+        Assert.Equal(1, loaderCalls);
+    }
+
+    [Fact]
+    public async Task RealRedisWaiterCancellationDoesNotCancelLeader()
+    {
+        var tenant = RequiredTenant("TODIR_REDIS_ACCEPTANCE_TENANT_ID");
+        var redisConfiguration = Required("TODIR_REDIS_ACCEPTANCE_REDIS");
+        await using var dataSource = NpgsqlDataSource.Create(Required("TODIR_REDIS_ACCEPTANCE_CONNECTION"));
+        using var multiplexer = await ConnectAsync(redisConfiguration);
+        using var cache = CreateCache(multiplexer, redisConfiguration, dataSource);
+        var scope = new CacheScope(tenant, null, null, Guid.CreateVersion7(), 31);
+        var fingerprint = CacheKeyFingerprint.For($"waiter-cancellation:{Guid.CreateVersion7():D}");
+        var loaderStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseLoader = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var loaderCalls = 0;
+        async Task<string> Loader(CancellationToken _)
+        {
+            Interlocked.Increment(ref loaderCalls);
+            loaderStarted.SetResult();
+            await releaseLoader.Task;
+            return "leader-result";
+        }
+
+        var leader = cache.GetOrCreateAsync(scope, PlatformCachePolicies.HrEmployeeDirectory, fingerprint, TimeSpan.FromSeconds(30), Loader);
+        await loaderStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        using var waiterCancellation = new CancellationTokenSource();
+        var waiter = cache.GetOrCreateAsync(scope, PlatformCachePolicies.HrEmployeeDirectory, fingerprint, TimeSpan.FromSeconds(30), Loader, waiterCancellation.Token);
+        waiterCancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiter);
+        releaseLoader.SetResult();
+        Assert.Equal("leader-result", await leader);
+        Assert.Equal(1, loaderCalls);
+    }
+
+    [Fact]
+    public async Task RealRedisLoaderFailureRemovesFillAndAllowsRecovery()
+    {
+        var tenant = RequiredTenant("TODIR_REDIS_ACCEPTANCE_TENANT_ID");
+        var redisConfiguration = Required("TODIR_REDIS_ACCEPTANCE_REDIS");
+        await using var dataSource = NpgsqlDataSource.Create(Required("TODIR_REDIS_ACCEPTANCE_CONNECTION"));
+        using var multiplexer = await ConnectAsync(redisConfiguration);
+        using var cache = CreateCache(multiplexer, redisConfiguration, dataSource);
+        var scope = new CacheScope(tenant, null, null, Guid.CreateVersion7(), 37);
+        var fingerprint = CacheKeyFingerprint.For($"loader-failure-recovery:{Guid.CreateVersion7():D}");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => cache.GetOrCreateAsync(scope, PlatformCachePolicies.HrEmployeeDirectory, fingerprint, TimeSpan.FromSeconds(30), _ =>
+            Task.FromException<string>(new InvalidOperationException("expected-loader-failure"))));
+
+        var recovered = await cache.GetOrCreateAsync(scope, PlatformCachePolicies.HrEmployeeDirectory, fingerprint, TimeSpan.FromSeconds(30), _ =>
+            Task.FromResult("recovered"));
+
+        Assert.Equal("recovered", recovered);
+    }
+
+    [Fact]
     public async Task RealRedisRejectsCrossTenantAndUnapprovedRevisionWrites()
     {
         var tenant = RequiredTenant("TODIR_REDIS_ACCEPTANCE_TENANT_ID");

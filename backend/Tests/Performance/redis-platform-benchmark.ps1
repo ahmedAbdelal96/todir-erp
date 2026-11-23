@@ -157,6 +157,10 @@ try {
         $ApiPort++
     }
 
+    $requestsPerMode = $levels.Count * $RequestsPerLevel
+    $totalRequests = $modeResults | ForEach-Object { $_.Result.Requests } | Measure-Object -Sum | Select-Object -ExpandProperty Sum
+    $totalSuccesses = $modeResults | ForEach-Object { $_.Result.Successes } | Measure-Object -Sum | Select-Object -ExpandProperty Sum
+    $totalErrors = $modeResults | ForEach-Object { $_.Result.Errors } | Measure-Object -Sum | Select-Object -ExpandProperty Sum
     $report = [pscustomobject]@{
         Certification = 'Local Redis platform evidence; not a production capacity claim'
         Commit = (& git rev-parse HEAD).Trim()
@@ -165,6 +169,15 @@ try {
         Environment = [pscustomobject]@{ Redis = 'todir-redis-1 / 127.0.0.1:6381'; PostgreSQL = 'todir-postgres-1 / 127.0.0.1:15432'; ApiInstances = 1; PoolMaximum = 64; Seed = 'development / Atlas + Delta' }
         Endpoint = $endpoint
         Results = $modeResults
+        RequestSummary = [pscustomobject]@{
+            Modes = 2
+            Levels = $levels.Count
+            RequestsPerLevel = $RequestsPerLevel
+            RequestsPerMode = $requestsPerMode
+            TotalRequests = $totalRequests
+            TotalSuccesses = $totalSuccesses
+            TotalErrors = $totalErrors
+        }
         Redis = $redisSnapshot
         Limits = @('One local API process per mode; two-instance consistency is covered by RedisPlatformAcceptanceIntegrationTests', '100 concurrent requests and 100 requests per level are the measured local ceiling for this evidence run', 'No production, autoscaling, multi-region, or universal capacity claim')
     }

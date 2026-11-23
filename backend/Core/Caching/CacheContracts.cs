@@ -136,8 +136,8 @@ public sealed class RedisPlatformCache(
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const string InvalidationPrefix = "platform:cache:invalidation:";
     private const string MonotonicRevisionScript = "local current=redis.call('GET',KEYS[1]); local incoming=tonumber(ARGV[1]); if (not current) or (incoming > tonumber(current)) then redis.call('SET',KEYS[1],ARGV[1],'EX',ARGV[2]); return 1 end return 0";
-    private const int MaximumFingerprintLength = 128;
-    private readonly ConcurrentDictionary<string, Task<object?>> localFills = new(StringComparer.Ordinal);
+    private static readonly SemaphoreSlim RevisionVerificationGate = new(4, 4);
+    private readonly ConcurrentDictionary<string, Task<LocalFillResult>> localFills = new(StringComparer.Ordinal);
     private int firstUseLogged;
 
     public bool IsEnabled => options.Enabled && multiplexer.IsConnected;
@@ -173,49 +173,59 @@ public sealed class RedisPlatformCache(
             if (localFills.TryGetValue(key, out var existing))
             {
                 CacheMetrics.CoalescedWaits.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
-                var result = await existing.WaitAsync(cancellationToken);
-                if (result is null) return default!;
-                if (result is T typed) return typed;
-                throw new InvalidOperationException("platform.cache_key_type_collision");
+                var shared = await existing.WaitAsync(cancellationToken);
+                var currentRevision = await ReadRevisionForWaiterAsync(scope, dependency, cancellationToken);
+                if (currentRevision != shared.Revision) continue;
+                return ReadSharedValue<T>(shared);
             }
 
-            var completion = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var completion = new TaskCompletionSource<LocalFillResult>(TaskCreationOptions.RunContinuationsAsynchronously);
             if (!localFills.TryAdd(key, completion.Task)) continue;
-            try
-            {
-                var loaded = await ReadOrFillAsync(scope, dependency, key, ttl, loader, database, cancellationToken);
-                completion.TrySetResult(loaded);
-                return loaded;
-            }
-            catch (Exception exception) when (IsRedisFailure(exception))
-            {
-                CacheMetrics.Failures.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
-                RedisFallbackLog(logger, dependency, exception);
-                try
-                {
-                    var fallback = await loader(cancellationToken);
-                    completion.TrySetResult(fallback);
-                    return fallback;
-                }
-                catch (Exception fallbackException)
-                {
-                    completion.TrySetException(fallbackException);
-                    throw;
-                }
-            }
-            catch (Exception exception)
-            {
-                completion.TrySetException(exception);
-                throw;
-            }
-            finally
-            {
-                localFills.TryRemove(new KeyValuePair<string, Task<object?>>(key, completion.Task));
-            }
+            _ = RunSharedFillAsync(scope, dependency, key, ttl, loader, database, completion);
+            var result = await completion.Task.WaitAsync(cancellationToken);
+            return ReadSharedValue<T>(result);
         }
     }
 
-    private async Task<T> ReadOrFillAsync<T>(CacheScope scope, string dependency, string key, TimeSpan ttl,
+    private async Task RunSharedFillAsync<T>(CacheScope scope, string dependency, string key, TimeSpan ttl,
+        Func<CancellationToken, Task<T>> loader, IDatabase database, TaskCompletionSource<LocalFillResult> completion)
+    {
+        using var fillCancellation = new CancellationTokenSource(options.LockTtl);
+        try
+        {
+            var result = await ReadOrFillAsync(scope, dependency, key, ttl, loader, database, fillCancellation.Token);
+            completion.TrySetResult(result);
+        }
+        catch (Exception exception) when (IsRedisFailure(exception))
+        {
+            CacheMetrics.Failures.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
+            RedisFallbackLog(logger, dependency, exception);
+            try
+            {
+                var fallback = await loader(fillCancellation.Token);
+                var revision = await ReadRevisionAsync(scope.TenantId, dependency, scope.LegalEntityId, scope.BranchId, fillCancellation.Token);
+                completion.TrySetResult(new LocalFillResult(revision, fallback));
+            }
+            catch (Exception fallbackException)
+            {
+                completion.TrySetException(fallbackException);
+            }
+        }
+        catch (OperationCanceledException) when (fillCancellation.IsCancellationRequested)
+        {
+            completion.TrySetException(new TimeoutException("platform.cache_fill_timeout"));
+        }
+        catch (Exception exception)
+        {
+            completion.TrySetException(exception);
+        }
+        finally
+        {
+            localFills.TryRemove(new KeyValuePair<string, Task<LocalFillResult>>(key, completion.Task));
+        }
+    }
+
+    private async Task<LocalFillResult> ReadOrFillAsync<T>(CacheScope scope, string dependency, string key, TimeSpan ttl,
         Func<CancellationToken, Task<T>> loader, IDatabase database, CancellationToken cancellationToken)
     {
         var revision = await ReadRevisionAsync(scope.TenantId, dependency, scope.LegalEntityId, scope.BranchId, cancellationToken);
@@ -223,14 +233,14 @@ public sealed class RedisPlatformCache(
         if (cached.HasValue && TryDeserialize<T>(cached!, revision, out var value))
         {
             CacheMetrics.Hits.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
-            return value!;
+            return new LocalFillResult(revision, value);
         }
 
         CacheMetrics.Misses.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
         return await FillWithDistributedLockAsync(scope, dependency, key, revision, ttl, loader, database, cancellationToken);
     }
 
-    private async Task<T> FillWithDistributedLockAsync<T>(CacheScope scope, string dependency, string key, long revision, TimeSpan ttl,
+    private async Task<LocalFillResult> FillWithDistributedLockAsync<T>(CacheScope scope, string dependency, string key, long revision, TimeSpan ttl,
         Func<CancellationToken, Task<T>> loader, IDatabase database, CancellationToken cancellationToken)
     {
         var lockKey = $"{key}:lock";
@@ -244,15 +254,15 @@ public sealed class RedisPlatformCache(
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
                 var raced = await database.StringGetAsync(key);
-                if (raced.HasValue && TryDeserialize<T>(raced!, revision, out var racedValue)) return racedValue!;
+                if (raced.HasValue && TryDeserialize<T>(raced!, revision, out var racedValue)) return new LocalFillResult(revision, racedValue);
             }
-            return await loader(cancellationToken);
+            return new LocalFillResult(revision, await loader(cancellationToken));
         }
 
         try
         {
             var afterLock = await database.StringGetAsync(key);
-            if (afterLock.HasValue && TryDeserialize<T>(afterLock!, revision, out var value)) return value!;
+            if (afterLock.HasValue && TryDeserialize<T>(afterLock!, revision, out var value)) return new LocalFillResult(revision, value);
             var loaded = await loader(cancellationToken);
             var afterReadRevision = await ReadRevisionAsync(scope.TenantId, dependency, scope.LegalEntityId, scope.BranchId, cancellationToken);
             if (afterReadRevision == revision)
@@ -264,7 +274,9 @@ public sealed class RedisPlatformCache(
                 else
                     CacheMetrics.OversizedSkipped.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
             }
-            return loaded;
+            // Keep the revision observed before the loader. A waiter must independently
+            // re-read PostgreSQL so a commit during this fill cannot be shared as fresh.
+            return new LocalFillResult(revision, loaded);
         }
         finally
         {
@@ -314,10 +326,22 @@ public sealed class RedisPlatformCache(
         return result is long revision ? revision : result is int integer ? integer : Convert.ToInt64(result ?? 0L, CultureInfo.InvariantCulture);
     }
 
+    private async Task<long> ReadRevisionForWaiterAsync(CacheScope scope, string dependency, CancellationToken cancellationToken)
+    {
+        await RevisionVerificationGate.WaitAsync(cancellationToken);
+        try
+        {
+            return await ReadRevisionAsync(scope.TenantId, dependency, scope.LegalEntityId, scope.BranchId, cancellationToken);
+        }
+        finally
+        {
+            RevisionVerificationGate.Release();
+        }
+    }
+
     private string BuildKey(CacheScope scope, string dependency, string queryFingerprint)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(queryFingerprint);
-        var boundedFingerprint = queryFingerprint.Length <= MaximumFingerprintLength ? queryFingerprint : CacheKeyFingerprint.For(queryFingerprint);
+        var boundedFingerprint = CacheKeyFingerprint.EnsureCanonical(queryFingerprint);
         return $"platform:cache:v{options.SchemaVersion}:{scope.TenantId.Value:D}:{dependency}:{scope.LegalEntityId?.ToString("D") ?? "all"}:{scope.BranchId?.ToString("D") ?? "all"}:{scope.MembershipId?.ToString("D") ?? "none"}:{scope.PermissionVersion}:{boundedFingerprint}";
     }
 
@@ -341,6 +365,14 @@ public sealed class RedisPlatformCache(
     }
 
     private static bool IsRedisFailure(Exception exception) => exception is RedisException or RedisConnectionException or RedisTimeoutException or TimeoutException or IOException;
+    private static T ReadSharedValue<T>(LocalFillResult shared)
+    {
+        if (shared.Value is null) return default!;
+        if (shared.Value is T typed) return typed;
+        throw new InvalidOperationException("platform.cache_key_type_collision");
+    }
+
+    private sealed record LocalFillResult(long Revision, object? Value);
     private sealed record CacheEnvelope<T>(int SchemaVersion, long Revision, DateTimeOffset CachedAt, T Value);
 
     public void Dispose() => multiplexer.Dispose();
@@ -363,6 +395,23 @@ public static class CacheKeyFingerprint
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    public static string EnsureCanonical(string value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        if (value.Length != 64)
+            throw new ArgumentException("Cache fingerprints must be canonical lowercase SHA-256 values.", nameof(value));
+
+        foreach (var character in value)
+        {
+            var isDigit = character >= '0' && character <= '9';
+            var isLowerHex = character >= 'a' && character <= 'f';
+            if (!isDigit && !isLowerHex)
+                throw new ArgumentException("Cache fingerprints must be canonical lowercase SHA-256 values.", nameof(value));
+        }
+
+        return value;
     }
 }
 

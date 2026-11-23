@@ -24,7 +24,7 @@ return await cache.GetOrCreateAsync(
     cancellationToken);
 ```
 
-The loader must be complete, tenant-scoped, permission-safe, bounded, and correct when called on every request. Pass a deterministic SHA-256 fingerprint; never put a search value, name, token, document number, or other raw user input in a Redis key or metric. The platform bounds oversized fingerprints and skips entries larger than the configured cache-entry limit (`TODIR_CACHE_MAX_ENTRY_BYTES`, 64 KiB–16 MiB, default 1 MiB).
+The loader must be complete, tenant-scoped, permission-safe, bounded, and correct when called on every request. `GetOrCreateAsync` accepts only the lowercase 64-character SHA-256 value returned by `CacheKeyFingerprint.For`; raw names, searches, emails, tokens, document numbers, uppercase hex, and other non-canonical values fail closed before a Redis key is built. Never put a search value, name, token, document number, or other raw user input in a Redis key or metric. The platform bounds oversized entries and skips serialized values larger than the configured cache-entry limit (`TODIR_CACHE_MAX_ENTRY_BYTES`, 64 KiB–16 MiB, default 1 MiB).
 
 ## Policy and scope rules
 
@@ -53,7 +53,7 @@ When adding a policy or writer integration, provide:
 
 ## Stampede and failure behavior
 
-The shared implementation coalesces cold fills within a process and uses a bounded Redis lock/wait window across instances. It never waits indefinitely and never turns Redis availability into a business failure. Keep loaders short enough for the configured lock window or document the measured exception path. Avoid loaders that perform unbounded work or call back into the cache with the same key.
+The shared implementation coalesces cold fills within a process and uses a bounded Redis lock/wait window across instances. Every caller that joins an in-flight fill re-reads the authoritative PostgreSQL revision after the shared task completes; a revision change causes that caller to retry instead of accepting the older value. The leader's caller token controls only that caller's wait. The shared fill uses an internal bounded timeout, so leader cancellation does not cancel independent waiters and waiter cancellation does not cancel the leader. A loader failure removes the fill entry and a later request may recover normally. It never waits indefinitely and never turns Redis availability into a business failure. Keep loaders short enough for the configured lock window or document the measured exception path. Avoid loaders that perform unbounded work or call back into the cache with the same key.
 
 Do not catch a cache miss and return a partial or synthetic business result. Return the loader's PostgreSQL result. Do not use Redis as a queue, source of authorization, or write-ahead store.
 

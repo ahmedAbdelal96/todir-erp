@@ -68,4 +68,23 @@ public sealed class PlatformCacheTests
     {
         Assert.Throws<ArgumentException>(() => CacheKeyFingerprint.For(" "));
     }
+
+    [Theory]
+    [InlineData("employee search: أحمد")]
+    [InlineData("alice@example.com")]
+    [InlineData("document-1234567890")]
+    public void CanonicalFingerprintContractRejectsRawSensitiveValues(string value)
+    {
+        Assert.Throws<ArgumentException>(() => CacheKeyFingerprint.EnsureCanonical(value));
+    }
+
+    [Fact]
+    public void CanonicalFingerprintContractAcceptsOnlyLowercaseSha256()
+    {
+        var fingerprint = CacheKeyFingerprint.For("canonical-input");
+
+        Assert.Equal(fingerprint, CacheKeyFingerprint.EnsureCanonical(fingerprint));
+        Assert.Throws<ArgumentException>(() => CacheKeyFingerprint.EnsureCanonical(fingerprint.ToUpperInvariant()));
+        Assert.Throws<ArgumentException>(() => CacheKeyFingerprint.EnsureCanonical(new string('a', 63)));
+    }
 }
