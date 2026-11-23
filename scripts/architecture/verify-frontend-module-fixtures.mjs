@@ -81,6 +81,16 @@ if (!moduleImportsReactAriaResult.violations.some(v => v.includes("Business modu
   throw new Error("Business module directly importing React Aria was not detected.");
 }
 
+// Check browser Redis clients remain behind the backend platform boundary.
+const browserRedisFixtureRoot = path.resolve("backend/Tests/Architecture/fixtures/frontend/browser-imports-redis");
+const browserRedisResult = validateFrontendArchitecture({
+  rootDir: browserRedisFixtureRoot,
+  modulesRoot: path.join(browserRedisFixtureRoot, "modules")
+});
+if (!browserRedisResult.violations.some(v => v.includes("browser-forbidden cache client"))) {
+  throw new Error("Browser Redis client import was not detected.");
+}
+
 console.log("Frontend architecture fixture verification passed all tests:");
 console.log("- Allowed public imports: PASSED");
 console.log("- Forbidden internal imports: REJECTED (PASS)");
@@ -91,3 +101,4 @@ console.log("- Forbidden paid package: REJECTED (PASS)");
 console.log("- Shared Components importing business module: REJECTED (PASS)");
 console.log("- Business module directly importing AG Grid: REJECTED (PASS)");
 console.log("- Business module directly importing React Aria: REJECTED (PASS)");
+console.log("- Browser Redis client import: REJECTED (PASS)");

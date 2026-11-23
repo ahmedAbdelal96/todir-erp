@@ -31,6 +31,10 @@ public sealed class RedisArchitectureGovernanceTests
         Assert.Contains("lowercase 64-character SHA-256", guide, StringComparison.Ordinal);
         Assert.Contains("leader cancellation", guide, StringComparison.Ordinal);
         Assert.Contains("TODIR_CACHE_MAX_ENTRY_BYTES", guide, StringComparison.Ordinal);
+        Assert.Contains("PostgreSQL/API only", guide, StringComparison.Ordinal);
+        Assert.Contains("frontend query-key/freshness contract", guide, StringComparison.Ordinal);
+        Assert.Contains("permission-scoped reference directory", guide, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Operational or financial workflow", guide, StringComparison.Ordinal);
     }
 
     private static string RepositoryRoot

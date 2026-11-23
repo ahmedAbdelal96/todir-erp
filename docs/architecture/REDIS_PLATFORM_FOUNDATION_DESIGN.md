@@ -30,6 +30,8 @@ Keys contain a platform schema version, tenant, dependency, legal entity, branch
 
 Every cache read is permission-gated before the cache is called. Membership and permission-version boundaries prevent a privileged result from crossing users or authorization changes. Tenant and legal-entity scope is never accepted from the browser as authority.
 
+Frontend code never connects to Redis or reads Redis markers. It uses the backend API and TanStack Query query-key/freshness contract, including mutation invalidation, cross-user refresh behavior, unsaved-form protection, offline/reconnect recovery, and scope clearing. `PostgreSQL/API only` is an approved design outcome when a workflow is not safely or measurably cacheable.
+
 ## Failure, operations, and security
 
 The development service is `redis:7.4-alpine`, AOF-enabled, 256 MB bounded, and `allkeys-lru`, published only on `127.0.0.1:6381` because this machine's Memurai service owns 6380 and Windows Redis owns 6379. Connect, sync, and async timeouts are one second by default. The multiplexer is configured with `AbortOnConnectFail=false`, so an API can start while Redis is unavailable and reconnect without a process restart; the owned cache service disposes it at shutdown. Redis connection failures are logged as bounded operational warnings without connection strings or credentials, and the request executes against PostgreSQL. Cache failures never fail a business mutation. Production requires TLS and ACL credentials through `TODIR_REDIS_TLS`, `TODIR_REDIS_REQUIRE_TLS`, `TODIR_REDIS_USERNAME`, and `TODIR_REDIS_PASSWORD`; secrets are never checked into configuration or logs.

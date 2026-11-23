@@ -26,6 +26,7 @@
 | R22 | developer governance | permanent developer guide plus architecture test forbidding module-owned Redis clients | PASS |
 | R23 | coalescing cancellation and recovery | leader cancellation, waiter cancellation, loader failure cleanup, and successful recovery against real Redis/PostgreSQL | PASS |
 | R24 | fingerprint privacy contract | canonical lowercase SHA-256 enforcement rejects raw, sensitive, uppercase, and malformed inputs | PASS |
+| R25 | permanent backend/frontend governance | backend manual, frontend manual/skill, decision examples, frontend boundary rule, and freshness/scope regression proof | PASS |
 
 ## Local runbook
 

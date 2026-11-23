@@ -33,6 +33,7 @@ Before writing or modifying any frontend code, the agent must strictly execute:
    - Reusable primitives from `frontend/components/` must be used; uncompiled Tailwind utility classes are strictly prohibited.
 5. **Quality Verification Ladder (Step 4)**:
    - Run typecheck, `pnpm run architecture:frontend`, `pnpm run localization:verify`, `pnpm run api:drift`, and real Playwright E2E workflows before declaring any task complete.
+   - Include the server-state freshness review below in the Discovery Gate, implementation notes, and final acceptance evidence.
 
 ### 00.1 Performance and scalability foundation
 
@@ -107,6 +108,24 @@ Every frontend module mission report must include the canonical Module Pack path
 Use the single `i18next` runtime as the source of truth for language. All user-facing copy, including labels, messages, validation, accessibility text, statuses, notifications, and navigation, must come from translation resources through `react-i18next`; hardcoded Arabic or English UI copy in application components, pages, features, forms, and dialogs is not allowed. Put shared/application terminology in `core/i18n`; each implemented module owns `modules/<module>/i18n/ar.ts` and `en.ts`. Keep equivalent Arabic/English key coverage and treat missing keys as defects. Arabic mode must not leak English UI copy and English mode must not leak Arabic UI copy. Preserve business and user-entered data as stored. Language persistence, document `lang`/`dir`, RTL/LTR, dates, numbers, money, and supported component locale must derive from the same runtime localization state. `FRONTEND COMPLETE` is blocked until localization coverage and both-language runtime acceptance are complete.
 
 Run the localization coverage and hardcoded-copy guard in verification. The guard must parse frontend source structurally and check translation resource parity; narrowly document syntax-based exclusions such as tests, stories, API routes, CSS, identifiers, and business data. Never disable the guard broadly or use the other language as silent fallback.
+
+## 0.3 Server-state freshness and Redis boundary
+
+Frontend server state is owned by TanStack Query and the backend contract. Redis is a backend-only acceleration detail: browser code must never connect to Redis, import a Redis client, inspect Redis markers, or treat client cache as authority for permissions, financial truth, inventory availability, or idempotency. The backend integration rules and approved policy registry are documented in [`REDIS_PLATFORM_DEVELOPER_GUIDE.md`](../docs/engineering/REDIS_PLATFORM_DEVELOPER_GUIDE.md); do not duplicate or invent a frontend cache protocol.
+
+Freshness is mandatory in every module's Discovery Gate, Pre-Code Card, implementation, and acceptance review. Before coding a query or mutation, record:
+
+- the authoritative owner and backend read/write endpoints;
+- whether the result is tenant-, legal-entity-, branch-, membership-, or permission-scoped, and the exact query-key dimensions that materially change it;
+- which mutations and post-commit events change it, and which query keys must be invalidated;
+- the backend freshness contract: immediate mutation response, revision/polling endpoint, bounded staleness, focus refetch, or another existing supported mechanism;
+- whether cross-user changes require automatic refresh, and why polling, focus refetch, or no automatic refresh is the correct choice;
+- how offline/reconnected browsers refetch safely, how unsaved forms are preserved, and how stale/concurrency conflicts are shown;
+- how tenant, legal-entity, branch, permission, and organization switching clears or invalidates stale queries.
+
+`staleTime` only controls when TanStack Query considers data stale; it does not itself refresh an open browser. Do not copy the HR polling implementation into another module without an owned revision/freshness contract and a measured need. Query keys must use the existing factories or an equivalent module-owned factory, remain bounded and paginated, and never contain raw sensitive values. Mutations must invalidate the owning resource keys after success and preserve unsaved form state during background refetch. Existing runtime context actions clear tenant-scoped state and invalidate the previous entity scope; module acceptance must prove the resulting context switch behavior rather than relying on key shape alone.
+
+No-cache is an explicit valid decision. When a read is authoritative, sensitive, highly volatile, low-volume, or not worth the invalidation and failure complexity, document `PostgreSQL/API only` in the Pre-Code Card and verify the uncached workflow. A cacheable decision requires real API/browser evidence for populated, loading, empty, error, stale, no-permission, offline/reconnect, and scope-switch states as applicable.
 
 ### Frontend ownership and real Product/UX acceptance
 

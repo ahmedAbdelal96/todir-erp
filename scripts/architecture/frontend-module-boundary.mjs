@@ -14,6 +14,13 @@ const FORBIDDEN_COMMERCIAL_PACKAGES = [
   "@syncfusion/"
 ];
 
+const FORBIDDEN_BROWSER_CACHE_PACKAGES = [
+  "redis",
+  "ioredis",
+  "@redis/client",
+  "stackexchange.redis"
+];
+
 export function validateFrontendArchitecture(options = {}) {
   const rootDir = path.resolve(options.rootDir ?? "frontend");
   const modulesRoot = path.resolve(options.modulesRoot ?? path.join(rootDir, "modules"));
@@ -50,6 +57,16 @@ export function validateFrontendArchitecture(options = {}) {
             if (specifierText === banned || specifierText.startsWith(banned)) {
               violations.push(
                 `${relative(rootDir, sourcePath)} imports forbidden commercial/paid package '${specifierText}'. TODIR Core enforces the Free-Only Core Dependency Rule.`
+              );
+            }
+          }
+
+          // Check 1a: Redis is a backend-only platform boundary; browser code must use API freshness contracts.
+          const normalizedSpecifier = specifierText.toLowerCase();
+          for (const banned of FORBIDDEN_BROWSER_CACHE_PACKAGES) {
+            if (normalizedSpecifier === banned || normalizedSpecifier.startsWith(`${banned}/`)) {
+              violations.push(
+                `${relative(rootDir, sourcePath)} imports browser-forbidden cache client '${specifierText}'. Frontend code must use the backend API and documented freshness contract.`
               );
             }
           }

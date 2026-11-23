@@ -64,3 +64,15 @@ For a cache change, run the focused Core tests and the real disposable PostgreSQ
 ## Configuration and security
 
 Development may use the loopback Redis service from `ops/compose/platform-dev.yml`. Non-development enabled Redis requires TLS and ACL credentials. Secrets belong in environment or secret configuration and never in source, keys, metrics, or logs. Keep metric dimensions bounded to dependency and outcome; never add tenant IDs, document IDs, query strings, SQL, or search values.
+
+## Decision examples
+
+Use these two decisions as the minimum review exercise for a new module; they are examples, not new cache integrations.
+
+### Permission-scoped reference directory — cacheable when measured
+
+A bounded reference directory that is read frequently, changes under an owned revision, and returns only permission-safe fields may use `IPlatformCache` after the owner registers an approved policy. The design must carry trusted tenant/entity/branch/membership/permission scope, a canonical `CacheKeyFingerprint.For` value, bounded pagination and payload size, same-transaction revision advancement, and an explicit frontend query-key/freshness contract. The module must prove the cache-enabled versus PostgreSQL-authoritative performance benefit, invalidation, isolation, outage/recovery, and cross-user freshness through the acceptance matrix before adoption.
+
+### Operational or financial workflow — PostgreSQL/API only
+
+A posted journal, stock availability decision, payment/idempotency workflow, authorization decision, or mutable operational command remains `PostgreSQL/API only`. Do not add a cache policy or Redis dependency to hide query cost. The frontend still uses the approved TanStack Query keys, mutation invalidation, scope clearing, and documented stale/conflict/offline behavior; the backend remains the sole authority. This is a correct and preferred outcome when cache consistency risk or operational cost outweighs a measured read benefit.

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { CapabilitySet } from "./capabilities.ts";
 import { PermissionSet } from "./permissions.ts";
 import { defaultUserPreferences } from "./preferences.ts";
+import { queryKeyFactory } from "../api/query-keys.ts";
 import type { TenantContext } from "./tenant-context.ts";
 import type { LegalEntityContext } from "./entity-context.ts";
 import type { QueryCacheManager } from "./runtime-provider.tsx";
@@ -77,6 +78,18 @@ describe("UserPreferences", () => {
 });
 
 describe("Context Switching & Cache Isolation Contract", () => {
+  it("keeps tenant and legal-entity boundaries in server-state query keys", () => {
+    assert.notDeepEqual(
+      queryKeyFactory.entity("tenant-1", "entity-1"),
+      queryKeyFactory.entity("tenant-2", "entity-1")
+    );
+    assert.notDeepEqual(
+      queryKeyFactory.entity("tenant-1", "entity-1"),
+      queryKeyFactory.entity("tenant-1", "entity-2")
+    );
+    assert.deepEqual(queryKeyFactory.tenant("tenant-1"), ["todir", "tenant", "tenant-1"]);
+  });
+
   it("tenant switch requires full query cache clear to prevent data leakage", () => {
     let cacheCleared = false;
     const cacheManager: QueryCacheManager = {

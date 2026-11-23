@@ -35,6 +35,10 @@ Never jump into code by assumption. Every screen belongs to a canonical module p
 3. **Inspect the actual backend contract**:
    - Review DTOs, OpenAPI client (`frontend/core/api/`), endpoints, and permissions before designing UI state.
    - If the backend lacks an endpoint, permission, or field required for the real workflow, **report the contract gap immediately**—never invent client-side workarounds or fake business behavior.
+4. **Map server-state freshness before choosing a query strategy**:
+   - Identify the authoritative owner, mutation dependencies, tenant/entity/branch/membership/permission scope, query-key dimensions, and backend freshness contract.
+   - Decide explicitly whether the read is `PostgreSQL/API only` or uses the approved backend cache/freshness capability; no-cache is a valid outcome.
+   - Never connect the browser to Redis or treat TanStack Query state as authority. Read the [Redis Platform Developer Guide](../../../docs/engineering/REDIS_PLATFORM_DEVELOPER_GUIDE.md) for backend boundaries and evidence requirements.
 
 ---
 
@@ -68,6 +72,7 @@ Before writing any component or markup, answer these 10 points:
 8. **Data Volume & Scale**: Server-side pagination, debounced search, and sorting for any list that can exceed 50 rows.
 9. **Component Reuse**: Check `frontend/components/` first. Never invent a one-off table, button, modal, or input.
 10. **Zero Technical Leakage**: No UUIDs, database error strings, table names, raw English enums (`APPROVED`, `IN_PROGRESS`), or translation keys shown to the user.
+11. **Data Freshness Contract**: State which queries become stale after each mutation, which keys are invalidated, whether cross-user changes need polling/focus refetch, how offline/reconnect and scope switching recover, and how unsaved forms survive background refresh. `staleTime` is not a refresh mechanism; do not copy an existing polling loop without an owned backend revision/freshness contract.
 
 ---
 
@@ -114,6 +119,13 @@ Before writing any component or markup, answer these 10 points:
    - **Context Race Correlation & Protection**: Effective-access requests must use sequence correlation counters and abort stale in-flight requests to prevent out-of-order resolution during rapid scope switching.
    - **Tenant & Legal-Entity Cache Invalidation**: Switching organizations or legal entities must immediately flush the permissions and effective-access cache, triggering a clean refetch.
 
+7. **Server-State Freshness & Cache Boundary**:
+   - TanStack Query owns browser server state; query keys must include only the tenant/entity/branch/membership/permission dimensions that materially change the response and must remain bounded/paginated.
+   - Mutations invalidate the owning resource keys after success. Cross-user freshness uses the backend's documented contract (revision polling, focus refetch, or explicit refresh); `staleTime` alone never proves that an open browser refreshed.
+   - Redis is backend-only. Never import a Redis client, read Redis markers, or make permissions, financial truth, stock availability, or idempotency depend on browser cache state.
+   - Every freshness-sensitive workflow preserves unsaved forms, handles stale/concurrency conflicts, recovers after offline/reconnect, and clears or invalidates state on tenant/legal-entity/branch/permission changes.
+   - A cacheable choice requires real API/browser proof and the backend's Redis acceptance evidence; a documented `PostgreSQL/API only` choice is correct when caching has no measurable benefit or creates unjustified invalidation risk.
+
 ### Permanent Contract — Canonical Task Navigation & Authorization
 
 For every registered module, use the destination registry as the only authority for task identity, canonical path, label, mode, and permission condition. Independent tasks must be addressable by a dedicated nested route. A legacy `?tab=` value is accepted only at the module root as a safe compatibility redirect: resolve it against registered destinations, evaluate the target with scoped effective access, preserve unrelated query parameters, remove `tab`, and use `replace`. An unauthorized target renders the fail-closed denied state; an unknown target is removed and follows the normal permitted landing. Never invent paths or let a query value bypass a canonical route's guarded `initialTab`.
@@ -141,6 +153,8 @@ Before reporting any frontend task as complete, execute this exact ladder:
 7. **Real-Stack Acceptance (Playwright E2E)**:
    `pnpm --dir frontend test:e2e tests/e2e/<flow>.spec.ts` against real API daemon and PostgreSQL database.
 
+8. **Freshness & Scope Acceptance**: The final evidence must prove the owning mutation invalidates the correct query keys, cross-user changes follow the documented freshness contract, scope switches do not display stale tenant/entity/branch/permission data, offline/reconnect behavior is safe, and unsaved form state is preserved. If Redis is involved, the backend guide's real Redis, outage, isolation, and performance evidence is required; frontend mocks cannot substitute for it.
+
 **Never claim a check passed that you did not actually execute.** In the final report, list each gate as PASSED / FAILED / NOT RUN with the actual command.
 
 ---
@@ -158,6 +172,7 @@ When implementing or reviewing a specific domain in TODIR, read its dedicated ve
 - Domain Safety & Invariants: `references/erp-domain-safety.md`
 - Quality Gates & Testing: `references/quality-gates.md`
 - Navigation, Entitlements & Lifecycle Architecture: `docs/architecture/TODIR_NAVIGATION_ACCESS_UX_ARCHITECTURE_DECISION.md`
+- Redis backend boundary & freshness evidence: `docs/engineering/REDIS_PLATFORM_DEVELOPER_GUIDE.md`
 
 ---
 

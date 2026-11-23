@@ -54,7 +54,17 @@ Open and inspect every screen in the browser or via Playwright screenshots:
 
 ---
 
-## 3. Honest Reporting Protocol
+## 3. Server-State Freshness & Cache Boundary
+
+Before accepting a data-driven workflow, record the authoritative owner, tenant/legal-entity/branch/membership/permission scope, mutation dependencies, exact query-key dimensions, and the backend freshness contract. `staleTime` only controls when TanStack Query considers data stale; it does not refresh an open browser.
+
+- [ ] The workflow explicitly chooses `PostgreSQL/API only` or an approved backend cache policy; no-cache is a valid decision.
+- [ ] Mutations invalidate or update the owning query keys, and cross-user changes have an owned mechanism (revision signal, polling, focus refetch, or explicit refresh).
+- [ ] Offline/reconnect, stale/concurrency conflicts, unsaved form state, and tenant/entity/branch/permission changes are covered.
+- [ ] The browser never imports Redis, reads Redis markers, or treats client cache state as authority.
+- [ ] If backend Redis is involved, evidence follows the [Redis Platform Developer Guide](../../../docs/engineering/REDIS_PLATFORM_DEVELOPER_GUIDE.md).
+
+## 4. Honest Reporting Protocol
 
 - **Never claim a check passed that you did not actually execute.**
 - In the final report, list each gate as **PASSED**, **FAILED**, or **NOT RUN**.
