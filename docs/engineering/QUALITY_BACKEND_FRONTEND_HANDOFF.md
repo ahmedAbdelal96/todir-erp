@@ -25,6 +25,10 @@ Frontend should consume `/api/v1/quality` with the authenticated tenant and lega
 - `POST /api/v1/quality/dispositions`, `POST /api/v1/quality/dispositions/{dispositionId}/execute`
 - `POST /api/v1/quality/issues`, `/ncrs`, `/capas`, `/supplier-profiles`, `/scars`, `/certificates`
 
+Disposition execution is approval-gated: create → approve → execute. Execution must not be presented as an Inventory release until the owner operation is confirmed. Plans and inspections accept a bounded `pageSize` query parameter (1–100; default 50). Receiving resolution is per line, so a mixed receipt may contain both `Available` and `QualityHold` lines.
+
+Operational recovery, owner-operation reconciliation, event replay and forbidden SQL changes are documented in `docs/engineering/QUALITY_BACKEND_RUNBOOK.md`.
+
 ## UX safety notes
 
 Use Arabic-first ERP terms: `فحص الجودة`, `احتجاز الجودة`, `إفراج`, `عدم مطابقة`, `إجراء تصحيحي`, `شهادة تحليل`. Keep list pages separate from creation/edit dialogs. Show pending/failed/blocked states, evidence references and error states; do not imply that a Passed inspection automatically releases inventory.

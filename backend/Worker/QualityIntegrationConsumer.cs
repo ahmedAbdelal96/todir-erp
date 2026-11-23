@@ -15,7 +15,7 @@ public sealed class QualityIntegrationConsumer(QualityRepository quality, IInbox
         if (!await inboxStore.TryBeginAsync(EndpointName, message.MessageId, message.TenantId, context.CancellationToken)) return;
         try
         {
-            await quality.RecordIntegrationEventAsync(message, context.CancellationToken);
+            await quality.ApplyIntegrationConsequencesAsync(message, context.CancellationToken);
             await inboxStore.MarkProcessedAsync(EndpointName, message.MessageId, message.TenantId, context.CancellationToken);
         }
         catch

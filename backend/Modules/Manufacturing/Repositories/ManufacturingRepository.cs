@@ -485,7 +485,7 @@ public sealed partial class ManufacturingRepository(
             return concurrentReplay.Response;
         }
         if (request.OutputType == "Good") await ExecuteAsync(context, "update business_manufacturing.production_order set completed_qty=completed_qty+$1,state=case when completed_qty+$1 >= ordered_qty then 'Completed' else state end,updated_at=now(),row_version=row_version+1 where tenant_id=$2 and id=$3", token, request.Quantity, tenant.Value, orderId);
-        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "ProductionOutputReportedV1", JsonSerializer.Serialize(new { productionOrderId = orderId, outputId = id, quantity = request.Quantity, outputType = request.OutputType }), tenant, DateTimeOffset.UtcNow, correlationId, orderId, "manufacturing"));
+        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "ProductionOutputReportedV1", JsonSerializer.Serialize(new { legalEntityId = order.LegalEntityId, productionOrderId = orderId, outputId = id, productVariantId = outputProductVariantId, quantity = request.Quantity, outputType = request.OutputType }), tenant, DateTimeOffset.UtcNow, correlationId, orderId, "manufacturing"));
         return new ProductionOutputResponse(id, orderId, outputProductVariantId, request.Quantity, request.OutputType, "Committed", request.IdempotencyKey);
     }, ct);
 

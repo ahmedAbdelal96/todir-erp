@@ -10,8 +10,9 @@ using Shared.Primitives.Identifiers;
 
 namespace Modules.Quality.Repositories;
 
-public sealed class QualityRepository(ITransactionCoordinator coordinator) : IQualityDecisionCapabilities, IQualityReceivingCapabilities
+public sealed class QualityRepository(ITransactionCoordinator coordinator, Shared.Contracts.Quality.IInventoryQualityCapabilities? inventory = null) : IQualityDecisionCapabilities, IQualityReceivingCapabilities
 {
+    private readonly Shared.Contracts.Quality.IInventoryQualityCapabilities? inventoryCapability = inventory;
     private static readonly HashSet<string> SupportedIntegrationEvents = new(StringComparer.Ordinal)
     {
         "StockReceivedV1",
@@ -32,10 +33,47 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator) : IQu
         }, ct);
     }
 
-    public Task<IReadOnlyList<object>> ListPlansAsync(TenantId tenant, Guid legalEntityId, string? eventType, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    public async Task ApplyIntegrationConsequencesAsync(OutboxPublishedMessage message, CancellationToken ct = default)
+    {
+        if (!SupportedIntegrationEvents.Contains(message.MessageType)) return;
+        await coordinator.ExecuteAsync(message.TenantId, async (context, token) =>
+        {
+            if (Convert.ToBoolean(await ScalarAsync(context, "select exists(select 1 from business_quality.quality_integration_event where tenant_id=$1 and message_id=$2)", token, message.TenantId.Value, message.MessageId), CultureInfo.InvariantCulture)) return true;
+            using var document = JsonDocument.Parse(message.Payload);
+            var root = document.RootElement;
+            var legalEntityId = ReadGuid(root, "legalEntityId");
+            var productVariantId = ReadGuid(root, "productVariantId");
+            var quantity = root.TryGetProperty("quantity", out var quantityElement) && quantityElement.TryGetDecimal(out var parsedQuantity) ? parsedQuantity : 0m;
+            var eventType = message.MessageType switch
+            {
+                "StockReceivedV1" => "Receiving",
+                "ProductionOutputReportedV1" or "ProductionOperationCompletedV1" => "Final",
+                "SalesReturnReceivedV1" => "Return",
+                _ => null
+            };
+            var status = "Ignored";
+            if (eventType is not null && legalEntityId is { } entity && productVariantId is { } product && quantity > 0m)
+            {
+                var request = new CreateInspectionRequest(entity, eventType, product, quantity, SourceDocumentId: ReadGuid(root, "operationId") ?? ReadGuid(root, "outputId"), SourceFingerprint: $"integration:{message.MessageId:D}");
+                if (await ResolvePlanVersionAsync(context, message.TenantId.Value, request, token) is { } planVersion)
+                {
+                    var exists = await ScalarAsync<Guid?>(context, "select id from business_quality.inspection where tenant_id=$1 and source_fingerprint=$2 limit 1", token, message.TenantId.Value, request.SourceFingerprint);
+                    if (exists is null) _ = await CreateInspectionInContextAsync(context, message.TenantId, Guid.Empty, request with { PlanVersionId = planVersion }, token);
+                    status = "Applied";
+                }
+            }
+            await ExecuteAsync(context, "insert into business_quality.quality_integration_event(tenant_id,message_id,source_module,message_type,status,payload,occurred_at,processed_at) values($1,$2,$3,$4,$5,$6::jsonb,$7,now())", token, message.TenantId.Value, message.MessageId, message.SourceModule, message.MessageType, status, message.Payload, message.OccurredAt);
+            return true;
+        }, ct);
+    }
+
+    private static Guid? ReadGuid(JsonElement root, string property) => root.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String && Guid.TryParse(value.GetString(), out var id) ? id : null;
+
+    public Task<IReadOnlyList<object>> ListPlansAsync(TenantId tenant, Guid legalEntityId, string? eventType, int? pageSize, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
         var result = new List<object>();
-        await using var command = Command(context, "select id,code,name,event_type,mandatory,status,row_version from business_quality.quality_plan where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or event_type=$3) order by code limit 500", tenant.Value, legalEntityId, Db(eventType));
+        var boundedSize = Math.Clamp(pageSize ?? 50, 1, 100);
+        await using var command = Command(context, "select id,code,name,event_type,mandatory,status,row_version from business_quality.quality_plan where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or event_type=$3) order by code limit $4", tenant.Value, legalEntityId, Db(eventType), boundedSize);
         await using var reader = await command.ExecuteReaderAsync(token);
         while (await reader.ReadAsync(token)) result.Add(new { id = reader.GetGuid(0), code = reader.GetString(1), name = reader.GetString(2), eventType = reader.GetString(3), mandatory = reader.GetBoolean(4), status = reader.GetString(5), rowVersion = reader.GetInt64(6) });
         return (IReadOnlyList<object>)result;
@@ -94,8 +132,8 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator) : IQu
     public Task<object> AddPlanCharacteristicAsync(TenantId tenant, Guid actor, Guid planVersionId, CreatePlanCharacteristicRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
         var id = Guid.CreateVersion7();
-        await ExecuteAsync(context, "insert into business_quality.quality_plan_characteristic(tenant_id,id,plan_version_id,characteristic_id,specification_version_id,minimum,maximum,target,allowed_values,required) values($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10)", token, tenant.Value, id, planVersionId, request.CharacteristicId, Db(request.SpecificationVersionId), Db(request.Minimum), Db(request.Maximum), Db(request.Target), Db(request.AllowedValuesJson), request.Required);
-        return (object)new { id, planVersionId, request.CharacteristicId, request.Minimum, request.Maximum, request.Required };
+        await ExecuteAsync(context, "insert into business_quality.quality_plan_characteristic(tenant_id,id,plan_version_id,characteristic_id,specification_version_id,minimum,maximum,target,allowed_values,required,evidence_required) values($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)", token, tenant.Value, id, planVersionId, request.CharacteristicId, Db(request.SpecificationVersionId), Db(request.Minimum), Db(request.Maximum), Db(request.Target), Db(request.AllowedValuesJson), request.Required, request.EvidenceRequired);
+        return (object)new { id, planVersionId, request.CharacteristicId, request.Minimum, request.Maximum, request.Required, request.EvidenceRequired };
     }, ct);
 
     public Task<object> CreateSamplingPlanAsync(TenantId tenant, Guid actor, CreateSamplingPlanRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
@@ -120,6 +158,7 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator) : IQu
     {
         if (request.LotQuantity <= 0m) throw new QualityException("quality.lot_quantity_invalid");
         var planVersionId = request.PlanVersionId ?? await ResolvePlanVersionAsync(context, tenant.Value, request, token);
+        if (planVersionId is null && request.EventType is not "AdHoc") throw new QualityException("quality.plan_not_configured");
         var samplingId = request.SamplingPlanVersionId;
         var sampleSize = samplingId is null ? (int)Math.Ceiling(request.LotQuantity) : await CalculateSampleSizeInContextAsync(context, tenant.Value, samplingId.Value, request.LotQuantity, token);
         var id = Guid.CreateVersion7(); var number = $"QI-{id.ToString("N")[..12].ToUpperInvariant()}";
@@ -135,10 +174,11 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator) : IQu
         return await ReadInspectionAsync(context, tenant.Value, id, token) ?? throw new QualityException("quality.inspection_not_found");
     }, ct);
 
-    public Task<IReadOnlyList<InspectionListItem>> ListInspectionsAsync(TenantId tenant, Guid legalEntityId, string? state, string? eventType, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    public Task<IReadOnlyList<InspectionListItem>> ListInspectionsAsync(TenantId tenant, Guid legalEntityId, string? state, string? eventType, int? pageSize, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
         var items = new List<InspectionListItem>();
-        await using var command = Command(context, "select id,number,event_type,state,decision_state,product_variant_id,source_document_id,lot_quantity,sample_size,created_at from business_quality.inspection where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or state=$3) and ($4::text is null or event_type=$4) order by created_at desc,id desc limit 500", tenant.Value, legalEntityId, Db(state), Db(eventType));
+        var boundedSize = Math.Clamp(pageSize ?? 50, 1, 100);
+        await using var command = Command(context, "select id,number,event_type,state,decision_state,product_variant_id,source_document_id,lot_quantity,sample_size,created_at from business_quality.inspection where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or state=$3) and ($4::text is null or event_type=$4) order by created_at desc,id desc limit $5", tenant.Value, legalEntityId, Db(state), Db(eventType), boundedSize);
         await using var reader = await command.ExecuteReaderAsync(token);
         while (await reader.ReadAsync(token)) items.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetGuid(5), reader.IsDBNull(6) ? null : reader.GetGuid(6), reader.GetDecimal(7), reader.GetInt32(8), reader.GetFieldValue<DateTimeOffset>(9)));
         return (IReadOnlyList<InspectionListItem>)items;
@@ -146,17 +186,39 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator) : IQu
 
     public Task<InspectionView?> GetInspectionAsync(TenantId tenant, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, (context, token) => ReadInspectionAsync(context, tenant.Value, id, token), ct);
 
+    public Task<Guid?> GetLegalEntityForResourceAsync(TenantId tenant, string resourceType, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    {
+        var table = resourceType switch
+        {
+            "inspection" => "inspection",
+            "restriction" => "quality_restriction",
+            "disposition" => "quality_disposition",
+            "issue" => "quality_issue",
+            "ncr" => "nonconformance",
+            "capa" => "capa",
+            "certificate" => "quality_certificate",
+            _ => throw new QualityException("quality.resource_type_invalid")
+        };
+        return await ScalarAsync<Guid?>(context, $"select legal_entity_id from business_quality.{table} where tenant_id=$1 and id=$2", token, tenant.Value, id);
+    }, ct);
+
     public Task<InspectionResultView> AddResultAsync(TenantId tenant, Guid actor, Guid inspectionId, AddInspectionResultRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
         var inspection = await ReadSingleAsync(context, "select plan_version_id,state from business_quality.inspection where tenant_id=$1 and id=$2", token, tenant.Value, inspectionId) ?? throw new QualityException("quality.inspection_not_found");
         if ((string)inspection[1] is not ("InProgress" or "Draft")) throw new QualityException("quality.inspection_immutable");
-        var rule = await ReadSingleAsync(context, "select c.data_type,c.required,pc.minimum,pc.maximum,pc.allowed_values from business_quality.quality_characteristic c left join business_quality.quality_plan_characteristic pc on pc.tenant_id=c.tenant_id and pc.characteristic_id=c.id and pc.plan_version_id=$3 where c.tenant_id=$1 and c.id=$2", token, tenant.Value, request.CharacteristicId, inspection[0] is DBNull ? null : inspection[0]);
-        if (rule is null) throw new QualityException("quality.characteristic_not_found");
+        var rule = await ReadSingleAsync(context, "select c.data_type,c.required,c.base_uom_code,pc.minimum,pc.maximum,pc.allowed_values,pc.required,pc.evidence_required from business_quality.quality_characteristic c join business_quality.quality_plan_characteristic pc on pc.tenant_id=c.tenant_id and pc.characteristic_id=c.id and pc.plan_version_id=$3 where c.tenant_id=$1 and c.id=$2", token, tenant.Value, request.CharacteristicId, inspection[0] is DBNull ? null : inspection[0]);
+        if (rule is null) throw new QualityException("quality.characteristic_not_in_plan");
         var numeric = request.NumericValue; var text = request.TextValue; var boolean = request.BooleanValue;
         if ((numeric is not null ? 1 : 0) + (text is not null ? 1 : 0) + (boolean is not null ? 1 : 0) != 1) throw new QualityException("quality.result_value_required");
-        var passed = rule[0] switch { "Numeric" => QualityRules.EvaluateNumeric(numeric, rule[2] as decimal?, rule[3] as decimal?, Convert.ToBoolean(rule[1], CultureInfo.InvariantCulture)), "Categorical" => QualityRules.EvaluateCategorical(text, ParseAllowed(rule[4]), Convert.ToBoolean(rule[1], CultureInfo.InvariantCulture)), "Boolean" => boolean == true, _ => !string.IsNullOrWhiteSpace(text) };
+        if (request.InstrumentReference is not null && request.CalibrationStatus is not ("Valid" or "NotRequired")) throw new QualityException("quality.instrument_not_calibrated");
+        if (rule[2] is not DBNull && !string.IsNullOrWhiteSpace(request.UomCode) && !string.Equals((string)rule[2], request.UomCode, StringComparison.OrdinalIgnoreCase)) throw new QualityException("quality.uom_mismatch");
+        if (Convert.ToBoolean(rule[7], CultureInfo.InvariantCulture) && string.IsNullOrWhiteSpace(request.EvidenceReference)) throw new QualityException("quality.evidence_required");
+        var duplicate = await ScalarAsync(context, "select exists(select 1 from business_quality.inspection_result where tenant_id=$1 and inspection_id=$2 and characteristic_id=$3 and (($4::uuid is null and sample_id is null) or sample_id=$4::uuid))", token, tenant.Value, inspectionId, request.CharacteristicId, Db(request.SampleId));
+        if (Convert.ToBoolean(duplicate, CultureInfo.InvariantCulture)) throw new QualityException("quality.result_duplicate");
+        var passed = rule[0] switch { "Numeric" => QualityRules.EvaluateNumeric(numeric, rule[3] is DBNull ? null : (decimal?)rule[3], rule[4] is DBNull ? null : (decimal?)rule[4], Convert.ToBoolean(rule[6], CultureInfo.InvariantCulture)), "Categorical" => QualityRules.EvaluateCategorical(text, ParseAllowed(rule[5]), Convert.ToBoolean(rule[6], CultureInfo.InvariantCulture)), "Boolean" => boolean == true, _ => !string.IsNullOrWhiteSpace(text) };
         var id = Guid.CreateVersion7();
-        await ExecuteAsync(context, "insert into business_quality.inspection_result(tenant_id,id,inspection_id,characteristic_id,numeric_value,text_value,boolean_value,uom_code,passed,evidence_reference,recorded_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", token, tenant.Value, id, inspectionId, request.CharacteristicId, Db(numeric), Db(text), Db(boolean), Db(request.UomCode), passed, Db(request.EvidenceReference), actor);
+        await ExecuteAsync(context, "insert into business_quality.inspection_result(tenant_id,id,inspection_id,sample_id,characteristic_id,numeric_value,text_value,boolean_value,uom_code,passed,evidence_reference,recorded_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)", token, tenant.Value, id, inspectionId, Db(request.SampleId), request.CharacteristicId, Db(numeric), Db(text), Db(boolean), Db(request.UomCode), passed, Db(request.EvidenceReference), actor);
+        if (request.InstrumentReference is not null) await ExecuteAsync(context, "insert into business_quality.inspection_instrument_use(tenant_id,id,inspection_id,instrument_ref,calibration_status,calibration_due_on,calibration_snapshot) values($1,$2,$3,$4,$5,$6,$7::jsonb)", token, tenant.Value, Guid.CreateVersion7(), inspectionId, request.InstrumentReference, request.CalibrationStatus!, Db(request.CalibrationDueOn), JsonSerializer.Serialize(new { request.InstrumentReference, request.CalibrationStatus, request.CalibrationDueOn }));
         return new InspectionResultView(id, request.CharacteristicId, numeric, text, boolean, passed, request.UomCode, request.EvidenceReference);
     }, ct);
 
@@ -165,8 +227,10 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator) : IQu
         var existing = await ReadSingleAsync(context, "select plan_version_id,state,production_order_id,production_operation_id from business_quality.inspection where tenant_id=$1 and id=$2 for update", token, tenant.Value, inspectionId) ?? throw new QualityException("quality.inspection_not_found");
         if ((string)existing[1] is not ("InProgress" or "Draft")) throw new QualityException("quality.inspection_immutable");
         var failed = Convert.ToBoolean(await ScalarAsync(context, "select exists(select 1 from business_quality.inspection_result where tenant_id=$1 and inspection_id=$2 and passed=false)", token, tenant.Value, inspectionId), CultureInfo.InvariantCulture);
-        var missing = existing[0] is not DBNull && Convert.ToBoolean(await ScalarAsync(context, "select exists(select 1 from business_quality.quality_plan_characteristic pc where pc.tenant_id=$1 and pc.plan_version_id=$3 and pc.required and not exists(select 1 from business_quality.inspection_result r where r.tenant_id=$1 and r.inspection_id=$2 and r.characteristic_id=pc.characteristic_id))", token, tenant.Value, inspectionId, existing[0]), CultureInfo.InvariantCulture);
-        var decision = failed || missing ? "Failed" : "Passed"; var evidence = $"inspection:{inspectionId:D}:evaluation";
+        var missing = existing[0] is not DBNull && Convert.ToBoolean(await ScalarAsync(context, "select exists(select 1 from business_quality.quality_plan_characteristic pc where pc.tenant_id=$1 and pc.plan_version_id=$3 and pc.required and not exists(select 1 from business_quality.inspection_result r where r.tenant_id=$1 and r.inspection_id=$2 and r.characteristic_id=pc.characteristic_id and r.passed is not null))", token, tenant.Value, inspectionId, existing[0]), CultureInfo.InvariantCulture);
+        var noResults = existing[0] is not DBNull && Convert.ToBoolean(await ScalarAsync(context, "select not exists(select 1 from business_quality.inspection_result where tenant_id=$1 and inspection_id=$2)", token, tenant.Value, inspectionId), CultureInfo.InvariantCulture);
+        var evidenceMissing = existing[0] is not DBNull && Convert.ToBoolean(await ScalarAsync(context, "select exists(select 1 from business_quality.quality_plan_characteristic pc where pc.tenant_id=$1 and pc.plan_version_id=$3 and pc.evidence_required and not exists(select 1 from business_quality.inspection_result r where r.tenant_id=$1 and r.inspection_id=$2 and r.characteristic_id=pc.characteristic_id and nullif(trim(r.evidence_reference),'') is not null)", token, tenant.Value, inspectionId, existing[0]), CultureInfo.InvariantCulture);
+        var decision = failed || missing || noResults || evidenceMissing ? "Failed" : "Passed"; var evidence = $"inspection:{inspectionId:D}:evaluation";
         await ExecuteAsync(context, "insert into business_quality.inspection_evaluation(tenant_id,id,inspection_id,decision,evaluated_by,evidence_reference,reason) values($1,$2,$3,$4,$5,$6,$7) on conflict(tenant_id,inspection_id) do update set decision=excluded.decision,evaluated_by=excluded.evaluated_by,evaluated_at=now(),evidence_reference=excluded.evidence_reference,reason=excluded.reason", token, tenant.Value, Guid.CreateVersion7(), inspectionId, decision, actor, evidence, Db(request.ReviewNotes));
         await ExecuteAsync(context, "update business_quality.inspection set state='Completed',decision_state=$3,completed_at=now(),row_version=row_version+1 where tenant_id=$1 and id=$2", token, tenant.Value, inspectionId, decision);
         await AuditAsync(context, tenant.Value, "Inspection", inspectionId, "completed", actor, new { decision }, token);
@@ -182,25 +246,93 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator) : IQu
         return await CreateInspectionInContextAsync(context, tenant, actor, request2, token);
     }, ct);
 
-    public Task<QualityRestrictionView> CreateRestrictionAsync(TenantId tenant, Guid actor, CreateRestrictionRequest request, Guid legalEntityId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    public async Task<QualityRestrictionView> CreateRestrictionAsync(TenantId tenant, Guid actor, CreateRestrictionRequest request, Guid legalEntityId, CancellationToken ct)
     {
         if (request.RestrictionType is not ("QualityHold" or "Quarantine" or "Blocked" or "ReturnsInspection")) throw new QualityException("quality.restriction_type_invalid");
+        var hasOwnerScope = request.ProductVariantId is not null || request.WarehouseId is not null || request.Quantity is not null;
+        if (hasOwnerScope && (request.ProductVariantId is null || request.WarehouseId is null || request.Quantity is not > 0m || request.UnitOfMeasureId is null))
+            throw new QualityException("quality.owner_scope_incomplete");
+        if (hasOwnerScope && inventoryCapability is null) throw new QualityException("quality.inventory_capability_unavailable");
         var id = Guid.CreateVersion7();
-        await ExecuteAsync(context, "insert into business_quality.quality_restriction(tenant_id,id,legal_entity_id,restriction_type,reason_code,product_variant_id,warehouse_id,location_id,lot_id,serial_id,inspection_id,quantity,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", token, tenant.Value, id, legalEntityId, request.RestrictionType, request.ReasonCode.Trim(), Db(request.ProductVariantId), Db(request.WarehouseId), Db(request.LocationId), Db(request.LotId), Db(request.SerialId), Db(request.InspectionId), Db(request.Quantity), actor);
-        await AuditAsync(context, tenant.Value, "QualityRestriction", id, "created", actor, request, token);
-        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1", JsonSerializer.Serialize(new { restrictionId = id, legalEntityId, request.ProductVariantId, request.WarehouseId, request.LocationId, request.LotId, request.SerialId, request.Quantity, request.RestrictionType }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
-        return new QualityRestrictionView(id, request.RestrictionType, "Active", request.ReasonCode, request.ProductVariantId, request.LotId, request.Quantity, request.InspectionId, DateTimeOffset.UtcNow, null);
-    }, ct);
+        var ownerKey = hasOwnerScope ? $"quality-restriction:{id:D}:create" : null;
+        await coordinator.ExecuteAsync<bool>(tenant, async (context, token) =>
+        {
+            await ExecuteAsync(context, "insert into business_quality.quality_restriction(tenant_id,id,legal_entity_id,restriction_type,reason_code,product_variant_id,warehouse_id,location_id,lot_id,serial_id,inspection_id,quantity,owner_execution_status,owner_idempotency_key,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)", token, tenant.Value, id, legalEntityId, request.RestrictionType, request.ReasonCode.Trim(), Db(request.ProductVariantId), Db(request.WarehouseId), Db(request.LocationId), Db(request.LotId), Db(request.SerialId), Db(request.InspectionId), Db(request.Quantity), hasOwnerScope ? "Pending" : "NotRequired", Db(ownerKey), actor);
+            await AuditAsync(context, tenant.Value, "QualityRestriction", id, "created", actor, request, token);
+            return true;
+        }, ct);
+        if (hasOwnerScope)
+        {
+            try
+            {
+                var ownerResult = await inventoryCapability!.ChangeQualityStatusAsync(tenant.Value, actor, new InventoryQualityStatusRequest(legalEntityId, request.ProductVariantId!.Value, request.WarehouseId!.Value, request.LocationId, request.UnitOfMeasureId!.Value, request.Quantity!.Value, "Available", InventoryStatusForRestriction(request.RestrictionType), request.OperationalDate ?? DateOnly.FromDateTime(DateTime.UtcNow), request.PostingDate ?? DateOnly.FromDateTime(DateTime.UtcNow), ownerKey!, request.LotId, request.SerialId), ct);
+                await coordinator.ExecuteAsync<bool>(tenant, async (context, token) =>
+                {
+                    await ExecuteAsync(context, "update business_quality.quality_restriction set owner_execution_status='Confirmed',inventory_operation_id=$3 where tenant_id=$1 and id=$2", token, tenant.Value, id, ownerResult.OperationId);
+                    context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1", JsonSerializer.Serialize(new { restrictionId = id, legalEntityId, request.ProductVariantId, request.WarehouseId, request.LocationId, request.LotId, request.SerialId, request.Quantity, request.RestrictionType, ownerOperationId = ownerResult.OperationId }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
+                    return true;
+                }, ct);
+            }
+            catch
+            {
+                await coordinator.ExecuteAsync<int>(tenant, (context, token) => ExecuteAsync(context, "update business_quality.quality_restriction set owner_execution_status='Failed' where tenant_id=$1 and id=$2", token, tenant.Value, id), ct);
+                throw new QualityException("quality.inventory_owner_execution_failed");
+            }
+        }
+        else
+        {
+            await coordinator.ExecuteAsync<bool>(tenant, async (context, token) =>
+            {
+                context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1", JsonSerializer.Serialize(new { restrictionId = id, legalEntityId, request.ProductVariantId, request.WarehouseId, request.LocationId, request.LotId, request.SerialId, request.Quantity, request.RestrictionType }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
+                return true;
+            }, ct);
+        }
+        return new QualityRestrictionView(id, request.RestrictionType, "Active", request.ReasonCode, request.ProductVariantId, request.LotId, request.Quantity, request.InspectionId, DateTimeOffset.UtcNow, null, 0m, hasOwnerScope ? "Confirmed" : "NotRequired");
+    }
 
-    public Task<QualityRestrictionView> ReleaseRestrictionAsync(TenantId tenant, Guid actor, Guid id, ReleaseRestrictionRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    public async Task<QualityRestrictionView> ReleaseRestrictionAsync(TenantId tenant, Guid actor, Guid id, ReleaseRestrictionRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Reason)) throw new QualityException("quality.release_reason_required");
-        var updated = await ExecuteAsync(context, "update business_quality.quality_restriction set status='Released',released_by=$3,released_at=now(),release_reason=$4 where tenant_id=$1 and id=$2 and status='Active'", token, tenant.Value, id, actor, request.Reason.Trim());
-        if (updated != 1) throw new QualityException("quality.restriction_not_active");
-        var row = await ReadSingleAsync(context, "select restriction_type,status,reason_code,product_variant_id,lot_id,quantity,inspection_id,created_at,released_at from business_quality.quality_restriction where tenant_id=$1 and id=$2", token, tenant.Value, id) ?? throw new QualityException("quality.restriction_not_found");
-        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionReleasedV1", JsonSerializer.Serialize(new { restrictionId = id, reason = request.Reason }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
-        return new QualityRestrictionView(id, (string)row[0], (string)row[1], (string)row[2], row[3] is DBNull ? null : (Guid)row[3], row[4] is DBNull ? null : (Guid)row[4], row[5] is DBNull ? null : (decimal)row[5], row[6] is DBNull ? null : (Guid)row[6], (DateTimeOffset)row[7], row[8] is DBNull ? null : (DateTimeOffset)row[8]);
-    }, ct);
+        var row = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context, "select legal_entity_id,restriction_type,status,reason_code,product_variant_id,warehouse_id,location_id,lot_id,serial_id,inspection_id,quantity,created_at,released_at,owner_execution_status,inventory_operation_id,released_quantity from business_quality.quality_restriction where tenant_id=$1 and id=$2", token, tenant.Value, id), ct) ?? throw new QualityException("quality.restriction_not_found");
+        if ((string)row[2] != "Active") throw new QualityException("quality.restriction_not_active");
+        var hasOwnerScope = row[4] is not DBNull || row[5] is not DBNull || row[10] is not DBNull;
+        if (hasOwnerScope)
+        {
+            if ((string)row[13] != "Confirmed" || inventoryCapability is null) throw new QualityException("quality.inventory_owner_not_confirmed");
+            if (row[4] is DBNull || row[5] is DBNull || row[10] is DBNull || request.UnitOfMeasureId is null) throw new QualityException("quality.owner_scope_incomplete");
+            var available = (decimal)row[10] - (decimal)row[15];
+            var quantity = request.Quantity ?? available;
+            if (quantity <= 0m || quantity > available) throw new QualityException("quality.release_quantity_invalid");
+            try
+            {
+                var ownerResult = await inventoryCapability.ChangeQualityStatusAsync(tenant.Value, actor, new InventoryQualityStatusRequest((Guid)row[0], (Guid)row[4], (Guid)row[5], row[6] is DBNull ? null : (Guid)row[6], request.UnitOfMeasureId.Value, quantity, InventoryStatusForRestriction((string)row[1]), "Available", request.OperationalDate ?? DateOnly.FromDateTime(DateTime.UtcNow), request.PostingDate ?? DateOnly.FromDateTime(DateTime.UtcNow), $"quality-restriction:{id:D}:release:{quantity.ToString(CultureInfo.InvariantCulture)}", row[7] is DBNull ? null : (Guid)row[7], row[8] is DBNull ? null : (Guid)row[8]), ct);
+                return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+                {
+                    var newReleased = (decimal)row[15] + quantity;
+                    var newStatus = newReleased >= (decimal)row[10] ? "Released" : "Active";
+                    await ExecuteAsync(context, "update business_quality.quality_restriction set status=$3,released_quantity=$4,released_by=$5,released_at=case when $3='Released' then now() else released_at end,release_reason=$6,owner_execution_status='Confirmed',inventory_operation_id=$7 where tenant_id=$1 and id=$2", token, tenant.Value, id, newStatus, newReleased, actor, request.Reason.Trim(), ownerResult.OperationId);
+                    if (newStatus == "Released") context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionReleasedV1", JsonSerializer.Serialize(new { restrictionId = id, reason = request.Reason, ownerOperationId = ownerResult.OperationId }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
+                    return new QualityRestrictionView(id, (string)row[1], newStatus, (string)row[3], (Guid)row[4], row[7] is DBNull ? null : (Guid)row[7], (decimal)row[10], row[9] is DBNull ? null : (Guid)row[9], (DateTimeOffset)row[11], newStatus == "Released" ? DateTimeOffset.UtcNow : (DateTimeOffset?)null, newReleased, "Confirmed", ownerResult.OperationId);
+                }, ct);
+            }
+            catch (QualityException) { throw; }
+            catch { throw new QualityException("quality.inventory_owner_execution_failed"); }
+        }
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            if (await ExecuteAsync(context, "update business_quality.quality_restriction set status='Released',released_by=$3,released_at=now(),release_reason=$4 where tenant_id=$1 and id=$2 and status='Active'", token, tenant.Value, id, actor, request.Reason.Trim()) != 1) throw new QualityException("quality.restriction_not_active");
+            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionReleasedV1", JsonSerializer.Serialize(new { restrictionId = id, reason = request.Reason }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
+            return new QualityRestrictionView(id, (string)row[1], "Released", (string)row[3], row[4] is DBNull ? null : (Guid)row[4], row[7] is DBNull ? null : (Guid)row[7], row[10] is DBNull ? null : (decimal)row[10], row[9] is DBNull ? null : (Guid)row[9], (DateTimeOffset)row[11], DateTimeOffset.UtcNow, 0m, "NotRequired");
+        }, ct);
+    }
+
+    private static string InventoryStatusForRestriction(string type) => type switch
+    {
+        "Quarantine" => "Quarantine",
+        "Blocked" => "Blocked",
+        "ReturnsInspection" => "ReturnsInspection",
+        _ => "QualityHold"
+    };
 
     public Task<QualityDispositionView> CreateDispositionAsync(TenantId tenant, Guid actor, Guid legalEntityId, CreateDispositionRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
@@ -210,13 +342,30 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator) : IQu
         return new QualityDispositionView(id, request.InspectionId, request.Decision, "Draft", request.Quantity, request.Reason.Trim(), DateTimeOffset.UtcNow);
     }, ct);
 
-    public Task<QualityDispositionView> ExecuteDispositionAsync(TenantId tenant, Guid actor, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    public Task<QualityDispositionView> ApproveDispositionAsync(TenantId tenant, Guid actor, Guid id, ApproveDispositionRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
         var row = await ReadSingleAsync(context, "select inspection_id,decision,quantity,reason,created_at from business_quality.quality_disposition where tenant_id=$1 and id=$2", token, tenant.Value, id) ?? throw new QualityException("quality.disposition_not_found");
-        if (await ExecuteAsync(context, "update business_quality.quality_disposition set state='Executed',executed_by=$3,executed_at=now() where tenant_id=$1 and id=$2 and state in ('Draft','Approved')", token, tenant.Value, id, actor) != 1) throw new QualityException("quality.disposition_not_executable");
-        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityDispositionExecutedV1", JsonSerializer.Serialize(new { dispositionId = id, decision = (string)row[1] }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
-        return new QualityDispositionView(id, row[0] is DBNull ? null : (Guid)row[0], (string)row[1], "Executed", row[2] is DBNull ? null : (decimal)row[2], (string)row[3], (DateTimeOffset)row[4]);
+        if (await ExecuteAsync(context, "update business_quality.quality_disposition set state='Approved',approval_required=true,approved_by=$3,approved_at=now() where tenant_id=$1 and id=$2 and state='Draft'", token, tenant.Value, id, actor) != 1) throw new QualityException("quality.disposition_not_approvable");
+        await AuditAsync(context, tenant.Value, "QualityDisposition", id, "approved", actor, request, token);
+        return new QualityDispositionView(id, row[0] is DBNull ? null : (Guid)row[0], (string)row[1], "Approved", row[2] is DBNull ? null : (decimal)row[2], (string)row[3], (DateTimeOffset)row[4]);
     }, ct);
+
+    public async Task<QualityDispositionView> ExecuteDispositionAsync(TenantId tenant, Guid actor, Guid id, CancellationToken ct)
+    {
+        var row = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context, "select legal_entity_id,inspection_id,decision,quantity,reason,created_at,state from business_quality.quality_disposition where tenant_id=$1 and id=$2", token, tenant.Value, id), ct) ?? throw new QualityException("quality.disposition_not_found");
+        if ((string)row[6] != "Approved") throw new QualityException("quality.disposition_requires_approval");
+        Guid? ownerOperationId = null;
+        if (row[1] is not DBNull)
+        {
+            throw new QualityException("quality.disposition_owner_data_required");
+        }
+        return await coordinator.ExecuteAsync(tenant, async (context, token) =>
+        {
+            if (await ExecuteAsync(context, "update business_quality.quality_disposition set state='Executed',executed_by=$3,executed_at=now(),owner_execution_status=$4,owner_operation_id=$5 where tenant_id=$1 and id=$2 and state='Approved'", token, tenant.Value, id, actor, ownerOperationId is null ? "NotRequired" : "Confirmed", Db(ownerOperationId)) != 1) throw new QualityException("quality.disposition_requires_approval");
+            context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityDispositionExecutedV1", JsonSerializer.Serialize(new { dispositionId = id, decision = (string)row[2], ownerOperationId }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
+            return new QualityDispositionView(id, row[1] is DBNull ? null : (Guid)row[1], (string)row[2], "Executed", row[3] is DBNull ? null : (decimal)row[3], (string)row[4], (DateTimeOffset)row[5]);
+        }, ct);
+    }
 
     public Task<QualityIssueView> CreateIssueAsync(TenantId tenant, Guid actor, Guid legalEntityId, CreateIssueRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
@@ -246,22 +395,28 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator) : IQu
     {
         return await coordinator.ExecuteAsync(new TenantId(tenantId), async (context, token) =>
         {
-            var required = Convert.ToBoolean(await ScalarAsync(context, "select exists(select 1 from business_quality.supplier_quality_profile where tenant_id=$1 and legal_entity_id=$2 and supplier_party_id=$3 and receiving_inspection_required) or exists(select 1 from business_quality.quality_plan p join business_quality.quality_plan_applicability a on a.tenant_id=p.tenant_id and a.plan_id=p.id where p.tenant_id=$1 and p.legal_entity_id=$2 and p.event_type='Receiving' and p.status='Active' and p.mandatory and (a.supplier_party_id=$3 or a.product_variant_id = any($4::uuid[])))", token, tenantId, legalEntityId, supplierPartyId, lines.Select(x => x.ProductVariantId).ToArray()), CultureInfo.InvariantCulture);
+            if (lines.Count == 0 || lines.Any(x => x.Quantity <= 0m) || lines.Select(x => x.PurchaseOrderLineId).Distinct().Count() != lines.Count) throw new QualityException("quality.receipt_lines_invalid");
+            if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 200) throw new QualityException("quality.idempotency_key_invalid");
+            var initialStatuses = new Dictionary<Guid, string>();
+            var reasons = new List<string>();
             var inspections = new List<Guid>();
-            if (required)
-                foreach (var line in lines)
+            foreach (var line in lines)
+            {
+                var required = Convert.ToBoolean(await ScalarAsync(context, "select exists(select 1 from business_quality.supplier_quality_profile where tenant_id=$1 and legal_entity_id=$2 and supplier_party_id=$3 and receiving_inspection_required) or exists(select 1 from business_quality.quality_plan p join business_quality.quality_plan_applicability a on a.tenant_id=p.tenant_id and a.plan_id=p.id where p.tenant_id=$1 and p.legal_entity_id=$2 and p.event_type='Receiving' and p.status='Active' and p.mandatory and (a.supplier_party_id=$3 or a.product_variant_id=$4))", token, tenantId, legalEntityId, supplierPartyId, line.ProductVariantId), CultureInfo.InvariantCulture);
+                initialStatuses[line.PurchaseOrderLineId] = required ? "QualityHold" : "Available";
+                if (!required) continue;
+                reasons.Add($"line:{line.PurchaseOrderLineId:D}");
+                var sourceFingerprint = $"receiving:{purchaseOrderId:D}:{idempotencyKey}:{line.PurchaseOrderLineId:D}";
+                var existingInspectionId = await ScalarAsync<Guid?>(context, "select id from business_quality.inspection where tenant_id=$1 and event_type='Receiving' and source_fingerprint=$2 order by created_at desc,id desc limit 1", token, tenantId, sourceFingerprint);
+                if (existingInspectionId is { } existingId) inspections.Add(existingId);
+                else
                 {
-                    var sourceFingerprint = $"receiving:{purchaseOrderId:D}:{idempotencyKey}:{line.PurchaseOrderLineId:D}";
-                    var existingInspectionId = await ScalarAsync<Guid?>(context, "select id from business_quality.inspection where tenant_id=$1 and event_type='Receiving' and source_fingerprint=$2 order by created_at desc,id desc limit 1", token, tenantId, sourceFingerprint);
-                    if (existingInspectionId is { } existingId)
-                        inspections.Add(existingId);
-                    else
-                    {
-                        var inspection = await CreateInspectionInContextAsync(context, new TenantId(tenantId), actorId, new CreateInspectionRequest(legalEntityId, "Receiving", line.ProductVariantId, line.Quantity, purchaseOrderId, SupplierPartyId: supplierPartyId, LotReference: line.LotId?.ToString("D"), SourceFingerprint: sourceFingerprint), token);
-                        inspections.Add(inspection.Id);
-                    }
+                    var inspection = await CreateInspectionInContextAsync(context, new TenantId(tenantId), actorId, new CreateInspectionRequest(legalEntityId, "Receiving", line.ProductVariantId, line.Quantity, purchaseOrderId, SupplierPartyId: supplierPartyId, LotReference: line.LotId?.ToString("D"), SourceFingerprint: sourceFingerprint), token);
+                    inspections.Add(inspection.Id);
                 }
-            return new QualityReceiptResolution(purchaseOrderId, legalEntityId, supplierPartyId, lines, required, required ? "QualityHold" : "Available", required ? "Mandatory receiving inspection" : null, inspections);
+            }
+            var anyRequired = initialStatuses.Values.Any(x => x == "QualityHold");
+            return new QualityReceiptResolution(purchaseOrderId, legalEntityId, supplierPartyId, lines, anyRequired, anyRequired ? "QualityHold" : "Available", anyRequired ? $"Mandatory receiving inspection ({string.Join(',', reasons)})" : null, inspections, initialStatuses);
         }, cancellationToken);
     }
 
@@ -274,6 +429,7 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator) : IQu
     private static async Task<InspectionView> CreateInspectionInContextAsync(ITransactionContext context, TenantId tenant, Guid actor, CreateInspectionRequest request, CancellationToken token)
     {
         var planVersionId = request.PlanVersionId ?? await ResolvePlanVersionAsync(context, tenant.Value, request, token);
+        if (planVersionId is null && request.EventType is not "AdHoc") throw new QualityException("quality.plan_not_configured");
         var samplingId = request.SamplingPlanVersionId; var sampleSize = samplingId is null ? (int)Math.Ceiling(request.LotQuantity) : await CalculateSampleSizeInContextAsync(context, tenant.Value, samplingId.Value, request.LotQuantity, token);
         var id = Guid.CreateVersion7(); var number = $"QI-{id.ToString("N")[..12].ToUpperInvariant()}";
         await ExecuteAsync(context, "insert into business_quality.inspection(tenant_id,id,legal_entity_id,number,event_type,state,decision_state,product_variant_id,source_document_id,production_order_id,production_operation_id,supplier_party_id,customer_party_id,plan_version_id,sampling_plan_version_id,lot_quantity,sample_size,lot_reference,source_fingerprint,created_by) values($1,$2,$3,$4,$5,'InProgress','Pending',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)", token, tenant.Value, id, request.LegalEntityId, number, request.EventType, Db(request.ProductVariantId), Db(request.SourceDocumentId), Db(request.ProductionOrderId), Db(request.ProductionOperationId), Db(request.SupplierPartyId), Db(request.CustomerPartyId), Db(planVersionId), Db(samplingId), request.LotQuantity, sampleSize, Db(request.LotReference), Db(request.SourceFingerprint ?? request.SourceDocumentId?.ToString("D")), actor);
@@ -285,12 +441,12 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator) : IQu
 
     private static async Task<Guid?> ResolvePlanVersionAsync(ITransactionContext context, Guid tenant, CreateInspectionRequest request, CancellationToken token)
     {
-        return await ScalarAsync<Guid?>(context, "select v.id from business_quality.quality_plan_version v join business_quality.quality_plan p on p.tenant_id=v.tenant_id and p.id=v.plan_id left join business_quality.quality_plan_applicability a on a.tenant_id=p.tenant_id and a.plan_id=p.id where v.tenant_id=$1 and p.legal_entity_id=$2 and p.event_type=$3 and p.status='Active' and v.status='Active' and (a.product_variant_id is null or a.product_variant_id=$4) and (a.supplier_party_id is null or a.supplier_party_id=$5) order by (a.product_variant_id is not null) desc,(a.supplier_party_id is not null) desc,v.version_no desc limit 1", token, tenant, request.LegalEntityId, request.EventType, Db(request.ProductVariantId), Db(request.SupplierPartyId));
+        return await ScalarAsync<Guid?>(context, "select v.id from business_quality.quality_plan_version v join business_quality.quality_plan p on p.tenant_id=v.tenant_id and p.id=v.plan_id left join business_quality.quality_plan_applicability a on a.tenant_id=p.tenant_id and a.plan_id=p.id where v.tenant_id=$1 and p.legal_entity_id=$2 and p.event_type=$3 and p.status='Active' and v.status='Active' and v.effective_from<=current_date and (v.effective_to is null or v.effective_to>=current_date) and (a.product_variant_id is null or a.product_variant_id=$4) and (a.supplier_party_id is null or a.supplier_party_id=$5) order by (a.product_variant_id is not null) desc,(a.supplier_party_id is not null) desc,(a.supplier_party_id is not null) desc,v.version_no desc limit 1", token, tenant, request.LegalEntityId, request.EventType, Db(request.ProductVariantId), Db(request.SupplierPartyId));
     }
     private static async Task<int> CalculateSampleSizeInContextAsync(ITransactionContext context, Guid tenant, Guid samplingId, decimal lot, CancellationToken token) { var row = await ReadSingleAsync(context, "select p.method,p.fixed_quantity,p.percentage from business_quality.sampling_plan_version v join business_quality.sampling_plan p on p.tenant_id=v.tenant_id and p.id=v.sampling_plan_id where v.tenant_id=$1 and v.id=$2", token, tenant, samplingId) ?? throw new QualityException("quality.sampling_plan_not_found"); return QualityRules.CalculateSampleSize((string)row[0] == "Aql" ? "Full" : (string)row[0], lot, row[1] is DBNull ? null : (decimal?)row[1], row[2] is DBNull ? null : (decimal?)row[2]); }
-    private static async Task<string> ReadPlanSnapshotAsync(ITransactionContext context, Guid tenant, Guid planVersionId, CancellationToken token) { var rows = new List<object>(); await using var command = Command(context, "select c.code,c.name,c.data_type,c.base_uom_code,pc.minimum,pc.maximum,pc.target,pc.allowed_values,pc.required from business_quality.quality_plan_characteristic pc join business_quality.quality_characteristic c on c.tenant_id=pc.tenant_id and c.id=pc.characteristic_id where pc.tenant_id=$1 and pc.plan_version_id=$2 order by pc.sequence_no", tenant, planVersionId); await using var reader = await command.ExecuteReaderAsync(token); while (await reader.ReadAsync(token)) rows.Add(new { code = reader.GetString(0), name = reader.GetString(1), dataType = reader.GetString(2), uom = reader.IsDBNull(3) ? null : reader.GetString(3), minimum = reader.IsDBNull(4) ? (decimal?)null : reader.GetDecimal(4), maximum = reader.IsDBNull(5) ? (decimal?)null : reader.GetDecimal(5), target = reader.IsDBNull(6) ? null : reader.GetString(6), allowedValues = reader.IsDBNull(7) ? (JsonElement?)null : reader.GetFieldValue<JsonElement>(7), required = reader.GetBoolean(8) }); return JsonSerializer.Serialize(new { planVersionId, characteristics = rows }); }
+    private static async Task<string> ReadPlanSnapshotAsync(ITransactionContext context, Guid tenant, Guid planVersionId, CancellationToken token) { var rows = new List<object>(); await using var command = Command(context, "select c.code,c.name,c.data_type,c.base_uom_code,pc.minimum,pc.maximum,pc.target,pc.allowed_values,pc.required,pc.evidence_required from business_quality.quality_plan_characteristic pc join business_quality.quality_characteristic c on c.tenant_id=pc.tenant_id and c.id=pc.characteristic_id where pc.tenant_id=$1 and pc.plan_version_id=$2 order by pc.sequence_no", tenant, planVersionId); await using var reader = await command.ExecuteReaderAsync(token); while (await reader.ReadAsync(token)) rows.Add(new { code = reader.GetString(0), name = reader.GetString(1), dataType = reader.GetString(2), uom = reader.IsDBNull(3) ? null : reader.GetString(3), minimum = reader.IsDBNull(4) ? (decimal?)null : reader.GetDecimal(4), maximum = reader.IsDBNull(5) ? (decimal?)null : reader.GetDecimal(5), target = reader.IsDBNull(6) ? null : reader.GetString(6), allowedValues = reader.IsDBNull(7) ? (JsonElement?)null : reader.GetFieldValue<JsonElement>(7), required = reader.GetBoolean(8), evidenceRequired = reader.GetBoolean(9) }); return JsonSerializer.Serialize(new { planVersionId, characteristics = rows }); }
     private static async Task<InspectionView?> ReadInspectionAsync(ITransactionContext context, Guid tenant, Guid id, CancellationToken token) { var row = await ReadSingleAsync(context, "select id,legal_entity_id,number,event_type,state,decision_state,product_variant_id,source_document_id,production_order_id,production_operation_id,supplier_party_id,lot_quantity,sample_size,lot_reference,row_version from business_quality.inspection where tenant_id=$1 and id=$2", token, tenant, id); if (row is null) return null; var results = new List<InspectionResultView>(); await using var command = Command(context, "select id,characteristic_id,numeric_value,text_value,boolean_value,passed,uom_code,evidence_reference from business_quality.inspection_result where tenant_id=$1 and inspection_id=$2 order by recorded_at,id", tenant, id); await using var reader = await command.ExecuteReaderAsync(token); while (await reader.ReadAsync(token)) results.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetDecimal(2), reader.IsDBNull(3) ? null : reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetBoolean(4), reader.IsDBNull(5) ? null : reader.GetBoolean(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7))); return new InspectionView((Guid)row[0], (Guid)row[1], (string)row[2], (string)row[3], (string)row[4], (string)row[5], row[6] is DBNull ? null : (Guid)row[6], row[7] is DBNull ? null : (Guid)row[7], row[8] is DBNull ? null : (Guid)row[8], row[9] is DBNull ? null : (Guid)row[9], row[10] is DBNull ? null : (Guid)row[10], (decimal)row[11], (int)row[12], row[13] is DBNull ? null : (string)row[13], results, (long)row[14]); }
-    private static HashSet<string> ParseAllowed(object? json) { if (json is null or DBNull) return new HashSet<string>(StringComparer.OrdinalIgnoreCase); try { return JsonSerializer.Deserialize<HashSet<string>>((string)json) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase); } catch { return new HashSet<string>(StringComparer.OrdinalIgnoreCase); } }
+    private static HashSet<string> ParseAllowed(object? json) { if (json is null or DBNull) return new HashSet<string>(StringComparer.OrdinalIgnoreCase); try { var text = json is JsonElement element ? element.GetRawText() : json.ToString(); return JsonSerializer.Deserialize<HashSet<string>>(text!) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase); } catch { return new HashSet<string>(StringComparer.OrdinalIgnoreCase); } }
     private static async Task<object[]?> ReadSingleAsync(ITransactionContext context, string sql, CancellationToken token, params object?[] values) { await using var command = Command(context, sql, values); await using var reader = await command.ExecuteReaderAsync(token); return await reader.ReadAsync(token) ? Enumerable.Range(0, reader.FieldCount).Select(reader.GetValue).ToArray() : null; }
     private static async Task<T?> ScalarAsync<T>(ITransactionContext context, string sql, CancellationToken token, params object?[] values) { var value = await ScalarAsync(context, sql, token, values); return value is null or DBNull ? default : (T)value; }
     private static async Task<object?> ScalarAsync(ITransactionContext context, string sql, CancellationToken token, params object?[] values) { await using var command = Command(context, sql, values); return await command.ExecuteScalarAsync(token); }

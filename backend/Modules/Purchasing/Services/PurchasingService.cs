@@ -107,12 +107,12 @@ public sealed class PurchasingService(
         var order = await repository.GetAsync(tenant, entity, id, ct) ?? throw new PurchasingException("purchasing.po_not_found");
         if (order.State is PurchaseOrderStates.Draft or PurchaseOrderStates.PendingApproval or PurchaseOrderStates.Cancelled or PurchaseOrderStates.Closed) throw new PurchasingException("purchasing.receipt_not_allowed");
         if (inventory is null) throw new PurchasingException("purchasing.inventory_not_available");
-        var qualityResolution = quality is null
-            ? null
-            : await quality.ResolvePurchaseReceiptAsync(tenant.Value, actor, request.LegalEntityId, id, order.SupplierPartyId, request.IdempotencyKey,
-                request.Lines.Select(line => new Shared.Contracts.Quality.QualityReceiptLine(line.PurchaseOrderLineId, line.ProductVariantId, line.Quantity, line.LotId, line.SerialId)).ToArray(), ct);
-        var initialStatuses = qualityResolution?.Lines.ToDictionary(x => x.PurchaseOrderLineId, _ => qualityResolution.InitialStockStatus)
-            ?? new Dictionary<Guid, string>();
+        if (quality is null) throw new PurchasingException("purchasing.quality_capability_unavailable");
+        var qualityResolution = await quality.ResolvePurchaseReceiptAsync(tenant.Value, actor, request.LegalEntityId, id, order.SupplierPartyId, request.IdempotencyKey,
+            request.Lines.Select(line => new Shared.Contracts.Quality.QualityReceiptLine(line.PurchaseOrderLineId, line.ProductVariantId, line.Quantity, line.LotId, line.SerialId)).ToArray(), ct);
+        var initialStatuses = qualityResolution.InitialStockStatuses is { } perLine
+            ? new Dictionary<Guid, string>(perLine)
+            : qualityResolution.Lines.ToDictionary(x => x.PurchaseOrderLineId, _ => qualityResolution.InitialStockStatus);
         var result = await inventory.ReceivePurchaseAsync(tenant.Value, actor, new(request.LegalEntityId, id, request.IdempotencyKey, request.OperationalDate, request.PostingDate, request.Lines.Select(line => new Shared.Contracts.Inventory.PurchaseReceiptLine(line.PurchaseOrderLineId, line.ProductVariantId, line.WarehouseId, line.LocationId, line.UnitOfMeasureId, line.Quantity, line.LotId, line.SerialId, initialStatuses.GetValueOrDefault(line.PurchaseOrderLineId, "Available"))).ToArray()), ct);
         return await repository.ApplyReceiptAsync(tenant, actor, entity, id, request, result, correlation, ct);
     }

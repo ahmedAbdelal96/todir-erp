@@ -13,7 +13,7 @@ namespace Modules.Inventory.Services;
 
 /// <summary>Application boundary for Inventory workflows exposed to the API host.</summary>
 public sealed class InventoryService(InventoryRepository repository, ILedgerPostingEngine? ledgerPosting = null,
-    ILedgerControlBalanceRead? ledgerBalance = null, ICatalogCapabilities? catalog = null, TimeProvider? clock = null) : IInventoryCapabilities, Shared.Contracts.Inventory.IInventoryPurchasingCapabilities, Shared.Contracts.Inventory.IInventoryFixedAssetCapabilities, IInventoryAccountingRead
+    ILedgerControlBalanceRead? ledgerBalance = null, ICatalogCapabilities? catalog = null, TimeProvider? clock = null) : IInventoryCapabilities, Shared.Contracts.Inventory.IInventoryPurchasingCapabilities, Shared.Contracts.Inventory.IInventoryFixedAssetCapabilities, Shared.Contracts.Quality.IInventoryQualityCapabilities, IInventoryAccountingRead
 {
     public Task<IReadOnlyList<InventoryAvailabilityLine>> GetBatchAvailabilityAsync(Guid tenantId, InventoryAvailabilityRequest request, CancellationToken cancellationToken = default) => repository.GetBatchAvailabilityAsync(new TenantId(tenantId), request, cancellationToken);
     public async Task<Guid> ReserveAsync(Guid tenantId, Guid actorId, InventoryReservationRequest request, CancellationToken cancellationToken = default)
@@ -210,6 +210,20 @@ public sealed class InventoryService(InventoryRepository repository, ILedgerPost
     public Task<InventoryOperationResult> ConsumeReservationAsync(TenantId tenant, Guid actor, Guid entity, Guid reservationId, ConfirmStockMovementRequest request, Guid correlationId, string? traceParent, CancellationToken ct) => repository.IssueAsync(tenant, actor, entity, request, correlationId, traceParent, ct, reservationId: reservationId);
     public Task<InventoryOperationResult> OpenAsync(TenantId tenant, Guid actor, Guid entity, ConfirmStockMovementRequest request, Guid correlationId, string? traceParent, CancellationToken ct) => repository.OpenAsync(tenant, actor, entity, request, correlationId, traceParent, ct);
     public Task<InventoryOperationResult> ChangeStockStatusAsync(TenantId tenant, Guid actor, Guid entity, ChangeStockStatusRequest request, Guid correlationId, string? traceParent, CancellationToken ct) => repository.ChangeStockStatusAsync(tenant, actor, entity, request, correlationId, traceParent, ct);
+
+    public async Task<Shared.Contracts.Quality.InventoryQualityStatusResult> ChangeQualityStatusAsync(Guid tenantId, Guid actorId,
+        Shared.Contracts.Quality.InventoryQualityStatusRequest request, CancellationToken cancellationToken = default)
+    {
+        if (!Enum.TryParse<StockStatus>(request.FromStatus, true, out var fromStatus)
+            || !Enum.TryParse<StockStatus>(request.ToStatus, true, out var toStatus))
+            throw new InventoryException("inventory.status_change_request_invalid");
+        var result = await repository.ChangeStockStatusAsync(new TenantId(tenantId), actorId, request.LegalEntityId,
+            new ChangeStockStatusRequest(request.ProductVariantId, request.WarehouseId, request.LocationId,
+                request.UnitOfMeasureId, request.Quantity, fromStatus, toStatus, request.OperationalDate,
+                request.PostingDate, request.IdempotencyKey, request.LotId, request.SerialId),
+            Guid.CreateVersion7(), null, cancellationToken);
+        return new Shared.Contracts.Quality.InventoryQualityStatusResult(result.OperationId, result.Status, result.IdempotentReplay);
+    }
     public Task<InventoryOperationResult> AdjustAsync(TenantId tenant, Guid actor, Guid entity, AdjustStockRequest request, Guid correlationId, string? traceParent, CancellationToken ct, bool canOverrideNegativeStock = false) => repository.AdjustAsync(tenant, actor, entity, request, correlationId, traceParent, ct, canOverrideNegativeStock);
     public Task<InventoryOperationResult> ReverseOperationAsync(TenantId tenant, Guid actor, Guid entity, ReverseInventoryOperationRequest request, Guid correlationId, string? traceParent, CancellationToken ct) => repository.ReverseOperationAsync(tenant, actor, entity, request, correlationId, traceParent, ct);
     public async Task<Guid> AdjustAsync(Guid tenantId, Guid actorId, InventoryAdjustmentRequest request, CancellationToken cancellationToken = default)

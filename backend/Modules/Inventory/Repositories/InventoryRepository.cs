@@ -1564,6 +1564,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
             {
                 operationId,
                 movementId,
+                legalEntityId = entity,
                 productVariantId = request.ProductVariantId,
                 warehouseId = request.WarehouseId,
                 locationId = effectiveLocation,

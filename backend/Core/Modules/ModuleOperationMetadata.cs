@@ -50,6 +50,21 @@ public sealed class ModuleLifecycleEndpointFilter : IEndpointFilter
         if (metadata is null)
         {
             var path = http.Request.Path.Value ?? string.Empty;
+            if (path.StartsWith("/api/v1/quality", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!Guid.TryParse(http.User.FindFirstValue("tenant_id"), out var qualityTenantId)) return Results.Unauthorized();
+                Guid? qualityLegalEntityId = null;
+                if (http.Request.Query.TryGetValue("legalEntityId", out var qualityQuery) && Guid.TryParse(qualityQuery, out var qualityQueryId)) qualityLegalEntityId = qualityQueryId;
+                if (http.Request.Headers.TryGetValue("X-Legal-Entity-Id", out var qualityHeader) && Guid.TryParse(qualityHeader, out var qualityHeaderId))
+                {
+                    if (qualityLegalEntityId.HasValue && qualityLegalEntityId.Value != qualityHeaderId) return Results.Problem(statusCode: 400, title: "scope.conflict", extensions: new Dictionary<string, object?> { ["code"] = "scope.conflict" });
+                    qualityLegalEntityId = qualityHeaderId;
+                }
+                var qualityMutation = !HttpMethods.IsGet(http.Request.Method) && !HttpMethods.IsHead(http.Request.Method);
+                var qualityDecision = await http.RequestServices.GetRequiredService<IModuleLifecycleEnforcer>().EvaluateAccessAsync(new TenantId(qualityTenantId), "quality", qualityLegalEntityId, qualityMutation, http.RequestAborted);
+                if (!qualityDecision.Allowed) return Results.Problem(statusCode: 403, title: qualityDecision.DeniedReason ?? "module.disabled", extensions: new Dictionary<string, object?> { ["code"] = qualityDecision.DeniedReason ?? "module.disabled" });
+                return await next(context);
+            }
             if (path.StartsWith("/api/v1/inventory", StringComparison.OrdinalIgnoreCase) ||
                 path.StartsWith("/api/v1/ledger", StringComparison.OrdinalIgnoreCase) ||
                 path.StartsWith("/api/v1/accounting", StringComparison.OrdinalIgnoreCase) ||

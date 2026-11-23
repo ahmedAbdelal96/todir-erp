@@ -36,3 +36,11 @@ Backend, database, integrations, Development Seed and local acceptance were impl
 ## Known boundary
 
 The full UI/product acceptance is a separate frontend mission. Advanced Build Later Quality features are explicitly deferred by the Product Owner and are not hidden behind the Build Now APIs.
+
+## Correction checkpoint — 2026-11-23
+
+Implemented and locally built the correction slice: typed Inventory owner status capability, persisted owner execution state, per-line receiving resolution, fail-closed inspection/result validation, disposition approval gate with owner-linked execution fail-closed behavior, bounded Quality list sizes, Quality lifecycle fallback enforcement, real event-consequence inspection creation for applicable inbound events, and seed reference repair. The operational forward fix `quality-forward-fix-operational-integrity.sql` was applied to the local `todir` database and Development Seed was rerun successfully.
+
+Evidence after the correction: full `backend/Backend.sln` Release build passed with zero errors; Quality domain tests remain 6/6; DbMigrator applied/verified 250 scripts; Atlas and Delta seed completed; PostgreSQL checks report zero invalid Quality product or plan-version references and zero active owner-pending seeded restrictions.
+
+Still required before a truthful final acceptance claim: isolated disposable-database QA-01..QA-10 execution with actual owner operations, direct-resource lifecycle authorization assertions, real RabbitMQ/Worker consequence assertions for each supported inbound event, and final documentation/evidence refresh after those runs.
