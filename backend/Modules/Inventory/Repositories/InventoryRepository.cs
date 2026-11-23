@@ -1575,7 +1575,8 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
                 taskId = request.TaskId,
                 costCategory = request.CostCategory,
                 sourceModule,
-                reasonCode
+                reasonCode,
+                supplierPartyId = request.SupplierPartyId
             });
             context.AddOutbox(new(Guid.CreateVersion7(), eventType, payload, tenant, now, correlationId, operationId, "inventory", traceParent));
             return new InventoryOperationResult(operationId, operationNumber, "Confirmed", [movementId], false);

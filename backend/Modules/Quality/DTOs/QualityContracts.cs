@@ -23,7 +23,13 @@ public sealed record CreateCapaActionRequest(string ActionType, string Descripti
 public sealed record EffectivenessCheckRequest(bool Effective, string EvidenceReference, string Notes);
 public sealed record CreateSupplierProfileRequest(Guid LegalEntityId, Guid SupplierPartyId, string RiskLevel = "Medium", decimal TargetPpm = 0m, bool ReceivingInspectionRequired = false);
 public sealed record CreateScarRequest(Guid LegalEntityId, Guid SupplierPartyId, string Title, string Description, Guid? NcrId = null, DateOnly? DueDate = null);
+public sealed record SupplierScarResponseRequest(string Response, string EvidenceReference);
+public sealed record SupplierScarReviewRequest(string Decision, string Notes);
+public sealed record CreateCapaRootCauseRequest(string Category, string Description, bool Verified = false);
+public sealed record CompleteCapaActionRequest(string? EvidenceReference = null);
 public sealed record IssueCertificateRequest(Guid InspectionId, string CertificateType = "COA", string? CustomerReference = null);
+public sealed record QualityPage<T>(IReadOnlyList<T> Items, string? NextCursor);
+public sealed record QualityPlanListItem(Guid Id, string Code, string Name, string EventType, bool Mandatory, string Status, long RowVersion);
 public sealed record InspectionListItem(Guid Id, string Number, string EventType, string State, string DecisionState, Guid? ProductVariantId, Guid? SourceDocumentId, decimal LotQuantity, int SampleSize, DateTimeOffset CreatedAt);
 public sealed record InspectionResultView(Guid Id, Guid CharacteristicId, decimal? NumericValue, string? TextValue, bool? BooleanValue, bool? Passed, string? UomCode, string? EvidenceReference);
 public sealed record InspectionView(Guid Id, Guid LegalEntityId, string Number, string EventType, string State, string DecisionState, Guid? ProductVariantId, Guid? SourceDocumentId, Guid? ProductionOrderId, Guid? ProductionOperationId, Guid? SupplierPartyId, decimal LotQuantity, int SampleSize, string? LotReference, IReadOnlyList<InspectionResultView> Results, long RowVersion);
@@ -31,5 +37,8 @@ public sealed record SamplingCalculationView(string Method, decimal LotQuantity,
 public sealed record QualityRestrictionView(Guid Id, string RestrictionType, string Status, string ReasonCode, Guid? ProductVariantId, Guid? LotId, decimal? Quantity, Guid? InspectionId, DateTimeOffset CreatedAt, DateTimeOffset? ReleasedAt, decimal ReleasedQuantity = 0m, string OwnerExecutionStatus = "NotRequired", Guid? OwnerOperationId = null);
 public sealed record QualityDispositionView(Guid Id, Guid? InspectionId, string Decision, string State, decimal? Quantity, string Reason, DateTimeOffset CreatedAt);
 public sealed record QualityIssueView(Guid Id, string IssueType, string Title, string Severity, string State, Guid? InspectionId, Guid? SupplierPartyId, DateTimeOffset CreatedAt);
+public sealed record QualityNcrView(Guid Id, string Number, Guid LegalEntityId, string Title, string Severity, string State, Guid? IssueId, DateTimeOffset CreatedAt);
 public sealed record CapaView(Guid Id, string Number, string Type, string Title, string State, Guid? NcrId, DateTimeOffset CreatedAt);
+public sealed record CapaActionView(Guid Id, Guid CapaId, string ActionType, string State);
+public sealed record QualityScarView(Guid Id, string Number, Guid LegalEntityId, Guid SupplierPartyId, string Title, string State, Guid? NcrId, DateOnly? DueDate);
 public sealed record QualityCertificateView(Guid Id, string Number, string CertificateType, string State, Guid InspectionId, string? CustomerReference, DateTimeOffset CreatedAt);

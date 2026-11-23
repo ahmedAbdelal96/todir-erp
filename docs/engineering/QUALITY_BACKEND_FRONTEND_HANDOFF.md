@@ -22,10 +22,12 @@ Frontend should consume `/api/v1/quality` with the authenticated tenant and lega
 - `POST /api/v1/quality/inspections/{inspectionId}/reinspect`
 - `POST /api/v1/quality/inspections/{inspectionId}/restrictions`
 - `POST /api/v1/quality/restrictions/{restrictionId}/release`
-- `POST /api/v1/quality/dispositions`, `POST /api/v1/quality/dispositions/{dispositionId}/execute`
-- `POST /api/v1/quality/issues`, `/ncrs`, `/capas`, `/supplier-profiles`, `/scars`, `/certificates`
+- `POST /api/v1/quality/dispositions`, `POST /api/v1/quality/dispositions/{dispositionId}/approve`, `POST /api/v1/quality/dispositions/{dispositionId}/execute`, `GET /api/v1/quality/dispositions/{dispositionId}`
+- `POST/GET /api/v1/quality/issues`, `/ncrs`, `/capas`, `/supplier-profiles`, `/scars`, `/certificates`
+- `POST /api/v1/quality/capas/{capaId}/root-causes`, `POST /api/v1/quality/capas/{capaId}/actions`, `POST /api/v1/quality/capa-actions/{actionId}/complete`, `POST /api/v1/quality/capas/{capaId}/effectiveness`
+- `POST /api/v1/quality/scars/{scarId}/response`, `POST /api/v1/quality/scars/{scarId}/review`
 
-Disposition execution is approval-gated: create → approve → execute. Execution must not be presented as an Inventory release until the owner operation is confirmed. Plans and inspections accept a bounded `pageSize` query parameter (1–100; default 50). Receiving resolution is per line, so a mixed receipt may contain both `Available` and `QualityHold` lines.
+Disposition execution is approval-gated: create → approve → execute. Execution must not be presented as an Inventory release until the owner operation is confirmed. `GET /plans` and `GET /inspections` return typed `{ items, nextCursor }` keyset pages; `pageSize` is bounded to 1–100 (default 50), and the cursor must be sent unchanged for the next page. Receiving resolution is per line, so a mixed receipt may contain both `Available` and `QualityHold` lines.
 
 Operational recovery, owner-operation reconciliation, event replay and forbidden SQL changes are documented in `docs/engineering/QUALITY_BACKEND_RUNBOOK.md`.
 

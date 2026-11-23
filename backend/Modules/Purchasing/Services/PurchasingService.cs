@@ -113,7 +113,7 @@ public sealed class PurchasingService(
         var initialStatuses = qualityResolution.InitialStockStatuses is { } perLine
             ? new Dictionary<Guid, string>(perLine)
             : qualityResolution.Lines.ToDictionary(x => x.PurchaseOrderLineId, _ => qualityResolution.InitialStockStatus);
-        var result = await inventory.ReceivePurchaseAsync(tenant.Value, actor, new(request.LegalEntityId, id, request.IdempotencyKey, request.OperationalDate, request.PostingDate, request.Lines.Select(line => new Shared.Contracts.Inventory.PurchaseReceiptLine(line.PurchaseOrderLineId, line.ProductVariantId, line.WarehouseId, line.LocationId, line.UnitOfMeasureId, line.Quantity, line.LotId, line.SerialId, initialStatuses.GetValueOrDefault(line.PurchaseOrderLineId, "Available"))).ToArray()), ct);
+        var result = await inventory.ReceivePurchaseAsync(tenant.Value, actor, new(request.LegalEntityId, id, request.IdempotencyKey, request.OperationalDate, request.PostingDate, request.Lines.Select(line => new Shared.Contracts.Inventory.PurchaseReceiptLine(line.PurchaseOrderLineId, line.ProductVariantId, line.WarehouseId, line.LocationId, line.UnitOfMeasureId, line.Quantity, line.LotId, line.SerialId, initialStatuses.GetValueOrDefault(line.PurchaseOrderLineId, "Available"))).ToArray(), order.SupplierPartyId), ct);
         return await repository.ApplyReceiptAsync(tenant, actor, entity, id, request, result, correlation, ct);
     }
 

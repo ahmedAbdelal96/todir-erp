@@ -14,7 +14,7 @@ public sealed record ConfirmStockMovementRequest(Guid ProductVariantId, Guid War
     Guid EnteredUomId, decimal EnteredQuantity, DateOnly OperationalDate,
     DateOnly PostingDate, string IdempotencyKey, string? SourceModule, Guid? SourceDocumentId,
     StockStatus Status = StockStatus.Available, Guid? LotId = null, Guid? SerialId = null,
-    decimal? UnitCost = null, string? CurrencyCode = null, Guid? ProjectId = null, Guid? TaskId = null, string? CostCategory = null);
+    decimal? UnitCost = null, string? CurrencyCode = null, Guid? ProjectId = null, Guid? TaskId = null, string? CostCategory = null, Guid? SupplierPartyId = null);
 public sealed record ChangeStockStatusRequest(Guid ProductVariantId, Guid WarehouseId, Guid? LocationId,
     Guid EnteredUomId, decimal EnteredQuantity, StockStatus FromStatus, StockStatus ToStatus,
     DateOnly OperationalDate, DateOnly PostingDate, string IdempotencyKey, Guid? LotId = null, Guid? SerialId = null);

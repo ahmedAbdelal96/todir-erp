@@ -29,9 +29,14 @@ Backend, database, integrations, Development Seed and local acceptance were impl
 - `dotnet test backend/Tests/SeedData/SeedDataTests.csproj --configuration Release --no-restore` with local admin/runtime connections: PASS, 5/5.
 - `dotnet test backend/Tests/Security/SecurityTests.csproj --configuration Release --no-restore` with local admin/runtime connections: PASS, 7/7.
 - Authenticated local API smoke test: login 200 and `GET /api/v1/quality/plans` 200 for Atlas.
-- Real local RabbitMQ/Worker path: a pending `StockReceivedV1` outbox row reached `Published`, the Quality Worker endpoint recorded Inbox processing, and 10 inbound events were persisted in `business_quality.quality_integration_event` with no pending outbox rows remaining in the isolated database.
-- Local DbMigrator applied/verified 249 ordered scripts (including the receiving-fingerprint forward fix) and seeded both Atlas and Delta; output included 1 plan, 1 inspection, 1 restriction, 1 NCR and 1 CAPA per tenant.
+- Real local RabbitMQ/Worker path: the disposable acceptance published `StockReceivedV1`, observed `quality_integration_event=Applied`, one integration-created inspection, one processed `quality-integration` Inbox row, and no duplicate after replay.
+- Local DbMigrator applied/verified 254 migration records (253 ordered module scripts plus final RLS finalization, including the source-fingerprint and SCAR-response forward fixes) and seeded both Atlas and Delta; output included 1 plan, 1 inspection, 1 restriction, 1 NCR and 1 CAPA per tenant.
 - Real PostgreSQL check as `erp_app`: no tenant context returned 0 Quality plans; Atlas and Delta contexts each returned only their own seeded plan. `quality_plan`, `inspection` and `quality_restriction` reported RLS enabled and forced.
+
+## Final acceptance evidence — 2026-11-23
+
+- Added source-fingerprint uniqueness/idempotent inspection creation, typed keyset pagination, explicit effective-plan validation/conflict detection, calibration/sample/UOM hardening, owner-operation claiming/recovery, immutable certificate snapshots, typed Quality reads, CAPA action/root-cause lifecycle and SCAR response/review lifecycle.
+- `QualityBackendAcceptanceTests` passed 11 tests against isolated local PostgreSQL database `todir_quality_final` after the final source and migration changes: QA-01, QA-02, QA-03, QA-04, QA-05, QA-06, QA-07, QA-08, QA-09, QA-10 idempotency, and QA-10 real Worker path.
 
 ## Known boundary
 
@@ -41,6 +46,4 @@ The full UI/product acceptance is a separate frontend mission. Advanced Build La
 
 Implemented and locally built the correction slice: typed Inventory owner status capability, persisted owner execution state, per-line receiving resolution, fail-closed inspection/result validation, disposition approval plus owner-linked release execution, bounded Quality list sizes, Quality lifecycle fallback enforcement, real event-consequence inspection creation for applicable inbound events, and seed reference repair. The operational forward fixes `quality-forward-fix-operational-integrity.sql` and `quality-forward-fix-disposition-owner-data.sql` were applied to the local `todir` database and the correction database.
 
-Evidence after the correction: full `backend/Backend.sln` Release build passed with zero errors; Quality domain tests remain 6/6; DbMigrator applied/verified 250 scripts; Atlas and Delta seed completed; PostgreSQL checks report zero invalid Quality product or plan-version references and zero active owner-pending seeded restrictions.
-
-Still required before a truthful final acceptance claim: isolated disposable-database QA-01..QA-10 execution with actual owner operations, direct-resource lifecycle authorization assertions, real RabbitMQ/Worker consequence assertions for each supported inbound event, and final documentation/evidence refresh after those runs.
+Evidence after the correction: full `backend/Backend.sln` Release build passed with zero errors; Quality domain tests remain 6/6; DbMigrator applied/verified 253 scripts; Atlas and Delta seed completed; PostgreSQL checks report zero invalid Quality product or plan-version references and zero active owner-pending seeded restrictions. The isolated QA suite and real Worker replay are now complete.
