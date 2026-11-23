@@ -14,6 +14,10 @@ The following release evidence remains intentionally environment-blocked and is 
 
 Only the explicitly listed staging, scanner, and IaC capabilities remain unverified locally; they are not represented as local passes.
 
+## Data protection foundation closeout
+
+The local recovery foundation now has a repeatable isolated drill at `backend/DbMigrator/Database/pitr-recovery-drill.ps1`. The final full-schema local run used PostgreSQL 18, the canonical `DbMigrator`, encrypted custom-format logical backup, physical `pg_basebackup`, WAL archive replay, named PITR, latest-LSN recovery, API `/health/ready`, runtime-role/FORCE-RLS isolation, wrong-key/unsafe/failed-backup rejection, and missing/corrupt-WAL failure. It completed in approximately 337 seconds. This is local evidence only; production repository, key escrow, object-storage replication, alert exporter, and formal RPO/RTO approval remain deployment-owned gates.
+
 ## Directory / Party foundation closeout
 
 The Directory / Party foundation owns the `foundation_directory` schema and registers the `directory` L1 foundation manifest with the approved Platform Kernel dependency. All tenant-owned Directory tables enable and force RLS through the final baseline pass. Future schema changes must be additive or use a new forward-fix migration; the squashed baseline itself is now the clean starting point for development environments.

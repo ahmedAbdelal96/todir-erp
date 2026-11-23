@@ -264,3 +264,11 @@ Backend work must strictly adhere to Section 12 of the repository root `AGENTS.m
 8. **No Performance Rabbit Holes:** Ensure indexes, pagination, bounded queries, and no N+1; do not build synthetic load tests or micro-benchmarks unless explicitly commissioned.
 9. **Pattern Reuse:** Reuse existing DbContext, entity configurations, repository, domain event, Outbox, and validation patterns.
 10. **Silent Execution:** Work silently without progress commentary; report only when complete or blocked by a genuine external decision.
+
+## 19. Data protection and recovery governance
+
+PostgreSQL remains the system of record. Database backup, restore, and PITR work uses the approved PostgreSQL-native provider (`pg_basebackup` plus WAL `archive_command`) unless a later ADR approves a different provider. `pg_dump` custom-format backups are a logical portability layer; they do not replace physical recovery evidence. Never run a restore, WAL replay, retention deletion, or failure drill against the shared development container, its named database, or its persistent Docker volumes.
+
+Every local recovery drill must use uniquely named disposable containers, bind-mounted temporary storage, a repository/evidence ownership marker, bounded cleanup, and an ignored evidence directory. The drill must prove checksums, encryption/wrong-key rejection, physical restore, a named PITR target, the latest archived point, missing/corrupt WAL rejection, runtime-role/RLS boundaries, and API readiness where the restored schema supports it. A failed backup or restore is an operator-visible failure and must not leave a false-success manifest.
+
+Backup keys, Data Protection keys/certificates, object-storage credentials, and broker credentials are separate secret-manager responsibilities. Never place them in source control, committed manifests, test output, command transcripts, or application logs. API/Worker external-effecting consumers remain stopped or fenced during restore; reconcile Outbox/Inbox and idempotency state before resuming them. Local evidence supplies engineering confidence only; it is not a production RPO/RTO certification.

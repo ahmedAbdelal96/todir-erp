@@ -12,6 +12,10 @@ Platform Files uploads use a five-minute signed POST policy for an unguessable i
 
 If storage is not configured or unavailable, metadata stays intact and download requests fail with a stable service error. They must never fall back to an untrusted or public object URL.
 
+## Recovery boundary
+
+Private file metadata and database backup are separate recovery units. A database restore does not claim that object bytes were restored. Production operations must use the object-storage provider's encrypted versioning/replication or snapshot mechanism, retain the matching key reference, and verify object checksums before marking a recovered document Ready. During a storage outage, keep metadata and authorization intact, fail downloads closed, and do not expose a public bucket or unsigned URL as a fallback.
+
 ## Abandoned-upload lifecycle rule
 
 Before changing a bucket, inspect its current rules and confirm that no existing broad or overlapping `incoming/` rule has different retention requirements:

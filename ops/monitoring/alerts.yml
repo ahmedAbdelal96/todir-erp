@@ -22,3 +22,52 @@ groups:
           severity: warning
         annotations:
           summary: API server error rate exceeded five percent.
+      - alert: BackupLastSuccessTooOld
+        expr: todir_backup_age_seconds > 86400
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: The latest verified backup is older than the configured one-day local policy window.
+      - alert: BackupVerificationMissing
+        expr: time() - todir_backup_last_verified_timestamp_seconds > 86400
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: A successful backup has not completed independent verification within the policy window.
+      - alert: BackupFailureDetected
+        expr: increase(todir_backup_failures_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: A scheduled backup failed; do not report a false-success backup.
+      - alert: WalArchiveLagHigh
+        expr: todir_wal_archive_lag_seconds > 300
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: WAL archive lag is above the configured five-minute warning threshold.
+      - alert: BackupRepositoryUnavailable
+        expr: todir_backup_repository_available == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: The backup repository is unavailable.
+      - alert: BackupRepositoryCapacityLow
+        expr: todir_backup_repository_free_bytes < 10737418240
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Backup repository free capacity is below ten GiB.
+      - alert: RestoreDrillOverdue
+        expr: time() - todir_restore_drill_last_success_timestamp_seconds > 2592000
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: No successful recovery drill has been recorded within the configured 30-day policy window.
