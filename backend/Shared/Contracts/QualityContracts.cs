@@ -46,6 +46,13 @@ public sealed record QualityInventoryScrapRequest(Guid LegalEntityId, Guid Produ
     DateOnly PostingDate, string IdempotencyKey, Guid? LotId = null, Guid? SerialId = null);
 public sealed record QualityDispositionOwnerResult(Guid OperationId, string Status, bool IdempotentReplay);
 
+public sealed class QualityDispositionOwnerException(string code, bool uncertain, Exception? innerException = null)
+    : Exception(code, innerException)
+{
+    public string Code { get; } = code;
+    public bool Uncertain { get; } = uncertain;
+}
+
 public interface IInventoryQualityDispositionCapabilities
 {
     Task<QualityDispositionOwnerResult> ExecuteScrapAsync(Guid tenantId, Guid actorId,

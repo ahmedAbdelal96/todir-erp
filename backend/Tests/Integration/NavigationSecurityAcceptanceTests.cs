@@ -572,6 +572,31 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
     }
 
     [Fact]
+    public async Task Quality_ReadOnlyDisabledAndUnentitled_DenyRestrictedAuthenticatedMutation()
+    {
+        await using var fixture = await NavSecurityFixture.CreateAsync(useDedicatedDb: true);
+        using var client = fixture.CreateClient();
+        await fixture.LoginAsync(client);
+        var path = $"/api/v1/quality/dispositions?legalEntityId={fixture.EntityA:D}";
+        var payload = new { decision = "Accept", reason = "Lifecycle security test", quantity = 1m };
+
+        await fixture.ExecuteAdminSqlAsync($"update platform.module_instance set status = 'ReadOnly' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'quality' and scope_type = 'legal_entity' and scope_id = '{fixture.EntityA}';");
+        var readOnly = await fixture.PostAsync(client, path, payload);
+        Assert.Equal(HttpStatusCode.Forbidden, readOnly.StatusCode);
+        Assert.Equal("module.lifecycle_readonly", (await readOnly.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+
+        await fixture.ExecuteAdminSqlAsync($"update platform.module_instance set status = 'Disabled' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'quality' and scope_type = 'legal_entity' and scope_id = '{fixture.EntityA}';");
+        var disabled = await fixture.PostAsync(client, path, payload);
+        Assert.Equal(HttpStatusCode.Forbidden, disabled.StatusCode);
+        Assert.Equal("module.disabled", (await disabled.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+
+        await fixture.ExecuteAdminSqlAsync($"update platform.module_instance set status = 'Active' where tenant_id = '{fixture.Tenant.Value}' and module_id = 'quality' and scope_type = 'legal_entity' and scope_id = '{fixture.EntityA}'; update platform.entitlement_snapshot set modules = modules - 'quality' where tenant_id = '{fixture.Tenant.Value}';");
+        var unentitled = await fixture.PostAsync(client, path, payload);
+        Assert.Equal(HttpStatusCode.Forbidden, unentitled.StatusCode);
+        Assert.Equal("module.unentitled", (await unentitled.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+    }
+
+    [Fact]
     public async Task POS_ActiveToReadOnly_BlocksMutationAndPreservesReads()
     {
         await using var fixture = await NavSecurityFixture.CreateAsync();
@@ -2512,6 +2537,8 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'purchasing.price.override'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'purchasing.price.read'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'purchasing.history.read'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'quality.read'),
+                    ('{fixture.Tenant.Value}', '{roleOperatorA}', 'quality.disposition.manage'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'invoicing.supplier_invoice.finalize'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'invoicing.supplier_invoice.read'),
                     ('{fixture.Tenant.Value}', '{roleOperatorA}', 'invoicing.supplier_invoice.create'),
@@ -2532,7 +2559,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                     ('{fixture.Tenant.Value}', '{fixture.MembershipId.Value}', '{roleBranchA1Only}', 'Branch', '{fixture.BranchA1}');
 
                 insert into platform.entitlement_snapshot (tenant_id, snapshot_version, issued_at, valid_until, key_id, modules, features, limits, scopes, signature)
-                values ('{fixture.Tenant.Value}', 1, now(), now() + interval '30 days', 'test_key', '[""banking"", ""crm"", ""inventory"", ""accounting"", ""sales"", ""purchasing"", ""pos"", ""catalog"", ""pricing"", ""payments"", ""invoicing"", ""subledger"", ""tax""]'::jsonb, '[]'::jsonb, '{{}}'::jsonb, '[]'::jsonb, 'test_sig');
+                values ('{fixture.Tenant.Value}', 1, now(), now() + interval '30 days', 'test_key', '[""banking"", ""crm"", ""inventory"", ""accounting"", ""sales"", ""purchasing"", ""pos"", ""catalog"", ""pricing"", ""payments"", ""invoicing"", ""subledger"", ""tax"", ""quality""]'::jsonb, '[]'::jsonb, '{{}}'::jsonb, '[]'::jsonb, 'test_sig');
 
                 insert into platform.module_instance (id, tenant_id, module_id, scope_type, scope_id, status, manifest_version, version)
                 values
@@ -2550,6 +2577,7 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'invoicing', 'tenant', null, 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'subledger', 'tenant', null, 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'tax', 'tenant', null, 'Active', '1.0.0', 1),
+                    ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'quality', 'tenant', null, 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'banking', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'crm', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'inventory', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
@@ -2563,7 +2591,9 @@ public sealed class NavigationSecurityAcceptanceTests : DatabaseIntegrationTestB
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'payments', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'invoicing', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
                     ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'subledger', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
-                    ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'tax', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1);
+                    ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'tax', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1),
+                    ('{Guid.CreateVersion7()}', '{fixture.Tenant.Value}', 'quality', 'legal_entity', '{fixture.EntityA}', 'Active', '1.0.0', 1);
+
 
                 reset app.tenant_id;
                 reset role;

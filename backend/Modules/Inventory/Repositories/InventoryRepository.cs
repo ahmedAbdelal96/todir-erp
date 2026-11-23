@@ -256,10 +256,10 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
     public Task<InventoryOperationResult> ReceiveAsync(TenantId tenant, Guid actor, Guid entity, ConfirmStockMovementRequest request, Guid correlationId, string? traceParent, CancellationToken ct) =>
         ConfirmMovementAsync(tenant, actor, entity, request, MovementKind.Receipt, correlationId, traceParent, ct);
 
-    public async Task<InventoryOperationResult> IssueAsync(TenantId tenant, Guid actor, Guid entity, ConfirmStockMovementRequest request, Guid correlationId, string? traceParent, CancellationToken ct, bool canOverrideNegativeStock = false, Guid? reservationId = null)
+    public async Task<InventoryOperationResult> IssueAsync(TenantId tenant, Guid actor, Guid entity, ConfirmStockMovementRequest request, Guid correlationId, string? traceParent, CancellationToken ct, bool canOverrideNegativeStock = false, Guid? reservationId = null, bool allowRestrictedStatus = false)
     {
         await ExpireReservationsAsync(tenant, entity, 500, correlationId, ct);
-        return await ConfirmMovementAsync(tenant, actor, entity, request, MovementKind.Issue, correlationId, traceParent, ct, canOverrideNegativeStock, reservationId);
+        return await ConfirmMovementAsync(tenant, actor, entity, request, MovementKind.Issue, correlationId, traceParent, ct, canOverrideNegativeStock, reservationId, allowRestrictedStatus: allowRestrictedStatus);
     }
 
     public Task<InventoryOperationResult> OpenAsync(TenantId tenant, Guid actor, Guid entity, ConfirmStockMovementRequest request, Guid correlationId, string? traceParent, CancellationToken ct) =>
@@ -1373,7 +1373,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
 
     private async Task<InventoryOperationResult> ConfirmMovementAsync(TenantId tenant, Guid actor, Guid entity, ConfirmStockMovementRequest request,
         MovementKind kind, Guid correlationId, string? traceParent, CancellationToken ct, bool canOverrideNegativeStock = false,
-        Guid? reservationId = null, int? adjustmentSign = null, string? reasonCode = null, Guid? adjustmentRequestId = null)
+        Guid? reservationId = null, int? adjustmentSign = null, string? reasonCode = null, Guid? adjustmentRequestId = null, bool allowRestrictedStatus = false)
     {
         var sourceModule = string.IsNullOrWhiteSpace(request.SourceModule) ? "inventory" : request.SourceModule.Trim().ToLowerInvariant();
         if (request.IdempotencyKey.Length is < 1 or > 200) throw new InventoryException("inventory.idempotency_key_invalid");
@@ -1427,7 +1427,7 @@ public sealed class InventoryRepository(NpgsqlDataSource dataSource, ITransactio
             await EnsurePostingDateOpenAsync(context, tenant, entity, request.OperationalDate, token);
             if (request.Status == StockStatus.InTransit)
                 throw new InventoryException("inventory.transit_requires_transfer");
-            if (kind == MovementKind.Issue && request.Status != StockStatus.Available)
+            if (kind == MovementKind.Issue && request.Status != StockStatus.Available && !allowRestrictedStatus)
                 throw new InventoryException("inventory.issue_requires_available_status");
             var variant = await catalog.FindVariantAsync(tenant, request.ProductVariantId, entity, token)
                 ?? throw new InventoryException("inventory.catalog_variant_not_found");

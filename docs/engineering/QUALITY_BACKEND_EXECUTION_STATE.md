@@ -17,6 +17,8 @@ Backend, database, integrations, Development Seed and local acceptance were impl
 - Added deterministic Atlas and Delta seed records and a focused six-test Quality domain suite.
 - Added durable partial-release operations with idempotency/request-hash conflict protection, in-flight quantity reservation, Unknown-state retry and owner-operation linkage.
 - Added owner-backed Scrap, Supplier Return and Manufacturing Rework capabilities through Inventory, Purchasing and Manufacturing contracts; Quality remains the decision owner and each side effect is persisted by its owning module.
+- Closed the targeted safety gap in Supplier Return: Quality keeps the restriction active while Purchasing creates/approves the return, Inventory issues directly from `QualityHold`, and only a confirmed owner operation allows Quality to resolve the restriction. No pre-return `Available` release operation is created.
+- Added deterministic disposition reconciliation through the persisted owner idempotency key. `Unknown` can be retried through the authorized reconcile route; successful owner replays are idempotent, while deterministic owner failures remain `Failed` and non-Executed.
 - Added bounded typed list/read APIs for the operational work queues and master-data selectors, including sampling plans, characteristics, restrictions, dispositions, issues, NCRs, CAPA, supplier profiles, SCARs and certificates.
 
 ## Fresh evidence
@@ -40,6 +42,13 @@ Backend, database, integrations, Development Seed and local acceptance were impl
 
 - Added source-fingerprint uniqueness/idempotent inspection creation, typed keyset pagination, explicit effective-plan validation/conflict detection, calibration/sample/UOM hardening, owner-operation claiming/recovery, immutable certificate snapshots, typed Quality reads, CAPA action/root-cause lifecycle and SCAR response/review lifecycle.
 - `QualityBackendAcceptanceTests` passed 11/11 against fresh isolated local PostgreSQL database `todir_quality_m27_final` after the final source and migration changes. QA-01 proves receiving resolution; QA-03 proves Manufacturing Rework owner evidence and blocked continuation; QA-04 proves replay/concurrent partial-release conservation; QA-08 proves failed/Unknown owner recovery and exactly-once owner operation; QA-09 proves RLS; QA-10 proves source-fingerprint idempotency and the real RabbitMQ Worker Inbox path.
+
+## Targeted safety closure evidence — 2026-11-23
+
+- Fresh disposable `todir_quality_targeted`: DbMigrator applied/verified 257 ordered scripts and Development Seed completed for Atlas and Delta.
+- `QualityBackendAcceptanceTests`: PASS 15/15 after the final source change. The original 11 acceptance scenarios remain present; QA-11 proves the actual Purchasing receipt service creates mandatory QualityHold, QA-12 proves Return consumes QualityHold without an Available release and without duplicate return/movement rows, QA-13 proves Unknown reconciliation reuses the owner identity exactly once, and QA-14 proves a deterministic Purchasing failure leaves the restriction Active and the quantity restricted.
+- Authenticated lifecycle regression with the restricted non-admin operator on a disposable dedicated database: PASS 1/1. Quality mutation was denied with `module.lifecycle_readonly`, `module.disabled`, and `module.unentitled` for ReadOnly, Disabled, and removed entitlement states.
+- No new database migration was required; the existing 257-script schema already contains the disposition owner state, idempotency and supplier-return link structures. The code path was verified against a fresh migration/seed rather than the protected development database.
 
 ## Known boundary
 

@@ -546,11 +546,12 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
 
     public async Task<QualityDispositionView> ExecuteDispositionAsync(TenantId tenant, Guid actor, Guid id, CancellationToken ct)
     {
-        var row = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context, "select legal_entity_id,inspection_id,decision,quantity,reason,created_at,state,unit_of_measure_id,operational_date,posting_date,owner_execution_status,owner_operation_id from business_quality.quality_disposition where tenant_id=$1 and id=$2", token, tenant.Value, id), ct) ?? throw new QualityException("quality.disposition_not_found");
+        var row = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context, "select legal_entity_id,inspection_id,decision,quantity,reason,created_at,state,unit_of_measure_id,operational_date,posting_date,owner_execution_status,owner_operation_id,owner_idempotency_key from business_quality.quality_disposition where tenant_id=$1 and id=$2", token, tenant.Value, id), ct) ?? throw new QualityException("quality.disposition_not_found");
         if ((string)row[6] == "Executed") return new QualityDispositionView(id, row[1] is DBNull ? null : (Guid)row[1], (string)row[2], "Executed", row[3] is DBNull ? null : (decimal)row[3], (string)row[4], Timestamp(row[5]), (string)row[10], row[11] is DBNull ? null : (Guid)row[11]);
         if ((string)row[6] != "Approved") throw new QualityException("quality.disposition_requires_approval");
-        if ((string)row[10] is "Executing" or "Unknown") throw new QualityException("quality.disposition_execution_in_progress");
-        if (await coordinator.ExecuteAsync(tenant, (context, token) => ExecuteAsync(context, "update business_quality.quality_disposition set owner_execution_status='Executing',owner_idempotency_key=$3,execution_error_code=null where tenant_id=$1 and id=$2 and state='Approved' and owner_execution_status in ('NotRequired','Failed')", token, tenant.Value, id, $"quality-disposition:{id:D}"), ct) != 1)
+        if ((string)row[10] == "Executing") throw new QualityException("quality.disposition_execution_in_progress");
+        var ownerIdempotencyKey = row[12] is DBNull ? $"quality-disposition:{id:D}" : (string)row[12];
+        if (await coordinator.ExecuteAsync(tenant, (context, token) => ExecuteAsync(context, "update business_quality.quality_disposition set owner_execution_status='Executing',owner_idempotency_key=$3,execution_error_code=null where tenant_id=$1 and id=$2 and state='Approved' and owner_execution_status in ('NotRequired','Failed','Unknown')", token, tenant.Value, id, ownerIdempotencyKey), ct) != 1)
             throw new QualityException("quality.disposition_execution_in_progress");
         Guid? ownerOperationId = null;
         try
@@ -572,14 +573,16 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
                 if (restriction is null || row[7] is DBNull || inventoryDispositionCapability is null) throw new QualityException("quality.inventory_scrap_capability_unavailable");
                 var result = await inventoryDispositionCapability.ExecuteScrapAsync(tenant.Value, actor, new QualityInventoryScrapRequest((Guid)row[0], (Guid)restriction[1], (Guid)restriction[2], restriction[3] is DBNull ? null : (Guid)restriction[3], (Guid)row[7], quantity, id, row[8] is DBNull ? DateOnly.FromDateTime(DateTime.UtcNow) : (DateOnly)row[8], row[9] is DBNull ? DateOnly.FromDateTime(DateTime.UtcNow) : (DateOnly)row[9], $"quality-disposition:{id:D}:scrap", restriction[4] is DBNull ? null : (Guid)restriction[4], restriction[5] is DBNull ? null : (Guid)restriction[5]), ct);
                 ownerOperationId = result.OperationId;
-                await MarkRestrictionDisposedAsync(tenant, actor, (Guid)restriction[0], quantity, (string)row[4], result.OperationId, ct);
+                try { await MarkRestrictionDisposedAsync(tenant, actor, (Guid)restriction[0], quantity, (string)row[4], result.OperationId, ct); }
+                catch (Exception exception) { throw new QualityDispositionOwnerException("quality.scrap_reconciliation_unknown", true, exception); }
             }
             else if (decision == "Return")
             {
                 if (restriction is null || inspection is null || inspection[0] is DBNull || row[7] is DBNull || purchasingDispositionCapability is null) throw new QualityException("quality.purchasing_return_capability_unavailable");
-                await ReleaseRestrictionAsync(tenant, actor, (Guid)restriction[0], new ReleaseRestrictionRequest((string)row[4], quantity, (Guid)row[7], row[8] is DBNull ? null : (DateOnly)row[8], row[9] is DBNull ? null : (DateOnly)row[9], $"quality-disposition:{id:D}:release"), ct);
                 var result = await purchasingDispositionCapability.ExecuteSupplierReturnAsync(tenant.Value, actor, new QualitySupplierReturnRequest((Guid)row[0], (Guid)inspection[0], (Guid)restriction[1], (Guid)restriction[2], restriction[3] is DBNull ? null : (Guid)restriction[3], (Guid)row[7], quantity, id, row[8] is DBNull ? DateOnly.FromDateTime(DateTime.UtcNow) : (DateOnly)row[8], row[9] is DBNull ? DateOnly.FromDateTime(DateTime.UtcNow) : (DateOnly)row[9], restriction[4] is DBNull ? null : (Guid)restriction[4], restriction[5] is DBNull ? null : (Guid)restriction[5]), ct);
                 ownerOperationId = result.OperationId;
+                try { await MarkRestrictionDisposedAsync(tenant, actor, (Guid)restriction[0], quantity, (string)row[4], result.OperationId, ct); }
+                catch (Exception exception) { throw new QualityDispositionOwnerException("quality.return_reconciliation_unknown", true, exception); }
             }
             else if (decision == "Rework")
             {
@@ -595,8 +598,17 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
         }
         catch (Exception exception)
         {
-            await coordinator.ExecuteAsync(tenant, (context, token) => ExecuteAsync(context, "update business_quality.quality_disposition set owner_execution_status='Unknown',execution_error_code=$3 where tenant_id=$1 and id=$2 and state='Approved'", token, tenant.Value, id, exception.GetType().Name), CancellationToken.None);
-            throw exception is QualityException qualityException ? qualityException : new QualityException("quality.disposition_owner_execution_unknown");
+            var (executionStatus, errorCode) = exception switch
+            {
+                QualityDispositionOwnerException ownerException => (ownerException.Uncertain ? "Unknown" : "Failed", ownerException.Code),
+                QualityException knownQualityFailure when knownQualityFailure.Code == "quality.inventory_owner_execution_unknown" => ("Unknown", knownQualityFailure.Code),
+                QualityException knownQualityFailure => ("Failed", knownQualityFailure.Code),
+                _ => ("Unknown", exception.GetType().Name)
+            };
+            await coordinator.ExecuteAsync(tenant, (context, token) => ExecuteAsync(context, "update business_quality.quality_disposition set owner_execution_status=$3,execution_error_code=$4 where tenant_id=$1 and id=$2 and state='Approved'", token, tenant.Value, id, executionStatus, errorCode), CancellationToken.None);
+            if (exception is QualityException qualityException) throw qualityException;
+            if (exception is QualityDispositionOwnerException ownerFailure && !ownerFailure.Uncertain) throw new QualityException(ownerFailure.Code);
+            throw new QualityException("quality.disposition_owner_execution_unknown");
         }
         return await coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
@@ -605,6 +617,9 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
             return new QualityDispositionView(id, row[1] is DBNull ? null : (Guid)row[1], (string)row[2], "Executed", row[3] is DBNull ? null : (decimal)row[3], (string)row[4], Timestamp(row[5]), ownerOperationId is null ? "NotRequired" : "Confirmed", ownerOperationId);
         }, ct);
     }
+
+    public Task<QualityDispositionView> ReconcileDispositionAsync(TenantId tenant, Guid actor, Guid id, CancellationToken ct)
+        => ExecuteDispositionAsync(tenant, actor, id, ct);
 
     public Task<QualityIssueView> CreateIssueAsync(TenantId tenant, Guid actor, Guid legalEntityId, CreateIssueRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {

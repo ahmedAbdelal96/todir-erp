@@ -13,6 +13,8 @@ using Modules.Quality.Repositories;
 using Modules.Inventory.DTOs;
 using Modules.Inventory.Entities;
 using Modules.Inventory.Services;
+using Modules.Purchasing.DTOs;
+using Modules.Purchasing.Services;
 using Npgsql;
 using RabbitMQ.Client;
 using Shared.Primitives.Identifiers;
@@ -277,8 +279,145 @@ public sealed class QualityBackendAcceptanceTests
         }
     }
 
+    [Fact(DisplayName = "QA-11 actual Purchasing receipt creates mandatory QualityHold before any disposition")]
+    public async Task Qa11ActualPurchasingReceiptCreatesMandatoryQualityHold()
+    {
+        var connection = RequireConnection();
+        using var factory = CreateFactory(connection);
+        var purchasing = factory.Services.GetRequiredService<PurchasingService>();
+        var (order, line, warehouseId, locationId) = await ReadFreshPurchaseLineAsync(connection, purchasing);
+        var inventory = factory.Services.GetRequiredService<InventoryService>();
+        var quality = factory.Services.GetRequiredService<QualityRepository>();
+        await EnsureReceivingQualityPlanAsync(connection, quality, line.ProductVariantId!.Value);
+        await quality.SaveSupplierProfileAsync(AtlasTenant, Guid.CreateVersion7(), new(AtlasEntity, order.SupplierPartyId, ReceivingInspectionRequired: true), CancellationToken.None);
+        var (lotId, serialId) = await EnsureReceiptTrackingAsync(connection, inventory, line.ProductVariantId!.Value);
+        var before = await StockQuantityAsync(connection, line.ProductVariantId!.Value, warehouseId, locationId, "QualityHold");
+
+        var result = await purchasing.ReceiveAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, order.Id,
+            new ReceivePurchaseOrderRequest(AtlasEntity, order.Version, $"qa-11-receipt:{Guid.CreateVersion7():D}",
+                DateOnly.FromDateTime(DateTime.UtcNow.Date), DateOnly.FromDateTime(DateTime.UtcNow.Date),
+                [new PurchaseReceiptLineRequest(line.Id, line.ProductVariantId.Value, warehouseId, locationId, line.UnitOfMeasureId!.Value, 1m, LotId: lotId, SerialId: serialId)]),
+            Guid.CreateVersion7(), CancellationToken.None);
+
+        Assert.NotEmpty(result.ReceiptIds);
+        Assert.Equal(before + 1m, await StockQuantityAsync(connection, line.ProductVariantId.Value, warehouseId, locationId, "QualityHold"));
+        Assert.Equal(1L, await CountAsync(connection, "select count(*) from business_quality.inspection where tenant_id=$1 and source_document_id=$2 and event_type='Receiving'", AtlasTenant.Value, order.Id));
+        Assert.Equal("QualityHold", await StockStatusAsync(connection, new StockRef(line.ProductVariantId.Value, warehouseId, locationId, line.UnitOfMeasureId.Value, 0m), "QualityHold"));
+    }
+
+    [Fact(DisplayName = "QA-12 supplier Return consumes QualityHold without releasing Available stock and replays exactly once")]
+    public async Task Qa12SupplierReturnNeverLeaksRestrictedStock()
+    {
+        var connection = RequireConnection();
+        using var factory = CreateFactory(connection);
+        var quality = factory.Services.GetRequiredService<QualityRepository>();
+        var purchasing = factory.Services.GetRequiredService<PurchasingService>();
+        var inventory = factory.Services.GetRequiredService<InventoryService>();
+        var (order, line, warehouseId, locationId) = await ReadFreshPurchaseLineAsync(connection, purchasing);
+        await EnsureReceivingQualityPlanAsync(connection, quality, line.ProductVariantId!.Value);
+        await quality.SaveSupplierProfileAsync(AtlasTenant, Guid.CreateVersion7(), new(AtlasEntity, order.SupplierPartyId, ReceivingInspectionRequired: true), CancellationToken.None);
+        var (lotId, serialId) = await EnsureReceiptTrackingAsync(connection, inventory, line.ProductVariantId!.Value);
+        var receiveKey = $"qa-12-receipt:{Guid.CreateVersion7():D}";
+        await purchasing.ReceiveAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, order.Id,
+            new ReceivePurchaseOrderRequest(AtlasEntity, order.Version, receiveKey, DateOnly.FromDateTime(DateTime.UtcNow.Date), DateOnly.FromDateTime(DateTime.UtcNow.Date),
+                [new PurchaseReceiptLineRequest(line.Id, line.ProductVariantId!.Value, warehouseId, locationId, line.UnitOfMeasureId!.Value, 1m, LotId: lotId, SerialId: serialId)]), Guid.CreateVersion7(), CancellationToken.None);
+
+        var inspectionId = (Guid)(await ScalarAsync(connection, "select id from business_quality.inspection where tenant_id=$1 and source_document_id=$2 and event_type='Receiving' order by created_at desc limit 1", AtlasTenant.Value, order.Id))!;
+        await inventory.ChangeQualityStatusAsync(AtlasTenant.Value, Guid.CreateVersion7(), new(AtlasEntity, line.ProductVariantId.Value, warehouseId, locationId, line.UnitOfMeasureId.Value, 1m, "QualityHold", "Available", DateOnly.FromDateTime(DateTime.UtcNow.Date), DateOnly.FromDateTime(DateTime.UtcNow.Date), $"qa-12-move-to-available:{Guid.CreateVersion7():D}", lotId, serialId), CancellationToken.None);
+
+        var hold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), new("QualityHold", "QA12", line.ProductVariantId.Value, warehouseId, locationId, LotId: lotId, SerialId: serialId, Quantity: 1m, UnitOfMeasureId: line.UnitOfMeasureId.Value, InspectionId: inspectionId), AtlasEntity, CancellationToken.None);
+        var availableBefore = await StockQuantityAsync(connection, line.ProductVariantId.Value, warehouseId, locationId, "Available");
+        var holdBefore = await StockQuantityAsync(connection, line.ProductVariantId.Value, warehouseId, locationId, "QualityHold");
+        var disposition = await quality.CreateDispositionAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new("Return", "QA-12 supplier return", inspectionId, 1m, UnitOfMeasureId: line.UnitOfMeasureId.Value), CancellationToken.None);
+        await quality.ApproveDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, new("QA-12 approval"), CancellationToken.None);
+
+        var executed = await quality.ExecuteDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, CancellationToken.None);
+        var replay = await quality.ExecuteDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, CancellationToken.None);
+        Assert.Equal("Executed", executed.State);
+        Assert.Equal(executed.OwnerOperationId, replay.OwnerOperationId);
+        Assert.Equal("Released", (await quality.GetRestrictionAsync(AtlasTenant, hold.Id, CancellationToken.None))!.Status);
+        Assert.Equal(availableBefore, await StockQuantityAsync(connection, line.ProductVariantId.Value, warehouseId, locationId, "Available"));
+        Assert.Equal(holdBefore - 1m, await StockQuantityAsync(connection, line.ProductVariantId.Value, warehouseId, locationId, "QualityHold"));
+        Assert.Equal(1L, await CountAsync(connection, "select count(*) from business_purchasing.supplier_return_request where tenant_id=$1 and idempotency_key=$2 and state='Executed'", AtlasTenant.Value, $"quality-disposition:{disposition.Id:D}"));
+        Assert.Equal(1L, await CountAsync(connection, "select count(*) from business_inventory.inventory_operation where tenant_id=$1 and legal_entity_id=$2 and source_module='purchasing' and source_document_id=(select id from business_purchasing.supplier_return_request where tenant_id=$1 and idempotency_key=$3)", AtlasTenant.Value, AtlasEntity, $"quality-disposition:{disposition.Id:D}"));
+        Assert.Equal(0L, await CountAsync(connection, "select count(*) from business_quality.quality_restriction_release_operation where tenant_id=$1 and restriction_id=$2 and idempotency_key=$3", AtlasTenant.Value, hold.Id, $"quality-disposition:{disposition.Id:D}:release"));
+    }
+
+    [Fact(DisplayName = "QA-13 Unknown disposition reconciliation retries the owner idempotency identity exactly once")]
+    public async Task Qa13UnknownDispositionReconcilesExactlyOnce()
+    {
+        var connection = RequireConnection();
+        using var factory = CreateFactory(connection);
+        var quality = factory.Services.GetRequiredService<QualityRepository>();
+        var stock = await ReadStockAsync(connection, factory.Services.GetRequiredService<InventoryService>());
+        var inspection = await CreatePassedInspectionAsync(quality, connection, stock, "QA-13");
+        var hold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), new("QualityHold", "QA13", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id), AtlasEntity, CancellationToken.None);
+        var disposition = await quality.CreateDispositionAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new("Accept", "QA-13 reconcile", inspection.Id, 1m, UnitOfMeasureId: stock.UnitId), CancellationToken.None);
+        await quality.ApproveDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, new("QA-13 approval"), CancellationToken.None);
+        var key = $"quality-disposition:{disposition.Id:D}";
+        await ExecuteAsync(connection, "update business_quality.quality_disposition set owner_execution_status='Unknown',owner_idempotency_key=$3,execution_error_code='simulated_unknown' where tenant_id=$1 and id=$2", AtlasTenant.Value, disposition.Id, key);
+
+        var reconciled = await quality.ReconcileDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, CancellationToken.None);
+        var replay = await quality.ReconcileDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, CancellationToken.None);
+        Assert.Equal("Executed", reconciled.State);
+        Assert.Equal(reconciled.OwnerOperationId, replay.OwnerOperationId);
+        Assert.Equal("Released", (await quality.GetRestrictionAsync(AtlasTenant, hold.Id, CancellationToken.None))!.Status);
+        Assert.Equal(1L, await CountAsync(connection, "select count(*) from business_quality.quality_restriction_release_operation where tenant_id=$1 and restriction_id=$2 and state='Confirmed'", AtlasTenant.Value, hold.Id));
+        Assert.Equal(1L, await CountAsync(connection, "select count(*) from business_inventory.inventory_operation where tenant_id=$1 and id=$2 and status='Confirmed'", AtlasTenant.Value, reconciled.OwnerOperationId!.Value));
+    }
+
+    [Fact(DisplayName = "QA-14 Purchasing failure keeps supplier-return quantity restricted")]
+    public async Task Qa14SupplierReturnFailureKeepsQuantityRestricted()
+    {
+        var connection = RequireConnection();
+        using var factory = CreateFactory(connection);
+        var quality = factory.Services.GetRequiredService<QualityRepository>();
+        var stock = await ReadStockAsync(connection, factory.Services.GetRequiredService<InventoryService>());
+        var missingPurchaseOrderId = Guid.CreateVersion7();
+        var inspection = await quality.CreateInspectionAsync(AtlasTenant, Guid.CreateVersion7(), new(AtlasEntity, "Receiving", stock.ProductVariantId, 1m, SourceDocumentId: missingPurchaseOrderId, PlanVersionId: await PlanVersionAsync(connection), SourceFingerprint: $"qa-14:{Guid.CreateVersion7():N}"), CancellationToken.None);
+        var hold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), new("QualityHold", "QA14", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id), AtlasEntity, CancellationToken.None);
+        var before = await StockQuantityAsync(connection, stock.ProductVariantId, stock.WarehouseId, stock.LocationId, "QualityHold");
+        var disposition = await quality.CreateDispositionAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new("Return", "QA-14 invalid supplier return", inspection.Id, 1m, UnitOfMeasureId: stock.UnitId), CancellationToken.None);
+        await quality.ApproveDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, new("QA-14 approval"), CancellationToken.None);
+
+        var error = await Assert.ThrowsAsync<QualityException>(() => quality.ExecuteDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, CancellationToken.None));
+        Assert.Equal("quality.supplier_return_purchase_order_not_found", error.Code);
+        Assert.Equal("Failed", (string)(await ScalarAsync(connection, "select owner_execution_status from business_quality.quality_disposition where tenant_id=$1 and id=$2", AtlasTenant.Value, disposition.Id))!);
+        Assert.Equal("Active", (await quality.GetRestrictionAsync(AtlasTenant, hold.Id, CancellationToken.None))!.Status);
+        Assert.Equal(before, await StockQuantityAsync(connection, stock.ProductVariantId, stock.WarehouseId, stock.LocationId, "QualityHold"));
+        Assert.Equal(0L, await CountAsync(connection, "select count(*) from business_purchasing.supplier_return_request where tenant_id=$1 and idempotency_key=$2", AtlasTenant.Value, $"quality-disposition:{disposition.Id:D}"));
+    }
+
     private static async Task<Modules.Quality.DTOs.InspectionView> CreatePassedInspectionAsync(QualityRepository quality, string connection, StockRef stock, string key)
         => await CreateInspectionAsync(quality, connection, stock, key, 10m);
+
+    private static async Task<(Modules.Purchasing.DTOs.PurchaseOrderView Order, PurchaseOrderLineView Line, Guid WarehouseId, Guid LocationId)> ReadFreshPurchaseLineAsync(string connection, PurchasingService purchasing)
+    {
+        var orderId = (Guid)(await ScalarAsync(connection, "select po.id from business_purchasing.purchase_order po join business_purchasing.purchase_order_line l on l.tenant_id=po.tenant_id and l.purchase_order_id=po.id join business_inventory.product_inventory_profile p on p.tenant_id=po.tenant_id and p.legal_entity_id=po.legal_entity_id and p.product_variant_id=l.product_variant_id where po.tenant_id=$1 and po.legal_entity_id=$2 and po.state in ('Approved','Open','PartiallyCompleted') and l.received_quantity=0 and not exists (select 1 from business_quality.inspection i where i.tenant_id=po.tenant_id and i.source_document_id=po.id and i.event_type='Receiving') order by po.id limit 1", AtlasTenant.Value, AtlasEntity))!;
+        var order = await purchasing.GetAsync(AtlasTenant, AtlasEntity, orderId, false, CancellationToken.None) ?? throw new InvalidOperationException("QA acceptance requires a seeded approved purchase order.");
+        var line = order.Lines.First(item => item.ProductVariantId is not null && item.UnitOfMeasureId is not null);
+        var warehouseId = (Guid)(await ScalarAsync(connection, "select id from business_inventory.warehouse where tenant_id=$1 and legal_entity_id=$2 and status='Active' order by id limit 1", AtlasTenant.Value, AtlasEntity))!;
+        var locationId = (Guid)(await ScalarAsync(connection, "select default_location_id from business_inventory.warehouse where tenant_id=$1 and id=$2", AtlasTenant.Value, warehouseId))!;
+        return (order, line, warehouseId, locationId);
+    }
+
+    private static async Task<(Guid? LotId, Guid? SerialId)> EnsureReceiptTrackingAsync(string connection, InventoryService inventory, Guid productVariantId)
+    {
+        var tracking = (string?)(await ScalarAsync(connection, "select tracking_mode from business_inventory.product_inventory_profile where tenant_id=$1 and legal_entity_id=$2 and product_variant_id=$3", AtlasTenant.Value, AtlasEntity, productVariantId));
+        if (string.Equals(tracking, "Lot", StringComparison.OrdinalIgnoreCase))
+            return ((await inventory.CreateLotAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new CreateLotRequest(productVariantId, $"QA-{Guid.CreateVersion7():N}", DateOnly.FromDateTime(DateTime.UtcNow.Date), null, "quality-acceptance"), Guid.CreateVersion7(), CancellationToken.None)).Id, null);
+        if (string.Equals(tracking, "Serial", StringComparison.OrdinalIgnoreCase))
+            return (null, (await inventory.CreateSerialAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new CreateSerialRequest(productVariantId, $"QA-{Guid.CreateVersion7():N}"), Guid.CreateVersion7(), CancellationToken.None)).Id);
+        return (null, null);
+    }
+
+    private static async Task EnsureReceivingQualityPlanAsync(string connection, QualityRepository quality, Guid productVariantId)
+    {
+        var planId = (Guid)(await ScalarAsync(connection, "select id from business_quality.quality_plan where tenant_id=$1 and legal_entity_id=$2 and event_type='Receiving' and status='Active' order by id limit 1", AtlasTenant.Value, AtlasEntity))!;
+        var exists = await CountAsync(connection, "select count(*) from business_quality.quality_plan_applicability where tenant_id=$1 and plan_id=$2 and product_variant_id=$3", AtlasTenant.Value, planId, productVariantId);
+        if (exists == 0)
+            await quality.CreateApplicabilityAsync(AtlasTenant, Guid.CreateVersion7(), planId, new(productVariantId), CancellationToken.None);
+    }
 
     private static async Task<Modules.Quality.DTOs.InspectionView> CreateInspectionAsync(QualityRepository quality, string connection, StockRef stock, string key, decimal value)
     {
@@ -323,6 +462,8 @@ public sealed class QualityBackendAcceptanceTests
     private static async Task<decimal> StockQuantityAsync(string connection, Guid product, Guid warehouse, Guid location, string status) => Convert.ToDecimal(await ScalarAsync(connection, "select coalesce(sum(on_hand_base_quantity),0) from business_inventory.stock_balance where tenant_id=$1 and legal_entity_id=$2 and product_variant_id=$3 and warehouse_id=$4 and location_id=$5 and stock_status=$6", AtlasTenant.Value, AtlasEntity, product, warehouse, location, status), CultureInfo.InvariantCulture);
     private static async Task<string> StockStatusAsync(string connection, StockRef stock, string status) => (string)(await ScalarAsync(connection, "select stock_status from business_inventory.stock_balance where tenant_id=$1 and legal_entity_id=$2 and product_variant_id=$3 and warehouse_id=$4 and location_id=$5 and stock_status=$6 and on_hand_base_quantity>0 limit 1", AtlasTenant.Value, AtlasEntity, stock.ProductVariantId, stock.WarehouseId, stock.LocationId, status))!;
     private static async Task<long> CountAsync(string connection, string sql, params object[] values) => Convert.ToInt64(await ScalarAsync(connection, sql, values), CultureInfo.InvariantCulture);
+    private static async Task<int> ExecuteAsync(string connection, string sql, params object[] values)
+    { await using var db = new NpgsqlConnection(connection); await db.OpenAsync(); await SetTenantAsync(db); await using var command = new NpgsqlCommand(sql, db); for (var i = 0; i < values.Length; i++) command.Parameters.AddWithValue(values[i]); return await command.ExecuteNonQueryAsync(); }
     private static async Task<object?> ScalarAsync(string connection, string sql, params object[] values)
     { await using var db = new NpgsqlConnection(connection); await db.OpenAsync(); await SetTenantAsync(db); await using var command = new NpgsqlCommand(sql, db); for (var i = 0; i < values.Length; i++) command.Parameters.AddWithValue(values[i]); return await command.ExecuteScalarAsync(); }
     private static async Task<object?> ScalarAsync(NpgsqlConnection db, string sql, params object[] values) { await using var command = new NpgsqlCommand(sql, db); for (var i = 0; i < values.Length; i++) command.Parameters.AddWithValue(values[i]); return await command.ExecuteScalarAsync(); }

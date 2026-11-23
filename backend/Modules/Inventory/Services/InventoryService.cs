@@ -195,13 +195,17 @@ public sealed class InventoryService(InventoryRepository repository, ILedgerPost
 
     public async Task<IReadOnlyList<Guid>> ReturnPurchaseAsync(Guid tenantId, Guid actorId, Shared.Contracts.Inventory.PurchaseReturnRequest request, CancellationToken cancellationToken = default)
     {
+        if (!Enum.TryParse<StockStatus>(request.FromStockStatus, true, out var fromStatus)
+            || fromStatus is not (StockStatus.Available or StockStatus.QualityHold))
+            throw new InventoryException("inventory.return_source_status_invalid");
         var operations = new List<Guid>();
         foreach (var line in request.Lines)
         {
             var result = await repository.IssueAsync(new TenantId(tenantId), actorId, request.LegalEntityId,
                 new ConfirmStockMovementRequest(line.ProductVariantId, line.WarehouseId, line.LocationId, line.UnitOfMeasureId, line.Quantity,
                     request.OperationalDate, request.PostingDate, request.IdempotencyKey + ":" + line.PurchaseOrderLineId.ToString("D"), "purchasing", request.ReturnRequestId,
-                    StockStatus.Available, line.LotId, line.SerialId), Guid.CreateVersion7(), null, cancellationToken);
+                    fromStatus, line.LotId, line.SerialId), Guid.CreateVersion7(), null, cancellationToken,
+                allowRestrictedStatus: true);
             operations.Add(result.OperationId);
         }
         return operations;
@@ -228,11 +232,18 @@ public sealed class InventoryService(InventoryRepository repository, ILedgerPost
     public async Task<Shared.Contracts.Quality.QualityDispositionOwnerResult> ExecuteScrapAsync(Guid tenantId, Guid actorId,
         Shared.Contracts.Quality.QualityInventoryScrapRequest request, CancellationToken cancellationToken = default)
     {
-        var operationId = await AdjustAsync(tenantId, actorId, new InventoryAdjustmentRequest(request.ProductVariantId,
-            request.LegalEntityId, request.WarehouseId, request.LocationId, request.Quantity, request.UnitOfMeasureId,
-            "Decrease", "Scrap", request.OperationalDate, request.PostingDate, request.IdempotencyKey, "QualityHold",
-            request.LotId, null), cancellationToken);
-        return new Shared.Contracts.Quality.QualityDispositionOwnerResult(operationId, "Confirmed", false);
+        try
+        {
+            var operationId = await AdjustAsync(tenantId, actorId, new InventoryAdjustmentRequest(request.ProductVariantId,
+                request.LegalEntityId, request.WarehouseId, request.LocationId, request.Quantity, request.UnitOfMeasureId,
+                "Decrease", "Scrap", request.OperationalDate, request.PostingDate, request.IdempotencyKey, "QualityHold",
+                request.LotId, null), cancellationToken);
+            return new Shared.Contracts.Quality.QualityDispositionOwnerResult(operationId, "Confirmed", false);
+        }
+        catch (InventoryException exception)
+        {
+            throw new Shared.Contracts.Quality.QualityDispositionOwnerException(exception.Code, false, exception);
+        }
     }
     public Task<InventoryOperationResult> AdjustAsync(TenantId tenant, Guid actor, Guid entity, AdjustStockRequest request, Guid correlationId, string? traceParent, CancellationToken ct, bool canOverrideNegativeStock = false) => repository.AdjustAsync(tenant, actor, entity, request, correlationId, traceParent, ct, canOverrideNegativeStock);
     public Task<InventoryOperationResult> ReverseOperationAsync(TenantId tenant, Guid actor, Guid entity, ReverseInventoryOperationRequest request, Guid correlationId, string? traceParent, CancellationToken ct) => repository.ReverseOperationAsync(tenant, actor, entity, request, correlationId, traceParent, ct);

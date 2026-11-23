@@ -9,6 +9,8 @@ This runbook is for operational recovery of Quality records. PostgreSQL remains 
 - Do not change a stock balance or status with ad-hoc SQL. Reconcile through the typed Inventory owner capability and replay the original idempotency key where applicable.
 - Partial releases are durable operations. The same restriction and idempotency key must keep the same quantity, UOM, dates and reason fingerprint; a changed payload is a conflict. Competing requests may be rejected while another owner operation is in flight.
 - Scrap, supplier return and rework are owner-module operations. Quality records the decision and owner operation, while Inventory, Purchasing or Manufacturing remains authoritative for the side effect.
+- Supplier Return safety invariant: Quality must not release the restriction to `Available` before the physical/commercial return. Purchasing reuses the disposition idempotency key, and Inventory issues from `QualityHold`; only after Purchasing confirms the return may Quality mark its restriction resolved. If Purchasing fails deterministically, the disposition is `Failed` and the restriction remains `Active`.
+- For a disposition with `owner_execution_status='Unknown'`, use the authorized `POST /api/v1/quality/dispositions/{dispositionId}/reconcile` operation. It reuses the persisted owner idempotency identity. A confirmed owner operation is replayed, not executed twice; a failed owner operation remains non-Executed until a valid correction and retry.
 - After recovery, verify the outbox/inbox state, owner operation, Quality state history, audit event and the user-visible read API.
 
 ## Common incidents
@@ -20,7 +22,7 @@ This runbook is for operational recovery of Quality records. PostgreSQL remains 
 | Incorrect result | Do not edit a completed result in place. Record a correction with reason/evidence and run reinspection. |
 | Instrument out of calibration | Block completion, attach the calibration evidence, repeat the measurement with a valid instrument, and preserve the original failed/blocked result. |
 | Pending or unknown Inventory hold | Inspect `quality_restriction_release_operation`, the owner idempotency key and Inbox/outbox state. Retry the same typed Inventory operation; never mark the Quality hold released locally. |
-| Unknown disposition | Keep the disposition non-Executed until the owner operation is confirmed. Reconcile Inventory, Purchasing return or Manufacturing rework evidence and the approval audit before retrying. |
+| Unknown disposition | Keep the disposition non-Executed until the owner operation is confirmed. Reconcile Inventory, Purchasing return or Manufacturing rework evidence and the approval audit, then call the authorized reconcile route with the same disposition identity; never use manual SQL to mark it Executed. |
 | Wrong Use-as-Is decision | Cancel the unexecuted disposition where allowed, obtain a new approval with concession evidence, and release only through Inventory. |
 | Duplicate NCR | Use the source reference and tenant-scoped audit trail to link the records; do not delete the duplicate. |
 | Wrong scope or tenant | Stop processing, revoke the request, and re-run authorization with the correct legal entity. Never repair by changing tenant identifiers. |
