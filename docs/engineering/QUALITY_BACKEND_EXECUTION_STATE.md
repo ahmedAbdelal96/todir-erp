@@ -39,7 +39,7 @@ The full UI/product acceptance is a separate frontend mission. Advanced Build La
 
 ## Correction checkpoint — 2026-11-23
 
-Implemented and locally built the correction slice: typed Inventory owner status capability, persisted owner execution state, per-line receiving resolution, fail-closed inspection/result validation, disposition approval gate with owner-linked execution fail-closed behavior, bounded Quality list sizes, Quality lifecycle fallback enforcement, real event-consequence inspection creation for applicable inbound events, and seed reference repair. The operational forward fix `quality-forward-fix-operational-integrity.sql` was applied to the local `todir` database and Development Seed was rerun successfully.
+Implemented and locally built the correction slice: typed Inventory owner status capability, persisted owner execution state, per-line receiving resolution, fail-closed inspection/result validation, disposition approval plus owner-linked release execution, bounded Quality list sizes, Quality lifecycle fallback enforcement, real event-consequence inspection creation for applicable inbound events, and seed reference repair. The operational forward fixes `quality-forward-fix-operational-integrity.sql` and `quality-forward-fix-disposition-owner-data.sql` were applied to the local `todir` database and the correction database.
 
 Evidence after the correction: full `backend/Backend.sln` Release build passed with zero errors; Quality domain tests remain 6/6; DbMigrator applied/verified 250 scripts; Atlas and Delta seed completed; PostgreSQL checks report zero invalid Quality product or plan-version references and zero active owner-pending seeded restrictions.
 

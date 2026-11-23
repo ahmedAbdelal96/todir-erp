@@ -23,6 +23,6 @@ Build Later remains outside this mission: advanced dynamic sampling/ISO tables, 
 - Inventory status changes used by Quality now cross a typed `IInventoryQualityCapabilities` contract with an owner idempotency key and persisted owner execution state; Quality does not silently release a failed owner operation.
 - Receiving resolution is per purchase-order line and fails closed when the Quality capability is unavailable. Inspection creation is fail-closed for non-AdHoc events without an effective plan.
 - Result entry now rejects characteristics outside the frozen plan, duplicate sample/characteristic results, missing required evidence, invalid UOM and uncalibrated instruments; completion cannot pass with no results.
-- Dispositions now require an explicit approval transition before execution. Lists have a bounded page-size parameter capped at 100.
+- Dispositions now require an explicit approval transition before execution; Accept/UseAsIs/Concession releases the linked Inventory restriction through the owner capability, while unsupported owner decisions fail closed. Lists have a bounded page-size parameter capped at 100.
 - Seed verification corrected Quality references to actual Catalog/Purchasing rows; current local validation reports zero invalid product or plan-version references.
 - The remaining QA-01..QA-10 evidence must be refreshed against the corrected Worker/owner-operation path before this matrix can be used as a final completion claim.

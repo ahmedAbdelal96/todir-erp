@@ -338,7 +338,7 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
     {
         if (request.Decision is not ("Accept" or "Reject" or "UseAsIs" or "Concession" or "Return" or "Scrap" or "Rework" or "Partial")) throw new QualityException("quality.disposition_invalid");
         var id = Guid.CreateVersion7();
-        await ExecuteAsync(context, "insert into business_quality.quality_disposition(tenant_id,id,legal_entity_id,inspection_id,decision,quantity,reason,external_reference,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9)", token, tenant.Value, id, legalEntityId, Db(request.InspectionId), request.Decision, Db(request.Quantity), request.Reason.Trim(), Db(request.ExternalReference), actor);
+        await ExecuteAsync(context, "insert into business_quality.quality_disposition(tenant_id,id,legal_entity_id,inspection_id,decision,quantity,reason,external_reference,unit_of_measure_id,operational_date,posting_date,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)", token, tenant.Value, id, legalEntityId, Db(request.InspectionId), request.Decision, Db(request.Quantity), request.Reason.Trim(), Db(request.ExternalReference), Db(request.UnitOfMeasureId), Db(request.OperationalDate), Db(request.PostingDate), actor);
         return new QualityDispositionView(id, request.InspectionId, request.Decision, "Draft", request.Quantity, request.Reason.Trim(), DateTimeOffset.UtcNow);
     }, ct);
 
@@ -352,12 +352,16 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
 
     public async Task<QualityDispositionView> ExecuteDispositionAsync(TenantId tenant, Guid actor, Guid id, CancellationToken ct)
     {
-        var row = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context, "select legal_entity_id,inspection_id,decision,quantity,reason,created_at,state from business_quality.quality_disposition where tenant_id=$1 and id=$2", token, tenant.Value, id), ct) ?? throw new QualityException("quality.disposition_not_found");
+        var row = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context, "select legal_entity_id,inspection_id,decision,quantity,reason,created_at,state,unit_of_measure_id,operational_date,posting_date from business_quality.quality_disposition where tenant_id=$1 and id=$2", token, tenant.Value, id), ct) ?? throw new QualityException("quality.disposition_not_found");
         if ((string)row[6] != "Approved") throw new QualityException("quality.disposition_requires_approval");
         Guid? ownerOperationId = null;
         if (row[1] is not DBNull)
         {
-            throw new QualityException("quality.disposition_owner_data_required");
+            if ((string)row[2] is not ("Accept" or "UseAsIs" or "Concession")) throw new QualityException("quality.disposition_owner_capability_unavailable");
+            var restriction = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context, "select id from business_quality.quality_restriction where tenant_id=$1 and inspection_id=$2 and status='Active' order by created_at desc,id desc limit 1", token, tenant.Value, row[1]), ct) ?? throw new QualityException("quality.disposition_restriction_not_found");
+            if (row[7] is DBNull) throw new QualityException("quality.disposition_owner_data_required");
+            var released = await ReleaseRestrictionAsync(tenant, actor, (Guid)restriction[0], new ReleaseRestrictionRequest((string)row[4], row[3] is DBNull ? null : (decimal)row[3], (Guid)row[7], row[8] is DBNull ? null : (DateOnly)row[8], row[9] is DBNull ? null : (DateOnly)row[9]), ct);
+            ownerOperationId = released.OwnerOperationId;
         }
         return await coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
