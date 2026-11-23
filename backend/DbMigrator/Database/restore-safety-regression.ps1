@@ -20,7 +20,7 @@ $storageRoot = Join-Path ([IO.Path]::GetTempPath()) $testId
 $container = "recovery-safety-$($testId.Substring($testId.Length - 12))"
 $unrecognized = "$container-unrecognized"
 $port = 19000 + (Get-Random -Minimum 100 -Maximum 700)
-$existingDatabase = "recovery_verify_existing_$($testId.Substring($testId.Length - 12))"
+$existingDatabase = "recovery_verify_$([Guid]::NewGuid().ToString('N'))"
 $backupPath = Join-Path $storageRoot "backup.dump"
 $containerCreated = $false; $unrecognizedCreated = $false; $existingCreated = $false
 $keyBytes = [byte[]]::new(32); [Security.Cryptography.RandomNumberGenerator]::Fill($keyBytes); $key = [Convert]::ToBase64String($keyBytes)
@@ -45,9 +45,11 @@ function Wait-Postgres {
     throw "Disposable PostgreSQL did not become ready."
 }
 function Invoke-ExpectedFailure {
-    param([string]$Path, [string[]]$Arguments)
+    param([string]$Path, [string[]]$Arguments, [string]$ExpectedReason)
     $output = & pwsh -NoProfile -File $Path @Arguments 2>&1
     if ($LASTEXITCODE -eq 0) { throw "Expected helper failure unexpectedly succeeded: $Path" }
+    $text = ((($output -join "`n") -replace "`e\[[0-?]*[ -/]*[@-~]", "") -replace '\s+', ' ')
+    if ($text -notmatch $ExpectedReason) { throw "Expected failure reason '$ExpectedReason' was not observed. Actual output: $text" }
 }
 
 try {
@@ -62,24 +64,26 @@ try {
     $manifest = Get-Content -Raw -LiteralPath "$backupPath.manifest.json" | ConvertFrom-Json
     $results.backupId = [string]$manifest.backupId; $results.checks.encryptedBackup = "PASS"
 
+    if ($existingDatabase -notmatch '^recovery_verify_[a-f0-9]{32}$') { throw "The existing-database fixture name is not valid for restore verification." }
     Invoke-DockerChecked @("exec", $container, "createdb", "--username=postgres", $existingDatabase) | Out-Null; $existingCreated = $true
     Invoke-Sql -Database $existingDatabase "create table public.safety_marker(value text primary key); insert into public.safety_marker values ('protected');" | Out-Null
-    Invoke-ExpectedFailure (Join-Path $scriptRoot "restore-verify.ps1") @("-Container", $container, "-Database", "postgres", "-BackupPath", $backupPath, "-AllowDisposableRestore", "-RestoreDatabase", $existingDatabase)
+    if ((Invoke-Sql "select exists(select 1 from pg_database where datname='$existingDatabase');") -ne 't') { throw "Existing database fixture was not present before the restore attempt." }
+    Invoke-ExpectedFailure (Join-Path $scriptRoot "restore-verify.ps1") @("-Container", $container, "-Database", "postgres", "-BackupPath", $backupPath, "-AllowDisposableRestore", "-RestoreDatabase", $existingDatabase) 'already exists; refusing to overwrite'
     if ((Invoke-Sql "select exists(select 1 from pg_database where datname='$existingDatabase');") -ne 't') { throw "Existing similarly named database disappeared." }
     if ((Invoke-Sql -Database $existingDatabase "select count(*) from public.safety_marker;") -ne '1') { throw "Existing database marker changed." }
     $results.checks.existingDatabaseProtected = "PASS"
 
-    Invoke-ExpectedFailure (Join-Path $scriptRoot "restore-verify.ps1") @("-Container", $container, "-Database", "postgres", "-BackupPath", $backupPath, "-AllowDisposableRestore", "-RestoreDatabase", "postgres")
+    Invoke-ExpectedFailure (Join-Path $scriptRoot "restore-verify.ps1") @("-Container", $container, "-Database", "postgres", "-BackupPath", $backupPath, "-AllowDisposableRestore", "-RestoreDatabase", "postgres") 'RestoreDatabase must use the recovery_verify_<unique> safe name'
     $results.checks.protectedDatabaseRejected = "PASS"
 
     Invoke-DockerChecked @("run", "-d", "--name", $unrecognized, "-e", "POSTGRES_PASSWORD=postgres", $PostgresImage) | Out-Null; $unrecognizedCreated = $true
-    Invoke-ExpectedFailure (Join-Path $scriptRoot "restore-verify.ps1") @("-Container", $unrecognized, "-Database", "postgres", "-BackupPath", $backupPath, "-AllowDisposableRestore")
+    Invoke-ExpectedFailure (Join-Path $scriptRoot "restore-verify.ps1") @("-Container", $unrecognized, "-Database", "postgres", "-BackupPath", $backupPath, "-AllowDisposableRestore") 'Refusing restore verification unless'
     $results.checks.unrecognizedContainerRejected = "PASS"
 
     $tampered = Join-Path $storageRoot "tampered.dump"; Copy-Item -LiteralPath $backupPath -Destination $tampered
     $tamperedBytes = [IO.File]::ReadAllBytes($tampered); $tamperedBytes[($tamperedBytes.Length - 1)] = $tamperedBytes[($tamperedBytes.Length - 1)] -bxor 255; [IO.File]::WriteAllBytes($tampered, $tamperedBytes)
     Copy-Item -LiteralPath "$backupPath.manifest.json" -Destination "$tampered.manifest.json"
-    Invoke-ExpectedFailure (Join-Path $scriptRoot "restore-verify.ps1") @("-Container", $container, "-Database", "postgres", "-BackupPath", $tampered, "-AllowDisposableRestore")
+    Invoke-ExpectedFailure (Join-Path $scriptRoot "restore-verify.ps1") @("-Container", $container, "-Database", "postgres", "-BackupPath", $tampered, "-AllowDisposableRestore") 'checksum mismatch'
     $results.checks.checksumMismatchRejected = "PASS"
 
     & pwsh -NoProfile -File (Join-Path $scriptRoot "restore-verify.ps1") -Container $container -Database postgres -BackupPath $backupPath -AllowDisposableRestore -VerificationSchema recovery_test -VerificationTable recovery_probe 2>&1 | Out-Host

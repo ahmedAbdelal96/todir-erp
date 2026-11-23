@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$EvidenceRoot = (Join-Path (Get-Location) "artifacts/recovery"),
+    [string]$EvidenceRoot = (Join-Path (Get-Location) ("artifacts/recovery-" + [Guid]::NewGuid().ToString('N'))),
     [string]$PostgresImage = "postgres:18",
     [switch]$SkipApplicationMigration,
     [switch]$KeepEnvironment
@@ -52,9 +52,17 @@ function Invoke-Sql {
 
 function Invoke-ScriptChecked {
     param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string[]]$Arguments)
-    $output = & pwsh -NoProfile -File $Path @Arguments 2>&1
+    $output = @(& pwsh -NoProfile -File $Path @Arguments 2>&1)
     if ($output) { $output | Out-Host }
-    if ($LASTEXITCODE -ne 0) { throw "Recovery helper failed with exit code $($LASTEXITCODE): $Path" }
+    if ($LASTEXITCODE -ne 0) { throw "Recovery helper failed with exit code $($LASTEXITCODE): $Path`n$($output -join "`n")" }
+}
+
+function Invoke-ExpectedScriptFailure {
+    param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string[]]$Arguments, [Parameter(Mandatory = $true)][string]$ExpectedReason)
+    $output = @(& pwsh -NoProfile -File $Path @Arguments 2>&1)
+    $text = ((($output -join "`n") -replace "`e\[[0-?]*[ -/]*[@-~]", "") -replace '\s+', ' ')
+    if ($LASTEXITCODE -eq 0) { throw "Expected recovery helper failure unexpectedly succeeded: $Path" }
+    if ($text -notmatch $ExpectedReason) { throw "Expected failure reason '$ExpectedReason' was not observed. Actual output: $text" }
 }
 
 function Wait-Postgres {
@@ -115,6 +123,19 @@ function Start-RecoveryTarget {
     param([string]$Name, [string]$Data, [string]$Wal, [int]$HostPort)
     $args = @("run", "-d", "--name", $Name, "--label", "todir.recovery.test=$testId", "--label", "todir.recovery.disposable=true", "-p", "${HostPort}:5432", "--mount", "type=bind,source=$Data,target=/var/lib/postgresql", "--mount", "type=bind,source=$Wal,target=/wal", $PostgresImage, "-c", "listen_addresses=*")
     Invoke-DockerChecked $args | Out-Null
+}
+
+function Wait-RecoveryFailure {
+    param([string]$Container, [string]$ExpectedPattern, [int]$Seconds = 180)
+    $lastLog = ""
+    for ($i = 0; $i -lt $Seconds; $i++) {
+        $lastLog = ((& docker logs $Container 2>&1) -join "`n")
+        if ($lastLog -match $ExpectedPattern) { return $lastLog }
+        $status = ((& docker inspect --format '{{.State.Status}}' $Container 2>$null) -join "").Trim()
+        if ($status -in @("exited", "dead")) { break }
+        Start-Sleep -Seconds 1
+    }
+    throw "Recovery container '$Container' did not produce the expected failure '$ExpectedPattern'. Actual recovery log: $lastLog"
 }
 
 function Wait-Archive {
@@ -192,9 +213,9 @@ try {
     $results.checks.logicalBackup = "PASS"
     Invoke-ScriptChecked (Join-Path $scriptRoot "restore-verify.ps1") @("-Container", $origin, "-Database", "postgres", "-BackupPath", $backupPath, "-AllowDisposableRestore", "-VerificationSchema", "recovery_test", "-VerificationTable", "recovery_probe", "-EvidencePath", (Join-Path $evidence "logical-restore.json"))
     $results.checks.logicalRestore = "PASS"
-    try { $env:TODIR_BACKUP_ENCRYPTION_KEY = $wrongKey; Invoke-ScriptChecked (Join-Path $scriptRoot "restore-verify.ps1") @("-Container", $origin, "-Database", "postgres", "-BackupPath", $backupPath, "-AllowDisposableRestore"); throw "Wrong-key restore unexpectedly succeeded." } catch { if ($_.Exception.Message -match 'Wrong-key restore unexpectedly') { throw }; $results.checks.wrongKeyRejected = "PASS" } finally { $env:TODIR_BACKUP_ENCRYPTION_KEY = $key }
-    try { Invoke-ScriptChecked (Join-Path $scriptRoot "restore-verify.ps1") @("-Container", $origin, "-Database", "postgres", "-BackupPath", $backupPath); throw "Unsafe restore unexpectedly succeeded." } catch { if ($_.Exception.Message -match 'Unsafe restore unexpectedly') { throw }; $results.checks.unsafeRestoreRejected = "PASS" }
-    try { Invoke-ScriptChecked (Join-Path $scriptRoot "backup.ps1") @("-Container", $origin, "-Database", "missing_database", "-OutputPath", (Join-Path $backupRepository "failed.dump")); throw "Failed backup unexpectedly succeeded." } catch { if ($_.Exception.Message -match 'Failed backup unexpectedly') { throw }; $results.checks.failedBackupDetected = "PASS" }
+    try { $env:TODIR_BACKUP_ENCRYPTION_KEY = $wrongKey; Invoke-ExpectedScriptFailure (Join-Path $scriptRoot "restore-verify.ps1") @("-Container", $origin, "-Database", "postgres", "-BackupPath", $backupPath, "-AllowDisposableRestore") 'authentication tag did not match'; $results.checks.wrongKeyRejected = "PASS" } finally { $env:TODIR_BACKUP_ENCRYPTION_KEY = $key }
+    Invoke-ExpectedScriptFailure (Join-Path $scriptRoot "restore-verify.ps1") @("-Container", $origin, "-Database", "postgres", "-BackupPath", $backupPath) 'requires -AllowDisposableRestore'; $results.checks.unsafeRestoreRejected = "PASS"
+    Invoke-ExpectedScriptFailure (Join-Path $scriptRoot "backup.ps1") @("-Container", $origin, "-Database", "missing_database", "-OutputPath", (Join-Path $backupRepository "failed.dump")) 'database.*missing_database.*does not exist'; $results.checks.failedBackupDetected = "PASS"
 
     Invoke-DockerChecked @("exec", $origin, "pg_basebackup", "--username=postgres", "--pgdata=/base", "--format=plain", "--wal-method=stream", "--progress") | Out-Null
     Get-ChildItem -LiteralPath $archive -File -ErrorAction SilentlyContinue | Remove-Item -Force
@@ -231,18 +252,21 @@ try {
     $brokenPgData = Copy-BaseData $baseData $brokenData; New-Item -ItemType Directory -Force -Path $brokenArchive | Out-Null
     Configure-RecoveryTarget $brokenPgData "recovery_target_name = '$targetMarker'"
     Start-RecoveryTarget $brokenTarget $brokenData $brokenArchive $brokenPort; Start-Sleep -Seconds 8
-    $brokenLog = ((& docker logs $brokenTarget 2>&1) -join "`n"); $brokenRunning = (& docker inspect --format '{{.State.Running}}' $brokenTarget 2>$null); $brokenExitCode = (& docker inspect --format '{{.State.ExitCode}}' $brokenTarget 2>$null); $brokenReadyOutput = (& docker exec $brokenTarget pg_isready --username=postgres --dbname=postgres 2>&1); $brokenReadyCode = $LASTEXITCODE; if ($brokenRunning -eq 'true') { Stop-Disposable $brokenTarget }
-    if ($brokenRunning -eq 'true' -and $brokenReadyCode -eq 0 -and $brokenLog -notmatch 'could not open file|requested WAL segment|waiting for WAL|could not restore file|cannot stat|archive file') { throw "Missing-WAL recovery did not produce a visible recovery failure." }
+    $brokenLog = Wait-RecoveryFailure $brokenTarget 'could not open file|requested WAL segment|waiting for WAL|could not restore file|cannot stat|archive file|recovery ended before configured recovery target was reached|could not find recovery target'
+    Stop-Disposable $brokenTarget
     $results.checks.missingWalRejected = "PASS"
 
     $corruptPgData = Copy-BaseData $baseData $corruptData; Copy-Tree $archive $corruptArchive
-    $corruptWalFile = Get-ChildItem -LiteralPath $corruptArchive -File | Where-Object { $_.Length -gt 0 } | Select-Object -First 1
-    if ($null -eq $corruptWalFile) { throw "No archived WAL file was available for corruption testing." }
-    $corruptBytes = [IO.File]::ReadAllBytes($corruptWalFile.FullName); $corruptBytes[[Math]::Floor($corruptBytes.Length / 2)] = $corruptBytes[[Math]::Floor($corruptBytes.Length / 2)] -bxor 255; [IO.File]::WriteAllBytes($corruptWalFile.FullName, $corruptBytes)
+    $corruptWalFiles = @(Get-ChildItem -LiteralPath $corruptArchive -File | Where-Object { $_.Length -gt 0 -and $_.Name -match '^[0-9A-F]{24}$' })
+    if ($corruptWalFiles.Count -eq 0) { throw "No archived WAL segment was available for corruption testing." }
+    $corruptWalFile = $corruptWalFiles | Sort-Object Name | Select-Object -Last 1
+    $corruptBytes = [IO.File]::ReadAllBytes($corruptWalFile.FullName)
+    $corruptBytes[0] = $corruptBytes[0] -bxor 255
+    [IO.File]::WriteAllBytes($corruptWalFile.FullName, $corruptBytes)
     Configure-RecoveryTarget $corruptPgData "recovery_target_name = '$targetMarker'"
-    $corruptTarget = "todir-$testId-corrupt"; $names.Add($corruptTarget); Start-RecoveryTarget $corruptTarget $corruptData $corruptArchive $corruptPort; Start-Sleep -Seconds 8
-    $corruptLog = ((& docker logs $corruptTarget 2>&1) -join "`n"); $corruptRunning = (& docker inspect --format '{{.State.Running}}' $corruptTarget 2>$null); $corruptExitCode = (& docker inspect --format '{{.State.ExitCode}}' $corruptTarget 2>$null); $corruptReadyOutput = (& docker exec $corruptTarget pg_isready --username=postgres --dbname=postgres 2>&1); $corruptReadyCode = $LASTEXITCODE; if ($corruptRunning -eq 'true') { Stop-Disposable $corruptTarget }
-    if ($corruptRunning -eq 'true' -and $corruptReadyCode -eq 0 -and $corruptLog -notmatch 'invalid record|PANIC|could not restore file|unexpected pageaddr|invalid resource manager ID|invalid resource manager') { throw "Corrupt-WAL recovery did not produce a visible recovery failure." }
+    $corruptTarget = "todir-$testId-corrupt"; $names.Add($corruptTarget); Start-RecoveryTarget $corruptTarget $corruptData $corruptArchive $corruptPort
+    $corruptLog = Wait-RecoveryFailure $corruptTarget 'invalid record|PANIC|could not restore file|unexpected pageaddr|invalid resource manager ID|invalid resource manager|invalid magic|WAL file.*invalid|incorrect resource manager'
+    Stop-Disposable $corruptTarget
     $results.checks.corruptWalRejected = "PASS"
 
     $results.durationSeconds = ([DateTimeOffset]::UtcNow - $testStarted).TotalSeconds

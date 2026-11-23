@@ -13,7 +13,7 @@ pwsh -NoProfile -File backend/DbMigrator/Database/restore-safety-regression.ps1
 pwsh -NoProfile -File backend/DbMigrator/Database/evidence-retention.ps1 -ArtifactsRoot artifacts -RetentionCount 10 -WhatIf
 ```
 
-The PITR drill allocates unique disposable PostgreSQL 18 containers and temporary storage, applies the canonical migrator by default, creates encrypted logical backup evidence, takes a physical base backup, archives WAL, restores named and latest targets, starts the API against the restored target, checks role/RLS isolation, and rejects wrong-key, unsafe restore, failed-backup, missing-WAL, and corrupt-WAL paths. Evidence is retained by default and contains only sanitized run metadata and results. `-SkipApplicationMigration` is a fast probe mode for repeatable command debugging; it is not a substitute for the default full-schema acceptance run.
+The PITR drill allocates unique disposable PostgreSQL 18 containers and temporary storage, applies the canonical migrator by default, creates encrypted logical backup evidence, takes a physical base backup, archives WAL, restores named and latest targets, starts the API against the restored target, checks role/RLS isolation, and rejects wrong-key, unsafe restore, failed-backup, missing-WAL, and corrupt-WAL paths with cause-specific assertions. With no `-EvidenceRoot`, each invocation creates a new unique `artifacts/recovery-<guid>` directory and refuses explicit reuse of an existing directory. Evidence is retained by default and contains only sanitized run metadata and results. `-SkipApplicationMigration` is a fast probe mode for repeatable command debugging; it is not a substitute for the default full-schema acceptance run.
 
 ## Safety requirements
 
@@ -34,7 +34,7 @@ The PITR drill allocates unique disposable PostgreSQL 18 containers and temporar
 | Isolated physical restore | `pg_basebackup`, disposable target | PASS |
 | Named PITR | baseline/target present, post-target absent | PASS |
 | Latest archived point | post-target present at latest LSN | PASS |
-| Missing/corrupt WAL | bounded recovery failure and non-ready target | PASS |
+| Missing/corrupt WAL | bounded recovery failure with WAL retrieval/corruption cause asserted | PASS |
 | Runtime role and FORCE RLS | tenant B is invisible under tenant A context | PASS |
 | Restored API readiness | `/health/ready` against restored target | PASS |
 | Failed backup detection | nonexistent database invocation | PASS |
@@ -44,6 +44,8 @@ The PITR drill allocates unique disposable PostgreSQL 18 containers and temporar
 | Sanitized success/failure evidence | retained `recovery-evidence.json`, no secret/private backup bytes | PASS |
 | Retention-safe deletion | manifest shape, artifact existence, byte count, checksum, `-WhatIf` and bounded deletion | PASS (isolated repository) |
 | Evidence retention safety | ownership markers, explicit `-Delete`, bounded count | PASS (isolated evidence root) |
+| Negative-test reliability | existing-target, wrong-key, unsafe-target, failed-backup, missing-WAL, corrupt-WAL, and checksum tests assert their intended causes | PASS |
+| Default drill repeatability | two consecutive no-argument runs retained separate unique evidence directories | PASS |
 | Object-storage private document recovery | provider-specific environment required | DEFERRED locally |
 | RabbitMQ Outbox/Inbox replay and external-effect reconciliation | existing messaging gates + runbook sequence | DEFERRED to broker/effect drill |
 
@@ -51,6 +53,6 @@ Production backup destination, secret escrow, object-storage versioning/replicat
 
 ## Final local evidence
 
-On 2026-11-23, the final full-schema drill completed with all 11 checks PASS in 377.3636826 seconds. The run applied all 257 canonical migration scripts to its disposable PostgreSQL 18 origin, verified the encrypted logical artifact, restored the named PITR target with `baseline=1`, `target=1`, `postTarget=0`, verified the latest archived LSN, rejected the wrong key, unsafe restore, failed backup, missing WAL, and corrupt WAL, proved runtime-role/RLS isolation, and returned API `/health/ready` successfully. The lightweight probe also completed all 11 checks in 136.6532464 seconds. The focused safety regression completed with all six checks PASS, including existing-database protection, protected-name rejection, unrecognized-container rejection, checksum rejection, and current-run target cleanup. A deliberately failed drill retained a sanitized `finalAcceptance=FAIL` evidence file without secrets or backup bytes.
+On 2026-11-23, two consecutive no-argument full-schema drills completed with all 11 checks PASS: `artifacts/recovery-5cd5c91c6b6a4a0ca2726aa973d6ba17` in 589.7745928 seconds and `artifacts/recovery-205376de39bf4f6bb29d1accf75f65dc` in 469.584509 seconds. Each run applied all 257 canonical migration scripts to its disposable PostgreSQL 18 origin, verified the encrypted logical artifact, restored the named PITR target with `baseline=1`, `target=1`, `postTarget=0`, verified the latest archived LSN, asserted the specific wrong-key, unsafe-target, failed-backup, missing-WAL, and corrupt-WAL causes, proved runtime-role/RLS isolation, and returned API `/health/ready` successfully. The focused safety regression completed all six checks PASS, including a valid `recovery_verify_<32-hex>` existing-database target rejected by the real already-exists guard with its marker preserved, protected-name rejection, unrecognized-container rejection, checksum rejection, and current-run target cleanup. Previous failed drills remain retained as sanitized `finalAcceptance=FAIL` evidence without secrets or backup bytes.
 
-Post-change local gates: ArchitectureTests 23/23, SecurityTests 7/7 against the disposable `todir_test_fresh` database, selected PostgreSQL/RabbitMQ/API integration tests 5/5, transaction/outbox integration tests 4/4, Backend Release build 0 warnings/0 errors, release-gate structural controls 73/73, PowerShell parse, formatter for the changed migrator project, and `git diff --check` passed. The repository-wide formatter still reports six pre-existing Ledger whitespace findings, and the repository OpenAPI validator still reports the pre-existing Inventory frozen-contract endpoint mismatch; neither is owned by this data-protection change and neither was weakened.
+Post-change local gates: ArchitectureTests 23/23, SecurityTests 7/7 against the disposable `todir_test_fresh` database, selected PostgreSQL/RabbitMQ integration tests 3/3, Backend Release build 0 warnings/0 errors, release-gate structural controls 73/73, PowerShell parse, formatter for the changed migrator project, explicit evidence-reuse rejection, and `git diff --check` passed. The repository-wide formatter still reports six pre-existing Ledger whitespace findings, and the repository OpenAPI validator still reports the pre-existing Inventory frozen-contract endpoint mismatch; neither is owned by this data-protection change and neither was weakened.

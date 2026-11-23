@@ -17,13 +17,15 @@ For local validation, run:
 pwsh -NoProfile -File backend/DbMigrator/Database/pitr-recovery-drill.ps1
 ```
 
+With no `-EvidenceRoot`, every invocation creates a new unique child such as `artifacts/recovery-<guid>`. The drill refuses an explicitly supplied evidence directory that already exists, so consecutive runs retain separate acceptance records and cannot overwrite prior evidence.
+
 For an operator-controlled logical restore, use `restore-verify.ps1` with `-AllowDisposableRestore` and a `recovery_verify_<unique>` database name. The script refuses protected development containers/databases, unrecognized containers, and any target database that already exists. It validates the manifest and checksum, decrypts only with the supplied key, restores with `pg_restore --exit-on-error`, proves a verification table and FORCE RLS, and removes only the database created by this invocation by default. It never pre-drops a name and never uses forced deletion during cleanup.
 
 For physical PITR, restore `pg_basebackup` into the isolated target, provide only the approved WAL archive through `restore_command`, create `recovery.signal`, and set exactly one recovery target. A named target must prove pre-target rows exist and post-target rows do not. A latest-LSN target must prove the latest committed row exists. Missing or corrupt WAL must fail visibly; never promote a target that did not reach the requested recovery point.
 
 ## Evidence and retention
 
-The PITR drill preserves a sanitized `recovery-evidence.json` under its unique `artifacts` evidence directory for both success and failure. It records the commit, PostgreSQL version, backup ID, recovery target, individual checks, duration, failure summary when applicable, and final acceptance status. Temporary database containers, private backup bytes, decrypted files, and isolated storage are cleaned separately. API smoke logs and encryption material are not part of retained evidence.
+The PITR drill preserves a sanitized `recovery-evidence.json` under its unique `artifacts` evidence directory for both success and failure. It records the commit, PostgreSQL version, backup ID, recovery target, individual checks, duration, failure summary when applicable, and final acceptance status. Its negative paths assert the intended cause (wrong key, unsafe target, failed backup, missing WAL, or corrupt WAL), not merely a nonzero exit. Temporary database containers, private backup bytes, decrypted files, and isolated storage are cleaned separately. API smoke logs and encryption material are not part of retained evidence.
 
 Evidence is explicitly pruned with the ownership-checked helper; it never deletes logical backup repositories or physical base-backup/WAL data:
 
