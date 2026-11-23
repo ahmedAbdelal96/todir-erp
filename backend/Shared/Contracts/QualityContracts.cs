@@ -40,3 +40,33 @@ public interface IInventoryQualityCapabilities
     Task<InventoryQualityStatusResult> ChangeQualityStatusAsync(Guid tenantId, Guid actorId,
         InventoryQualityStatusRequest request, CancellationToken cancellationToken = default);
 }
+
+public sealed record QualityInventoryScrapRequest(Guid LegalEntityId, Guid ProductVariantId, Guid WarehouseId,
+    Guid? LocationId, Guid UnitOfMeasureId, decimal Quantity, Guid DispositionId, DateOnly OperationalDate,
+    DateOnly PostingDate, string IdempotencyKey, Guid? LotId = null, Guid? SerialId = null);
+public sealed record QualityDispositionOwnerResult(Guid OperationId, string Status, bool IdempotentReplay);
+
+public interface IInventoryQualityDispositionCapabilities
+{
+    Task<QualityDispositionOwnerResult> ExecuteScrapAsync(Guid tenantId, Guid actorId,
+        QualityInventoryScrapRequest request, CancellationToken cancellationToken = default);
+}
+
+public sealed record QualitySupplierReturnRequest(Guid LegalEntityId, Guid PurchaseOrderId, Guid ProductVariantId,
+    Guid WarehouseId, Guid? LocationId, Guid UnitOfMeasureId, decimal Quantity, Guid DispositionId,
+    DateOnly OperationalDate, DateOnly PostingDate, Guid? LotId = null, Guid? SerialId = null);
+
+public interface IPurchasingQualityDispositionCapabilities
+{
+    Task<QualityDispositionOwnerResult> ExecuteSupplierReturnAsync(Guid tenantId, Guid actorId,
+        QualitySupplierReturnRequest request, CancellationToken cancellationToken = default);
+}
+
+public sealed record QualityReworkRequest(Guid LegalEntityId, Guid ProductionOrderId, Guid? ProductionOperationId,
+    decimal Quantity, Guid DispositionId, string Reason);
+
+public interface IManufacturingQualityDispositionCapabilities
+{
+    Task<QualityDispositionOwnerResult> ExecuteReworkAsync(Guid tenantId, Guid actorId,
+        QualityReworkRequest request, CancellationToken cancellationToken = default);
+}

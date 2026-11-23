@@ -13,7 +13,7 @@ namespace Modules.Inventory.Services;
 
 /// <summary>Application boundary for Inventory workflows exposed to the API host.</summary>
 public sealed class InventoryService(InventoryRepository repository, ILedgerPostingEngine? ledgerPosting = null,
-    ILedgerControlBalanceRead? ledgerBalance = null, ICatalogCapabilities? catalog = null, TimeProvider? clock = null) : IInventoryCapabilities, Shared.Contracts.Inventory.IInventoryPurchasingCapabilities, Shared.Contracts.Inventory.IInventoryFixedAssetCapabilities, Shared.Contracts.Quality.IInventoryQualityCapabilities, IInventoryAccountingRead
+    ILedgerControlBalanceRead? ledgerBalance = null, ICatalogCapabilities? catalog = null, TimeProvider? clock = null) : IInventoryCapabilities, Shared.Contracts.Inventory.IInventoryPurchasingCapabilities, Shared.Contracts.Inventory.IInventoryFixedAssetCapabilities, Shared.Contracts.Quality.IInventoryQualityCapabilities, Shared.Contracts.Quality.IInventoryQualityDispositionCapabilities, IInventoryAccountingRead
 {
     public Task<IReadOnlyList<InventoryAvailabilityLine>> GetBatchAvailabilityAsync(Guid tenantId, InventoryAvailabilityRequest request, CancellationToken cancellationToken = default) => repository.GetBatchAvailabilityAsync(new TenantId(tenantId), request, cancellationToken);
     public async Task<Guid> ReserveAsync(Guid tenantId, Guid actorId, InventoryReservationRequest request, CancellationToken cancellationToken = default)
@@ -223,6 +223,16 @@ public sealed class InventoryService(InventoryRepository repository, ILedgerPost
                 request.PostingDate, request.IdempotencyKey, request.LotId, request.SerialId),
             Guid.CreateVersion7(), null, cancellationToken);
         return new Shared.Contracts.Quality.InventoryQualityStatusResult(result.OperationId, result.Status, result.IdempotentReplay);
+    }
+
+    public async Task<Shared.Contracts.Quality.QualityDispositionOwnerResult> ExecuteScrapAsync(Guid tenantId, Guid actorId,
+        Shared.Contracts.Quality.QualityInventoryScrapRequest request, CancellationToken cancellationToken = default)
+    {
+        var operationId = await AdjustAsync(tenantId, actorId, new InventoryAdjustmentRequest(request.ProductVariantId,
+            request.LegalEntityId, request.WarehouseId, request.LocationId, request.Quantity, request.UnitOfMeasureId,
+            "Decrease", "Scrap", request.OperationalDate, request.PostingDate, request.IdempotencyKey, "QualityHold",
+            request.LotId, null), cancellationToken);
+        return new Shared.Contracts.Quality.QualityDispositionOwnerResult(operationId, "Confirmed", false);
     }
     public Task<InventoryOperationResult> AdjustAsync(TenantId tenant, Guid actor, Guid entity, AdjustStockRequest request, Guid correlationId, string? traceParent, CancellationToken ct, bool canOverrideNegativeStock = false) => repository.AdjustAsync(tenant, actor, entity, request, correlationId, traceParent, ct, canOverrideNegativeStock);
     public Task<InventoryOperationResult> ReverseOperationAsync(TenantId tenant, Guid actor, Guid entity, ReverseInventoryOperationRequest request, Guid correlationId, string? traceParent, CancellationToken ct) => repository.ReverseOperationAsync(tenant, actor, entity, request, correlationId, traceParent, ct);

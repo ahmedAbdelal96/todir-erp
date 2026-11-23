@@ -20,6 +20,7 @@ public static class ManufacturingModuleExtensions
         services.AddSingleton<IModuleManifestProvider, ManufacturingModuleManifestProvider>();
         services.AddSingleton<ManufacturingRepository>();
         services.AddSingleton<ManufacturingExecutionService>();
+        services.AddSingleton<Shared.Contracts.Quality.IManufacturingQualityDispositionCapabilities, ManufacturingQualityDispositionOwner>();
         services.AddSingleton<IManufacturingCostReader>(provider => provider.GetRequiredService<ManufacturingRepository>());
         return services;
     }
