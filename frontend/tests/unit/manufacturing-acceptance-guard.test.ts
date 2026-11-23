@@ -97,8 +97,20 @@ describe('Manufacturing Acceptance Guard: Fail-Closed Protection Tests', () => {
     restoreEnv();
   });
 
+  it('rejects API check if diagnostic token is missing or empty in environment', async () => {
+    process.env['TODIR_ACCEPTANCE_DB'] = 'todir_mfg_acceptance';
+    delete process.env['TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN'];
+
+    await assert.rejects(
+      async () => assertApiDatabaseContext('http://127.0.0.1:5089'),
+      /Acceptance diagnostic token not provided in environment/
+    );
+    restoreEnv();
+  });
+
   it('rejects API check if API database does not match target acceptance database', async () => {
     process.env['TODIR_ACCEPTANCE_DB'] = 'todir_mfg_acceptance';
+    process.env['TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN'] = 'test-token';
 
     // Mock fetch to simulate API returning wrong database
     const originalFetch = globalThis.fetch;
@@ -127,6 +139,7 @@ describe('Manufacturing Acceptance Guard: Fail-Closed Protection Tests', () => {
 
   it('rejects API check if API is not in Development or Acceptance environment', async () => {
     process.env['TODIR_ACCEPTANCE_DB'] = 'todir_mfg_acceptance';
+    process.env['TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN'] = 'test-token';
 
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () => ({
@@ -154,6 +167,7 @@ describe('Manufacturing Acceptance Guard: Fail-Closed Protection Tests', () => {
 
   it('rejects API check if API reports isDisposable is false', async () => {
     process.env['TODIR_ACCEPTANCE_DB'] = 'todir_mfg_acceptance';
+    process.env['TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN'] = 'test-token';
 
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () => ({
@@ -178,6 +192,7 @@ describe('Manufacturing Acceptance Guard: Fail-Closed Protection Tests', () => {
 
   it('rejects API check if diagnostic request returns 401 Unauthorized', async () => {
     process.env['TODIR_ACCEPTANCE_DB'] = 'todir_mfg_acceptance';
+    process.env['TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN'] = 'test-token';
 
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () => ({
@@ -199,6 +214,7 @@ describe('Manufacturing Acceptance Guard: Fail-Closed Protection Tests', () => {
 
   it('rejects API check if diagnostic request returns 403 Forbidden', async () => {
     process.env['TODIR_ACCEPTANCE_DB'] = 'todir_mfg_acceptance';
+    process.env['TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN'] = 'test-token';
 
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () => ({

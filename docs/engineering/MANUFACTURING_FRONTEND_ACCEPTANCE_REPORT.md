@@ -44,15 +44,15 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 ## 2. Acceptance Blocker Resolutions
 
 ### 2.1 P0 — Enforce Disposable Database Safety (`todir_mfg_acceptance`)
-- **Authoritative Database Identity Endpoint:** Implemented secure `GET /internal/acceptance/database-context` in `backend/Api/Program.cs` querying PostgreSQL `current_database()`, `current_user`, host, port, environment, and returning `isDisposable: true` strictly when database name contains `acceptance` or `test`, environment is Development, request originates from loopback (`IPAddress.IsLoopback`), and caller presents a valid constant-time acceptance diagnostic token (`TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN`). All sensitive connection metadata (passwords, usernames, internal connection strings) are strictly omitted.
-- **Dedicated Acceptance Config:** Created `frontend/playwright.manufacturing.config.ts` dedicated exclusively to Manufacturing real-stack acceptance testing.
+- **Authoritative Database Identity Endpoint:** Implemented secure `GET /internal/acceptance/database-context` in `backend/Api/Program.cs` querying PostgreSQL `current_database()`, host, port, environment, and returning `isDisposable: true` strictly when database name contains `acceptance` or `test`, environment is Development (`TODIR_ENABLE_ACCEPTANCE_DIAGNOSTICS=true`), request originates from loopback (`IPAddress.IsLoopback` with null IP rejection), and caller presents a valid constant-time acceptance diagnostic token (`TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN`). All exception details and connection metadata (passwords, usernames, internal connection strings) are strictly omitted.
+- **Dedicated Acceptance Config:** Created `frontend/playwright.manufacturing.config.ts` dedicated exclusively to Manufacturing real-stack acceptance testing with zero fallback credentials or diagnostic tokens (fails closed immediately if `TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN` is unset).
 - **Fail-Closed Runtime Guard:** Implemented `frontend/tests/e2e/manufacturing-acceptance-guard.ts` with `assertDisposableDatabase()`:
   - Connects to PostgreSQL directly via Docker psql and verifies `SELECT current_database()` returns `todir_mfg_acceptance`.
-  - Queries `GET /internal/acceptance/database-context` with diagnostic bearer token to verify the actual API connection pool is bound to the target disposable database.
+  - Queries `GET /internal/acceptance/database-context` with required environment diagnostic bearer token (`TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN`) to verify the actual API connection pool is bound to the target disposable database. Fails closed if token is unset.
   - Refuses to run and immediately aborts if connected to protected developer databases (`todir`, `todir_dev`, `postgres`).
   - Strict zero fallback credentials: throws `manufacturing_guard.credentials_missing` if `TODIR_DB_PASSWORD` or `ERP_DEV_PASSWORD` are unset.
   - Enforces `reuseExistingServer: false` and dedicated ports (5089 for API, 5179 for Vite) so background development instances cannot leak into acceptance runs.
-  - Guard verified with 12/12 passing unit tests in `frontend/tests/unit/manufacturing-acceptance-guard.test.ts`.
+  - Guard verified with 13/13 passing unit tests in `frontend/tests/unit/manufacturing-acceptance-guard.test.ts`.
 
 ### 2.2 P1 — Catalog Lookup at Scale: Batch Identity Resolution
 - **Backend Batch Endpoint:** Implemented `POST /api/v1/catalog/resolve/batch` in `backend/Modules/Catalog/Controllers/CatalogModuleExtensions.cs`, `CatalogContracts.cs`, `CatalogDetailRepository.cs`, and `CatalogDetailService.cs`.
@@ -99,27 +99,29 @@ All user-facing Arabic microcopy strictly follows the Enterprise Arabic Vocabula
 | Test Suite | Spec File / Project | Total | Passed | Failed | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Real-Stack Transactional Suite** | `manufacturing-transactions-real-stack.spec.ts` | 9 | 9 | 0 | **PASS (100%)** |
-| **Acceptance Guard Unit Suite** | `manufacturing-acceptance-guard.test.ts` | 12 | 12 | 0 | **PASS (100%)** |
-| **Backend Manufacturing Tests** | `ManufacturingTests.csproj` | 14 | 14 | 0 | **PASS (100%)** |
+| **Acceptance Guard Unit Suite** | `manufacturing-acceptance-guard.test.ts` | 13 | 13 | 0 | **PASS (100%)** |
+| **Backend Manufacturing Tests** | `ManufacturingTests.csproj` | 16 | 16 | 0 | **PASS (100%)** |
 | **Backend Catalog Tests** | `CatalogTests.csproj` | 18 | 18 | 0 | **PASS (100%)** |
 | **TypeScript Strict Verification** | `pnpm --dir frontend run typecheck` | — | — | 0 | **PASS (0 errors)** |
 | **Architecture Boundary Lint** | `pnpm run architecture:frontend` | 27 | 27 | 0 | **PASS (100%)** |
 | **Localization Parity** | `pnpm run localization:verify` | — | — | 0 | **PASS (100%)** |
-| **Production Vite Build** | `pnpm --dir frontend run build` | — | — | 0 | **PASS (1.85s)** |
+| **Production Vite Build** | `pnpm --dir frontend run build` | — | — | 0 | **PASS (1.71s)** |
 
 ### 4.3 Transactional Acceptance Scenarios Verified (`manufacturing-transactions-real-stack.spec.ts`)
 
-| Scenario ID | Test Scenario Description | API / Domain Operation Verified | Execution Time | Result |
-| :--- | :--- | :--- | :---: | :--- |
-| **TX-01** | Master Definition Creation & Validation | `POST /api/v1/manufacturing/definitions` creates Discrete definition with real BOM version (201 Created); asserts negative guard (400) on invalid date interval (`validTo < validFrom`). | 11s | **PASS** |
-| **TX-02** | Production Order Lifecycle Transitions | Creates order via API (Draft, v1), releases order (Released, v2), starts order (InProgress, v3); verifies row version incrementation and live UI state. | 13s | **PASS** |
-| **TX-03** | Material Conservation & Reservation Guards | Asserts Material Conservation Invariant: direct consumption exceeding issued qty rejected with HTTP 400; asserts inventory reservation requirement on issuance. | 9s | **PASS** |
-| **TX-04** | MRP Planning Run & Demand Pegging | Creates planning run, adds demand requirement, executes MRP calculation, verifies planned supplies, and exercises production order firming. | 14s | **PASS** |
-| **TX-05** | Shop Floor Operations Queue & Progress | Navigates to Shop Floor Workbench, verifies registered work centers, scheduling horizon selector, and active operation queue visibility. | 9s | **PASS** |
-| **TX-06** | Quality Policy Role Security Guard | Authenticates as restricted role (`warehouse@atlas.com`); asserts direct policy mutation returns HTTP 403 Forbidden; verifies admin UI Quality tab. | 12s | **PASS** |
-| **TX-07** | Lot/Serial Genealogy Security Guard | Asserts security invariant: attempting genealogy link with forged/mismatched output IDs returns HTTP 400/404; verifies forward/reverse trace UI. | 9s | **PASS** |
-| **TX-08** | Authoritative Costing & Close Rejection | Queries live costing summary verifying authoritative legal entity currency (`EGP`); attempts close mutation on incomplete order asserting 400 Bad Request rejection (`manufacturing.close_blocked`). | 11s | **PASS** |
-| **TX-09** | SaaS Commercial Entitlement Invariant | Queries effective access API verifying Atlas tenant has active manufacturing entitlements; verifies unauthenticated requests return HTTP 401 Unauthorized. | 10s | **PASS** |
+The suite combines authenticated backend API requests (`page.request.*`) for deterministic data setup, state assertions, and negative invariant verification, with real browser navigation and DOM interaction (`page.goto`, `page.locator`, `page.fill`, `page.click`, `expect(locator).toBeVisible`) for end-user workflow validation:
+
+| Scenario ID | Test Scenario Description | API Invariant / Verification | UI Journey / Browser Evidence | Result |
+| :--- | :--- | :--- | :--- | :---: |
+| **TX-01** | Master Definition Creation & Validation | Direct API call `POST /api/v1/manufacturing/definitions` creates Discrete definition with real BOM version (201 Created); asserts negative guard (400) on invalid date interval (`validTo < validFrom`). | Navigates to `/manufacturing/definitions` in browser; verifies definition name, BOM version, and plant badge visible in table. | **PASS** |
+| **TX-02** | Production Order Lifecycle Transitions | Direct API call creates order (Draft, v1), releases order (Released, v2), starts order (InProgress, v3); verifies row version incrementation on each transition. | Navigates to `/manufacturing/orders/:id` 360 Workspace; verifies live status badge transitions to `قيد التشغيل` (InProgress) and action controls update. | **PASS** |
+| **TX-03** | Material Conservation & Reservation Guards | Directly creates test-scoped order and material requirement via API; asserts Material Conservation Invariant: consumption exceeding issued qty rejected with HTTP 400; asserts reservation requirement on issuance. | Navigates to `/manufacturing/materials` in browser; verifies unissued quantity column (`الكمية المتبقية للصرف`) and shortage badges. | **PASS** |
+| **TX-04** | MRP Planning Run & Demand Pegging | Directly fetches live supply, creates planning run, adds demand requirement exceeding existing supply, executes MRP calculation, verifies planned supplies, and exercises production order firming. | Navigates to `/manufacturing/mrp` in browser; verifies suggested supplies table, plant filter, and netting breakdown. | **PASS** |
+| **TX-05** | Shop Floor Operations Queue & Progress | Direct API calls setup test order and operations. | Navigates to `/manufacturing/shop-floor` in browser; verifies registered work centers, scheduling horizon selector, and active operation queue. | **PASS** |
+| **TX-06** | Quality Policy Role Security Guard | Directly attempts policy mutation via API authenticated as restricted role (`warehouse@atlas.com`), asserting 403 Forbidden rejection. | Navigates to `/manufacturing/admin` as admin; verifies Quality Policy configuration tab, inspection policies, and reassurance presentation. | **PASS** |
+| **TX-07** | Lot/Serial Genealogy Security Guard | Direct API calls assert genealogy security invariant: attempting genealogy link with forged/mismatched output IDs returns HTTP 400/404. | Navigates to `/manufacturing/genealogy` in browser; exercises lot search, forward/reverse trace views, and quick-select pills. | **PASS** |
+| **TX-08** | Authoritative Costing & Operational Close | Direct API queries live costing summary verifying authoritative legal entity currency (`EGP`); attempts close mutation on incomplete order asserting 400 rejection (`manufacturing.close_blocked`); executes idempotent zero-value operational close on eligible order (no actual costs, 0 good output, 0 WIP); asserts PostgreSQL `production_close_reconciliation.state = 'Closed'` directly without silent catches. *(Note: This verifies operational order close and reconciliation state; cross-module General Ledger journal posting and variance clearance are deferred to the financial ledger module).* | Navigates to `/manufacturing/costing` in browser; verifies live KPI card displaying authoritative EGP operational WIP balance and explanatory notes. | **PASS** |
+| **TX-09** | SaaS Commercial Entitlement Invariant | Direct API call queries effective access verifying Atlas tenant has active manufacturing entitlements; unauthenticated request returns HTTP 401 Unauthorized; switches tenant to ReadOnly asserting mutation rejection (403 Forbidden); switches tenant to Disabled asserting access rejection (403 Forbidden). | Navigates to `/manufacturing` in browser; verifies full navigation accessibility for authorized active tenant. | **PASS** |
 
 ---
 

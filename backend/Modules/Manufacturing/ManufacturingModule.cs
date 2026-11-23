@@ -169,20 +169,22 @@ public static class ManufacturingModuleExtensions
         return entity is null ? null : await AccessAsync(http, subjects, authorizer, permission, entity, ct);
     }
 
-    private static async Task<IResult> Execute<T>(HttpContext http, Access? access, Func<Task<T>> action, int status = StatusCodes.Status200OK)
+    public static async Task<IResult> Execute<T>(HttpContext http, Access? access, Func<Task<T>> action, int status = StatusCodes.Status200OK)
     {
         if (access is null) return Results.Unauthorized();
         if (!access.Allowed) return Results.Forbid();
         var lifecycle = http.RequestServices.GetService<IModuleLifecycleEnforcer>();
-        if (lifecycle is not null)
+        if (lifecycle is null)
         {
-            var isMutation = http.Request.Method != "GET" && http.Request.Method != "HEAD";
-            var decision = await lifecycle.EvaluateAccessAsync(access.Tenant, "manufacturing", access.LegalEntityId, isMutation, http.RequestAborted);
-            if (!decision.Allowed)
-            {
-                var code = decision.DeniedReason ?? (isMutation ? "module.lifecycle_readonly" : "module.disabled");
-                return Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: code, extensions: new Dictionary<string, object?> { ["code"] = code });
-            }
+            return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "module.lifecycle_unavailable", extensions: new Dictionary<string, object?> { ["code"] = "module.lifecycle_unavailable" });
+        }
+        var isMutation = http.Request.Method != "GET" && http.Request.Method != "HEAD";
+        var decision = await lifecycle.EvaluateAccessAsync(access.Tenant, "manufacturing", access.LegalEntityId, isMutation, http.RequestAborted);
+        if (!decision.Allowed)
+        {
+            var code = decision.DeniedReason ?? (isMutation ? "module.lifecycle_readonly" : "module.disabled");
+            var problemStatus = code == "infrastructure.unavailable" ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status403Forbidden;
+            return Results.Problem(statusCode: problemStatus, title: code, extensions: new Dictionary<string, object?> { ["code"] = code });
         }
         try
         {
@@ -199,7 +201,7 @@ public static class ManufacturingModuleExtensions
     private static TenantId Tenant(HttpContext http) => new(Guid.Parse(http.User.FindFirstValue("tenant_id")!));
     private static Guid Actor(HttpContext http) => Guid.Parse(http.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
     private static Guid Correlation(HttpContext http) => Guid.TryParse(http.Request.Headers["X-Correlation-Id"], out var value) ? value : Guid.CreateVersion7();
-    private sealed record Access(TenantId Tenant, Guid ActorId, Guid MembershipId, bool Allowed, Guid? LegalEntityId = null);
+    public sealed record Access(TenantId Tenant, Guid ActorId, Guid MembershipId, bool Allowed, Guid? LegalEntityId = null);
 }
 
 public sealed class ManufacturingModuleManifestProvider : IModuleManifestProvider

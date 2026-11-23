@@ -1,4 +1,6 @@
 using Core.Modules;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Modules.Manufacturing.DTOs;
 using Modules.Manufacturing.Entities;
 using Xunit;
@@ -119,5 +121,33 @@ public sealed class ManufacturingLifecycleAndCostingTests
         var ex = new ManufacturingException("manufacturing.legal_entity_currency_missing", "Authoritative base currency for legal entity is not configured.");
         Assert.Equal("manufacturing.legal_entity_currency_missing", ex.Code);
         Assert.Contains("Authoritative base currency", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ManufacturingExecutionFailsClosedWhenLifecycleEnforcerIsMissing()
+    {
+        var services = new ServiceCollection().BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        var access = new ManufacturingModuleExtensions.Access(Shared.Primitives.Identifiers.TenantId.New(), Guid.NewGuid(), Guid.NewGuid(), true);
+
+        var result = await ManufacturingModuleExtensions.Execute(context, access, () => Task.FromResult(new { ok = true }));
+        Assert.NotNull(result);
+        var problem = Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, problem.StatusCode);
+    }
+
+    [Fact]
+    public async Task ManufacturingExecutionFailsClosedWhenLifecycleEnforcerIsUnavailable()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IModuleLifecycleEnforcer>(new UnavailableModuleLifecycleEnforcer());
+        var sp = services.BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = sp };
+        var access = new ManufacturingModuleExtensions.Access(Shared.Primitives.Identifiers.TenantId.New(), Guid.NewGuid(), Guid.NewGuid(), true);
+
+        var result = await ManufacturingModuleExtensions.Execute(context, access, () => Task.FromResult(new { ok = true }));
+        Assert.NotNull(result);
+        var problem = Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, problem.StatusCode);
     }
 }

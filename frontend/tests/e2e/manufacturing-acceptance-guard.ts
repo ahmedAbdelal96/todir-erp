@@ -98,7 +98,12 @@ export function assertDisposableDatabase(): void {
  */
 export async function assertApiDatabaseContext(apiBaseUrl: string): Promise<DatabaseContextResponse> {
   const targetDb = process.env['TODIR_ACCEPTANCE_DB'] || 'todir_mfg_acceptance';
-  const token = process.env['TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN'] || 'mfg-acceptance-diagnostic-token-2026';
+  const token = process.env['TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN'];
+  if (!token || token.trim().length === 0) {
+    throw new Error(
+      'FATAL SAFETY INVARIANT VIOLATION: Acceptance diagnostic token not provided in environment (TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN).'
+    );
+  }
   const url = `${apiBaseUrl.replace(/\/+$/, '')}/internal/acceptance/database-context`;
 
   let lastResponse: Response | null = null;

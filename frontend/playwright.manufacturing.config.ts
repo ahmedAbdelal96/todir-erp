@@ -10,8 +10,10 @@ if (!dbPassword || dbPassword.trim().length === 0) {
   throw new Error('FATAL: Database password not provided in environment (TODIR_DB_PASSWORD or ERP_DEV_PASSWORD).');
 }
 
-const diagnosticToken = process.env['TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN'] || 'mfg-acceptance-diagnostic-token-2026';
-process.env['TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN'] = diagnosticToken;
+const diagnosticToken = process.env['TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN'];
+if (!diagnosticToken || diagnosticToken.trim().length === 0) {
+  throw new Error('FATAL: Acceptance diagnostic token not provided in environment (TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN).');
+}
 
 const connectionString =
   process.env['TODIR_ACCEPTANCE_DB_CONNECTION'] ||

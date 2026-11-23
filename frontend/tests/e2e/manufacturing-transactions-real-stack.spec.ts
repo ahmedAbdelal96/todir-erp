@@ -2,7 +2,7 @@ import { test, expect, Page } from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
 import { assertDisposableDatabase, assertApiDatabaseContext } from './manufacturing-acceptance-guard.ts';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 
 const LOCAL_ARTIFACTS_DIR = path.resolve('artifacts/manufacturing-acceptance/transactions-real-stack');
 const AGENT_BRAIN_DIR = 'C:/Users/IT/.gemini/antigravity/brain/11ce24c9-e66d-46b8-95e8-fa43b74dced8/manufacturing-acceptance/transactions-real-stack';
@@ -1055,14 +1055,25 @@ test.describe('TODIR Module 26: Manufacturing & MRP — REAL-STACK Transactional
     const closedOrder = await closeRes.json();
     expect(closedOrder.state).toBe('Closed');
 
-    // Assert reconciliation state in PostgreSQL
-    try {
-      const reconState = execSync(
-        `docker exec todir-postgres-1 psql -U postgres -d todir_mfg_acceptance -t -A -c "SET app.tenant_id = '${ATLAS_TENANT_ID}'; SELECT state FROM business_manufacturing.production_close_reconciliation WHERE production_order_id = '${closeOrderId}';"`,
-        { encoding: 'utf-8' }
-      ).trim();
-      expect(reconState).toBe('Closed');
-    } catch {}
+    // Assert reconciliation state in PostgreSQL (fail-closed, no silent catch)
+    const reconState = execFileSync(
+      'docker',
+      [
+        'exec',
+        'todir-postgres-1',
+        'psql',
+        '-U',
+        'postgres',
+        '-d',
+        'todir_mfg_acceptance',
+        '-t',
+        '-A',
+        '-c',
+        `SET app.tenant_id = '${ATLAS_TENANT_ID}'; SELECT state FROM business_manufacturing.production_close_reconciliation WHERE production_order_id = '${closeOrderId}';`
+      ],
+      { encoding: 'utf-8' }
+    ).trim();
+    expect(reconState).toBe('Closed');
 
     // Idempotent retry: Re-submitting close on already closed order MUST return 200/204 with closed order
     const replayCloseRes = await page.request.post(`/api/v1/manufacturing/production-orders/${closeOrderId}/close`, {

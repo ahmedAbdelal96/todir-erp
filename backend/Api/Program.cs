@@ -176,8 +176,8 @@ if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("TOD
     {
         app.MapGet("/internal/acceptance/database-context", async (HttpContext context, IServiceProvider services, CancellationToken cancellationToken) =>
         {
-            // Enforce loopback caller restriction
-            if (context.Connection.RemoteIpAddress is not null && !IPAddress.IsLoopback(context.Connection.RemoteIpAddress))
+            // Enforce loopback caller restriction (reject null or non-loopback)
+            if (context.Connection.RemoteIpAddress is null || !IPAddress.IsLoopback(context.Connection.RemoteIpAddress))
             {
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
             }
@@ -210,9 +210,9 @@ if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("TOD
                     isDisposable
                 });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: ex.Message);
+                return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Database context check unavailable");
             }
         });
     }
