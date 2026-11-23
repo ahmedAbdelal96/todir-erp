@@ -12,7 +12,7 @@ $scriptRoot = Split-Path -Parent $PSCommandPath
 $repositoryRoot = (Resolve-Path (Join-Path $scriptRoot "../../..")).Path
 $evidence = [IO.Path]::GetFullPath($EvidenceRoot)
 $allowedEvidencePrefix = [IO.Path]::GetFullPath((Join-Path $repositoryRoot "artifacts"))
-if (-not ($evidence.StartsWith($allowedEvidencePrefix, [StringComparison]::OrdinalIgnoreCase))) { throw "EvidenceRoot must be under the ignored repository artifacts directory." }
+if ($evidence -eq $allowedEvidencePrefix -or -not $evidence.StartsWith($allowedEvidencePrefix + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw "EvidenceRoot must be a child of the ignored repository artifacts directory." }
 if (Test-Path -LiteralPath $evidence) { throw "EvidenceRoot already exists; refusing to reuse recovery evidence or resources." }
 New-Item -ItemType Directory -Force -Path $evidence | Out-Null
 $ownership = Join-Path $evidence ".todir-recovery-owner"
@@ -35,7 +35,8 @@ $tenantA = "11111111-1111-1111-1111-111111111111"; $tenantB = "22222222-2222-222
 $keyBytes = [byte[]]::new(32); [Security.Cryptography.RandomNumberGenerator]::Fill($keyBytes); $key = [Convert]::ToBase64String($keyBytes)
 $wrongKeyBytes = [byte[]]::new(32); [Security.Cryptography.RandomNumberGenerator]::Fill($wrongKeyBytes); $wrongKey = [Convert]::ToBase64String($wrongKeyBytes)
 $previousBackupKey = $env:TODIR_BACKUP_ENCRYPTION_KEY
-$results = [ordered]@{ testId = $testId; commit = ((git -C $repositoryRoot rev-parse HEAD).Trim()); postgresImage = $PostgresImage; status = "failed"; checks = [ordered]@{}; environment = [ordered]@{ origin = $origin; target = $target; evidenceRoot = $evidence } }
+$results = [ordered]@{ testId = $testId; commit = ((git -C $repositoryRoot rev-parse HEAD).Trim()); postgresImage = $PostgresImage; postgresVersion = $null; backupId = $null; recoveryTarget = $null; status = "failed"; checks = [ordered]@{}; environment = [ordered]@{ origin = $origin; target = $target; evidenceRoot = $evidence } }
+$failure = $null
 
 function Invoke-DockerChecked {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
@@ -134,7 +135,7 @@ function Assert-RecoveryReady {
 
 function Invoke-ApiHealthSmoke {
     param([int]$DatabasePort, [int]$HttpPort)
-    $stdout = Join-Path $evidence "api-smoke.stdout.log"; $stderr = Join-Path $evidence "api-smoke.stderr.log"
+    $stdout = Join-Path $storageRoot "api-smoke.stdout.log"; $stderr = Join-Path $storageRoot "api-smoke.stderr.log"
     $saved = @{}
     foreach ($name in @("ASPNETCORE_ENVIRONMENT", "ASPNETCORE_URLS", "TODIR_DATABASE_CONNECTION", "TODIR_RABBITMQ_HOST")) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
     $process = $null
@@ -183,8 +184,11 @@ try {
     Invoke-Sql $origin "$probeBootstrap create schema recovery_test; create table recovery_test.recovery_probe(phase text primary key, committed_at timestamptz not null default clock_timestamp()); create table recovery_test.tenant_probe(tenant_id uuid primary key, value text not null); alter table recovery_test.tenant_probe enable row level security; alter table recovery_test.tenant_probe force row level security; create policy tenant_probe_isolation on recovery_test.tenant_probe using (tenant_id = nullif(current_setting('app.tenant_id', true),'')::uuid); grant usage on schema recovery_test to erp_app; grant select on recovery_test.tenant_probe to erp_app; insert into recovery_test.tenant_probe values ('$tenantA','A'),('$tenantB','B'); insert into recovery_test.recovery_probe(phase) values ('baseline');" | Out-Null
     $backupPath = Join-Path $backupRepository "erp-logical.dump"
     $env:TODIR_BACKUP_ENCRYPTION_KEY = $key
-    Invoke-ScriptChecked (Join-Path $scriptRoot "backup.ps1") @("-Container", $origin, "-Database", "postgres", "-OutputPath", $backupPath)
+    Invoke-ScriptChecked (Join-Path $scriptRoot "backup.ps1") @("-Container", $origin, "-Database", "postgres", "-OutputPath", $backupPath, "-RequireEncryption")
     if (-not (Test-Path -LiteralPath "$backupPath.manifest.json")) { throw "Logical backup manifest was not created." }
+    $backupManifest = Get-Content -Raw -LiteralPath "$backupPath.manifest.json" | ConvertFrom-Json
+    $results.backupId = [string]$backupManifest.backupId
+    $results.postgresVersion = [string]$backupManifest.postgresVersion
     $results.checks.logicalBackup = "PASS"
     Invoke-ScriptChecked (Join-Path $scriptRoot "restore-verify.ps1") @("-Container", $origin, "-Database", "postgres", "-BackupPath", $backupPath, "-AllowDisposableRestore", "-VerificationSchema", "recovery_test", "-VerificationTable", "recovery_probe", "-EvidencePath", (Join-Path $evidence "logical-restore.json"))
     $results.checks.logicalRestore = "PASS"
@@ -203,6 +207,7 @@ try {
     Invoke-Sql $origin "select pg_switch_wal();" | Out-Null
     Wait-Archive $archive
     $results.walTarget = [ordered]@{ restorePoint = $targetMarker; latestLsn = $latestLsn; archiveFiles = @((Get-ChildItem -LiteralPath $archive -File)).Count }
+    $results.recoveryTarget = $targetMarker
     Stop-Disposable $origin
 
     $targetPgData = Copy-BaseData $baseData $targetData; Configure-RecoveryTarget $targetPgData "recovery_target_name = '$targetMarker'"; Start-RecoveryTarget $target $targetData $archive $targetPort
@@ -242,14 +247,26 @@ try {
 
     $results.durationSeconds = ([DateTimeOffset]::UtcNow - $testStarted).TotalSeconds
     $results.status = "verified"
-    $results | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $evidence "recovery-evidence.json") -Encoding UTF8
     Write-Output ($results | ConvertTo-Json -Depth 8)
 }
+catch {
+    $message = [string]$_.Exception.Message
+    $message = $message -replace '(?i)(password|secret|token|credential|encryption key|backup key)[^\r\n;]*', '$1=[REDACTED]'
+    $message = $message -replace '[A-Za-z0-9+/]{40,}={0,2}', '[REDACTED]'
+    $failure = [ordered]@{ type = $_.Exception.GetType().FullName; message = $message }
+    $results.failure = $failure
+    throw
+}
 finally {
+    $results.durationSeconds = ([DateTimeOffset]::UtcNow - $testStarted).TotalSeconds
+    if ($results.status -eq "verified") { $results.finalAcceptance = "PASS" } else { $results.status = "failed"; $results.finalAcceptance = "FAIL" }
+    if ($null -ne $failure) { $results.failure = $failure }
+    if ((Test-Path -LiteralPath $evidence -PathType Container) -and (Test-Path -LiteralPath $ownership -PathType Leaf) -and ((Get-Content -Raw -LiteralPath $ownership) -eq $testId)) {
+        $results | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $evidence "recovery-evidence.json") -Encoding UTF8
+    }
+    if ($null -eq $previousBackupKey) { Remove-Item Env:TODIR_BACKUP_ENCRYPTION_KEY -ErrorAction SilentlyContinue } else { $env:TODIR_BACKUP_ENCRYPTION_KEY = $previousBackupKey }
     if (-not $KeepEnvironment) {
         foreach ($name in $names) { Stop-Disposable $name }
-        if ($null -eq $previousBackupKey) { Remove-Item Env:TODIR_BACKUP_ENCRYPTION_KEY -ErrorAction SilentlyContinue } else { $env:TODIR_BACKUP_ENCRYPTION_KEY = $previousBackupKey }
         if ((Test-Path -LiteralPath $storageRoot -PathType Container) -and (Test-Path -LiteralPath $storageOwnership -PathType Leaf) -and ((Get-Content -Raw -LiteralPath $storageOwnership) -eq $testId)) { Remove-Item -LiteralPath $storageRoot -Recurse -Force -ErrorAction SilentlyContinue }
-        if ((Test-Path -LiteralPath $evidence -PathType Container) -and (Test-Path -LiteralPath $ownership -PathType Leaf) -and ((Get-Content -Raw -LiteralPath $ownership) -eq $testId)) { Remove-Item -LiteralPath $evidence -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }

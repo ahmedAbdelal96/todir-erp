@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory = $true)][string]$Container,
     [Parameter(Mandatory = $true)][string]$Database,
     [Parameter(Mandatory = $true)][string]$OutputPath,
-    [string]$EncryptionKeyBase64 = $env:TODIR_BACKUP_ENCRYPTION_KEY
+    [string]$EncryptionKeyBase64 = $env:TODIR_BACKUP_ENCRYPTION_KEY,
+    [switch]$RequireEncryption
 )
 
 Set-StrictMode -Version Latest
@@ -48,6 +49,10 @@ if (Test-Path -LiteralPath "$resolvedOutput.manifest.json") { throw "A manifest 
 $backupId = "backup-$([Guid]::NewGuid().ToString('N'))"; $remotePath = "/tmp/$backupId.dump"
 $stagingDirectory = Join-Path ([IO.Path]::GetTempPath()) $backupId; $stagingPath = Join-Path $stagingDirectory "backup.dump"
 $key = Get-EncryptionKey $EncryptionKeyBase64; $encrypted = $null -ne $key; $createdAt = [DateTimeOffset]::UtcNow; $status = "failed"
+if ($RequireEncryption -and $null -eq $key) { throw "Encryption is required for this backup operation." }
+$environmentName = $env:DOTNET_ENVIRONMENT
+if ([string]::IsNullOrWhiteSpace($environmentName)) { $environmentName = $env:ASPNETCORE_ENVIRONMENT }
+if ($null -eq $key -and $environmentName -notin @("Development", "Test", "Testing")) { throw "Encryption is required unless the process is explicitly running in a development or test environment." }
 try {
     New-Item -ItemType Directory -Force -Path $stagingDirectory | Out-Null
     $version = (Invoke-DockerChecked @("exec", $Container, "pg_dump", "--version")) -join " "

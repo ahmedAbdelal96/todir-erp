@@ -34,6 +34,13 @@ function Invoke-DockerChecked {
     return @($output)
 }
 
+function Assert-DisposableContainer {
+    $inspection = ((Invoke-DockerChecked @("inspect", "--format", '{{.Config.Image}}|{{ index .Config.Labels "todir.recovery.disposable" }}|{{ index .Config.Labels "todir.recovery.test" }}', $Container)) -join "").Trim()
+    $parts = $inspection -split '\|', 3
+    if ($parts.Count -ne 3 -or $parts[0] -notmatch '^postgres:') { throw "Refusing restore verification against an unrecognized PostgreSQL container." }
+    if ($parts[1] -ne 'true' -or [string]::IsNullOrWhiteSpace($parts[2]) -or $parts[2] -notmatch '^recovery-[a-f0-9]{32}$') { throw "Refusing restore verification unless the container carries the approved disposable recovery ownership labels." }
+}
+
 function Get-EncryptionKey {
     param([string]$Value)
     if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
@@ -58,15 +65,19 @@ $safeName = if ([string]::IsNullOrWhiteSpace($RestoreDatabase)) { "recovery_veri
 if ($safeName -notmatch '^recovery_verify_[a-f0-9]{8,40}$') { throw "RestoreDatabase must use the recovery_verify_<unique> safe name." }
 $remotePath = "/tmp/$safeName.dump"; $decryptedPath = Join-Path ([IO.Path]::GetTempPath()) "$safeName.dump"; $created = $false; $started = [DateTimeOffset]::UtcNow
 try {
+    Assert-DisposableContainer
     $payload = [IO.File]::ReadAllBytes($backup)
     $plain = if ($manifest.encrypted) { $key = Get-EncryptionKey $EncryptionKeyBase64; if ($null -eq $key) { throw "An encryption key is required for this artifact." }; Unprotect-BackupBytes $payload $key } else { $payload }
     [IO.File]::WriteAllBytes($decryptedPath, $plain)
-    Invoke-DockerChecked @("exec", $Container, "dropdb", "--if-exists", "--force", "--username=postgres", $safeName) | Out-Null
+    $existing = ((Invoke-DockerChecked @("exec", $Container, "psql", "--username=postgres", "--dbname=postgres", "--tuples-only", "--no-align", "--command=select exists(select 1 from pg_database where datname = '$safeName');")) -join "").Trim()
+    if ($existing -eq 't' -or $existing -eq 'true') { throw "Restore target '$safeName' already exists; refusing to overwrite or delete an existing database." }
     Invoke-DockerChecked @("exec", $Container, "createdb", "--username=postgres", $safeName) | Out-Null; $created = $true
     Invoke-DockerChecked @("cp", $decryptedPath, "${Container}:$remotePath") | Out-Null
     Invoke-DockerChecked @("exec", $Container, "pg_restore", "--username=postgres", "--exit-on-error", "--no-owner", "--no-privileges", "--dbname=$safeName", $remotePath) | Out-Null
-    $tenantCount = [int64]((Invoke-DockerChecked @("exec", $Container, "psql", "--username=postgres", "--dbname=$safeName", "--tuples-only", "--no-align", "--command=select count(*) from `"$VerificationSchema`".`"$VerificationTable`"")) -join "").Trim()
-    $forcedRls = [int64]((Invoke-DockerChecked @("exec", $Container, "psql", "--username=postgres", "--dbname=$safeName", "--tuples-only", "--no-align", "--command=select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relforcerowsecurity and n.nspname <> 'pg_catalog'")) -join "").Trim()
+    $tenantRaw = Invoke-DockerChecked @("exec", $Container, "psql", "--username=postgres", "--dbname=$safeName", "--tuples-only", "--no-align", "--command=select count(*) from `"$VerificationSchema`".`"$VerificationTable`"")
+    $tenantCount = [int64](($tenantRaw -join "").Trim())
+    $forcedRlsRaw = Invoke-DockerChecked @("exec", $Container, "psql", "--username=postgres", "--dbname=$safeName", "--tuples-only", "--no-align", "--command=select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relforcerowsecurity and n.nspname <> 'pg_catalog'")
+    $forcedRls = [int64](($forcedRlsRaw -join "").Trim())
     if ($tenantCount -lt 1 -or $forcedRls -lt 1) { throw "Restored database verification failed: tenant or FORCE RLS evidence is missing." }
     $evidence = [ordered]@{ status = "verified"; backupId = $manifest.backupId; database = $Database; restoreDatabase = $safeName; tenantCount = $tenantCount; forcedRlsTables = $forcedRls; sha256 = $actualHash; durationSeconds = ([DateTimeOffset]::UtcNow - $started).TotalSeconds; verifiedAtUtc = [DateTimeOffset]::UtcNow.ToString("O") }
     if ($EvidencePath) { $evidence | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath ([IO.Path]::GetFullPath($EvidencePath)) -Encoding UTF8 }
@@ -74,6 +85,6 @@ try {
 }
 finally {
     try { Invoke-DockerChecked @("exec", $Container, "rm", "-f", $remotePath) | Out-Null } catch { }
-    if ($created -and -not $KeepDatabase) { Invoke-DockerChecked @("exec", $Container, "dropdb", "--if-exists", "--force", "--username=postgres", $safeName) | Out-Null }
+    if ($created -and -not $KeepDatabase) { Invoke-DockerChecked @("exec", $Container, "dropdb", "--username=postgres", $safeName) | Out-Null }
     if (Test-Path -LiteralPath $decryptedPath) { Remove-Item -LiteralPath $decryptedPath -Force -ErrorAction SilentlyContinue }
 }

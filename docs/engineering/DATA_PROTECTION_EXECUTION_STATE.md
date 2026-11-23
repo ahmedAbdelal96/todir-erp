@@ -1,6 +1,6 @@
 # Data protection execution state
 
-Status: COMPLETE — local foundation accepted; production deployment gates remain deployment-owned.
+Status: COMPLETE — local safety closure accepted; production deployment gates remain deployment-owned.
 
 ## Authorized scope
 
@@ -13,6 +13,9 @@ Shared PostgreSQL logical/physical backup, WAL/PITR, restore safety, encryption,
 - Named PITR and latest-LSN recovery with pre/post evidence.
 - Missing/corrupt WAL failure, isolated target naming, cleanup ownership, runtime role, FORCE RLS, tenant visibility, and restored API readiness.
 - Marker-protected retention helper and operator runbook/ADR/governance/alerts.
+- Restore verification now requires labeled disposable-container ownership, refuses existing targets without deleting them, and cleans only targets created by the current run.
+- PITR evidence is retained separately from disposable infrastructure cleanup, sanitized on success/failure, and managed by an explicit ownership-checked evidence retention helper.
+- Logical retention revalidates every manifest and artifact checksum, rejects unsafe/corrupt references, and never manages physical base-backup/WAL chains.
 - Architecture 23/23, Security 7/7, selected integration 5/5, transaction/outbox 4/4, backend Release build 0/0, release gates 73/73, PowerShell parse, changed-project formatter, and diff check.
 
 ## Deferred or deployment-owned
@@ -21,4 +24,4 @@ Production repository/object-store destination, key escrow and rotation, capacit
 
 ## Last meaningful change and evidence
 
-The final full-schema local run completed all 11 checks in approximately 337 seconds. After the last secret-transport change, the final fast repeatable probe completed all 11 checks in approximately 124 seconds, followed by PowerShell parse and diff checks. The next executable action is the task-owned commit and SSH push after staging only the files listed in the final delivery review; unrelated concurrent frontend changes remain untouched.
+The final full-schema local run completed all 11 checks in 377.3636826 seconds, and the fast probe completed all 11 checks in 136.6532464 seconds. The focused safety regression completed all six safety checks, and a deliberately failed drill retained sanitized failure evidence. Final release-gate verification and the task-owned commit/push remain; unrelated concurrent frontend changes remain untouched.
