@@ -10,6 +10,7 @@ import {
   ACCOUNTING_DESTINATIONS,
   INVENTORY_DESTINATIONS,
   MANUFACTURING_DESTINATIONS,
+  QUALITY_DESTINATIONS,
   SALES_DESTINATIONS,
   PURCHASING_DESTINATIONS,
   POS_DESTINATIONS,
@@ -186,6 +187,19 @@ describe("Permission Manifest Authoritative Audit", () => {
       }
     }
     assert.deepEqual(invalidCodes, [], `All MANUFACTURING_DESTINATIONS permissions must be valid manifests. Found invalid: ${invalidCodes.join(", ")}`);
+  });
+
+  it("verifies 100% of QUALITY_DESTINATIONS permissions exist in manifest catalog", () => {
+    const invalidCodes: string[] = [];
+    for (const dest of QUALITY_DESTINATIONS) {
+      const codes = extractPermissions(dest.permission);
+      for (const code of codes) {
+        if (!authoritativeCatalog.has(code)) {
+          invalidCodes.push(`${dest.id} -> ${code}`);
+        }
+      }
+    }
+    assert.deepEqual(invalidCodes, [], `All QUALITY_DESTINATIONS permissions must be valid manifests. Found invalid: ${invalidCodes.join(", ")}`);
   });
 
   it("verifies 100% of SALES_DESTINATIONS permissions exist in manifest catalog", () => {

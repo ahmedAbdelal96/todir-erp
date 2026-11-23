@@ -182,5 +182,24 @@ export function buildCommandPaletteItems({
     });
   }
 
+  if (canPerform("quality.read", "quality") || canPerform("quality.inspection.create", "quality")) {
+    items.push({
+      id: "action-quality-overview",
+      title: t("commandPalette.actionQualityOverview", "إدارة الجودة الشاملة والفحوصات"),
+      subtitle: t("commandPalette.subtitleQuality", "لوحة أولويات الجودة، الفحوصات والحظر المخزني"),
+      category: "navigation",
+      keywords: ["جودة", "فحص", "حظر", "مطابقة", "quality", "inspections", "holds", "ncr", "capa"],
+      onSelect: () => navigate("/quality")
+    });
+    items.push({
+      id: "action-quality-inspections",
+      title: t("commandPalette.actionQualityInspections", "فحوصات الجودة والتشغيل"),
+      subtitle: t("commandPalette.subtitleQualityInspections", "أوامر الفحص وورشة تسجيل القياسات"),
+      category: "navigation",
+      keywords: ["فحص", "عينات", "قياس", "inspection", "samples"],
+      onSelect: () => navigate("/quality/inspections")
+    });
+  }
+
   return items;
 }

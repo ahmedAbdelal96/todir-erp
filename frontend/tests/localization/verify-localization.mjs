@@ -10,7 +10,7 @@ const resourcePairs = [
   ["core/i18n/resources/ar/navigation.ts", "core/i18n/resources/en/navigation.ts"],
   ["core/i18n/resources/ar/validation.ts", "core/i18n/resources/en/validation.ts"],
   ["core/i18n/resources/ar/workspace.ts", "core/i18n/resources/en/workspace.ts"],
-  ...["accounting", "catalog", "directory", "finbase", "identity", "invoicing", "migration", "payments", "pricing", "tax", "subledger", "inventory", "sales", "purchasing", "hr", "payroll", "crm", "pos", "expenses", "fixed-assets", "projects", "service", "banking", "manufacturing"]
+  ...["accounting", "catalog", "directory", "finbase", "identity", "invoicing", "migration", "payments", "pricing", "tax", "subledger", "inventory", "sales", "purchasing", "hr", "payroll", "crm", "pos", "expenses", "fixed-assets", "projects", "service", "banking", "manufacturing", "quality"]
     .map((module) => [`modules/${module}/i18n/ar.ts`, `modules/${module}/i18n/en.ts`])
 ];
 const excludedCopyPaths = /(?:\.test\.|\.stories\.|\.story\.|\/tests\/|\/stories\/|\/__fixtures__\/|\/i18n\/|\/utils\/diagnostic-translations\.ts$)/;
@@ -98,7 +98,7 @@ function visibleLiteral(node, ancestors) {
   if (node.type === "StringLiteral" && /^(?:actions|partyRecord|common|navigation|validation|workspace|service)\./.test(node.value.trim())) return false;
   if (node.type === "TemplateLiteral" && node.quasis.every((part) => /^[\s·—\-:|/#*()[\]{}.,…]*$/.test(part.value.cooked ?? ""))) return false;
   if (node.type === "TemplateLiteral" && node.quasis.every((part) => /^(?:0\.)?$/.test(part.value.cooked ?? "")) && node.expressions.length <= 1) return false;
-  if (node.type === "TemplateLiteral" && node.quasis.some((part) => (part.value.cooked ?? "").includes("ui-datagrid__"))) return false;
+  if (node.type === "TemplateLiteral" && node.quasis.some((part) => (part.value.cooked ?? "").includes("ui-datagrid__") || (part.value.cooked ?? "").includes("@media"))) return false;
   if (ancestors.some((item) => item.type === "CallExpression" &&
     ((item.callee?.type === "Identifier" && ["t", "translate"].includes(item.callee.name)) ||
       (item.callee?.type === "TSAsExpression" && ["t", "translate"].includes(item.callee.expression?.name)) ||

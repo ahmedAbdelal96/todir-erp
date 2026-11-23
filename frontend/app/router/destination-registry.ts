@@ -1146,6 +1146,127 @@ export const SERVICE_DESTINATIONS: readonly NavDestination[] = [
   }
 ];
 
+export const QUALITY_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "quality-overview",
+    category: "inventory",
+    moduleId: "quality",
+    path: "/quality",
+    labelKey: "tabs.overview",
+    fallbackLabel: "لوحة التحكم وأولويات العمل",
+    icon: "dashboard",
+    permission: { anyOf: ["quality.read", "quality.inspection.create", "quality.inspection.execute", "quality.inspection.review", "quality.hold.manage", "quality.disposition.manage", "quality.ncr.manage", "quality.capa.manage"] },
+    order: 10,
+    isPrimary: true,
+    mode: "read",
+    keywords: ["جودة", "لوحة التحكم", "أولويات", "نظرة عامة", "quality", "overview"]
+  },
+  {
+    id: "quality-inspections",
+    category: "inventory",
+    moduleId: "quality",
+    path: "/quality/inspections",
+    labelKey: "tabs.inspections",
+    fallbackLabel: "فحوصات الجودة",
+    icon: "checklist",
+    permission: { anyOf: ["quality.inspection.create", "quality.inspection.execute", "quality.inspection.review", "quality.read"] },
+    order: 20,
+    mode: "mixed",
+    keywords: ["فحص", "فحوصات", "عينة", "قياس", "inspections", "samples"]
+  },
+  {
+    id: "quality-plans",
+    category: "inventory",
+    moduleId: "quality",
+    path: "/quality/plans",
+    labelKey: "tabs.plans",
+    fallbackLabel: "خطط ومعايير الجودة",
+    icon: "assignment",
+    permission: { anyOf: ["quality.plan.manage", "quality.characteristic.manage", "quality.read"] },
+    order: 30,
+    mode: "mixed",
+    keywords: ["خطة جودة", "مواصفة", "خاصية فحص", "عينة", "plans", "specifications"]
+  },
+  {
+    id: "quality-restrictions",
+    category: "inventory",
+    moduleId: "quality",
+    path: "/quality/restrictions",
+    labelKey: "tabs.restrictions",
+    fallbackLabel: "الحظر واحتجاز الجودة (Holds)",
+    icon: "lock",
+    permission: { anyOf: ["quality.hold.manage", "quality.read"] },
+    order: 40,
+    mode: "mixed",
+    keywords: ["حظر", "حجز مخزني", "إفراج", "holds", "restrictions", "quarantine"]
+  },
+  {
+    id: "quality-dispositions",
+    category: "inventory",
+    moduleId: "quality",
+    path: "/quality/dispositions",
+    labelKey: "tabs.dispositions",
+    fallbackLabel: "القرارات الفنية (Dispositions)",
+    icon: "gavel",
+    permission: { anyOf: ["quality.disposition.manage", "quality.read"] },
+    order: 50,
+    mode: "mixed",
+    keywords: ["تصرف", "قرار فني", "إرجاع", "خردة", "disposition", "approval"]
+  },
+  {
+    id: "quality-ncrs",
+    category: "inventory",
+    moduleId: "quality",
+    path: "/quality/ncrs",
+    labelKey: "tabs.ncrs",
+    fallbackLabel: "حالات عدم المطابقة (NCR)",
+    icon: "warning",
+    permission: { anyOf: ["quality.ncr.manage", "quality.issue.manage", "quality.read"] },
+    order: 60,
+    mode: "mixed",
+    keywords: ["عدم مطابقة", "مشاكل الجودة", "احتواء", "ncr", "issues", "nonconformance"]
+  },
+  {
+    id: "quality-capas",
+    category: "inventory",
+    moduleId: "quality",
+    path: "/quality/capas",
+    labelKey: "tabs.capas",
+    fallbackLabel: "الإجراءات التصحيحية والوقائية (CAPA)",
+    icon: "published_with_changes",
+    permission: { anyOf: ["quality.capa.manage", "quality.read"] },
+    order: 70,
+    mode: "mixed",
+    keywords: ["إجراء تصحيحي", "إجراء وقائي", "جذر المشكلة", "فعالية", "capa", "root cause"]
+  },
+  {
+    id: "quality-supplier-quality",
+    category: "inventory",
+    moduleId: "quality",
+    path: "/quality/supplier-quality",
+    labelKey: "tabs.supplierQuality",
+    fallbackLabel: "جودة الموردين و(SCAR)",
+    icon: "local_shipping",
+    permission: { anyOf: ["quality.supplier.manage", "quality.read"] },
+    order: 80,
+    mode: "mixed",
+    keywords: ["مورد", "تقييم مورد", "scar", "supplier quality"]
+  },
+  {
+    id: "quality-certificates",
+    category: "inventory",
+    moduleId: "quality",
+    path: "/quality/certificates",
+    labelKey: "tabs.certificates",
+    fallbackLabel: "شهادات التحليل والمطابقة (COA)",
+    icon: "verified",
+    permission: { anyOf: ["quality.certificate.manage", "quality.read"] },
+    order: 90,
+    mode: "mixed",
+    keywords: ["شهادة", "coa", "مطابقة", "تحليل", "certificates"]
+  }
+];
+
 export function isDestinationPermitted(
   dest: NavDestination,
   access: EffectiveAccess | null | undefined

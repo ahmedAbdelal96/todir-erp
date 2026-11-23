@@ -28,6 +28,7 @@ import { serviceRoutes } from "@modules/service/public.ts";
 import { bankingRoutes } from "@modules/banking/public.ts";
 import { settingsRoutes } from "@modules/settings/public.ts";
 import { manufacturingRoutes } from "@modules/manufacturing/public.ts";
+import { qualityRoutes } from "@modules/quality/public.ts";
 import { useTranslation } from "react-i18next";
 
 import { PermissionGuard } from "../../core/runtime/permission-guard.tsx";
@@ -116,6 +117,7 @@ const workspaceRoutes: RouteObject = {
     ...protectModuleRoutes(taxRoutes),
     ...protectModuleRoutes(inventoryRoutes),
     ...protectModuleRoutes(manufacturingRoutes),
+    ...protectModuleRoutes(qualityRoutes),
     ...protectModuleRoutes(salesRoutes),
     ...protectModuleRoutes(purchasingRoutes),
     ...protectModuleRoutes(hrRoutes),

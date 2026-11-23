@@ -29,7 +29,7 @@ export default defineConfig({
     ? undefined
     : [
         {
-          command: 'dotnet ../backend/Api/bin/Debug/net10.0/Api.dll --urls http://127.0.0.1:5080',
+          command: 'dotnet ../backend/Api/bin/Debug/net10.0/Api.dll --urls http://127.0.0.1:5080 --environment Development',
           url: 'http://127.0.0.1:5080/api/v1/auth/csrf',
           reuseExistingServer: true,
           timeout: 120 * 1000,
