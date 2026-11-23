@@ -24,6 +24,7 @@ using Modules.Projects;
 using Modules.Manufacturing;
 using Modules.FixedAssets;
 using Modules.Service;
+using Modules.Quality;
 using Modules.FixedAssets.Controllers;
 using Quartz;
 using Shared.BuildingBlocks.Observability;
@@ -58,6 +59,7 @@ builder.Services.AddCore(builder.Configuration, bus =>
     bus.AddConsumer<ProjectsSourceEventConsumer, ProjectsSourceEventConsumerDefinition>();
     bus.AddConsumer<ProjectCapitalHandoffConsumer, ProjectCapitalHandoffConsumerDefinition>();
     bus.AddConsumer<ManufacturingIntegrationConsumer, ManufacturingIntegrationConsumerDefinition>();
+    bus.AddConsumer<QualityIntegrationConsumer, QualityIntegrationConsumerDefinition>();
     bus.AddConsumer<CacheInvalidationConsumer, CacheInvalidationConsumerDefinition>();
 });
 builder.Services.AddSampleModule();
@@ -80,6 +82,7 @@ builder.Services.AddExpensesModule();
 builder.Services.AddPosModule();
 builder.Services.AddProjectsModule();
 builder.Services.AddManufacturingModule();
+builder.Services.AddQualityModule();
 builder.Services.AddFixedAssetsModule();
 builder.Services.AddServiceModule();
 builder.Services.AddScheduling(builder.Configuration, options =>

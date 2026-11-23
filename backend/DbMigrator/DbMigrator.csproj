@@ -14,5 +14,6 @@
     <ProjectReference Include="../Modules/POS/POS.csproj" />
     <ProjectReference Include="../Modules/Projects/Projects.csproj" />
     <ProjectReference Include="../Modules/Service/Service.csproj" />
+    <ProjectReference Include="../Modules/Quality/Quality.csproj" />
   </ItemGroup>
 </Project>

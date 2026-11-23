@@ -186,7 +186,7 @@ public sealed class InventoryService(InventoryRepository repository, ILedgerPost
             var result = await repository.ReceiveAsync(new TenantId(tenantId), actorId, request.LegalEntityId,
                 new ConfirmStockMovementRequest(line.ProductVariantId, line.WarehouseId, line.LocationId, line.UnitOfMeasureId, line.Quantity,
                     request.OperationalDate, request.PostingDate, request.IdempotencyKey + ":" + line.PurchaseOrderLineId.ToString("D"), "purchasing", request.PurchaseOrderId,
-                    StockStatus.Available, line.LotId, line.SerialId), Guid.CreateVersion7(), null, cancellationToken);
+                    Enum.TryParse<StockStatus>(line.InitialStockStatus, true, out var status) && status != StockStatus.InTransit ? status : throw new InventoryException("inventory.receipt_status_invalid"), line.LotId, line.SerialId), Guid.CreateVersion7(), null, cancellationToken);
             receipts.Add(result.OperationId);
             lines.Add(new(line.PurchaseOrderLineId, result.OperationId, line.Quantity));
         }

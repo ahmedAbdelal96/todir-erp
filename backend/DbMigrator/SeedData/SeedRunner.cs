@@ -60,7 +60,8 @@ public static class SeedRunner
             var projects = await RunStageAsync(connection, tenant, context => ProjectsSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var service = await RunStageAsync(connection, tenant, context => ServiceSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var banking = await RunStageAsync(connection, tenant, context => BankingSeed.SeedAsync(context, cancellationToken), cancellationToken);
-            summaries.Add(new(tenant, identity, directory, hr, expenses, payroll, catalog, finance, pricing, tax, ledger, subledger, invoicing, payments, inventory, manufacturing, sales, crm, purchasing, accounting, pos, fixedAssets, projects, service, banking));
+            var quality = await RunStageAsync(connection, tenant, context => QualitySeed.SeedAsync(context, cancellationToken), cancellationToken);
+            summaries.Add(new(tenant, identity, directory, hr, expenses, payroll, catalog, finance, pricing, tax, ledger, subledger, invoicing, payments, inventory, manufacturing, sales, crm, purchasing, accounting, pos, fixedAssets, projects, service, banking, quality));
         }
         return new(SeedIds.Version, summaries);
     }
@@ -82,7 +83,7 @@ public static class SeedRunner
     }
 }
 
-public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, HrSeedSummary Hr, ExpensesSeedSummary Expenses, PayrollSeedSummary Payroll, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger, SeedInvoiceSummary Invoicing, SeedPaymentSummary Payments, SeedInventorySummary Inventory, ManufacturingSeedSummary Manufacturing, SeedSalesSummary Sales, CrmSeedSummary Crm, SeedPurchasingSummary Purchasing, SeedAccountingSummary Accounting, PosSeedSummary Pos, FixedAssetsSeedSummary FixedAssets, ProjectsSeedSummary Projects, ServiceSeedSummary Service, SeedBankingSummary Banking);
+public sealed record SeedTenantSummary(SeedTenant Tenant, SeedIdentitySummary Identity, SeedModuleSummary Directory, HrSeedSummary Hr, ExpensesSeedSummary Expenses, PayrollSeedSummary Payroll, SeedModuleSummary Catalog, SeedFinanceSummary Finance, SeedPricingSummary Pricing, SeedTaxSummary Tax, SeedLedgerSummary Ledger, SeedSubledgerSummary Subledger, SeedInvoiceSummary Invoicing, SeedPaymentSummary Payments, SeedInventorySummary Inventory, ManufacturingSeedSummary Manufacturing, SeedSalesSummary Sales, CrmSeedSummary Crm, SeedPurchasingSummary Purchasing, SeedAccountingSummary Accounting, PosSeedSummary Pos, FixedAssetsSeedSummary FixedAssets, ProjectsSeedSummary Projects, ServiceSeedSummary Service, SeedBankingSummary Banking, QualitySeedSummary Quality);
 public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSummary> Tenants)
 {
     public void Print(TextWriter output)
@@ -117,6 +118,7 @@ public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSumm
             output.WriteLine($"  Projects: {tenant.Projects.Projects} projects, {tenant.Projects.Tasks} tasks, {tenant.Projects.TimeEntries} time entries, {tenant.Projects.CostFacts} cost facts, {tenant.Projects.BillableCharges} billable charges");
             output.WriteLine($"  Service: {tenant.Service.InstalledBaseItems} installed base, {tenant.Service.Requests} requests, {tenant.Service.WorkOrders} work orders, {tenant.Service.Visits} visits, {tenant.Service.Contracts} contracts, {tenant.Service.Plans} maintenance plans");
             output.WriteLine($"  Banking: {tenant.Banking.Statements} statements, {tenant.Banking.Reconciliations} reconciliation, {tenant.Banking.CashCounts} cash count, {tenant.Banking.Forecasts} forecast");
+            output.WriteLine($"  Quality: {tenant.Quality.Plans} plans, {tenant.Quality.Inspections} inspections, {tenant.Quality.Restrictions} restrictions, {tenant.Quality.Nonconformances} NCRs, {tenant.Quality.Capas} CAPA");
         }
     }
 }
