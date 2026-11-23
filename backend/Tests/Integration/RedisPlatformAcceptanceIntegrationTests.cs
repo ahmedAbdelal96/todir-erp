@@ -95,6 +95,59 @@ public sealed class RedisPlatformAcceptanceIntegrationTests : DatabaseIntegratio
         Assert.Equal("recomputed", permissionChanged);
     }
 
+    [Theory]
+    [InlineData(10)]
+    [InlineData(50)]
+    [InlineData(100)]
+    public async Task RealRedisCoalescesConcurrentColdFills(int concurrency)
+    {
+        var tenant = RequiredTenant("TODIR_REDIS_ACCEPTANCE_TENANT_ID");
+        var postgres = Required("TODIR_REDIS_ACCEPTANCE_CONNECTION");
+        var redisConfiguration = Required("TODIR_REDIS_ACCEPTANCE_REDIS");
+        await using var dataSource = NpgsqlDataSource.Create(postgres);
+        using var multiplexer = await ConnectAsync(redisConfiguration);
+        using var cache = CreateCache(multiplexer, redisConfiguration, dataSource);
+        var scope = new CacheScope(tenant, null, null, Guid.CreateVersion7(), 19);
+        var fingerprint = CacheKeyFingerprint.For($"coalescing:{concurrency}:{Guid.CreateVersion7():D}");
+        var loaderStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseLoader = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var loaderCalls = 0;
+
+        var requests = Enumerable.Range(0, concurrency).Select(_ => cache.GetOrCreateAsync(scope, PlatformCachePolicies.HrEmployeeDirectory, fingerprint,
+            TimeSpan.FromSeconds(30), async _ =>
+            {
+                Interlocked.Increment(ref loaderCalls);
+                loaderStarted.TrySetResult();
+                await releaseLoader.Task;
+                return "coalesced";
+            })).ToArray();
+
+        await loaderStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        releaseLoader.TrySetResult();
+        var values = await Task.WhenAll(requests);
+
+        Assert.Equal(1, loaderCalls);
+        Assert.All(values, value => Assert.Equal("coalesced", value));
+    }
+
+    [Fact]
+    public async Task RealRedisRejectsCrossTenantAndUnapprovedRevisionWrites()
+    {
+        var tenant = RequiredTenant("TODIR_REDIS_ACCEPTANCE_TENANT_ID");
+        var otherTenant = RequiredTenant("TODIR_REDIS_ACCEPTANCE_TENANT_B_ID");
+        await using var dataSource = NpgsqlDataSource.Create(Required("TODIR_REDIS_ACCEPTANCE_CONNECTION"));
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using (var context = new NpgsqlCommand("select set_config('app.tenant_id',$1,false)", connection))
+        {
+            context.Parameters.AddWithValue(tenant.Value.ToString("D"));
+            await context.ExecuteNonQueryAsync();
+        }
+
+        await Assert.ThrowsAsync<PostgresException>(async () => await CallRevisionAsync(connection, null, otherTenant, "hr.employee.directory", "all", null, null));
+        await Assert.ThrowsAsync<PostgresException>(async () => await CallRevisionAsync(connection, null, tenant, "platform.arbitrary", "all", null, null));
+        await Assert.ThrowsAsync<PostgresException>(async () => await CallRevisionAsync(connection, null, tenant, "hr.employee.directory", "all", RequiredGuid("TODIR_REDIS_ACCEPTANCE_LEGAL_ENTITY_ID"), null));
+    }
+
     [Fact]
     public async Task RealEmployeeProfileMutationAdvancesTenantWideRevisionAndPublishesInvalidation()
     {
@@ -174,6 +227,19 @@ public sealed class RedisPlatformAcceptanceIntegrationTests : DatabaseIntegratio
         command.Parameters.AddWithValue(DBNull.Value);
         await command.ExecuteScalarAsync();
         await transaction.CommitAsync();
+    }
+
+    private static async Task CallRevisionAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, TenantId tenant, string dependency, string scopeKey, Guid? legalEntity, Guid? branch)
+    {
+        await using var command = transaction is null
+            ? new NpgsqlCommand("select platform.advance_cache_dependency_revision($1,$2,$3,$4,$5)", connection)
+            : new NpgsqlCommand("select platform.advance_cache_dependency_revision($1,$2,$3,$4,$5)", connection, transaction);
+        command.Parameters.AddWithValue(tenant.Value);
+        command.Parameters.AddWithValue(dependency);
+        command.Parameters.AddWithValue(scopeKey);
+        command.Parameters.AddWithValue((object?)legalEntity ?? DBNull.Value);
+        command.Parameters.AddWithValue((object?)branch ?? DBNull.Value);
+        await command.ExecuteScalarAsync();
     }
 
     private static TenantId RequiredTenant(string name) => new(RequiredGuid(name));

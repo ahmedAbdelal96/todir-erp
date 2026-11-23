@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -26,6 +27,7 @@ public sealed record PlatformCacheOptions(
     public bool RequireSecureTransport { get; init; }
     public string? Username { get; init; }
     public string? Password { get; init; }
+    public int MaximumEntryBytes { get; init; } = 1_048_576;
 
     public static PlatformCacheOptions FromConfiguration(IConfiguration configuration, string? environmentName = null) => new(
         configuration.GetValue("TODIR_REDIS_ENABLED", false),
@@ -44,7 +46,8 @@ public sealed record PlatformCacheOptions(
                 && !string.IsNullOrWhiteSpace(environmentName)
                 && !string.Equals(environmentName, "Development", StringComparison.OrdinalIgnoreCase)),
         Username = configuration["TODIR_REDIS_USERNAME"],
-        Password = configuration["TODIR_REDIS_PASSWORD"]
+        Password = configuration["TODIR_REDIS_PASSWORD"],
+        MaximumEntryBytes = Math.Clamp(configuration.GetValue("TODIR_CACHE_MAX_ENTRY_BYTES", 1_048_576), 65_536, 16_777_216)
     };
 }
 
@@ -133,6 +136,8 @@ public sealed class RedisPlatformCache(
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const string InvalidationPrefix = "platform:cache:invalidation:";
     private const string MonotonicRevisionScript = "local current=redis.call('GET',KEYS[1]); local incoming=tonumber(ARGV[1]); if (not current) or (incoming > tonumber(current)) then redis.call('SET',KEYS[1],ARGV[1],'EX',ARGV[2]); return 1 end return 0";
+    private const int MaximumFingerprintLength = 128;
+    private readonly ConcurrentDictionary<string, Task<object?>> localFills = new(StringComparer.Ordinal);
     private int firstUseLogged;
 
     public bool IsEnabled => options.Enabled && multiplexer.IsConnected;
@@ -146,53 +151,128 @@ public sealed class RedisPlatformCache(
         if (Interlocked.Exchange(ref firstUseLogged, 1) == 0)
             FirstUseLog(logger, dependency, multiplexer.IsConnected, null);
 
-        var revision = await ReadRevisionAsync(scope.TenantId, dependency, scope.LegalEntityId, scope.BranchId, cancellationToken);
         var key = BuildKey(scope, dependency, queryFingerprint);
         try
         {
             var database = multiplexer.GetDatabase();
-            var cached = await database.StringGetAsync(key);
-            if (cached.HasValue && TryDeserialize<T>(cached!, revision, out var value))
-            {
-                CacheMetrics.Hits.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
-                return value!;
-            }
-
-            CacheMetrics.Misses.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
-            var lockKey = $"{key}:lock";
-            var lockToken = Guid.NewGuid().ToString("N");
-            var lockTaken = await database.LockTakeAsync(lockKey, lockToken, options.LockTtl);
-            if (!lockTaken)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
-                var raced = await database.StringGetAsync(key);
-                if (raced.HasValue && TryDeserialize<T>(raced!, revision, out value)) return value!;
-                return await loader(cancellationToken);
-            }
-
-            try
-            {
-                var afterLock = await database.StringGetAsync(key);
-                if (afterLock.HasValue && TryDeserialize<T>(afterLock!, revision, out value)) return value!;
-                var loaded = await loader(cancellationToken);
-                var afterReadRevision = await ReadRevisionAsync(scope.TenantId, dependency, scope.LegalEntityId, scope.BranchId, cancellationToken);
-                if (afterReadRevision == revision)
-                {
-                    var envelope = new CacheEnvelope<T>(options.SchemaVersion, afterReadRevision, clock.GetUtcNow(), loaded);
-                    await database.StringSetAsync(key, JsonSerializer.Serialize(envelope, JsonOptions), ttl, When.Always);
-                }
-                return loaded;
-            }
-            finally
-            {
-                await database.LockReleaseAsync(lockKey, lockToken);
-            }
+            return await GetOrFillCoalescedAsync(scope, dependency, key, ttl, loader, database, cancellationToken);
         }
         catch (Exception exception) when (IsRedisFailure(exception))
         {
             CacheMetrics.Failures.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
             RedisFallbackLog(logger, dependency, exception);
             return await loader(cancellationToken);
+        }
+    }
+
+    private async Task<T> GetOrFillCoalescedAsync<T>(CacheScope scope, string dependency, string key, TimeSpan ttl,
+        Func<CancellationToken, Task<T>> loader, IDatabase database, CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            if (localFills.TryGetValue(key, out var existing))
+            {
+                CacheMetrics.CoalescedWaits.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
+                var result = await existing.WaitAsync(cancellationToken);
+                if (result is null) return default!;
+                if (result is T typed) return typed;
+                throw new InvalidOperationException("platform.cache_key_type_collision");
+            }
+
+            var completion = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!localFills.TryAdd(key, completion.Task)) continue;
+            try
+            {
+                var loaded = await ReadOrFillAsync(scope, dependency, key, ttl, loader, database, cancellationToken);
+                completion.TrySetResult(loaded);
+                return loaded;
+            }
+            catch (Exception exception) when (IsRedisFailure(exception))
+            {
+                CacheMetrics.Failures.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
+                RedisFallbackLog(logger, dependency, exception);
+                try
+                {
+                    var fallback = await loader(cancellationToken);
+                    completion.TrySetResult(fallback);
+                    return fallback;
+                }
+                catch (Exception fallbackException)
+                {
+                    completion.TrySetException(fallbackException);
+                    throw;
+                }
+            }
+            catch (Exception exception)
+            {
+                completion.TrySetException(exception);
+                throw;
+            }
+            finally
+            {
+                localFills.TryRemove(new KeyValuePair<string, Task<object?>>(key, completion.Task));
+            }
+        }
+    }
+
+    private async Task<T> ReadOrFillAsync<T>(CacheScope scope, string dependency, string key, TimeSpan ttl,
+        Func<CancellationToken, Task<T>> loader, IDatabase database, CancellationToken cancellationToken)
+    {
+        var revision = await ReadRevisionAsync(scope.TenantId, dependency, scope.LegalEntityId, scope.BranchId, cancellationToken);
+        var cached = await database.StringGetAsync(key);
+        if (cached.HasValue && TryDeserialize<T>(cached!, revision, out var value))
+        {
+            CacheMetrics.Hits.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
+            return value!;
+        }
+
+        CacheMetrics.Misses.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
+        return await FillWithDistributedLockAsync(scope, dependency, key, revision, ttl, loader, database, cancellationToken);
+    }
+
+    private async Task<T> FillWithDistributedLockAsync<T>(CacheScope scope, string dependency, string key, long revision, TimeSpan ttl,
+        Func<CancellationToken, Task<T>> loader, IDatabase database, CancellationToken cancellationToken)
+    {
+        var lockKey = $"{key}:lock";
+        var lockToken = Guid.NewGuid().ToString("N");
+        var lockTaken = await database.LockTakeAsync(lockKey, lockToken, options.LockTtl);
+        if (!lockTaken)
+        {
+            CacheMetrics.StampedeWaits.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
+            var deadline = clock.GetUtcNow() + options.LockTtl;
+            while (clock.GetUtcNow() < deadline)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
+                var raced = await database.StringGetAsync(key);
+                if (raced.HasValue && TryDeserialize<T>(raced!, revision, out var racedValue)) return racedValue!;
+            }
+            return await loader(cancellationToken);
+        }
+
+        try
+        {
+            var afterLock = await database.StringGetAsync(key);
+            if (afterLock.HasValue && TryDeserialize<T>(afterLock!, revision, out var value)) return value!;
+            var loaded = await loader(cancellationToken);
+            var afterReadRevision = await ReadRevisionAsync(scope.TenantId, dependency, scope.LegalEntityId, scope.BranchId, cancellationToken);
+            if (afterReadRevision == revision)
+            {
+                var envelope = new CacheEnvelope<T>(options.SchemaVersion, afterReadRevision, clock.GetUtcNow(), loaded);
+                var serialized = JsonSerializer.SerializeToUtf8Bytes(envelope, JsonOptions);
+                if (serialized.Length <= options.MaximumEntryBytes)
+                    await database.StringSetAsync(key, serialized, ttl, When.Always);
+                else
+                    CacheMetrics.OversizedSkipped.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
+            }
+            return loaded;
+        }
+        finally
+        {
+            try { await database.LockReleaseAsync(lockKey, lockToken); }
+            catch (Exception exception) when (IsRedisFailure(exception))
+            {
+                CacheMetrics.Failures.Add(1, new KeyValuePair<string, object?>("dependency", dependency));
+            }
         }
     }
 
@@ -234,8 +314,12 @@ public sealed class RedisPlatformCache(
         return result is long revision ? revision : result is int integer ? integer : Convert.ToInt64(result ?? 0L, CultureInfo.InvariantCulture);
     }
 
-    private string BuildKey(CacheScope scope, string dependency, string queryFingerprint) =>
-        $"platform:cache:v{options.SchemaVersion}:{scope.TenantId.Value:D}:{dependency}:{scope.LegalEntityId?.ToString("D") ?? "all"}:{scope.BranchId?.ToString("D") ?? "all"}:{scope.MembershipId?.ToString("D") ?? "none"}:{scope.PermissionVersion}:{queryFingerprint}";
+    private string BuildKey(CacheScope scope, string dependency, string queryFingerprint)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(queryFingerprint);
+        var boundedFingerprint = queryFingerprint.Length <= MaximumFingerprintLength ? queryFingerprint : CacheKeyFingerprint.For(queryFingerprint);
+        return $"platform:cache:v{options.SchemaVersion}:{scope.TenantId.Value:D}:{dependency}:{scope.LegalEntityId?.ToString("D") ?? "all"}:{scope.BranchId?.ToString("D") ?? "all"}:{scope.MembershipId?.ToString("D") ?? "none"}:{scope.PermissionVersion}:{boundedFingerprint}";
+    }
 
     private static string BuildInvalidationKey(CacheInvalidation invalidation) =>
         $"{InvalidationPrefix}{invalidation.TenantId.Value:D}:{invalidation.Dependency}:{invalidation.LegalEntityId?.ToString("D") ?? "all"}:{invalidation.BranchId?.ToString("D") ?? "all"}";
@@ -276,6 +360,7 @@ public static class CacheKeyFingerprint
 {
     public static string For(string value)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
@@ -288,4 +373,7 @@ public static class CacheMetrics
     public static readonly System.Diagnostics.Metrics.Counter<long> Misses = Meter.CreateCounter<long>("todir.cache.misses");
     public static readonly System.Diagnostics.Metrics.Counter<long> Failures = Meter.CreateCounter<long>("todir.cache.failures");
     public static readonly System.Diagnostics.Metrics.Counter<long> Invalidations = Meter.CreateCounter<long>("todir.cache.invalidations");
+    public static readonly System.Diagnostics.Metrics.Counter<long> CoalescedWaits = Meter.CreateCounter<long>("todir.cache.coalesced_waits");
+    public static readonly System.Diagnostics.Metrics.Counter<long> StampedeWaits = Meter.CreateCounter<long>("todir.cache.stampede_waits");
+    public static readonly System.Diagnostics.Metrics.Counter<long> OversizedSkipped = Meter.CreateCounter<long>("todir.cache.oversized_skipped");
 }

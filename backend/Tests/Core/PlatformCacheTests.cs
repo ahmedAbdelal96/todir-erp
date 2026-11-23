@@ -1,4 +1,5 @@
 using Core.Caching;
+using Microsoft.Extensions.Configuration;
 using Shared.Primitives.Identifiers;
 using Xunit;
 
@@ -45,5 +46,26 @@ public sealed class PlatformCacheTests
         var policy = new CacheDependencyPolicy("hr.employee.identifier", CacheConsistencyModel.BoundedStaleness, "hr", "unknown", "unknown", true, TimeSpan.FromSeconds(1));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => cache.GetOrCreateAsync(scope, policy, CacheKeyFingerprint.For("sensitive"), TimeSpan.FromSeconds(1), _ => Task.FromResult("forbidden")));
+    }
+
+    [Fact]
+    public void CacheConfigurationClampsEntrySizeToSafeEnvelope()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["TODIR_CACHE_MAX_ENTRY_BYTES"] = "1"
+            })
+            .Build();
+
+        var options = PlatformCacheOptions.FromConfiguration(configuration, "Development");
+
+        Assert.Equal(65_536, options.MaximumEntryBytes);
+    }
+
+    [Fact]
+    public void FingerprintRejectsEmptyInput()
+    {
+        Assert.Throws<ArgumentException>(() => CacheKeyFingerprint.For(" "));
     }
 }
