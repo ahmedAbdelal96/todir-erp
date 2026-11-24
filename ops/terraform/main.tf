@@ -83,9 +83,13 @@ resource "docker_container" "minio" {
 resource "docker_container" "minio_init" {
   name       = "${local.project}-minio-init"
   image      = "jumpserver/minio:RELEASE.2024-06-13T22-53-53Z@sha256:fea940414bd63fc721a8f5a1103d00b58312ecb9cdb89557b1164f32f23777f8"
-  entrypoint = ["sh", "-c"]
-  command = [
-    "until mc alias set local http://${docker_container.minio.name}:9000 minio-admin ${var.object_storage_root_password}; do sleep 1; done; mc mb --ignore-existing local/private-files; mc anonymous set none local/private-files; mc admin policy create local private-files-app /tmp/private-files-policy.json || true; mc admin user add local ${var.object_storage_access_key} ${var.object_storage_password} || true; mc admin policy attach local private-files-app --user ${var.object_storage_access_key}",
+  entrypoint = ["sh", "/opt/bootstrap/minio-bootstrap.sh"]
+  env = [
+    "MINIO_ROOT_ENDPOINT=http://${docker_container.minio.name}:9000",
+    "MINIO_ROOT_USER=minio-admin",
+    "MINIO_ROOT_PASSWORD=${var.object_storage_root_password}",
+    "MINIO_APP_ACCESS_KEY=${var.object_storage_access_key}",
+    "MINIO_APP_PASSWORD=${var.object_storage_password}",
   ]
   networks_advanced {
     name = docker_network.private.name
@@ -94,6 +98,11 @@ resource "docker_container" "minio_init" {
   volumes {
     host_path      = abspath("${path.root}/../containers/minio-private-files-policy.json")
     container_path = "/tmp/private-files-policy.json"
+    read_only      = true
+  }
+  volumes {
+    host_path      = abspath("${path.root}/../containers/minio-bootstrap.sh")
+    container_path = "/opt/bootstrap/minio-bootstrap.sh"
     read_only      = true
   }
   must_run = false
@@ -136,7 +145,7 @@ resource "docker_container" "api" {
     "TODIR_RABBITMQ_TLS_SERVER_NAME=rabbitmq",
     "TODIR_RABBITMQ_CA_CERTIFICATE_PATH=/etc/rabbitmq/tls/ca.crt",
     "TODIR_CORS_ORIGINS=https://127.0.0.1:${var.web_port}",
-    "TODIR_TRUSTED_PROXY_NETWORKS=${var.private_network_subnet}",
+    "TODIR_TRUSTED_PROXY_ADDRESSES=${var.reverse_proxy_ip}",
     "TODIR_STAGING_VERIFICATION=${var.staging_replay_token != "" ? "true" : "false"}",
     "TODIR_STAGING_REPLAY_TOKEN=${var.staging_replay_token}",
   ]
@@ -244,7 +253,8 @@ resource "docker_container" "web" {
     read_only      = true
   }
   networks_advanced {
-    name = docker_network.private.name
+    name         = docker_network.private.name
+    ipv4_address = var.reverse_proxy_ip
   }
   depends_on = [docker_container.api]
 }

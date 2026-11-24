@@ -49,6 +49,16 @@ variable "private_network_subnet" {
   }
 }
 
+variable "reverse_proxy_ip" {
+  type        = string
+  default     = "172.31.0.10"
+  description = "Reserved private-network IPv4 address assigned only to the staging reverse proxy."
+  validation {
+    condition     = can(cidrhost("${var.reverse_proxy_ip}/32", 0))
+    error_message = "reverse_proxy_ip must be a valid IPv4 address reserved inside private_network_subnet."
+  }
+}
+
 variable "database_admin_password" {
   type        = string
   sensitive   = true

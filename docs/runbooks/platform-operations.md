@@ -26,11 +26,11 @@ Rotate through the secret manager with overlap only for the documented transitio
 
 ## Infrastructure security boundary
 
-The staging stack uses separate credentials for the PostgreSQL administrator/migrator, `erp_app`, RabbitMQ, MinIO root, and the MinIO private-files identity. API and Worker containers receive only runtime credentials; they never receive the PostgreSQL administrator password. The MinIO application identity is limited to the `private-files` bucket policy. The development compose file uses intentionally non-production credentials and binds PostgreSQL, RabbitMQ, RabbitMQ management, and MinIO to loopback only.
+The staging stack uses separate credentials for the PostgreSQL administrator/migrator, `erp_app`, RabbitMQ, MinIO root, and the MinIO private-files identity. API and Worker containers receive only runtime credentials; they never receive the PostgreSQL administrator password. MinIO bootstrap fails closed unless the existing policy/user state is verified, and the application identity is limited to the `private-files` bucket policy. The development compose file uses intentionally non-production credentials and binds PostgreSQL, RabbitMQ, RabbitMQ management, and MinIO to loopback only.
 
 OpenTofu `sensitive` variables hide values from normal plan output but do not encrypt state. Shared or staging runs must use the approved encrypted, locked, audited remote state backend. A local state file is disposable development material: do not commit, upload, or retain it after destroying an isolated stack. Rotate credentials by applying the new values, verifying service recovery, then revoking the old values; never print connection strings or secret-bearing container inspection in evidence.
 
-The API trusts forwarded headers only from the configured private Docker network CIDR. If the reverse-proxy network changes, update `TODIR_TRUSTED_PROXY_NETWORKS` and the network allocation together; do not replace this with trust-all forwarded-header handling.
+The API trusts forwarded headers only from the reserved reverse-proxy IP (`TODIR_TRUSTED_PROXY_ADDRESSES`). The staging web container receives that static private address; other containers on the shared Docker subnet are not trusted proxies. Use the network-CIDR setting only for an explicitly reviewed legacy topology, never together with the address setting, and do not replace either with trust-all forwarded-header handling.
 
 ## Tenant export/offboarding
 
