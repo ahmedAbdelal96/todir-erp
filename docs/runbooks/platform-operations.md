@@ -24,6 +24,14 @@ Scale or restart workers without changing tenant queues. During object-store out
 
 Rotate through the secret manager with overlap only for the documented transition. Break-glass access requires reason, approval where possible, MFA, visible tenant banner, expiry, and full audit. Never create a permanent support superuser.
 
+## Infrastructure security boundary
+
+The staging stack uses separate credentials for the PostgreSQL administrator/migrator, `erp_app`, RabbitMQ, MinIO root, and the MinIO private-files identity. API and Worker containers receive only runtime credentials; they never receive the PostgreSQL administrator password. The MinIO application identity is limited to the `private-files` bucket policy. The development compose file uses intentionally non-production credentials and binds PostgreSQL, RabbitMQ, RabbitMQ management, and MinIO to loopback only.
+
+OpenTofu `sensitive` variables hide values from normal plan output but do not encrypt state. Shared or staging runs must use the approved encrypted, locked, audited remote state backend. A local state file is disposable development material: do not commit, upload, or retain it after destroying an isolated stack. Rotate credentials by applying the new values, verifying service recovery, then revoking the old values; never print connection strings or secret-bearing container inspection in evidence.
+
+The API trusts forwarded headers only from the configured private Docker network CIDR. If the reverse-proxy network changes, update `TODIR_TRUSTED_PROXY_NETWORKS` and the network allocation together; do not replace this with trust-all forwarded-header handling.
+
 ## Tenant export/offboarding
 
 Freeze new writes, produce a tenant-scoped export, verify checksums and audit trail, retain legal attachments according to policy, then disable access. Destructive deletion requires a separately approved retention decision.

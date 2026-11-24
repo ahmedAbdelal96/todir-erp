@@ -33,6 +33,7 @@ using Npgsql;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Serialization;
@@ -76,6 +77,21 @@ builder.Services.AddCors(options => options.AddPolicy("web", policy =>
     if (configuredOrigins.Length == 0) policy.SetIsOriginAllowed(_ => false);
     else policy.WithOrigins(configuredOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
 }));
+var trustedProxyNetworks = (builder.Configuration["TODIR_TRUSTED_PROXY_NETWORKS"] ?? string.Empty)
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+if (trustedProxyNetworks.Length > 0)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        foreach (var network in trustedProxyNetworks)
+        {
+            if (!System.Net.IPNetwork.TryParse(network, out var parsedNetwork))
+                throw new InvalidOperationException("TODIR_TRUSTED_PROXY_NETWORKS must contain valid CIDR networks.");
+            options.KnownIPNetworks.Add(parsedNetwork);
+        }
+    });
+}
 var keyDirectory = builder.Configuration["TODIR_DATA_PROTECTION_KEYS"];
 var certificateText = builder.Configuration["TODIR_DATA_PROTECTION_CERTIFICATE_BASE64"];
 var certificatePassword = builder.Configuration["TODIR_DATA_PROTECTION_CERTIFICATE_PASSWORD"];
@@ -122,6 +138,7 @@ builder.Services.AddRateLimiter(options =>
 var app = builder.Build();
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 if (!app.Environment.IsDevelopment()) app.UseHsts();
+if (trustedProxyNetworks.Length > 0) app.UseForwardedHeaders();
 
 // Keep the approved order explicit: correlation, exception handling, security headers, endpoint.
 app.UseCorrelation();

@@ -31,6 +31,22 @@ function Invoke-CheckedCommand {
     if ($LASTEXITCODE -ne 0) { throw "$Description failed with exit code $LASTEXITCODE." }
 }
 
+function Get-RequiredSecret {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [int]$MinimumLength = 16
+    )
+
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        throw "Set $Name in the local process environment before starting the development services."
+    }
+    if ($value.Length -lt $MinimumLength) {
+        throw "$Name must contain at least $MinimumLength characters."
+    }
+    return $value
+}
+
 function Stop-ProcessTree {
     param([System.Diagnostics.Process]$Process)
 
@@ -64,6 +80,10 @@ function Stop-ExistingLocalHosts {
 
 Push-Location $repositoryRoot
 try {
+    $postgresAdminPassword = Get-RequiredSecret -Name 'TODIR_DEV_POSTGRES_ADMIN_PASSWORD'
+    $rabbitPassword = Get-RequiredSecret -Name 'TODIR_DEV_RABBITMQ_PASSWORD'
+    $objectStoragePassword = Get-RequiredSecret -Name 'TODIR_DEV_OBJECT_STORAGE_PASSWORD'
+
     if (-not (Test-Path -LiteralPath $settingsPath)) {
         throw 'Local settings are missing. Copy backend/appsettings.json to backend/appsettings.Development.json, then configure the local database, services, and Seed:DefaultPassword.'
     }
@@ -98,13 +118,18 @@ try {
     $env:DOTNET_ENVIRONMENT = 'Development'
     $env:TODIR_REPOSITORY_ROOT = $repositoryRoot
     $env:TODIR_DATABASE_CONNECTION = $runtimeConnection
-    $env:TODIR_MIGRATOR_CONNECTION = "Host=$databaseHost;Port=$databasePort;Database=$databaseName;Username=postgres;Password=postgres"
+    $env:TODIR_MIGRATOR_CONNECTION = "Host=$databaseHost;Port=$databasePort;Database=$databaseName;Username=postgres;Password=$postgresAdminPassword"
     $env:TODIR_RUNTIME_PASSWORD = $runtimePassword
+    $env:TODIR_RABBITMQ_HOST = if ($settings.TODIR_RABBITMQ_HOST) { $settings.TODIR_RABBITMQ_HOST } else { '127.0.0.1' }
+    $env:TODIR_RABBITMQ_PORT = if ($settings.TODIR_RABBITMQ_PORT) { $settings.TODIR_RABBITMQ_PORT } else { '5672' }
+    $env:TODIR_RABBITMQ_USER = if ($settings.TODIR_RABBITMQ_USER) { $settings.TODIR_RABBITMQ_USER } else { 'todir' }
+    $env:TODIR_RABBITMQ_PASSWORD = $rabbitPassword
+    $env:TODIR_RABBITMQ_VHOST = if ($settings.TODIR_RABBITMQ_VHOST) { $settings.TODIR_RABBITMQ_VHOST } else { '/erp-dev' }
     $env:SEED_DEFAULT_PASSWORD = $seedPassword
     $env:TODIR_FILES_BUCKET = if ($settings.TODIR_FILES_BUCKET) { $settings.TODIR_FILES_BUCKET } else { 'todir-files-private' }
     $env:TODIR_FILES_PUBLIC_ENDPOINT = if ($settings.TODIR_FILES_PUBLIC_ENDPOINT) { $settings.TODIR_FILES_PUBLIC_ENDPOINT } else { 'http://127.0.0.1:19000' }
     $env:TODIR_FILES_ACCESS_KEY = if ($settings.TODIR_FILES_ACCESS_KEY) { $settings.TODIR_FILES_ACCESS_KEY } else { 'todir' }
-    $env:TODIR_FILES_SECRET_KEY = if ($settings.TODIR_FILES_SECRET_KEY) { $settings.TODIR_FILES_SECRET_KEY } else { 'todir-dev-only' }
+    $env:TODIR_FILES_SECRET_KEY = $objectStoragePassword
     $env:TODIR_FILES_REGION = if ($settings.TODIR_FILES_REGION) { $settings.TODIR_FILES_REGION } else { 'us-east-1' }
     $env:TODIR_FILES_SCANNER_HOST = if ($settings.TODIR_FILES_SCANNER_HOST) { $settings.TODIR_FILES_SCANNER_HOST } else { '127.0.0.1' }
     $env:TODIR_FILES_SCANNER_PORT = if ($settings.TODIR_FILES_SCANNER_PORT) { $settings.TODIR_FILES_SCANNER_PORT } else { '3310' }

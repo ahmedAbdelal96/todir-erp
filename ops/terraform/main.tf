@@ -8,14 +8,17 @@ resource "docker_volume" "data_protection" {
 
 resource "docker_network" "private" {
   name = "${local.project}-private"
+  ipam_config {
+    subnet = var.private_network_subnet
+  }
 }
 
 resource "docker_container" "postgres" {
   name  = "${local.project}-postgres"
-  image = "postgres:18"
+  image = "postgres:18@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336"
   env = [
     "POSTGRES_USER=postgres",
-    "POSTGRES_PASSWORD=${var.database_password}",
+    "POSTGRES_PASSWORD=${var.database_admin_password}",
     "POSTGRES_DB=${var.database_name}",
   ]
   healthcheck {
@@ -31,7 +34,7 @@ resource "docker_container" "postgres" {
 
 resource "docker_container" "rabbitmq" {
   name  = "${local.project}-rabbitmq"
-  image = "rabbitmq:4.1-management"
+  image = "rabbitmq:4.1-management@sha256:19c5ee40801d36eaa46020c9e2ff802c4ef7e74839a00b0f8bd43f935f845778"
   # The image entrypoint drops to the rabbitmq account after fixing ownership
   # of the mounted TLS material; the container never runs the broker as root.
   user = "0"
@@ -69,8 +72,8 @@ resource "docker_container" "minio" {
   image   = "jumpserver/minio:RELEASE.2024-06-13T22-53-53Z@sha256:fea940414bd63fc721a8f5a1103d00b58312ecb9cdb89557b1164f32f23777f8"
   command = ["server", "/data", "--console-address", ":9001"]
   env = [
-    "MINIO_ROOT_USER=todir",
-    "MINIO_ROOT_PASSWORD=${var.rabbit_password}",
+    "MINIO_ROOT_USER=minio-admin",
+    "MINIO_ROOT_PASSWORD=${var.object_storage_root_password}",
   ]
   networks_advanced {
     name = docker_network.private.name
@@ -82,21 +85,26 @@ resource "docker_container" "minio_init" {
   image      = "jumpserver/minio:RELEASE.2024-06-13T22-53-53Z@sha256:fea940414bd63fc721a8f5a1103d00b58312ecb9cdb89557b1164f32f23777f8"
   entrypoint = ["sh", "-c"]
   command = [
-    "until mc alias set local http://${docker_container.minio.name}:9000 todir ${var.rabbit_password}; do sleep 1; done; mc mb --ignore-existing local/private-files; mc anonymous set none local/private-files",
+    "until mc alias set local http://${docker_container.minio.name}:9000 minio-admin ${var.object_storage_root_password}; do sleep 1; done; mc mb --ignore-existing local/private-files; mc anonymous set none local/private-files; mc admin policy create local private-files-app /tmp/private-files-policy.json || true; mc admin user add local ${var.object_storage_access_key} ${var.object_storage_password} || true; mc admin policy attach local private-files-app --user ${var.object_storage_access_key}",
   ]
   networks_advanced {
     name = docker_network.private.name
   }
   depends_on = [docker_container.minio]
-  must_run   = false
+  volumes {
+    host_path      = abspath("${path.root}/../containers/minio-private-files-policy.json")
+    container_path = "/tmp/private-files-policy.json"
+    read_only      = true
+  }
+  must_run = false
 }
 
 resource "docker_container" "migrator" {
   name  = "${local.project}-migrator"
   image = var.migrator_image
   env = [
-    "TODIR_MIGRATOR_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=postgres;Password=${var.database_password}",
-    "TODIR_RUNTIME_PASSWORD=${var.database_password}",
+    "TODIR_MIGRATOR_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=postgres;Password=${var.database_admin_password}",
+    "TODIR_RUNTIME_PASSWORD=${var.database_runtime_password}",
     "TODIR_REPOSITORY_ROOT=/app",
   ]
   networks_advanced {
@@ -118,7 +126,7 @@ resource "docker_container" "api" {
     "TODIR_DB_COMMAND_TIMEOUT_SECONDS=15",
     "TODIR_DB_MAX_POOL_SIZE=20",
     "TODIR_ENTITLEMENT_HMAC_KEY=${var.entitlement_hmac_key}",
-    "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_password}",
+    "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_runtime_password}",
     "TODIR_RABBITMQ_HOST=${docker_container.rabbitmq.name}",
     "TODIR_RABBITMQ_PORT=5671",
     "TODIR_RABBITMQ_VHOST=/erp-staging",
@@ -128,6 +136,7 @@ resource "docker_container" "api" {
     "TODIR_RABBITMQ_TLS_SERVER_NAME=rabbitmq",
     "TODIR_RABBITMQ_CA_CERTIFICATE_PATH=/etc/rabbitmq/tls/ca.crt",
     "TODIR_CORS_ORIGINS=https://127.0.0.1:${var.web_port}",
+    "TODIR_TRUSTED_PROXY_NETWORKS=${var.private_network_subnet}",
     "TODIR_STAGING_VERIFICATION=${var.staging_replay_token != "" ? "true" : "false"}",
     "TODIR_STAGING_REPLAY_TOKEN=${var.staging_replay_token}",
   ]
@@ -155,7 +164,7 @@ resource "docker_container" "worker" {
   env = [
     "TODIR_DB_COMMAND_TIMEOUT_SECONDS=15",
     "TODIR_DB_MAX_POOL_SIZE=20",
-    "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_password}",
+    "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_runtime_password}",
     "TODIR_RABBITMQ_HOST=${docker_container.rabbitmq.name}",
     "TODIR_RABBITMQ_PORT=5671",
     "TODIR_RABBITMQ_VHOST=/erp-staging",
@@ -189,7 +198,7 @@ resource "docker_container" "worker_secondary" {
   env = [
     "TODIR_DB_COMMAND_TIMEOUT_SECONDS=15",
     "TODIR_DB_MAX_POOL_SIZE=20",
-    "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_password}",
+    "TODIR_DATABASE_CONNECTION=Host=${docker_container.postgres.name};Database=${var.database_name};Username=erp_app;Password=${var.database_runtime_password}",
     "TODIR_RABBITMQ_HOST=${docker_container.rabbitmq.name}",
     "TODIR_RABBITMQ_PORT=5671",
     "TODIR_RABBITMQ_VHOST=/erp-staging",
@@ -220,6 +229,7 @@ resource "docker_container" "web" {
   restart  = "on-failure"
   must_run = false
   ports {
+    ip       = var.web_bind_ip
     internal = 8443
     external = var.web_port
   }
