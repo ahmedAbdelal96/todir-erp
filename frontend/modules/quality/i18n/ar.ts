@@ -119,6 +119,13 @@ export const qualityAr = {
     Regrade: "تخفيض الرتبة والتصنيف (Regrade)"
   },
 
+  restrictionTypes: {
+    QualityHold: "احتجاز جودة (QualityHold)",
+    Quarantine: "حجر صناعي وصحي (Quarantine)",
+    Blocked: "حظر جودة وتوريد (Blocked)",
+    ReturnsInspection: "فحص واحتجاز مرتجعات (ReturnsInspection)"
+  },
+
   actions: {
     createPlan: "إنشاء خطة جودة جديدة",
     createVersion: "إصدار نسخة جديدة",
@@ -170,6 +177,7 @@ export const qualityAr = {
     openWorkspace: "فتح ورشة الفحص",
     previous: "السابق",
     next: "التالي",
+    pagination: "تصفح الصفحات",
     reMeasure: "تعديل / إعادة قياس",
     measure: "+ تسجيل القياس"
   },

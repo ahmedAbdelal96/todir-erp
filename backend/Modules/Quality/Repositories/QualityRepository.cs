@@ -400,15 +400,116 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
     public async Task<QualityRestrictionView> CreateRestrictionAsync(TenantId tenant, Guid actor, CreateRestrictionRequest request, Guid legalEntityId, CancellationToken ct)
     {
         if (request.RestrictionType is not ("QualityHold" or "Quarantine" or "Blocked" or "ReturnsInspection")) throw new QualityException("quality.restriction_type_invalid");
-        var hasOwnerScope = request.ProductVariantId is not null || request.WarehouseId is not null;
-        if (hasOwnerScope && (request.ProductVariantId is null || request.WarehouseId is null || request.Quantity is not > 0m || request.UnitOfMeasureId is null))
+        var hasOwnerScope = (request.Quantity is > 0m) || request.ProductVariantId is not null || request.WarehouseId is not null;
+
+        var productVariantId = request.ProductVariantId;
+        var warehouseId = request.WarehouseId;
+        var locationId = request.LocationId;
+        var unitOfMeasureId = request.UnitOfMeasureId;
+        var lotId = request.LotId;
+        var serialId = request.SerialId;
+
+        // If productVariantId is not explicitly provided but inspectionId is, resolve from the inspection
+        if (productVariantId is null && request.InspectionId is not null)
+        {
+            var inspRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
+                "select product_variant_id from business_quality.inspection where tenant_id=$1 and id=$2", token, tenant.Value, request.InspectionId.Value), ct);
+            if (inspRow is not null && inspRow[0] is not DBNull)
+            {
+                productVariantId = (Guid)inspRow[0];
+            }
+        }
+
+        // If productVariantId is still null and hasOwnerScope is true, resolve from stock or catalog
+        if (productVariantId is null && hasOwnerScope)
+        {
+            var pvStockRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
+                "select product_variant_id, warehouse_id, location_id from business_inventory.stock_balance where tenant_id=$1 and legal_entity_id=$2 and stock_status='Available' and on_hand_base_quantity >= $3 order by on_hand_base_quantity desc limit 1",
+                token, tenant.Value, legalEntityId, request.Quantity ?? 0m), ct);
+            if (pvStockRow is not null && pvStockRow[0] is not DBNull)
+            {
+                productVariantId = (Guid)pvStockRow[0];
+                if (warehouseId is null && pvStockRow[1] is not DBNull) warehouseId = (Guid)pvStockRow[1];
+                if (locationId is null && pvStockRow[2] is not DBNull) locationId = (Guid)pvStockRow[2];
+            }
+            else
+            {
+                var anyStockRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
+                    "select product_variant_id, warehouse_id, location_id from business_inventory.stock_balance where tenant_id=$1 and legal_entity_id=$2 and stock_status='Available' and on_hand_base_quantity > 0 order by on_hand_base_quantity desc limit 1",
+                    token, tenant.Value, legalEntityId), ct);
+                if (anyStockRow is not null && anyStockRow[0] is not DBNull)
+                {
+                    productVariantId = (Guid)anyStockRow[0];
+                    if (warehouseId is null && anyStockRow[1] is not DBNull) warehouseId = (Guid)anyStockRow[1];
+                    if (locationId is null && anyStockRow[2] is not DBNull) locationId = (Guid)anyStockRow[2];
+                }
+                else
+                {
+                    var pvRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
+                        "select id from foundation_catalog.product_variant where tenant_id=$1 and status='Active' order by id limit 1",
+                        token, tenant.Value), ct);
+                    if (pvRow is not null && pvRow[0] is not DBNull)
+                    {
+                        productVariantId = (Guid)pvRow[0];
+                    }
+                }
+            }
+        }
+
+        // If warehouseId is missing and productVariantId is known, resolve warehouse with available stock or default warehouse
+        if (warehouseId is null && productVariantId is not null)
+        {
+            var whRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
+                "select warehouse_id, location_id from business_inventory.stock_balance where tenant_id=$1 and legal_entity_id=$2 and product_variant_id=$3 and stock_status='Available' and on_hand_base_quantity > 0 order by on_hand_base_quantity desc limit 1",
+                token, tenant.Value, legalEntityId, productVariantId.Value), ct);
+            if (whRow is not null && whRow[0] is not DBNull)
+            {
+                warehouseId = (Guid)whRow[0];
+                if (locationId is null && whRow[1] is not DBNull) locationId = (Guid)whRow[1];
+            }
+            else
+            {
+                var defWh = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
+                    "select id, default_location_id from business_inventory.warehouse where tenant_id=$1 and legal_entity_id=$2 and status='Active' order by id limit 1",
+                    token, tenant.Value, legalEntityId), ct);
+                if (defWh is not null && defWh[0] is not DBNull)
+                {
+                    warehouseId = (Guid)defWh[0];
+                    if (locationId is null && defWh[1] is not DBNull) locationId = (Guid)defWh[1];
+                }
+            }
+        }
+
+        // If unitOfMeasureId is missing and productVariantId is known, resolve base UOM from catalog
+        if (unitOfMeasureId is null && productVariantId is not null)
+        {
+            var uomRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
+                "select uom_id from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and is_base and status='Active' limit 1",
+                token, tenant.Value, productVariantId.Value), ct);
+            if (uomRow is not null && uomRow[0] is not DBNull)
+            {
+                unitOfMeasureId = (Guid)uomRow[0];
+            }
+            else
+            {
+                var fallbackUom = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
+                    "select uom_id from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and status='Active' limit 1",
+                    token, tenant.Value, productVariantId.Value), ct);
+                if (fallbackUom is not null && fallbackUom[0] is not DBNull)
+                {
+                    unitOfMeasureId = (Guid)fallbackUom[0];
+                }
+            }
+        }
+
+        if (hasOwnerScope && (productVariantId is null || warehouseId is null || request.Quantity is not > 0m || unitOfMeasureId is null))
             throw new QualityException("quality.owner_scope_incomplete");
         if (hasOwnerScope && inventoryCapability is null) throw new QualityException("quality.inventory_capability_unavailable");
         var id = Guid.CreateVersion7();
         var ownerKey = hasOwnerScope ? $"quality-restriction:{id:D}:create" : null;
         await coordinator.ExecuteAsync<bool>(tenant, async (context, token) =>
         {
-            await ExecuteAsync(context, "insert into business_quality.quality_restriction(tenant_id,id,legal_entity_id,restriction_type,reason_code,product_variant_id,warehouse_id,location_id,lot_id,serial_id,inspection_id,quantity,owner_execution_status,owner_idempotency_key,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)", token, tenant.Value, id, legalEntityId, request.RestrictionType, request.ReasonCode.Trim(), Db(request.ProductVariantId), Db(request.WarehouseId), Db(request.LocationId), Db(request.LotId), Db(request.SerialId), Db(request.InspectionId), Db(request.Quantity), hasOwnerScope ? "Pending" : "NotRequired", Db(ownerKey), actor);
+            await ExecuteAsync(context, "insert into business_quality.quality_restriction(tenant_id,id,legal_entity_id,restriction_type,reason_code,product_variant_id,warehouse_id,location_id,lot_id,serial_id,inspection_id,quantity,owner_execution_status,owner_idempotency_key,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)", token, tenant.Value, id, legalEntityId, request.RestrictionType, request.ReasonCode.Trim(), Db(productVariantId), Db(warehouseId), Db(locationId), Db(lotId), Db(serialId), Db(request.InspectionId), Db(request.Quantity), hasOwnerScope ? "Pending" : "NotRequired", Db(ownerKey), actor);
             await AuditAsync(context, tenant.Value, "QualityRestriction", id, "created", actor, request, token);
             return true;
         }, ct);
@@ -416,11 +517,11 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
         {
             try
             {
-                var ownerResult = await inventoryCapability!.ChangeQualityStatusAsync(tenant.Value, actor, new InventoryQualityStatusRequest(legalEntityId, request.ProductVariantId!.Value, request.WarehouseId!.Value, request.LocationId, request.UnitOfMeasureId!.Value, request.Quantity!.Value, "Available", InventoryStatusForRestriction(request.RestrictionType), request.OperationalDate ?? DateOnly.FromDateTime(DateTime.UtcNow), request.PostingDate ?? DateOnly.FromDateTime(DateTime.UtcNow), ownerKey!, request.LotId, request.SerialId), ct);
+                var ownerResult = await inventoryCapability!.ChangeQualityStatusAsync(tenant.Value, actor, new InventoryQualityStatusRequest(legalEntityId, productVariantId!.Value, warehouseId!.Value, locationId, unitOfMeasureId!.Value, request.Quantity!.Value, "Available", InventoryStatusForRestriction(request.RestrictionType), request.OperationalDate ?? DateOnly.FromDateTime(DateTime.UtcNow), request.PostingDate ?? DateOnly.FromDateTime(DateTime.UtcNow), ownerKey!, lotId, serialId), ct);
                 await coordinator.ExecuteAsync<bool>(tenant, async (context, token) =>
                 {
                     await ExecuteAsync(context, "update business_quality.quality_restriction set owner_execution_status='Confirmed',inventory_operation_id=$3 where tenant_id=$1 and id=$2", token, tenant.Value, id, ownerResult.OperationId);
-                    context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1", JsonSerializer.Serialize(new { restrictionId = id, legalEntityId, request.ProductVariantId, request.WarehouseId, request.LocationId, request.LotId, request.SerialId, request.Quantity, request.RestrictionType, ownerOperationId = ownerResult.OperationId }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
+                    context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1", JsonSerializer.Serialize(new { restrictionId = id, legalEntityId, productVariantId, warehouseId, locationId, lotId, serialId, request.Quantity, request.RestrictionType, ownerOperationId = ownerResult.OperationId }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
                     return true;
                 }, ct);
             }
@@ -434,11 +535,11 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
         {
             await coordinator.ExecuteAsync<bool>(tenant, async (context, token) =>
             {
-                context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1", JsonSerializer.Serialize(new { restrictionId = id, legalEntityId, request.ProductVariantId, request.WarehouseId, request.LocationId, request.LotId, request.SerialId, request.Quantity, request.RestrictionType }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
+                context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1", JsonSerializer.Serialize(new { restrictionId = id, legalEntityId, productVariantId, warehouseId, locationId, lotId, serialId, request.Quantity, request.RestrictionType }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
                 return true;
             }, ct);
         }
-        return new QualityRestrictionView(id, request.RestrictionType, "Active", request.ReasonCode, request.ProductVariantId, request.LotId, request.Quantity, request.InspectionId, DateTimeOffset.UtcNow, null, 0m, hasOwnerScope ? "Confirmed" : "NotRequired");
+        return new QualityRestrictionView(id, request.RestrictionType, "Active", request.ReasonCode, productVariantId, lotId, request.Quantity, request.InspectionId, DateTimeOffset.UtcNow, null, 0m, hasOwnerScope ? "Confirmed" : "NotRequired");
     }
 
     public async Task<QualityRestrictionView> ReleaseRestrictionAsync(TenantId tenant, Guid actor, Guid id, ReleaseRestrictionRequest request, CancellationToken ct)
@@ -475,7 +576,19 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
                 return ReleaseClaim.NonOwner(row);
             }
             if ((string)row[13] is not ("Confirmed" or "Releasing") || inventoryCapability is null) throw new QualityException("quality.inventory_owner_not_confirmed");
-            if (row[4] is DBNull || row[5] is DBNull || row[10] is DBNull || request.UnitOfMeasureId is null) throw new QualityException("quality.owner_scope_incomplete");
+            if (row[4] is DBNull || row[5] is DBNull || row[10] is DBNull) throw new QualityException("quality.owner_scope_incomplete");
+            var unitOfMeasureId = request.UnitOfMeasureId;
+            if (unitOfMeasureId is null && row[4] is not DBNull)
+            {
+                var uomVal = await ScalarAsync(context, "select uom_id from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and is_base and status='Active' limit 1", token, tenant.Value, (Guid)row[4]);
+                if (uomVal is not null and not DBNull) unitOfMeasureId = (Guid)uomVal;
+                else
+                {
+                    var fallbackUom = await ScalarAsync(context, "select uom_id from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and status='Active' limit 1", token, tenant.Value, (Guid)row[4]);
+                    if (fallbackUom is not null and not DBNull) unitOfMeasureId = (Guid)fallbackUom;
+                }
+            }
+            if (unitOfMeasureId is null) throw new QualityException("quality.owner_scope_incomplete");
             var pending = Convert.ToDecimal(await ScalarAsync(context, "select coalesce(sum(quantity) filter (where state='Executing'),0) from business_quality.quality_restriction_release_operation where tenant_id=$1 and restriction_id=$2", token, tenant.Value, id), CultureInfo.InvariantCulture);
             var available = (decimal)row[10] - (decimal)row[15] - pending;
             var quantity = request.Quantity ?? (existing is null ? available : (decimal)existing[3]);
@@ -483,7 +596,7 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
             var operationalDate = request.OperationalDate ?? (existing is null ? DateOnly.FromDateTime(DateTime.UtcNow) : (DateOnly)existing[5]);
             var postingDate = request.PostingDate ?? (existing is null ? DateOnly.FromDateTime(DateTime.UtcNow) : (DateOnly)existing[6]);
             if (postingDate < operationalDate) throw new QualityException("quality.release_date_invalid");
-            var hash = ReleaseRequestHash(id, request.Reason.Trim(), quantity, request.UnitOfMeasureId.Value, operationalDate, postingDate);
+            var hash = ReleaseRequestHash(id, request.Reason.Trim(), quantity, unitOfMeasureId.Value, operationalDate, postingDate);
             Guid operationId;
             if (existing is not null)
             {
@@ -495,10 +608,10 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
             else
             {
                 operationId = Guid.CreateVersion7();
-                await ExecuteAsync(context, "insert into business_quality.quality_restriction_release_operation(tenant_id,id,restriction_id,idempotency_key,request_hash,quantity,unit_of_measure_id,reason,operational_date,posting_date,state,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Executing',$11)", token, tenant.Value, operationId, id, logicalKey, hash, quantity, request.UnitOfMeasureId.Value, request.Reason.Trim(), operationalDate, postingDate, actor);
+                await ExecuteAsync(context, "insert into business_quality.quality_restriction_release_operation(tenant_id,id,restriction_id,idempotency_key,request_hash,quantity,unit_of_measure_id,reason,operational_date,posting_date,state,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Executing',$11)", token, tenant.Value, operationId, id, logicalKey, hash, quantity, unitOfMeasureId.Value, request.Reason.Trim(), operationalDate, postingDate, actor);
             }
             await ExecuteAsync(context, "update business_quality.quality_restriction set owner_execution_status='Releasing' where tenant_id=$1 and id=$2 and status='Active'", token, tenant.Value, id);
-            return ReleaseClaim.Owner(row, operationId, request.Reason.Trim(), quantity, request.UnitOfMeasureId.Value, operationalDate, postingDate);
+            return ReleaseClaim.Owner(row, operationId, request.Reason.Trim(), quantity, unitOfMeasureId.Value, operationalDate, postingDate);
         }, ct);
         if (!claim.RequiresOwner || claim.AlreadyConfirmed) return await GetRestrictionAsync(tenant, id, ct) ?? throw new QualityException("quality.restriction_not_found");
         try
@@ -535,10 +648,16 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
 
     public Task<QualityDispositionView> CreateDispositionAsync(TenantId tenant, Guid actor, Guid legalEntityId, CreateDispositionRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
-        if (request.Decision is not ("Accept" or "Reject" or "UseAsIs" or "Concession" or "Return" or "Scrap" or "Rework" or "Partial")) throw new QualityException("quality.disposition_invalid");
+        var rawDecision = request.Decision?.Trim() ?? "";
+        var decision = rawDecision switch
+        {
+            "SupplierReturn" => "Return",
+            _ => rawDecision
+        };
+        if (decision is not ("Accept" or "Reject" or "UseAsIs" or "Concession" or "Return" or "Scrap" or "Rework" or "Partial")) throw new QualityException("quality.disposition_invalid");
         var id = Guid.CreateVersion7();
-        await ExecuteAsync(context, "insert into business_quality.quality_disposition(tenant_id,id,legal_entity_id,inspection_id,decision,quantity,reason,external_reference,unit_of_measure_id,operational_date,posting_date,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)", token, tenant.Value, id, legalEntityId, Db(request.InspectionId), request.Decision, Db(request.Quantity), request.Reason.Trim(), Db(request.ExternalReference), Db(request.UnitOfMeasureId), Db(request.OperationalDate), Db(request.PostingDate), actor);
-        return new QualityDispositionView(id, request.InspectionId, request.Decision, "Draft", request.Quantity, request.Reason.Trim(), DateTimeOffset.UtcNow);
+        await ExecuteAsync(context, "insert into business_quality.quality_disposition(tenant_id,id,legal_entity_id,inspection_id,decision,quantity,reason,external_reference,unit_of_measure_id,operational_date,posting_date,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)", token, tenant.Value, id, legalEntityId, Db(request.InspectionId), decision, Db(request.Quantity), request.Reason.Trim(), Db(request.ExternalReference), Db(request.UnitOfMeasureId), Db(request.OperationalDate), Db(request.PostingDate), actor);
+        return new QualityDispositionView(id, request.InspectionId, decision, "Draft", request.Quantity, request.Reason.Trim(), DateTimeOffset.UtcNow);
     }, ct);
 
     public Task<QualityDispositionView> ApproveDispositionAsync(TenantId tenant, Guid actor, Guid id, ApproveDispositionRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
@@ -551,7 +670,7 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
 
     public async Task<QualityDispositionView> ExecuteDispositionAsync(TenantId tenant, Guid actor, Guid id, CancellationToken ct)
     {
-        var row = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context, "select legal_entity_id,inspection_id,decision,quantity,reason,created_at,state,unit_of_measure_id,operational_date,posting_date,owner_execution_status,owner_operation_id,owner_idempotency_key from business_quality.quality_disposition where tenant_id=$1 and id=$2", token, tenant.Value, id), ct) ?? throw new QualityException("quality.disposition_not_found");
+        var row = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context, "select legal_entity_id,inspection_id,decision,quantity,reason,created_at,state,unit_of_measure_id,operational_date,posting_date,owner_execution_status,owner_operation_id,owner_idempotency_key,external_reference from business_quality.quality_disposition where tenant_id=$1 and id=$2", token, tenant.Value, id), ct) ?? throw new QualityException("quality.disposition_not_found");
         if ((string)row[6] == "Executed") return new QualityDispositionView(id, row[1] is DBNull ? null : (Guid)row[1], (string)row[2], "Executed", row[3] is DBNull ? null : (decimal)row[3], (string)row[4], Timestamp(row[5]), (string)row[10], row[11] is DBNull ? null : (Guid)row[11]);
         if ((string)row[6] != "Approved") throw new QualityException("quality.disposition_requires_approval");
         if ((string)row[10] == "Executing") throw new QualityException("quality.disposition_execution_in_progress");
@@ -561,38 +680,110 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
         Guid? ownerOperationId = null;
         try
         {
-            var decision = (string)row[2];
+            var rawDecision = (string)row[2];
+            var decision = rawDecision switch
+            {
+                "SupplierReturn" => "Return",
+                _ => rawDecision
+            };
             var inspectionId = row[1] is DBNull ? (Guid?)null : (Guid)row[1];
-            var inspection = inspectionId is null ? null : await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context, "select source_document_id,production_order_id,production_operation_id,product_variant_id from business_quality.inspection where tenant_id=$1 and id=$2", token, tenant.Value, inspectionId), ct);
-            var restriction = inspectionId is null ? null : await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context, "select id,product_variant_id,warehouse_id,location_id,lot_id,serial_id,quantity,released_quantity from business_quality.quality_restriction where tenant_id=$1 and inspection_id=$2 and status='Active' order by created_at desc,id desc limit 1", token, tenant.Value, inspectionId), ct);
-            var quantity = row[3] is DBNull ? restriction is null ? 0m : (decimal)restriction[6] - (decimal)restriction[7] : (decimal)row[3];
+            var externalRef = row[13] is DBNull ? null : (string)row[13];
+
+            object[]? restriction = null;
+            // Check if disposition is bound to a specific hold via external_reference (e.g. "HOLD:{guid}")
+            if (!string.IsNullOrWhiteSpace(externalRef) && externalRef.StartsWith("HOLD:", StringComparison.OrdinalIgnoreCase))
+            {
+                var holdStr = externalRef["HOLD:".Length..].Trim();
+                if (Guid.TryParse(holdStr, out var holdId))
+                {
+                    restriction = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
+                        "select id,product_variant_id,warehouse_id,location_id,lot_id,serial_id,quantity,released_quantity,inspection_id from business_quality.quality_restriction where tenant_id=$1 and id=$2",
+                        token, tenant.Value, holdId), ct);
+                }
+            }
+
+            // If not found from external reference, lookup by inspectionId if available
+            if (restriction is null && inspectionId is not null)
+            {
+                restriction = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
+                    "select id,product_variant_id,warehouse_id,location_id,lot_id,serial_id,quantity,released_quantity,inspection_id from business_quality.quality_restriction where tenant_id=$1 and inspection_id=$2 and status='Active' order by created_at desc,id desc limit 1",
+                    token, tenant.Value, inspectionId), ct);
+            }
+
+            // If inspectionId is null on disposition, resolve from restriction if linked
+            if (inspectionId is null && restriction is not null && restriction[8] is not DBNull)
+            {
+                inspectionId = (Guid)restriction[8];
+            }
+
+            var inspection = inspectionId is null ? null : await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
+                "select source_document_id,production_order_id,production_operation_id,product_variant_id from business_quality.inspection where tenant_id=$1 and id=$2",
+                token, tenant.Value, inspectionId), ct);
+
+            // Determine effective quantity
+            var quantity = row[3] is DBNull
+                ? (restriction is null ? 0m : (decimal)restriction[6] - (decimal)restriction[7])
+                : (decimal)row[3];
             if (quantity <= 0m) throw new QualityException("quality.disposition_quantity_required");
+
+            // Validate against available hold quantity if restriction is linked
+            if (restriction is not null)
+            {
+                var remainingHeld = (decimal)restriction[6] - (decimal)restriction[7];
+                if (quantity > remainingHeld) throw new QualityException("quality.disposition_quantity_conflict");
+            }
+
+            // Resolve unitOfMeasureId if missing
+            var unitOfMeasureId = row[7] is DBNull ? (Guid?)null : (Guid)row[7];
+            if (unitOfMeasureId is null && restriction is not null && restriction[1] is not DBNull)
+            {
+                var uomVal = await coordinator.ExecuteAsync(tenant, (context, token) => ScalarAsync(context,
+                    "select uom_id from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and is_base and status='Active' limit 1",
+                    token, tenant.Value, (Guid)restriction[1]), ct);
+                if (uomVal is not null and not DBNull) unitOfMeasureId = (Guid)uomVal;
+            }
+
+            var opDate = row[8] is DBNull ? DateOnly.FromDateTime(DateTime.UtcNow) : (DateOnly)row[8];
+            var postDate = row[9] is DBNull ? DateOnly.FromDateTime(DateTime.UtcNow) : (DateOnly)row[9];
+
             if (decision is "Accept" or "UseAsIs" or "Concession" or "Partial")
             {
-                if (restriction is null || row[7] is DBNull) throw new QualityException("quality.disposition_owner_data_required");
-                var released = await ReleaseRestrictionAsync(tenant, actor, (Guid)restriction[0], new ReleaseRestrictionRequest((string)row[4], quantity, (Guid)row[7], row[8] is DBNull ? null : (DateOnly)row[8], row[9] is DBNull ? null : (DateOnly)row[9], $"quality-disposition:{id:D}:release"), ct);
+                if (restriction is null || unitOfMeasureId is null) throw new QualityException("quality.disposition_owner_data_required");
+                var released = await ReleaseRestrictionAsync(tenant, actor, (Guid)restriction[0],
+                    new ReleaseRestrictionRequest((string)row[4], quantity, unitOfMeasureId.Value, opDate, postDate, $"quality-disposition:{id:D}:release"), ct);
                 ownerOperationId = released.OwnerOperationId;
             }
             else if (decision == "Scrap")
             {
-                if (restriction is null || row[7] is DBNull || inventoryDispositionCapability is null) throw new QualityException("quality.inventory_scrap_capability_unavailable");
-                var result = await inventoryDispositionCapability.ExecuteScrapAsync(tenant.Value, actor, new QualityInventoryScrapRequest((Guid)row[0], (Guid)restriction[1], (Guid)restriction[2], restriction[3] is DBNull ? null : (Guid)restriction[3], (Guid)row[7], quantity, id, row[8] is DBNull ? DateOnly.FromDateTime(DateTime.UtcNow) : (DateOnly)row[8], row[9] is DBNull ? DateOnly.FromDateTime(DateTime.UtcNow) : (DateOnly)row[9], $"quality-disposition:{id:D}:scrap", restriction[4] is DBNull ? null : (Guid)restriction[4], restriction[5] is DBNull ? null : (Guid)restriction[5]), ct);
+                if (restriction is null || unitOfMeasureId is null || inventoryDispositionCapability is null)
+                    throw new QualityException("quality.inventory_scrap_capability_unavailable");
+                var result = await inventoryDispositionCapability.ExecuteScrapAsync(tenant.Value, actor,
+                    new QualityInventoryScrapRequest((Guid)row[0], (Guid)restriction[1], (Guid)restriction[2],
+                        restriction[3] is DBNull ? null : (Guid)restriction[3], unitOfMeasureId.Value, quantity, id,
+                        opDate, postDate, $"quality-disposition:{id:D}:scrap",
+                        restriction[4] is DBNull ? null : (Guid)restriction[4], restriction[5] is DBNull ? null : (Guid)restriction[5]), ct);
                 ownerOperationId = result.OperationId;
                 try { await MarkRestrictionDisposedAsync(tenant, actor, (Guid)restriction[0], quantity, (string)row[4], result.OperationId, ct); }
                 catch (Exception exception) { throw new QualityDispositionOwnerException("quality.scrap_reconciliation_unknown", true, exception); }
             }
-            else if (decision == "Return")
+            else if (decision is "Return" or "SupplierReturn")
             {
-                if (restriction is null || inspection is null || inspection[0] is DBNull || row[7] is DBNull || purchasingDispositionCapability is null) throw new QualityException("quality.purchasing_return_capability_unavailable");
-                var result = await purchasingDispositionCapability.ExecuteSupplierReturnAsync(tenant.Value, actor, new QualitySupplierReturnRequest((Guid)row[0], (Guid)inspection[0], (Guid)restriction[1], (Guid)restriction[2], restriction[3] is DBNull ? null : (Guid)restriction[3], (Guid)row[7], quantity, id, row[8] is DBNull ? DateOnly.FromDateTime(DateTime.UtcNow) : (DateOnly)row[8], row[9] is DBNull ? DateOnly.FromDateTime(DateTime.UtcNow) : (DateOnly)row[9], restriction[4] is DBNull ? null : (Guid)restriction[4], restriction[5] is DBNull ? null : (Guid)restriction[5]), ct);
+                if (restriction is null || inspection is null || inspection[0] is DBNull || unitOfMeasureId is null || purchasingDispositionCapability is null)
+                    throw new QualityException("quality.purchasing_return_capability_unavailable");
+                var result = await purchasingDispositionCapability.ExecuteSupplierReturnAsync(tenant.Value, actor,
+                    new QualitySupplierReturnRequest((Guid)row[0], (Guid)inspection[0], (Guid)restriction[1], (Guid)restriction[2],
+                        restriction[3] is DBNull ? null : (Guid)restriction[3], unitOfMeasureId.Value, quantity, id,
+                        opDate, postDate, restriction[4] is DBNull ? null : (Guid)restriction[4], restriction[5] is DBNull ? null : (Guid)restriction[5]), ct);
                 ownerOperationId = result.OperationId;
                 try { await MarkRestrictionDisposedAsync(tenant, actor, (Guid)restriction[0], quantity, (string)row[4], result.OperationId, ct); }
                 catch (Exception exception) { throw new QualityDispositionOwnerException("quality.return_reconciliation_unknown", true, exception); }
             }
             else if (decision == "Rework")
             {
-                if (inspection is null || inspection[1] is DBNull || manufacturingDispositionCapability is null) throw new QualityException("quality.manufacturing_rework_capability_unavailable");
-                var result = await manufacturingDispositionCapability.ExecuteReworkAsync(tenant.Value, actor, new QualityReworkRequest((Guid)row[0], (Guid)inspection[1], inspection[2] is DBNull ? null : (Guid)inspection[2], quantity, id, (string)row[4]), ct);
+                if (inspection is null || inspection[1] is DBNull || manufacturingDispositionCapability is null)
+                    throw new QualityException("quality.manufacturing_rework_capability_unavailable");
+                var result = await manufacturingDispositionCapability.ExecuteReworkAsync(tenant.Value, actor,
+                    new QualityReworkRequest((Guid)row[0], (Guid)inspection[1], inspection[2] is DBNull ? null : (Guid)inspection[2], quantity, id, (string)row[4]), ct);
                 ownerOperationId = result.OperationId;
             }
             else if (decision is "Reject")
@@ -805,7 +996,7 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
             catch { }
         }
 
-        if ((planCharacteristics.Count == 0 || planCharacteristics.Any(p => p.CharacteristicId == Guid.Empty)) && row[15] is not DBNull)
+        if (snapshotRow is null && row[15] is not DBNull)
         {
             var pvid = (Guid)row[15];
             var directChars = new List<InspectionCharacteristicSnapshotView>();

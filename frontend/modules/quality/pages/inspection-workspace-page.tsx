@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { QualityStatusBadge } from "../components/quality-status-badge.tsx";
-import { useQualityInspection, useQualityCharacteristics } from "../hooks/use-quality-queries.ts";
+import { useQualityInspection } from "../hooks/use-quality-queries.ts";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
 import { useQualityAccess } from "../hooks/use-quality-access.ts";
 import { QualityNoScopePrompt } from "../components/quality-no-scope-prompt.tsx";
@@ -25,9 +25,6 @@ export function InspectionWorkspacePage(): React.JSX.Element {
   const { legalEntityId, isReady } = useQualityScope();
 
   const { data: inspection, isLoading } = useQualityInspection(id);
-  const { data: characteristicsData, isLoading: isCharsLoading } = useQualityCharacteristics(
-    inspection?.legalEntityId ?? legalEntityId
-  );
   const {
     isReadOnly,
     canExecuteInspection,
@@ -87,19 +84,7 @@ export function InspectionWorkspacePage(): React.JSX.Element {
         evidenceRequired: p.evidenceRequired,
         isFromFrozenSnapshot: true
       }))
-    : (characteristicsData?.items ?? []).map((c) => ({
-        id: c.id,
-        code: c.code,
-        name: c.name,
-        dataType: c.dataType,
-        baseUomCode: c.baseUomCode,
-        minimum: null as number | null,
-        maximum: null as number | null,
-        target: null as string | null,
-        required: c.required,
-        evidenceRequired: false,
-        isFromFrozenSnapshot: false
-      }));
+    : [];
   const results = inspection.results ?? [];
 
   const openRecordModalForChar = (c: { id: string; name: string; dataType?: string; baseUomCode?: string | null }) => {
@@ -267,15 +252,15 @@ export function InspectionWorkspacePage(): React.JSX.Element {
           <span style={{ fontSize: "0.8125rem", color: "#64748b" }}>
             {planSnapshotChars
               ? t("messages.frozenSnapshotActive", "معايير الخطة المجمدة المعتمدة")
-              : (isCharsLoading ? t("messages.loading", "جاري التحميل...") : t("messages.registeredCharacteristicsCount", { count: characteristics.length, defaultValue: `${characteristics.length} خاصية مسجلة` }))}
+              : t("messages.noFrozenSnapshot", "لا توجد خطة فحص مجمدة لهذا الأمر")}
           </span>
         </div>
 
         {characteristics.length === 0 ? (
           <div style={{ padding: "2rem", textAlign: "center", color: "#64748b", backgroundColor: "#f8fafc", borderRadius: "6px" }}>
-            <p style={{ margin: "0 0 0.5rem" }}>{t("messages.noData", "لا توجد خصائص فحص مسجلة لهذا الكيان.")}</p>
+            <p style={{ margin: "0 0 0.5rem" }}>{t("messages.noFrozenPlanAttached", "لا توجد مواصفات جودة مرتبطة بخطة الفحص المجمدة لهذا الأمر.")}</p>
             <Link to="/quality/plans" style={{ color: "#0284c7", fontWeight: 600 }}>
-              ← {t("actions.createCharacteristic", "إضافة معايير فحص جديدة")}
+              ← {t("navigation.plans", "استعراض خطط الجودة")}
             </Link>
           </div>
         ) : (

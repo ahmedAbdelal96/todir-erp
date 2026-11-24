@@ -18,9 +18,9 @@
 | 4 | Shared Components & Modals | KPI ribbon, status badges, 18 modal dialogs for discrete mutation workflows | **DONE** |
 | 5 | Operational Pages (10 Workspaces) | Overview, Plans, Inspections, Inspection Workspace, Holds/Restrictions, Dispositions, NCR/Issues, CAPA, Supplier Quality, Certificates | **DONE** |
 | 6 | Arabic/English Localization | Complete parity between `ar.ts` and `en.ts` with authentic enterprise vocabulary | **DONE** |
-| 7 | Real-Stack Playwright Suite | `quality-real-stack.spec.ts` covering QF-01 through QF-18 with live API & PostgreSQL (18/18 PASS, 3.7m) | **DONE** |
-| 8 | Quality Verification Ladder | Typecheck (`tsc --noEmit`), architecture boundaries, localization verify, API drift, unit tests (293/293 PASS), Vite build | **DONE** |
-| 9 | Acceptance Blockers Resolution | All 8 acceptance blockers fully resolved with fail-closed db guard, loopback & token diagnostics, and fresh artifacts | **DONE** |
+| 7 | Real-Stack Playwright Suite | `quality-real-stack.spec.ts` covering 20 transactional scenarios with live API, loopback diagnostic guards, & PostgreSQL acceptance database (20/20 PASS, 2.3m) | **DONE** |
+| 8 | Quality Verification Ladder | Typecheck (`tsc --noEmit`), architecture boundaries, localization verify, API drift, unit tests, Vite build (All PASS) | **DONE** |
+| 9 | Acceptance Blockers & Domain Safety | Fail-closed access hooks, authoritative Inventory ownership hold reconciliation, remaining balance validation, base UOM resolution, frozen plan snapshot purity, distinct responsive artifacts | **DONE** |
 | 10 | Final Documentation & Delivery | Update coverage matrix, product acceptance report, commit and push to `origin/dev` via SSH | **DONE** |
 
 ---

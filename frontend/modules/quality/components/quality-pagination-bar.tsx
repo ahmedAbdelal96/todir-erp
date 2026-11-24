@@ -16,13 +16,13 @@ export function QualityPaginationBar({
   onPrev,
   onNext,
   isLoading
-}: QualityPaginationBarProps): React.JSX.Element | null {
+}: QualityPaginationBarProps): React.JSX.Element {
   const { t } = useTranslation("quality");
-
-  if (!hasPrev && !hasNext) return null;
 
   return (
     <div
+      aria-label={t("actions.pagination", "تصفح الصفحات")}
+      role="navigation"
       style={{
         display: "flex",
         justifyContent: "space-between",

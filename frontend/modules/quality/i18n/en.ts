@@ -119,6 +119,13 @@ export const qualityEn = {
     Regrade: "Downgrade / Regrade"
   },
 
+  restrictionTypes: {
+    QualityHold: "Quality Hold (QualityHold)",
+    Quarantine: "Quarantine (Quarantine)",
+    Blocked: "Blocked (Blocked)",
+    ReturnsInspection: "Returns Inspection (ReturnsInspection)"
+  },
+
   actions: {
     createPlan: "Create Quality Plan",
     createVersion: "Create New Version",
@@ -170,6 +177,7 @@ export const qualityEn = {
     openWorkspace: "Open Inspection Workbench",
     previous: "Previous",
     next: "Next",
+    pagination: "Pagination",
     reMeasure: "Edit / Re-measure",
     measure: "+ Record Measurement"
   },

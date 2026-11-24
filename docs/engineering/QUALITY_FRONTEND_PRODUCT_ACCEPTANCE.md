@@ -60,7 +60,7 @@ All user-facing Arabic microcopy strictly follows the authoritative Enterprise A
 
 Executed via `pnpm --dir frontend exec playwright test --config=playwright.quality.config.ts` against the live PostgreSQL-backed backend on port 5088 and Vite on port 5178 targeting disposable database `todir_quality_acceptance`.
 
-**Execution Result:** `18 passed (3.7m)` — 100% PASS with 18 distinct, authentic, high-resolution visual artifacts. Target disposable database isolation enforced fail-closed by `assertDisposableDatabase()` and `assertApiDatabaseContext()`. Diagnostic token and loopback caller requirements enforced in `Program.cs`. Read-only safety assessment of `erp_app` confirmed in `pg_roles` (least-privilege application role, `rolsuper=f`, `rolcreatedb=f`, `rolbypassrls=f`).
+**Execution Result:** `20 passed (2.3m)` — 100% PASS with 18 distinct, authentic, high-resolution visual artifacts and 2 security/navigation invariant proofs. Target disposable database isolation enforced fail-closed by `assertDisposableDatabase()` and `assertApiDatabaseContext()`. Diagnostic token and loopback caller requirements enforced in `Program.cs`. Read-only safety assessment of `erp_app` confirmed in `pg_roles` (least-privilege application role, `rolsuper=f`, `rolcreatedb=f`, `rolbypassrls=f`).
 
 ### 3.1 Verified Scenarios & Visual Artifacts
 
@@ -75,15 +75,17 @@ Executed via `pnpm --dir frontend exec playwright test --config=playwright.quali
 | **07** | **Inspection Conformance & Completion:** Validates conformance evaluation modal, inspector assignment, and completion transition. | `07-inspection-evaluation-completed.png` | **PASS** |
 | **08** | **Strict Domain Invariant: Passed != Released:** Validates persistent warning banner on header asserting that passed inspection does not release held inventory. | `08-inspection-domain-invariant-warning.png` | **PASS** |
 | **09** | **Reinspection Workflow & Cycle Tracing:** Validates reinspection trigger and parent inspection cycle traceability. | `09-reinspection-workflow.png` | **PASS** |
-| **10** | **Material Holds & Restrictions Register:** Validates material hold register displaying initial quantity, released quantity, and remaining restricted balance. | `10-material-holds-restrictions.png` | **PASS** |
+| **10** | **Material Holds & Restrictions Register:** Validates material hold register displaying initial quantity, released quantity, and remaining restricted balance with authoritative Inventory status hold. | `10-material-holds-restrictions.png` | **PASS** |
 | **11** | **Partial Quantity Release Dialog & Balance Calculation:** Validates partial release modal with remaining balance accounting and operational date selection. | `11-partial-quantity-release-dialog.png` | **PASS** |
-| **12** | **Dispositions Queue & MRB Technical Decisions:** Validates MRB dispositions queue with source hold banner, decision types (`UseAsIs`, `Rework`, `Scrap`, `SupplierReturn`) and action buttons. | `12-quality-dispositions-mrb.png` | **PASS** |
+| **12** | **Dispositions Queue & MRB Technical Decisions:** Validates MRB dispositions queue with source hold binding (`HOLD:{id}`), decision types (`UseAsIs`, `Rework`, `Scrap`, `SupplierReturn`) and action buttons. | `12-quality-dispositions-mrb.png` | **PASS** |
 | **13** | **Quality Issues Log & Defect Classification:** Validates quality issues listing categorized by source, severity, and defect classification. | `13-quality-issues-log.png` | **PASS** |
 | **14** | **Non-Conformance Reports (NCR) & Containment:** Validates NCR lifecycle with immediate containment action logging and severity badges. | `14-ncrs-containment-actions.png` | **PASS** |
 | **15** | **Corrective & Preventive Action (CAPA) with 6M:** Validates CAPA workflow with Ishikawa 6M root cause analysis and action assignment. | `15-capa-root-cause-investigation.png` | **PASS** |
 | **16** | **Supplier Quality, SCAR Queue, and COA/COC:** Validates supplier quality scorecards, SCAR management, and Certificate of Analysis (COA) issuance register for passed inspections. | `16-supplier-quality-scar-certificates.png` | **PASS** |
 | **17** | **Multi-Viewport & Responsive RTL/LTR:** Validates responsive presentation on Desktop (1440px), Tablet (768px), Mobile (375px), and English LTR alignment without text clipping. | `17-multi-viewport-rtl-ltr.png` | **PASS** |
 | **18** | **Granular Authorization & Read-Only Protection:** Validates capability-driven action gating (`quality.read`, `quality.plan.manage`, `quality.hold.manage`, `quality.disposition.manage`) and module lifecycle locks. | `18-permission-lifecycle-protection.png` | **PASS** |
+| **19** | **Keyset Pagination & Cursor Navigation:** Validates keyset pagination bar controls, navigation aria contracts, and previous/next cursor paging. | Playwright Spec 19 | **PASS** |
+| **20** | **Fail-Closed Security & Access Invariant Verification:** Validates fail-closed tenant context enforcement and rejection of unauthenticated/unauthorized API mutations. | Playwright Spec 20 | **PASS** |
 
 ---
 

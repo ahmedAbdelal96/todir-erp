@@ -41,8 +41,8 @@ export function useQualityAccess(): QualityAccess {
     if (permissions) {
       return permissions.hasPermission(permission);
     }
-    // Fail-open for isolated unit testing only when no context is provided
-    return true;
+    // Fail-closed: deny permission when no security context is present
+    return false;
   };
 
   return {

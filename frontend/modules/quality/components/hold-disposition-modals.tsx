@@ -73,6 +73,7 @@ export function CreateRestrictionModal({
     const qty = Number(quantity);
     if (!finalInspectionId || !qty || qty <= 0 || !reasonCode.trim()) return;
 
+    const matchedInspection = inspectionsData?.items?.find((i) => i.id === finalInspectionId);
     try {
       await createRestrictionMutation.mutateAsync({
         inspectionId: finalInspectionId,
@@ -81,7 +82,8 @@ export function CreateRestrictionModal({
           restrictionType,
           reasonCode: reasonCode.trim(),
           quantity: qty,
-          inspectionId: finalInspectionId
+          inspectionId: finalInspectionId,
+          productVariantId: matchedInspection?.productVariantId ?? null
         }
       });
       onClose();
@@ -116,9 +118,10 @@ export function CreateRestrictionModal({
           selectedKey={restrictionType}
           onSelectionChange={(key) => setRestrictionType(String(key))}
           options={[
-            { id: "QualityHold", label: "احتجاز جودة (QualityHold)" },
-            { id: "Quarantine", label: "حجر صناعي وصحي (Quarantine)" },
-            { id: "Conditional", label: "حظر مشروط (Conditional)" }
+            { id: "QualityHold", label: t("restrictionTypes.QualityHold", "احتجاز جودة (QualityHold)") },
+            { id: "Quarantine", label: t("restrictionTypes.Quarantine", "حجر صناعي وصحي (Quarantine)") },
+            { id: "Blocked", label: t("restrictionTypes.Blocked", "حظر جودة وتوريد (Blocked)") },
+            { id: "ReturnsInspection", label: t("restrictionTypes.ReturnsInspection", "فحص واحتجاز مرتجعات (ReturnsInspection)") }
           ]}
         />
         <TextField

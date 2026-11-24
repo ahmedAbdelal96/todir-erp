@@ -215,7 +215,7 @@ export interface ReinspectionRequest {
 export interface QualityRestrictionListItem {
   id: string;
   legalEntityId: string;
-  restrictionType: string; // "QualityHold" | "Quarantine" | "Conditional"
+  restrictionType: string; // "QualityHold" | "Quarantine" | "Blocked" | "ReturnsInspection"
   status: string; // "Active" | "Released"
   reasonCode: string;
   productVariantId: string | null;
@@ -275,7 +275,7 @@ export interface QualityDispositionListItem {
   id: string;
   legalEntityId: string;
   inspectionId: string | null;
-  decision: string; // "Accept" | "Reject" | "UseAsIs" | "Concession" | "SupplierReturn" | "Scrap" | "Rework"
+  decision: string; // "Accept" | "Reject" | "UseAsIs" | "Concession" | "Return" | "SupplierReturn" | "Scrap" | "Rework" | "Partial"
   state: string; // "Draft" | "Approved" | "Executing" | "Executed" | "Failed" | "Unknown"
   quantity: number | null;
   reason: string;
