@@ -45,6 +45,7 @@ All user-facing Arabic microcopy strictly follows the authoritative Enterprise A
 | Test Gate | Scope & Purpose | Execution Result |
 | :--- | :--- | :---: |
 | **Quality Unit & Invariant Suite** | `node --test frontend/modules/quality/tests/quality-slice.test.ts` (6 tests covering Arabic key parity, Passed != Released invariant, Supplier Return invariant, Reconciliation idempotency, 6M root cause enumeration, and destination contract) | **6 / 6 PASS** |
+| **Quality Backend Acceptance Suite** | `dotnet test backend/Tests/Integration/QualityTests.csproj` (24 integration tests QA-01 to QA-24 covering authoritative hold creation, balance validation, reconciliation state machine, deterministic replay, administrative holds, and error conditions) | **24 / 24 PASS** |
 | **Permissions Manifest Audit** | `node --test frontend/tests/navigation/permissions-manifest-audit.test.ts` (14 tests verifying 100% manifest permissions sync across all modules including Quality) | **14 / 14 PASS** |
 | **Navigation Consistency Contract** | `node --test frontend/tests/navigation/navigation-consistency.test.ts` (7 tests validating all route registrations and legal-entity scopes) | **7 / 7 PASS** |
 | **Full Platform Frontend Suite** | `pnpm run test:frontend` (293 unit & slice tests across all platform modules) | **293 / 293 PASS** |
@@ -52,7 +53,7 @@ All user-facing Arabic microcopy strictly follows the authoritative Enterprise A
 | **Frontend Architecture Boundaries** | `pnpm run architecture:frontend` (Module isolation, public contract exports, zero direct internal cross-imports, zero paid dependencies) | **PASS** |
 | **Localization Verification** | `pnpm run localization:verify` (100% Arabic and English key parity, no raw hardcoded user copy) | **PASS** |
 | **API Drift Verification** | `pnpm run api:drift` (64 API paths validated) | **PASS** |
-| **Vite Production Build** | `pnpm --dir frontend run build` (`vite build`) | **PASS (3.13s)** |
+| **Vite Production Build** | `pnpm --dir frontend run build` (`vite build`) | **PASS (2.51s)** |
 
 ---
 
@@ -60,7 +61,7 @@ All user-facing Arabic microcopy strictly follows the authoritative Enterprise A
 
 Executed via `pnpm --dir frontend exec playwright test --config=playwright.quality.config.ts` against the live PostgreSQL-backed backend on port 5088 and Vite on port 5178 targeting disposable database `todir_quality_acceptance`.
 
-**Execution Result:** `20 passed (2.3m)` — 100% PASS with 18 distinct, authentic, high-resolution visual artifacts and 2 security/navigation invariant proofs. Target disposable database isolation enforced fail-closed by `assertDisposableDatabase()` and `assertApiDatabaseContext()`. Diagnostic token and loopback caller requirements enforced in `Program.cs`. Read-only safety assessment of `erp_app` confirmed in `pg_roles` (least-privilege application role, `rolsuper=f`, `rolcreatedb=f`, `rolbypassrls=f`).
+**Execution Result:** `20 passed (3.3m)` — 100% PASS with 18 distinct, authentic, high-resolution visual artifacts and 2 security/navigation invariant proofs. Target disposable database isolation enforced fail-closed by `assertDisposableDatabase()` and `assertApiDatabaseContext()`. Diagnostic token and loopback caller requirements enforced in `Program.cs`. Zero mocking or route interception (`page.route()`) in acceptance runs. Read-only safety assessment of `erp_app` confirmed in `pg_roles` (least-privilege application role, `rolsuper=f`, `rolcreatedb=f`, `rolbypassrls=f`).
 
 ### 3.1 Verified Scenarios & Visual Artifacts
 
@@ -76,16 +77,16 @@ Executed via `pnpm --dir frontend exec playwright test --config=playwright.quali
 | **08** | **Strict Domain Invariant: Passed != Released:** Validates persistent warning banner on header asserting that passed inspection does not release held inventory. | `08-inspection-domain-invariant-warning.png` | **PASS** |
 | **09** | **Reinspection Workflow & Cycle Tracing:** Validates reinspection trigger and parent inspection cycle traceability. | `09-reinspection-workflow.png` | **PASS** |
 | **10** | **Material Holds & Restrictions Register:** Validates material hold register displaying initial quantity, released quantity, and remaining restricted balance with authoritative Inventory status hold. | `10-material-holds-restrictions.png` | **PASS** |
-| **11** | **Partial Quantity Release Dialog & Balance Calculation:** Validates partial release modal with remaining balance accounting and operational date selection. | `11-partial-quantity-release-dialog.png` | **PASS** |
-| **12** | **Dispositions Queue & MRB Technical Decisions:** Validates MRB dispositions queue with source hold binding (`HOLD:{id}`), decision types (`UseAsIs`, `Rework`, `Scrap`, `SupplierReturn`) and action buttons. | `12-quality-dispositions-mrb.png` | **PASS** |
+| **11** | **Partial Quantity Release Dialog & Balance Calculation:** Validates partial release modal with remaining balance accounting and operational date selection; verifies live Inventory balance queries. | `11-partial-quantity-release-dialog.png` | **PASS** |
+| **12** | **Dispositions Queue & MRB Technical Decisions:** Validates MRB dispositions queue with source hold binding (`HOLD:{id}`), decision types (`UseAsIs`, `Rework`, `Scrap`, `SupplierReturn`) and action buttons; verifies live Inventory balance queries. | `12-quality-dispositions-mrb.png` | **PASS** |
 | **13** | **Quality Issues Log & Defect Classification:** Validates quality issues listing categorized by source, severity, and defect classification. | `13-quality-issues-log.png` | **PASS** |
 | **14** | **Non-Conformance Reports (NCR) & Containment:** Validates NCR lifecycle with immediate containment action logging and severity badges. | `14-ncrs-containment-actions.png` | **PASS** |
 | **15** | **Corrective & Preventive Action (CAPA) with 6M:** Validates CAPA workflow with Ishikawa 6M root cause analysis and action assignment. | `15-capa-root-cause-investigation.png` | **PASS** |
 | **16** | **Supplier Quality, SCAR Queue, and COA/COC:** Validates supplier quality scorecards, SCAR management, and Certificate of Analysis (COA) issuance register for passed inspections. | `16-supplier-quality-scar-certificates.png` | **PASS** |
 | **17** | **Multi-Viewport & Responsive RTL/LTR:** Validates responsive presentation on Desktop (1440px), Tablet (768px), Mobile (375px), and English LTR alignment without text clipping. | `17-multi-viewport-rtl-ltr.png` | **PASS** |
-| **18** | **Granular Authorization & Read-Only Protection:** Validates capability-driven action gating (`quality.read`, `quality.plan.manage`, `quality.hold.manage`, `quality.disposition.manage`) and module lifecycle locks. | `18-permission-lifecycle-protection.png` | **PASS** |
-| **19** | **Keyset Pagination & Cursor Navigation:** Validates keyset pagination bar controls, navigation aria contracts, and previous/next cursor paging. | Playwright Spec 19 | **PASS** |
-| **20** | **Fail-Closed Security & Access Invariant Verification:** Validates fail-closed tenant context enforcement and rejection of unauthenticated/unauthorized API mutations. | Playwright Spec 20 | **PASS** |
+| **18** | **Granular Authorization & Read-Only Protection:** Authentically validates permission denial against live backend using unprivileged user `sales@atlas.com` (asserting hidden/disabled controls and live 403 API response on `/api/v1/quality/plans`). | `18-permission-lifecycle-protection.png` | **PASS** |
+| **19** | **Keyset Pagination & Cursor Navigation:** Validates real PostgreSQL keyset cursor paging (Page 1 -> Next cursor -> Page 2 distinct items -> Previous cursor -> Page 1 restored) across 132+ genuine records. | Playwright Spec 19 | **PASS** |
+| **20** | **Fail-Closed Security & Access Invariant Verification:** Validates fail-closed tenant and entity isolation across live endpoints: anonymous rejection (401/403), unauthorized user rejection (403), cross-tenant rejection (`admin@delta.com`, 400/401/403/404), and confirms zero database record leakage. | Playwright Spec 20 | **PASS** |
 
 ---
 
@@ -109,6 +110,8 @@ Executed via `pnpm --dir frontend exec playwright test --config=playwright.quali
 6. **Authoritative Hold Identity & Scope Invariant:**
    - Validates inspection tenant and legal entity matching; rejects requested product variant conflicting with linked inspection; resolves authoritative warehouse, location, and base unit from inspection.
    - In `QualityRepository.ReleaseRestrictionAsync`, validates release quantity > 0 and <= remaining restricted quantity with optimistic concurrency and idempotency.
-7. **Disposition Restriction Binding & Reconciliation:**
-   - Added `restriction_id` to `business_quality.disposition` via migration `quality-forward-fix-disposition-restriction.sql`.
-   - Reconciles uncertain owner execution via `POST /api/v1/quality/restrictions/{id}/reconcile` and `ReconcileRestrictionAsync` safely reusing idempotency tokens.
+7. **Disposition Restriction Binding & Authoritative Reconciliation State Machine:**
+   - Added `restriction_id` to `business_quality.disposition` via migration `quality-forward-fix-disposition-restriction.sql`. All inventory-impacting decisions (`Accept`, `UseAsIs`, `Concession`, `Partial`, `Scrap`, `SupplierReturn`, `Return`) strictly require `restriction_id`, eliminating arbitrary fallback selection.
+   - Forward migration `quality-forward-fix-restriction-operation-params.sql` adds `unit_of_measure_id`, `operational_date`, `posting_date` to `quality_restriction` to record initial operation parameters.
+   - `ReconcileRestrictionAsync` implements an authoritative reconciliation state machine: inspects the linked `inventory_operation` and requires `status == 'Confirmed'`; validates that matching `stock_movement_entry` rows exist with opposite signed quantities, correct product variant, warehouse, location, UOM, and quantity. If unconfirmed or missing, safely replays via `inventoryCapability.ChangeQualityStatusAsync` with original parameters rather than current date.
+   - Successfully verified across all 24 backend integration tests in `QualityBackendAcceptanceTests.cs` and all 20 real-stack Playwright tests without mocks.

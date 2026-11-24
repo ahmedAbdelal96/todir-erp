@@ -27,9 +27,9 @@
 | **QF-15** | Corrective & Preventive Action (CAPA) with 6M | Quality Manager | `/quality/capas` | `GET/POST /api/v1/quality/capas`, `/actions`, `/root-cause` | `quality.capa.manage` | Yes | Unit + E2E | `15-capa-root-cause-investigation.png` | **PASS** |
 | **QF-16** | Supplier Quality, SCAR Queue, and COA/COC | Supplier Quality Lead | `/quality/suppliers`, `/quality/certificates` | `PUT /supplier-profiles`, `POST /scars`, `POST /certificates` | `quality.supplier.manage`, `quality.certificate.manage` | Yes | Unit + E2E | `16-supplier-quality-scar-certificates.png` | **PASS** |
 | **QF-17** | Multi-Viewport & Arabic/English Responsive | All Quality Users | `/quality` | RTL Arabic & LTR English layout, tablet (768px), mobile (375px) | Platform Core | Yes | E2E | `17-multi-viewport-rtl-ltr.png` | **PASS** |
-| **QF-18** | Granular Authorization & Read-Only Protection | Auditor / Restricted | `/quality/*` | `useQualityAccess` granular capability checks & lifecycle locks | `quality.read` + Granular | Yes | E2E | `18-permission-lifecycle-protection.png` | **PASS** |
-| **QF-19** | Keyset Pagination & Cursor Navigation | All Quality Users | `/quality/inspections` | Keyset pagination bar & server cursor tracking | `quality.read` | Yes | E2E | Playwright Spec 19 | **PASS** |
-| **QF-20** | Fail-Closed Security & Access Invariant Verification | System / Security | `/api/v1/quality/*` | Multi-tenant context enforcement & CSRF/Cookie guards | Security Core | Yes | E2E | Playwright Spec 20 | **PASS** |
+| **QF-18** | Granular Authorization & Read-Only Protection | Auditor / Restricted (`sales@atlas.com`) | `/quality/*` | `useQualityAccess` granular capability checks & lifecycle locks, 403 API rejection | `quality.read` + Granular | Yes | E2E (Real Live API) | `18-permission-lifecycle-protection.png` | **PASS** |
+| **QF-19** | Keyset Pagination & Cursor Navigation | All Quality Users | `/quality/inspections` | Keyset pagination bar & server cursor tracking (132+ real records) | `quality.read` | Yes | E2E (Real DB Keyset Cursors) | Playwright Spec 19 | **PASS** |
+| **QF-20** | Fail-Closed Security & Access Invariant Verification | System / Security | `/api/v1/quality/*` | Multi-tenant & legal entity isolation, 401 anonymous, 403 unauthorized, cross-tenant rejection (`admin@delta.com`), zero DB leakage | Security Core | Yes | E2E (Live API & DB Verification) | Playwright Spec 20 | **PASS** |
 
 ---
 

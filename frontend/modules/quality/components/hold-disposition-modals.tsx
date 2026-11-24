@@ -10,8 +10,10 @@ import {
   useReleaseRestriction,
   useCreateDisposition,
   useApproveDisposition,
-  useQualityInspections
+  useQualityInspections,
+  useQualityInspection
 } from "../hooks/use-quality-queries.ts";
+import { useWarehouses, useLocations } from "../../inventory/public.ts";
 
 // --------------------------------------------------------------------------
 // 1. Create Restriction (Quality Hold) Modal
@@ -40,6 +42,13 @@ export function CreateRestrictionModal({
 
   const initialInspection = inspectionId || defaultInspectionId || "";
   const [selectedInspectionId, setSelectedInspectionId] = useState(initialInspection);
+  const singleInspectionQuery = useQualityInspection(selectedInspectionId || null);
+
+  const { data: warehouses = [] } = useWarehouses(legalEntityId);
+  const [warehouseId, setWarehouseId] = useState<string>("");
+  const { data: locations = [] } = useLocations(legalEntityId, warehouseId || undefined);
+  const [locationId, setLocationId] = useState<string>("");
+
   const [restrictionType, setRestrictionType] = useState("QualityHold");
   const [reasonCode, setReasonCode] = useState("RECEIVING_INSPECTION_HOLD");
   const [quantity, setQuantity] = useState(defaultQuantity ? String(defaultQuantity) : "");
@@ -60,6 +69,9 @@ export function CreateRestrictionModal({
     }
   }, [initialInspection, inspectionsData, selectedInspectionId, quantity]);
 
+  const matchedInspection = inspectionsData?.items?.find((i) => i.id === selectedInspectionId.trim());
+  const currentInspection = matchedInspection || singleInspectionQuery.data;
+
   const handleInspectionChange = (inspId: string) => {
     setSelectedInspectionId(inspId);
     const found = inspectionsData?.items?.find((i) => i.id === inspId);
@@ -67,8 +79,6 @@ export function CreateRestrictionModal({
       setQuantity(String(found.lotQuantity));
     }
   };
-
-  const matchedInspection = inspectionsData?.items?.find((i) => i.id === selectedInspectionId.trim());
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,7 +95,9 @@ export function CreateRestrictionModal({
           reasonCode: reasonCode.trim(),
           quantity: qty,
           inspectionId: finalInspectionId,
-          productVariantId: matchedInspection?.productVariantId || null
+          productVariantId: currentInspection?.productVariantId || null,
+          warehouseId: warehouseId || null,
+          locationId: locationId || null
         }
       });
       onClose();
@@ -97,6 +109,16 @@ export function CreateRestrictionModal({
   const inspectionOptions = (inspectionsData?.items ?? []).map((ins) => ({
     id: ins.id,
     label: `${ins.number} - ${ins.eventType} (${ins.lotQuantity})`
+  }));
+
+  const warehouseOptions = warehouses.map((w) => ({
+    id: w.id,
+    label: `${w.code} - ${w.name}`
+  }));
+
+  const locationOptions = locations.map((loc) => ({
+    id: loc.id,
+    label: `${loc.code} - ${loc.name}`
   }));
 
   return (
@@ -115,7 +137,7 @@ export function CreateRestrictionModal({
             options={inspectionOptions}
           />
         )}
-        {matchedInspection && (
+        {currentInspection && (
           <div
             data-testid="inspection-hold-context-banner"
             style={{
@@ -127,19 +149,44 @@ export function CreateRestrictionModal({
               color: "#334155"
             }}
           >
-            <div><strong>{t("fields.inspectionNumber", "رقم أمر الفحص")}:</strong> <BdiText>{matchedInspection.number}</BdiText></div>
+            <div><strong>{t("fields.inspectionNumber", "رقم أمر الفحص")}:</strong> <BdiText>{currentInspection.number}</BdiText></div>
             <div style={{ marginTop: "4px" }}>
               <strong>{t("fields.inventoryScope", "نطاق حظر المخزون")}:</strong>{" "}
-              {matchedInspection.productVariantId
+              {currentInspection.productVariantId
                 ? t("fields.physicalHoldBound", "حظر مخزني فعلي مرتبط بدفعة وصنف الفحص المعتمد")
                 : t("fields.administrativeHold", "حظر إداري ومستندي (بدون قفل مخزني فعلي)")}
             </div>
-            {matchedInspection.lotQuantity && (
+            {currentInspection.lotQuantity && (
               <div style={{ marginTop: "4px" }}>
-                <strong>{t("fields.lotQuantity", "كمية الدفعة")}:</strong> <BdiText>{String(matchedInspection.lotQuantity)}</BdiText>
+                <strong>{t("fields.lotQuantity", "كمية الدفعة")}:</strong> <BdiText>{String(currentInspection.lotQuantity)}</BdiText>
               </div>
             )}
+            <div style={{ marginTop: "4px", color: "#64748b" }}>
+              <strong>{t("fields.expectedEffect", "الأثر التشغيلي المتوقع")}:</strong>{" "}
+              {currentInspection.productVariantId
+                ? t("fields.physicalHoldEffect", "سيتم نقل الكمية المحددة من الرصيد المتاح (Available) إلى رصيد حظر الجودة المخصص.")
+                : t("fields.administrativeHoldEffect", "حظر مستندي إداري يمنع استكمال الإجراءات لحين رفع الحظر.")}
+            </div>
           </div>
+        )}
+        {currentInspection?.productVariantId && warehouseOptions.length > 0 && (
+          <Select
+            label={t("fields.warehouse", "المستودع (اختياري / تلقائي من الرصيد)")}
+            selectedKey={warehouseId}
+            onSelectionChange={(key) => {
+              setWarehouseId(String(key));
+              setLocationId("");
+            }}
+            options={[{ id: "", label: t("fields.autoSelectWarehouse", "تحديد تلقائي من الرصيد المتاح") }, ...warehouseOptions]}
+          />
+        )}
+        {warehouseId && locationOptions.length > 0 && (
+          <Select
+            label={t("fields.location", "موقع التخزين داخل المستودع")}
+            selectedKey={locationId}
+            onSelectionChange={(key) => setLocationId(String(key))}
+            options={[{ id: "", label: t("fields.autoSelectLocation", "تحديد تلقائي من الموقع الافتراضي") }, ...locationOptions]}
+          />
         )}
         <Select
           label={t("fields.restrictionType", "نوع الحظر والاحتجاز")}

@@ -72,7 +72,7 @@ public sealed class QualityBackendAcceptanceTests
         var issue = await quality.CreateIssueAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new("MaterialDefect", "QA-02 defect", "Failed receiving characteristic", "Major", inspection.Id), CancellationToken.None);
         var ncr = await quality.CreateNcrAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new(issue.Id, "QA-02 NCR", "Contain failed material"), CancellationToken.None);
         var hold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), new("QualityHold", "QA02", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id), AtlasEntity, CancellationToken.None);
-        var disposition = await quality.CreateDispositionAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new("Accept", "Authorized QA-02 disposition", inspection.Id, 1m, UnitOfMeasureId: stock.UnitId), CancellationToken.None);
+        var disposition = await quality.CreateDispositionAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new("Accept", "Authorized QA-02 disposition", inspection.Id, 1m, UnitOfMeasureId: stock.UnitId, RestrictionId: hold.Id), CancellationToken.None);
         await quality.ApproveDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, new("QA-02 manager approval"), CancellationToken.None);
         var executed = await quality.ExecuteDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, CancellationToken.None);
         Assert.Equal("Executed", executed.State);
@@ -340,7 +340,7 @@ public sealed class QualityBackendAcceptanceTests
         var hold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), new("QualityHold", "QA12", line.ProductVariantId.Value, warehouseId, locationId, LotId: lotId, SerialId: serialId, Quantity: 1m, UnitOfMeasureId: line.UnitOfMeasureId.Value, InspectionId: inspectionId), AtlasEntity, CancellationToken.None);
         var availableBefore = await StockQuantityAsync(connection, line.ProductVariantId.Value, warehouseId, locationId, "Available");
         var holdBefore = await StockQuantityAsync(connection, line.ProductVariantId.Value, warehouseId, locationId, "QualityHold");
-        var disposition = await quality.CreateDispositionAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new("Return", "QA-12 supplier return", inspectionId, 1m, UnitOfMeasureId: line.UnitOfMeasureId.Value), CancellationToken.None);
+        var disposition = await quality.CreateDispositionAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new("Return", "QA-12 supplier return", inspectionId, 1m, UnitOfMeasureId: line.UnitOfMeasureId.Value, RestrictionId: hold.Id), CancellationToken.None);
         await quality.ApproveDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, new("QA-12 approval"), CancellationToken.None);
 
         var executed = await quality.ExecuteDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, CancellationToken.None);
@@ -364,7 +364,7 @@ public sealed class QualityBackendAcceptanceTests
         var stock = await ReadStockAsync(connection, factory.Services.GetRequiredService<InventoryService>());
         var inspection = await CreatePassedInspectionAsync(quality, connection, stock, "QA-13");
         var hold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), new("QualityHold", "QA13", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id), AtlasEntity, CancellationToken.None);
-        var disposition = await quality.CreateDispositionAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new("Accept", "QA-13 reconcile", inspection.Id, 1m, UnitOfMeasureId: stock.UnitId), CancellationToken.None);
+        var disposition = await quality.CreateDispositionAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new("Accept", "QA-13 reconcile", inspection.Id, 1m, UnitOfMeasureId: stock.UnitId, RestrictionId: hold.Id), CancellationToken.None);
         await quality.ApproveDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, new("QA-13 approval"), CancellationToken.None);
         var key = $"quality-disposition:{disposition.Id:D}";
         await ExecuteAsync(connection, "update business_quality.quality_disposition set owner_execution_status='Unknown',owner_idempotency_key=$3,execution_error_code='simulated_unknown' where tenant_id=$1 and id=$2", AtlasTenant.Value, disposition.Id, key);
@@ -389,7 +389,7 @@ public sealed class QualityBackendAcceptanceTests
         var inspection = await quality.CreateInspectionAsync(AtlasTenant, Guid.CreateVersion7(), new(AtlasEntity, "Receiving", stock.ProductVariantId, 1m, SourceDocumentId: missingPurchaseOrderId, PlanVersionId: await PlanVersionAsync(connection), SourceFingerprint: $"qa-14:{Guid.CreateVersion7():N}"), CancellationToken.None);
         var hold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), new("QualityHold", "QA14", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id), AtlasEntity, CancellationToken.None);
         var before = await StockQuantityAsync(connection, stock.ProductVariantId, stock.WarehouseId, stock.LocationId, "QualityHold");
-        var disposition = await quality.CreateDispositionAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new("Return", "QA-14 invalid supplier return", inspection.Id, 1m, UnitOfMeasureId: stock.UnitId), CancellationToken.None);
+        var disposition = await quality.CreateDispositionAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity, new("Return", "QA-14 invalid supplier return", inspection.Id, 1m, UnitOfMeasureId: stock.UnitId, RestrictionId: hold.Id), CancellationToken.None);
         await quality.ApproveDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, new("QA-14 approval"), CancellationToken.None);
 
         var error = await Assert.ThrowsAsync<QualityException>(() => quality.ExecuteDispositionAsync(AtlasTenant, Guid.CreateVersion7(), disposition.Id, CancellationToken.None));
@@ -500,6 +500,147 @@ public sealed class QualityBackendAcceptanceTests
         Assert.Equal("Confirmed", reconciled.OwnerExecutionStatus);
 
         await quality.ReleaseRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, new("QA-19 cleanup", 1m, stock.UnitId), CancellationToken.None);
+    }
+
+    [Fact(DisplayName = "QA-20 fault-injection: post-inventory quality confirmation failure reconciles cleanly")]
+    public async Task Qa20FaultInjectionPostInventoryFailureReconcilesCleanly()
+    {
+        var connection = RequireConnection();
+        using var factory = CreateFactory(connection);
+        var quality = factory.Services.GetRequiredService<QualityRepository>();
+        var stock = await ReadStockAsync(connection, factory.Services.GetRequiredService<InventoryService>());
+        var inspection = await CreatePassedInspectionAsync(quality, connection, stock, "QA-20");
+        var hold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+            new("QualityHold", "QA20-FAULT", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
+            AtlasEntity, CancellationToken.None);
+
+        Assert.Equal("Confirmed", hold.OwnerExecutionStatus);
+        var opId = hold.OwnerOperationId;
+        Assert.NotNull(opId);
+
+        // Simulate that quality restriction was left in 'Unknown' state with null inventory_operation_id
+        await ExecuteAsync(connection, "update business_quality.quality_restriction set owner_execution_status='Unknown', inventory_operation_id=null where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id);
+
+        // Reconcile must inspect inventory_operation and stock_movement_entry, verify Confirmed status, and update restriction to Confirmed
+        var reconciled = await quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None);
+        Assert.Equal("Confirmed", reconciled.OwnerExecutionStatus);
+        Assert.Equal(opId, reconciled.OwnerOperationId);
+
+        await quality.ReleaseRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, new("QA-20 cleanup", 1m, stock.UnitId), CancellationToken.None);
+    }
+
+    [Fact(DisplayName = "QA-21 incomplete inventory operation is rejected by reconciliation")]
+    public async Task Qa21IncompleteOperationRejectedByReconciliation()
+    {
+        var connection = RequireConnection();
+        using var factory = CreateFactory(connection);
+        var quality = factory.Services.GetRequiredService<QualityRepository>();
+        var stock = await ReadStockAsync(connection, factory.Services.GetRequiredService<InventoryService>());
+        var inspection = await CreatePassedInspectionAsync(quality, connection, stock, "QA-21");
+        var hold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+            new("QualityHold", "QA21-INCOMPLETE", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
+            AtlasEntity, CancellationToken.None);
+
+        var ownerKey = $"quality-restriction:{hold.Id:D}:create";
+        // Simulate inventory_operation exists but has unconfirmed status 'Draft' (incomplete)
+        await ExecuteAsync(connection, "update business_inventory.inventory_operation set status='Draft' where tenant_id=$1 and idempotency_key=$2", AtlasTenant.Value, ownerKey);
+        await ExecuteAsync(connection, "update business_quality.quality_restriction set owner_execution_status='Unknown', inventory_operation_id=null where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id);
+
+        var ex = await Assert.ThrowsAsync<QualityException>(() =>
+            quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None));
+        Assert.Equal("quality.inventory_operation_not_confirmed", ex.Code);
+
+        // Reset operation status to Confirmed so cleanup can proceed
+        await ExecuteAsync(connection, "update business_inventory.inventory_operation set status='Confirmed' where tenant_id=$1 and idempotency_key=$2", AtlasTenant.Value, ownerKey);
+        await quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None);
+        await quality.ReleaseRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, new("QA-21 cleanup", 1m, stock.UnitId), CancellationToken.None);
+    }
+
+    [Fact(DisplayName = "QA-22 conflicting idempotency retry is strictly rejected")]
+    public async Task Qa22ConflictingRetryRejected()
+    {
+        var connection = RequireConnection();
+        using var factory = CreateFactory(connection);
+        var quality = factory.Services.GetRequiredService<QualityRepository>();
+        var stock = await ReadStockAsync(connection, factory.Services.GetRequiredService<InventoryService>());
+        var inspection = await CreatePassedInspectionAsync(quality, connection, stock, "QA-22");
+        var hold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+            new("QualityHold", "QA22-CONFLICT", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
+            AtlasEntity, CancellationToken.None);
+
+        // Tamper restriction product variant to simulate a mismatch/conflict against committed stock movements
+        await ExecuteAsync(connection, "update business_quality.quality_restriction set product_variant_id=gen_random_uuid(), owner_execution_status='Unknown', inventory_operation_id=null where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id);
+
+        var ex = await Assert.ThrowsAsync<QualityException>(() =>
+            quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None));
+        Assert.Equal("quality.idempotency_conflict", ex.Code);
+
+        // Restore correct product variant and cleanup
+        await ExecuteAsync(connection, "update business_quality.quality_restriction set product_variant_id=$3 where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id, stock.ProductVariantId);
+        await quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None);
+        await quality.ReleaseRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, new("QA-22 cleanup", 1m, stock.UnitId), CancellationToken.None);
+    }
+
+    [Fact(DisplayName = "QA-23 physical versus administrative hold separation")]
+    public async Task Qa23PhysicalVsAdministrativeHoldSeparation()
+    {
+        var connection = RequireConnection();
+        using var factory = CreateFactory(connection);
+        var quality = factory.Services.GetRequiredService<QualityRepository>();
+
+        // 1. Pure administrative hold: no product variant, warehouse, or quantity
+        var adminHold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+            new("Blocked", "QA23-ADMIN-BLOCK"), AtlasEntity, CancellationToken.None);
+        Assert.Equal("NotRequired", adminHold.OwnerExecutionStatus);
+        Assert.Equal("Active", adminHold.Status);
+
+        // Reconciling an administrative hold is not allowed
+        var reconEx = await Assert.ThrowsAsync<QualityException>(() =>
+            quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), adminHold.Id, CancellationToken.None));
+        Assert.Equal("quality.reconciliation_not_allowed", reconEx.Code);
+
+        // Releasing an administrative hold succeeds without touching inventory
+        var released = await quality.ReleaseRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), adminHold.Id, new("Admin hold cleared"), CancellationToken.None);
+        Assert.Equal("Released", released.Status);
+
+        // 2. Ambiguous request: administrative hold supplying warehouse or product without quantity is rejected
+        var invalidScopeEx = await Assert.ThrowsAsync<QualityException>(() =>
+            quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+                new("QualityHold", "QA23-BAD-SCOPE", WarehouseId: Guid.CreateVersion7(), Quantity: 0m), AtlasEntity, CancellationToken.None));
+        Assert.Equal("quality.owner_scope_incomplete", invalidScopeEx.Code);
+    }
+
+    [Fact(DisplayName = "QA-24 inventory impacting disposition strictly requires restriction_id and positive quantity")]
+    public async Task Qa24InventoryImpactingDispositionRequiresRestrictionId()
+    {
+        var connection = RequireConnection();
+        using var factory = CreateFactory(connection);
+        var quality = factory.Services.GetRequiredService<QualityRepository>();
+        var stock = await ReadStockAsync(connection, factory.Services.GetRequiredService<InventoryService>());
+        var inspection = await CreatePassedInspectionAsync(quality, connection, stock, "QA-24");
+
+        // 1. Creating Accept disposition without restriction_id must fail closed
+        var reqEx = await Assert.ThrowsAsync<QualityException>(() =>
+            quality.CreateDispositionAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity,
+                new("Accept", "Missing restriction", inspection.Id, 1m, UnitOfMeasureId: stock.UnitId, RestrictionId: null), CancellationToken.None));
+        Assert.Equal("quality.disposition_restriction_required", reqEx.Code);
+
+        // 2. Creating disposition with zero or negative quantity must fail closed
+        var hold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+            new("QualityHold", "QA24-ZERO", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
+            AtlasEntity, CancellationToken.None);
+
+        var zeroQtyEx = await Assert.ThrowsAsync<QualityException>(() =>
+            quality.CreateDispositionAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity,
+                new("Accept", "Zero quantity", inspection.Id, 0m, UnitOfMeasureId: stock.UnitId, RestrictionId: hold.Id), CancellationToken.None));
+        Assert.Equal("quality.disposition_quantity_invalid", zeroQtyEx.Code);
+
+        var negQtyEx = await Assert.ThrowsAsync<QualityException>(() =>
+            quality.CreateDispositionAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity,
+                new("Accept", "Negative quantity", inspection.Id, -2m, UnitOfMeasureId: stock.UnitId, RestrictionId: hold.Id), CancellationToken.None));
+        Assert.Equal("quality.disposition_quantity_invalid", negQtyEx.Code);
+
+        await quality.ReleaseRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, new("QA-24 cleanup", 1m, stock.UnitId), CancellationToken.None);
     }
 
     private static async Task<Modules.Quality.DTOs.InspectionView> CreatePassedInspectionAsync(QualityRepository quality, string connection, StockRef stock, string key)
