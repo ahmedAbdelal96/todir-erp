@@ -22,13 +22,13 @@ This acceptance covers the provider-neutral backend observability foundation: bo
 
 ## Test evidence
 
-- Observability tests: `10 passed, 0 failed`.
+- Observability tests: `12 passed, 0 failed`, including missing-dependency readiness regression coverage.
 - Worker Release build: `0 warnings, 0 errors`.
 - API Release build: `0 warnings, 0 errors`.
 - Architecture tests: `23/23 passed`.
 - Security tests: `7/7 passed` against the isolated local acceptance database.
 - Redis platform integration: `12/12 passed` against PostgreSQL plus Docker Redis, including stale-fill, coalescing, cancellation, privacy, tenant/permission, and outage/recovery contracts.
-- Prometheus configuration and rules: `promtool check config` passed; `12 rules` loaded successfully.
+- Prometheus configuration and rules: `promtool check config` passed with the local metrics-token secret mounted; `16 rules` loaded successfully.
 - Runtime API login and currency read: `200`; controlled Development-only observability failure endpoint: authenticated `500` and loopback restricted.
 
 ## Operator handoff
