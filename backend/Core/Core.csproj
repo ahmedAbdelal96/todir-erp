@@ -7,6 +7,11 @@
     <PackageReference Include="AWSSDK.S3" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Npgsql" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="OpenIddict.AspNetCore" />
+    <PackageReference Include="OpenIddict.EntityFrameworkCore" />
+    <PackageReference Include="OpenIddict.Validation.AspNetCore" />
+    <PackageReference Include="OpenIddict.Validation.ServerIntegration" />
     <PackageReference Include="StackExchange.Redis" />
     <PackageReference Include="MassTransit.RabbitMQ" />
     <PackageReference Include="Quartz.Extensions.Hosting" />

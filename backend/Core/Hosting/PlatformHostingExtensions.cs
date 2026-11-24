@@ -3,10 +3,12 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
+using System.Security.Cryptography.X509Certificates;
 using Shared.Primitives.Identifiers;
 using Core.Entitlements;
 using Core.Identity;
@@ -19,7 +21,12 @@ using Core.Security;
 using Core.Authorization;
 using Shared.Contracts.Platform;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.EntityFrameworkCore;
+using OpenIddict.Abstractions;
+using OpenIddict.Server.AspNetCore;
+using OpenIddict.Validation.AspNetCore;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using System.Security.Cryptography;
 using MassTransit;
 using Core.Caching;
@@ -45,6 +52,45 @@ public static class PlatformHostingExtensions
             dataSourceBuilder.ConnectionStringBuilder.CommandTimeout = int.TryParse(configuration["TODIR_DB_COMMAND_TIMEOUT_SECONDS"], out var commandTimeout) && commandTimeout > 0 ? commandTimeout : 15;
             platformDataSource = dataSourceBuilder.Build();
             services.AddSingleton(platformDataSource);
+            services.AddDbContext<OpenIddictStoreContext>(options => options.UseNpgsql(connectionString));
+            services.AddOpenIddict()
+                .AddCore(options => options.UseEntityFrameworkCore().UseDbContext<OpenIddictStoreContext>())
+                .AddServer(options =>
+                {
+                    options.SetAuthorizationEndpointUris("/connect/authorize")
+                        .SetTokenEndpointUris("/connect/token")
+                        .SetRevocationEndpointUris("/connect/revoke")
+                        .SetIntrospectionEndpointUris("/connect/introspect")
+                        .AllowAuthorizationCodeFlow()
+                        .AllowRefreshTokenFlow()
+                        .RequireProofKeyForCodeExchange()
+                        .SetAccessTokenLifetime(TimeSpan.FromMinutes(5))
+                        .SetRefreshTokenLifetime(TimeSpan.FromDays(30))
+                        .SetRefreshTokenReuseLeeway(TimeSpan.Zero);
+                    options.Configure(serverOptions =>
+                    {
+                        serverOptions.CodeChallengeMethods.Clear();
+                        serverOptions.CodeChallengeMethods.Add("S256");
+                    });
+                    if (string.Equals(configuration["ASPNETCORE_ENVIRONMENT"] ?? configuration["DOTNET_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase))
+                    {
+                        options.AddDevelopmentEncryptionCertificate().AddDevelopmentSigningCertificate();
+                    }
+                    else
+                    {
+                        options.AddEncryptionCertificate(LoadOAuthCertificate(configuration, "TODIR_OAUTH_ENCRYPTION_CERTIFICATE_BASE64", "TODIR_OAUTH_ENCRYPTION_CERTIFICATE_PASSWORD"));
+                        options.AddSigningCertificate(LoadOAuthCertificate(configuration, "TODIR_OAUTH_SIGNING_CERTIFICATE_BASE64", "TODIR_OAUTH_SIGNING_CERTIFICATE_PASSWORD"));
+                    }
+                    options.UseAspNetCore()
+                        .EnableAuthorizationEndpointPassthrough();
+                    if (string.Equals(configuration["ASPNETCORE_ENVIRONMENT"] ?? configuration["DOTNET_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase))
+                        options.UseAspNetCore().DisableTransportSecurityRequirement();
+                })
+                .AddValidation(options =>
+                {
+                    options.UseLocalServer();
+                    options.UseAspNetCore();
+                });
         }
         services.AddPlatformCaching(configuration, platformDataSource, configuration["ASPNETCORE_ENVIRONMENT"] ?? configuration["DOTNET_ENVIRONMENT"]);
         services.AddSingleton<IIdentityStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlIdentityStore(dataSource) : new NullIdentityStore());
@@ -86,8 +132,11 @@ public static class PlatformHostingExtensions
             options.Cookie.HttpOnly = true;
             options.Cookie.SecurePolicy = cookieSecurePolicy;
             options.Cookie.SameSite = SameSiteMode.Strict;
-            options.SlidingExpiration = true;
-            options.ExpireTimeSpan = TimeSpan.FromHours(8);
+            // The server-side registry, not the cookie middleware, owns inactivity
+            // and reauthentication deadlines. Sliding the cookie would otherwise
+            // make a stale browser credential appear alive across instances.
+            options.SlidingExpiration = false;
+            options.ExpireTimeSpan = TimeSpan.FromHours(24);
             options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
             options.Events.OnRedirectToAccessDenied = context => { context.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
             options.Events.OnValidatePrincipal = async context =>
@@ -95,16 +144,43 @@ public static class PlatformHostingExtensions
                 var identityClaim = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
                 var tenantClaim = context.Principal?.FindFirstValue("tenant_id");
                 var stampClaim = context.Principal?.FindFirstValue("security_stamp");
-                if (!Guid.TryParse(identityClaim, out var identityId) || !Guid.TryParse(tenantClaim, out var tenantId) || !Guid.TryParse(stampClaim, out var securityStamp) || !await context.HttpContext.RequestServices.GetRequiredService<IIdentityStore>().ValidateSessionAsync(new(identityId), new(tenantId), securityStamp, context.HttpContext.RequestAborted))
+                var sessionClaim = context.Principal?.FindFirstValue("session_id");
+                Guid identityId = default, tenantId = default, securityStamp = default, sessionId = default;
+                var valid = Guid.TryParse(identityClaim, out identityId)
+                    && Guid.TryParse(tenantClaim, out tenantId)
+                    && Guid.TryParse(stampClaim, out securityStamp)
+                    && Guid.TryParse(sessionClaim, out sessionId);
+                if (valid)
+                {
+                    try
+                    {
+                        valid = await context.HttpContext.RequestServices.GetRequiredService<ISessionService>().ValidateAsync(sessionId, new(identityId), new(tenantId), securityStamp, context.HttpContext.RequestAborted);
+                    }
+                    catch (OperationCanceledException) when (context.HttpContext.RequestAborted.IsCancellationRequested) { throw; }
+                    catch (Exception) { valid = false; }
+                }
+                if (!valid)
                 {
                     context.RejectPrincipal();
                     await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
                 }
             };
         });
-        services.AddAuthorization();
+        services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationHandler, SessionAuthorityHandler>();
+        services.AddAuthorization(options =>
+        {
+            options.DefaultPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder(
+                    CookieAuthenticationDefaults.AuthenticationScheme,
+                    OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)
+                .RequireAuthenticatedUser()
+                .AddRequirements(new SessionAuthorityRequirement())
+                .Build();
+        });
         services.AddSingleton(TimeProvider.System);
-        services.AddSingleton<ISessionService, SessionService>();
+        services.AddSingleton(SessionPolicy.FromConfiguration(configuration));
+        services.AddSingleton<ISessionService>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
+            ? new NpgsqlSessionService(dataSource, provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<SessionPolicy>())
+            : new SessionService(provider.GetRequiredService<TimeProvider>(), policy: provider.GetRequiredService<SessionPolicy>()));
         services.AddSingleton<IMfaService, MfaService>();
         services.AddDataProtection();
         services.AddSingleton<IMfaCredentialStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlMfaCredentialStore(dataSource) : new InMemoryMfaCredentialStore());
@@ -160,6 +236,39 @@ public static class PlatformHostingExtensions
 
     public static WebApplication MapCore(this WebApplication app)
     {
+        app.MapMethods("/connect/authorize", [HttpMethods.Get, HttpMethods.Post], async (HttpContext context, ISessionService sessions, IConfiguration configuration, CancellationToken cancellationToken) =>
+        {
+            var request = Microsoft.AspNetCore.OpenIddictServerAspNetCoreHelpers.GetOpenIddictServerRequest(context);
+            if (request is null) return Results.BadRequest(new { error = "invalid_request" });
+            if (context.User.Identity?.IsAuthenticated != true)
+            {
+                var loginUri = configuration["TODIR_WEB_LOGIN_URI"];
+                if (TryGetSafeWebLoginUri(loginUri, context, out var safeLoginUri))
+                {
+                    var currentRequest = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.PathBase}{context.Request.Path}{context.Request.QueryString}";
+                    return Results.Redirect(QueryHelpers.AddQueryString(safeLoginUri, "oauth_return", currentRequest));
+                }
+                return Results.Unauthorized();
+            }
+            if (!TryGetSessionScope(context, out var sessionId, out var tenantId) || !Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
+            var session = await sessions.LoadAsync(sessionId, new(identityId), tenantId, cancellationToken);
+            if (session is null) return Results.Unauthorized();
+            var identity = new ClaimsIdentity(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme, ClaimTypes.Name, ClaimTypes.Role);
+            identity.AddClaim(new Claim(OpenIddictConstants.Claims.Subject, identityId.ToString("D")));
+            identity.AddClaim(new Claim("tenant_id", tenantId.Value.ToString("D")));
+            identity.AddClaim(new Claim("session_id", sessionId.ToString("D")));
+            identity.AddClaim(new Claim("security_stamp", session.SecurityStamp.ToString("D")));
+            var principal = new ClaimsPrincipal(identity);
+            principal.SetScopes(request.GetScopes());
+            principal.SetResources("todir-api");
+            principal.SetDestinations(static claim => claim.Type switch
+            {
+                OpenIddictConstants.Claims.Subject => [OpenIddictConstants.Destinations.AccessToken, OpenIddictConstants.Destinations.IdentityToken],
+                "tenant_id" or "session_id" => [OpenIddictConstants.Destinations.AccessToken],
+                _ => [OpenIddictConstants.Destinations.AccessToken]
+            });
+            return Results.SignIn(principal, authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+        }).RequireRateLimiting("auth");
         var group = app.MapGroup("/api/v1").RequireRateLimiting("api");
         group.MapGet("/auth/csrf", (Microsoft.AspNetCore.Antiforgery.IAntiforgery antiforgery, HttpContext context) =>
         {
@@ -176,9 +285,10 @@ public static class PlatformHostingExtensions
             var result = await flow.VerifyMfaAsync(request.ChallengeToken, request.Code, cancellationToken);
             return await RenderAuthenticationResult(result, context);
         }).RequireRateLimiting("auth");
-        group.MapPost("/auth/password/change", async (ChangePasswordRequest request, HttpContext context, IIdentityStore store, CancellationToken cancellationToken) =>
+        group.MapPost("/auth/password/change", async (ChangePasswordRequest request, HttpContext context, IIdentityStore store, MfaCredentialManager mfa, SessionPolicy policy, CancellationToken cancellationToken) =>
         {
             if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
+            if (!await HasFreshMfaAsync(context, new(identityId), mfa, policy, cancellationToken)) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_step_up_required", "Recent multi-factor verification is required");
             return await store.ChangePasswordAsync(new(identityId), request.CurrentPassword, request.NewPassword, cancellationToken)
                 ? Results.NoContent()
                 : Problem(StatusCodes.Status400BadRequest, "auth.password_change_failed", "Password change could not be completed");
@@ -188,19 +298,42 @@ public static class PlatformHostingExtensions
             var result = await flow.ChangePasswordAsync(request.ChallengeToken, request.NewPassword, cancellationToken);
             return await RenderAuthenticationResult(result, context);
         }).RequireRateLimiting("auth");
-        group.MapPost("/auth/mfa/enroll", async (HttpContext context, MfaCredentialManager mfa, CancellationToken cancellationToken) =>
+        group.MapPost("/auth/mfa/enroll", async (HttpContext context, MfaCredentialManager mfa, SessionPolicy policy, CancellationToken cancellationToken) =>
         {
             if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
+            if (!await HasFreshMfaAsync(context, new(identityId), mfa, policy, cancellationToken)) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_step_up_required", "Recent multi-factor verification is required");
             var enrollment = await mfa.EnrollAsync(new(identityId), cancellationToken);
             return Results.Ok(new { secretBase32 = enrollment.SecretBase32, recoveryCodes = enrollment.RecoveryCodes });
         }).RequireAuthorization();
-        group.MapPost("/auth/logout", async (HttpContext context) => { await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme); return Results.NoContent(); }).RequireAuthorization();
-        group.MapPost("/auth/sessions/revoke", async (HttpContext context, IIdentityStore store, CancellationToken cancellationToken) =>
+        group.MapPost("/auth/mfa/step-up", async (MfaStepUpRequest request, HttpContext context, MfaCredentialManager mfa, ISessionService sessions, SessionPolicy policy, CancellationToken cancellationToken) =>
         {
-            if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
-            await store.RevokeSessionsAsync(new(identityId), cancellationToken);
+            if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId) || !TryGetSessionScope(context, out var sessionId, out var tenantId)) return Results.Unauthorized();
+            var now = context.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow();
+            var proof = await mfa.VerifyStepUpAsync(new(identityId), request.Code, now, cancellationToken);
+            if (proof is null || proof.ExpiresAt - now > policy.MfaFreshness || !await sessions.MarkMfaVerifiedAsync(sessionId, new(identityId), tenantId, now, cancellationToken)) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_step_up_failed", "Multi-factor verification could not be completed");
+            return Results.NoContent();
+        }).RequireAuthorization();
+        group.MapPost("/auth/logout", async (HttpContext context, ISessionService sessions, CancellationToken cancellationToken) =>
+        {
+            if (TryGetSessionScope(context, out var sessionId, out var tenantId)) await sessions.RevokeAsync(sessionId, tenantId, cancellationToken);
             await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return Results.NoContent();
+        }).RequireAuthorization();
+        group.MapPost("/auth/sessions/revoke", async (HttpContext context, IIdentityStore store, MfaCredentialManager mfa, SessionPolicy policy, CancellationToken cancellationToken) =>
+        {
+            if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
+            if (!await HasFreshMfaAsync(context, new(identityId), mfa, policy, cancellationToken)) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_step_up_required", "Recent multi-factor verification is required");
+            await store.RevokeSessionsAsync(new(identityId), cancellationToken);
+            if (TryGetSessionScope(context, out var sessionId, out var tenantId)) await context.RequestServices.GetRequiredService<ISessionService>().RevokeAsync(sessionId, tenantId, cancellationToken);
+            await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            return Results.NoContent();
+        }).RequireAuthorization();
+        group.MapPost("/session/activity", async (HttpContext context, ISessionService sessions, CancellationToken cancellationToken) =>
+        {
+            if (!TryGetSessionScope(context, out var sessionId, out var tenantId) || !Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
+            if (!await sessions.AcceptActivityAsync(sessionId, new(identityId), tenantId, cancellationToken)) return Results.Unauthorized();
+            var session = await sessions.LoadAsync(sessionId, new(identityId), tenantId, cancellationToken);
+            return session is null ? Results.Unauthorized() : Results.Ok(new { session.LastActivityAt, inactivityExpiresAt = session.ExpiresAt, session.ReauthenticationExpiresAt });
         }).RequireAuthorization();
         group.MapGet("/modules", (IModuleRegistry registry) => Results.Ok(registry.GetAll()));
         group.MapGet("/me/navigation-preferences", async (HttpContext context, IUserNavigationPreferencesStore preferences, CancellationToken cancellationToken) =>
@@ -248,7 +381,11 @@ public static class PlatformHostingExtensions
             if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
             var snapshot = await surfaceStore.LoadTenantContextAsync(new(tenantId), cancellationToken);
             if (snapshot is null) return Results.NotFound();
-            return Results.Ok(new { authenticated = true, tenantId, identityId, context = snapshot });
+            var session = TryGetSessionScope(context, out var sessionId, out var sessionTenant)
+                ? await context.RequestServices.GetRequiredService<ISessionService>().LoadAsync(sessionId, new(identityId), sessionTenant, cancellationToken)
+                : null;
+            if (session is null) return Results.Unauthorized();
+            return Results.Ok(new { authenticated = true, tenantId, identityId, context = snapshot, session = new { session.IssuedAt, session.LastActivityAt, inactivityExpiresAt = session.ExpiresAt, session.ReauthenticationExpiresAt, session.MfaVerifiedAt } });
         }).RequireAuthorization();
         group.MapGet("/authorization/check", async (string permission, HttpContext context, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
         {
@@ -486,12 +623,12 @@ public static class PlatformHostingExtensions
             if (!await HasTenantPermissionAsync(context, new(tenantId), "platform.module.view", subjectStore, authorizer, cancellationToken)) return Results.Forbid();
             return await surfaceStore.LoadEntitlementAsync(new(tenantId), cancellationToken) is { } entitlement ? Results.Ok(entitlement) : Results.NotFound();
         }).RequireAuthorization();
-        group.MapPost("/messaging/replay", async (MessageReplayRequest request, HttpContext context, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, IMessageReplayService replay, CancellationToken cancellationToken) =>
+        group.MapPost("/messaging/replay", async (MessageReplayRequest request, HttpContext context, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, IMessageReplayService replay, MfaCredentialManager mfa, SessionPolicy policy, CancellationToken cancellationToken) =>
         {
             if (!Guid.TryParse(request.MessageId, out var messageId) || !Guid.TryParse(request.TenantId, out var tenantId)) return Problem(StatusCodes.Status400BadRequest, "message.replay_context_invalid", "Replay context is invalid");
             if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var operatorId) || !Guid.TryParse(context.User.FindFirstValue("membership_id"), out var membershipId)) return Results.Unauthorized();
             if (!string.Equals(context.User.FindFirstValue("tenant_id"), tenantId.ToString("D"), StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
-            if (!string.Equals(context.User.FindFirstValue("mfa_verified"), "true", StringComparison.OrdinalIgnoreCase)) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_required", "Multi-factor authentication is required");
+            if (!await HasFreshMfaAsync(context, new(operatorId), mfa, policy, cancellationToken)) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_required", "Recent multi-factor verification is required");
             var subject = await subjectStore.LoadAsync(new(tenantId), membershipId, cancellationToken);
             if (subject is null || !authorizer.Authorize(subject, "platform.messaging.replay", PermissionScope.ForTenant(new(tenantId)))) return Results.Forbid();
             try
@@ -527,6 +664,7 @@ public static class PlatformHostingExtensions
     private sealed record OrganizationSelection(string? LegalEntityId, string? BranchId);
     private sealed record LoginRequest(string Email, string Password);
     private sealed record MfaVerificationRequest(string ChallengeToken, string Code);
+    private sealed record MfaStepUpRequest(string Code);
     private sealed record InitialPasswordChangeRequest(string ChallengeToken, string NewPassword);
     private sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
     private sealed record CreateUserRequest(string Name, string EmailPrefix, Guid[]? RoleIds);
@@ -535,6 +673,39 @@ public static class PlatformHostingExtensions
     private sealed record StagingReplayRequest(string TenantId, string OperatorId, string Reason);
 
     private static IResult Problem(int statusCode, string code, string title) => Results.Problem(statusCode: statusCode, title: title, extensions: new Dictionary<string, object?> { ["code"] = code });
+
+    private static async Task<bool> HasFreshMfaAsync(HttpContext context, IdentityId identityId, MfaCredentialManager mfa, SessionPolicy policy, CancellationToken cancellationToken)
+    {
+        if (!await mfa.IsEnabledAsync(identityId, cancellationToken)) return true;
+        if (!TryGetSessionScope(context, out var sessionId, out var tenantId)) return false;
+        var session = await context.RequestServices.GetRequiredService<ISessionService>().LoadAsync(sessionId, identityId, tenantId, cancellationToken);
+        var now = context.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow();
+        return session?.MfaVerifiedAt is { } verifiedAt && verifiedAt <= now && now - verifiedAt <= policy.MfaFreshness && session.ReauthenticationExpiresAt is { } reauth && now < reauth;
+    }
+
+    private static X509Certificate2 LoadOAuthCertificate(IConfiguration configuration, string certificateKey, string passwordKey)
+    {
+        var encoded = configuration[certificateKey];
+        var password = configuration[passwordKey];
+        if (string.IsNullOrWhiteSpace(encoded) || string.IsNullOrWhiteSpace(password)) throw new InvalidOperationException("identity.oauth_signing_credentials_required");
+        try
+        {
+            var certificate = X509CertificateLoader.LoadPkcs12(Convert.FromBase64String(encoded), password, X509KeyStorageFlags.EphemeralKeySet);
+            if (!certificate.HasPrivateKey) throw new InvalidOperationException($"{certificateKey} must contain a private key.");
+            return certificate;
+        }
+        catch (FormatException exception) { throw new InvalidOperationException($"{certificateKey} is invalid.", exception); }
+        catch (CryptographicException exception) { throw new InvalidOperationException($"{certificateKey} could not be loaded.", exception); }
+    }
+
+    private static bool TryGetSafeWebLoginUri(string? configuredUri, HttpContext context, out string uri)
+    {
+        uri = string.Empty;
+        if (string.IsNullOrWhiteSpace(configuredUri) || !Uri.TryCreate(configuredUri, UriKind.Absolute, out var parsed) || parsed.UserInfo.Length > 0 || parsed.Fragment.Length > 0 || parsed.Query.Length > 0 || parsed.Scheme is not ("https" or "http")) return false;
+        if (!context.RequestServices.GetRequiredService<IHostEnvironment>().IsDevelopment() && !string.Equals(parsed.Scheme, "https", StringComparison.OrdinalIgnoreCase)) return false;
+        uri = parsed.ToString();
+        return true;
+    }
 
     private static bool TryGetUserScope(HttpContext context, out TenantId tenantId, out IdentityId identityId)
     {
@@ -550,6 +721,18 @@ public static class PlatformHostingExtensions
         return false;
     }
 
+    private static bool TryGetSessionScope(HttpContext context, out Guid sessionId, out TenantId tenantId)
+    {
+        if (Guid.TryParse(context.User.FindFirstValue("session_id"), out sessionId) && Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenant))
+        {
+            tenantId = new TenantId(tenant);
+            return true;
+        }
+        sessionId = Guid.Empty;
+        tenantId = default;
+        return false;
+    }
+
     private static async Task<IResult> RenderAuthenticationResult(AuthenticationFlowResult result, HttpContext context)
     {
         if (result.State == AuthenticationNextStep.Rejected) return Problem(StatusCodes.Status401Unauthorized, result.ErrorCode ?? "auth.invalid_credentials", "Authentication could not be completed");
@@ -561,12 +744,14 @@ public static class PlatformHostingExtensions
                 new Claim("membership_id", session.MembershipId.Value.ToString("D")),
                 new Claim("tenant_id", session.TenantId.Value.ToString("D")),
                 new Claim("security_stamp", session.SecurityStamp.ToString("D")),
-                new Claim("mfa_verified", result.MfaVerified.ToString().ToLowerInvariant())
+                new Claim("session_id", session.SessionId.ToString("D")),
+                new Claim("mfa_verified", result.MfaVerified.ToString().ToLowerInvariant()),
+                new Claim("reauthentication_expires_at", (session.ReauthenticationExpiresAt ?? session.ExpiresAt).ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture))
             };
             if (session.LegalEntityId is { } legalEntity) claims = [.. claims, new Claim("legal_entity_id", legalEntity.Value.ToString("D"))];
             if (session.BranchId is { } branch) claims = [.. claims, new Claim("branch_id", branch.Value.ToString("D"))];
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)));
-            return Results.Ok(new { state = result.State.ToString(), authenticated = true, tenantId = session.TenantId.Value });
+            return Results.Ok(new { state = result.State.ToString(), authenticated = true, tenantId = session.TenantId.Value, session = new { session.ExpiresAt, session.ReauthenticationExpiresAt, session.MfaVerifiedAt } });
         }
         return Results.Ok(new
         {

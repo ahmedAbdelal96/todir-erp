@@ -849,3 +849,7 @@ Frontend work must strictly adhere to Section 12 of the repository root `AGENTS.
 8. **No Premature Polish:** Ensure business data and workflow correctness before perfecting screenshot aesthetics.
 9. **Pattern Reuse:** Reuse design system primitives (`MoneyDisplay`, `StatusBadge`, `DataGrid`, `ListPage`, `RecordPage`, `Dialog`, `Select`). Never invent bespoke UI controls.
 10. **Silent Execution:** Work silently without progress commentary; report only when complete or blocked by a genuine external decision.
+
+## 12. Identity and session UX security
+
+The backend remains authoritative for session validity, inactivity, reauthentication, tenant scope, and MFA freshness. Frontend activity tracking may observe only meaningful user interaction, must throttle/coalesce writes, must never use background polling to keep a session alive, and must present an accessible warning before expiry. Never store bearer tokens, refresh tokens, tenant identifiers, or MFA proofs in browser storage. Mobile OAuth is a system-browser Authorization Code + PKCE flow owned by the backend; do not add Password Grant, Implicit Grant, WebView login, or frontend token issuance.

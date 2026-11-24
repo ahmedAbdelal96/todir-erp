@@ -191,3 +191,7 @@ When implementing or reviewing a specific domain in TODIR, read its dedicated ve
 - Real-Stack E2E (Playwright): PASSED (<passed>/<total>)
 الملاحظات والمتابعات: <أي ملاحظات، أو "لا يوجد">
 ```
+
+## Identity and session safety
+
+When changing authenticated shell behavior, treat the PostgreSQL-backed server session as the sole authority. Meaningful activity may be sent through a throttled, coalesced endpoint, but render/query polling must not extend a session. Build warning and expiry states with i18n and accessible governed primitives; never persist bearer credentials, refresh tokens, tenant identifiers, or MFA proofs in browser storage. Native mobile authentication is a backend-owned system-browser Authorization Code + PKCE flow and must not be recreated with Password Grant, Implicit Grant, WebViews, or client-side token issuance.

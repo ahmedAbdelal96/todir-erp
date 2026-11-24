@@ -8,7 +8,10 @@ export const ar = {
     favorites: "المفضلة", recentPages: "آخر الصفحات", addFavorite: "إضافة {{name}} إلى المفضلة", removeFavorite: "إزالة {{name}} من المفضلة",
     navigationPreferencesSaveFailed: "تعذر حفظ المفضلة. حاول مرة أخرى.",
     displayPreferencesSaveFailed: "تعذر حفظ تفضيلات العرض على حسابك.",
-    couldNotLoadSession: "تعذر تحميل الجلسة", couldNotUpdateScope: "تعذر تحديث النطاق التنظيمي"
+    couldNotLoadSession: "تعذر تحميل الجلسة", couldNotUpdateScope: "تعذر تحديث النطاق التنظيمي",
+    sessionWarningTitle: "ستوشك الجلسة على الانتهاء", sessionWarningDescription: "ستنتهي الجلسة بعد فترة من عدم النشاط لحماية حسابك.",
+    sessionWarningBody: "تابع العمل للإبقاء على الجلسة نشطة. قد يُطلب تسجيل الدخول مجددًا بعد انتهاء المهلة الأمنية.",
+    sessionContinue: "متابعة الجلسة", sessionSignOut: "تسجيل الخروج"
   },
   preferences: {
     language: "اللغة", theme: "المظهر", alternateTheme: "داكن", defaultTheme: "الافتراضي",

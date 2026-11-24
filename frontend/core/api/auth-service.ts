@@ -17,6 +17,12 @@ export interface SessionSnapshot {
     readonly legalEntities: ReadonlyArray<{ readonly id: string; readonly code: string; readonly name: string }>;
     readonly branches: ReadonlyArray<{ readonly id: string; readonly legalEntityId: string; readonly code: string; readonly name: string }>;
   } | undefined;
+  readonly session?: {
+    readonly lastActivityAt?: string | undefined;
+    readonly inactivityExpiresAt: string;
+    readonly reauthenticationExpiresAt: string;
+    readonly mfaVerifiedAt?: string | undefined;
+  } | undefined;
 }
 
 let cachedCsrfToken: string | null = null;
@@ -119,4 +125,15 @@ export async function logoutUser(): Promise<void> {
  */
 export async function loadSessionContext(): Promise<SessionSnapshot> {
   return httpClient<SessionSnapshot>("/api/v1/session/context");
+}
+
+export interface SessionActivityResponse {
+  readonly lastActivityAt: string;
+  readonly inactivityExpiresAt: string;
+  readonly reauthenticationExpiresAt: string;
+}
+
+/** Records meaningful browser activity without extending the session past reauthentication. */
+export async function recordSessionActivity(): Promise<SessionActivityResponse> {
+  return httpClient<SessionActivityResponse>("/api/v1/session/activity", { method: "POST" });
 }

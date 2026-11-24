@@ -44,7 +44,11 @@ public sealed record SessionContext(
     BranchId? BranchId,
     DateTimeOffset IssuedAt,
     DateTimeOffset ExpiresAt,
-    Guid SecurityStamp);
+    Guid SecurityStamp,
+    Guid SessionId = default,
+    DateTimeOffset? LastActivityAt = null,
+    DateTimeOffset? ReauthenticationExpiresAt = null,
+    DateTimeOffset? MfaVerifiedAt = null);
 
 public static class LoginDomainConventions
 {
@@ -85,6 +89,12 @@ public interface IIdentityAuthenticator
 public interface ISessionService
 {
     Task<SessionContext?> CreateAsync(Identity identity, Membership membership, CancellationToken cancellationToken = default);
+    Task<SessionContext?> CreateAsync(Identity identity, Membership membership, DateTimeOffset? mfaVerifiedAt, CancellationToken cancellationToken = default);
+    Task<SessionContext?> LoadAsync(Guid sessionId, IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default);
+    Task<bool> ValidateAsync(Guid sessionId, IdentityId identityId, TenantId tenantId, Guid securityStamp, CancellationToken cancellationToken = default);
+    Task<bool> AcceptActivityAsync(Guid sessionId, IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default);
+    Task<bool> MarkMfaVerifiedAsync(Guid sessionId, IdentityId identityId, TenantId tenantId, DateTimeOffset verifiedAt, CancellationToken cancellationToken = default);
+    Task<bool> RevokeAsync(Guid sessionId, TenantId tenantId, CancellationToken cancellationToken = default);
     Task RevokeAsync(IdentityId identityId, CancellationToken cancellationToken = default);
     bool IsValid(SessionContext session, DateTimeOffset now);
 }
@@ -135,30 +145,93 @@ public static class IdentityConventions
     }
 }
 
-public sealed class SessionService(TimeProvider clock, TimeSpan? lifetime = null) : ISessionService
+public sealed class SessionService(TimeProvider clock, TimeSpan? lifetime = null, SessionPolicy? policy = null) : ISessionService
 {
-    private readonly TimeSpan lifetime = lifetime ?? TimeSpan.FromHours(8);
+    private readonly SessionPolicy policy = policy ?? SessionPolicy.Default with { InactivityTimeout = lifetime ?? SessionPolicy.Default.InactivityTimeout };
+    private readonly Dictionary<Guid, SessionContext> sessions = [];
     private readonly HashSet<IdentityId> revokedIdentities = [];
     private readonly object gate = new();
 
-    public Task<SessionContext?> CreateAsync(Identity identity, Membership membership, CancellationToken cancellationToken = default)
+    public Task<SessionContext?> CreateAsync(Identity identity, Membership membership, CancellationToken cancellationToken = default) => CreateAsync(identity, membership, null, cancellationToken);
+
+    public Task<SessionContext?> CreateAsync(Identity identity, Membership membership, DateTimeOffset? mfaVerifiedAt, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (identity.Status != IdentityStatus.Active || membership.Status != MembershipStatus.Active) return Task.FromResult<SessionContext?>(null);
         var now = clock.GetUtcNow();
-        lock (gate) if (revokedIdentities.Contains(identity.Id)) return Task.FromResult<SessionContext?>(null);
-        return Task.FromResult<SessionContext?>(new SessionContext(identity.Id, membership.Id, membership.TenantId, membership.DefaultLegalEntityId, membership.DefaultBranchId, now, now.Add(lifetime), identity.SecurityStamp));
+        lock (gate)
+        {
+            if (revokedIdentities.Contains(identity.Id)) return Task.FromResult<SessionContext?>(null);
+            var session = new SessionContext(identity.Id, membership.Id, membership.TenantId, membership.DefaultLegalEntityId, membership.DefaultBranchId, now, now.Add(policy.InactivityTimeout), identity.SecurityStamp, Guid.CreateVersion7(), now, now.Add(policy.ReauthenticationTimeout), mfaVerifiedAt);
+            sessions[session.SessionId] = session;
+            return Task.FromResult<SessionContext?>(session);
+        }
+    }
+
+    public Task<SessionContext?> LoadAsync(Guid sessionId, IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (gate) return Task.FromResult(sessions.TryGetValue(sessionId, out var session) && session.IdentityId == identityId && session.TenantId == tenantId ? session : null);
+    }
+
+    public Task<bool> ValidateAsync(Guid sessionId, IdentityId identityId, TenantId tenantId, Guid securityStamp, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (gate) return Task.FromResult(sessions.TryGetValue(sessionId, out var session) && session.IdentityId == identityId && session.TenantId == tenantId && session.SecurityStamp == securityStamp && IsValidCore(session, clock.GetUtcNow()));
+    }
+
+    public Task<bool> AcceptActivityAsync(Guid sessionId, IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (gate)
+        {
+            if (!sessions.TryGetValue(sessionId, out var session) || session.IdentityId != identityId || session.TenantId != tenantId || !IsValidCore(session, clock.GetUtcNow())) return Task.FromResult(false);
+            var now = clock.GetUtcNow();
+            if (session.LastActivityAt is { } last && now - last < policy.ActivityWriteInterval) return Task.FromResult(true);
+            var expiry = Min(now.Add(policy.InactivityTimeout), session.ReauthenticationExpiresAt ?? now);
+            sessions[sessionId] = session with { LastActivityAt = now, ExpiresAt = expiry };
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<bool> MarkMfaVerifiedAsync(Guid sessionId, IdentityId identityId, TenantId tenantId, DateTimeOffset verifiedAt, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (gate)
+        {
+            if (!sessions.TryGetValue(sessionId, out var session) || session.IdentityId != identityId || session.TenantId != tenantId || !IsValidCore(session, verifiedAt)) return Task.FromResult(false);
+            sessions[sessionId] = session with { MfaVerifiedAt = verifiedAt };
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<bool> RevokeAsync(Guid sessionId, TenantId tenantId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (gate)
+        {
+            if (!sessions.TryGetValue(sessionId, out var session) || session.TenantId != tenantId) return Task.FromResult(false);
+            sessions.Remove(sessionId);
+            return Task.FromResult(true);
+        }
     }
 
     public Task RevokeAsync(IdentityId identityId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        lock (gate) revokedIdentities.Add(identityId);
+        lock (gate)
+        {
+            revokedIdentities.Add(identityId);
+            foreach (var sessionId in sessions.Where(item => item.Value.IdentityId == identityId).Select(item => item.Key).ToArray()) sessions.Remove(sessionId);
+        }
         return Task.CompletedTask;
     }
 
     public bool IsValid(SessionContext session, DateTimeOffset now)
     {
-        lock (gate) return now < session.ExpiresAt && !revokedIdentities.Contains(session.IdentityId);
+        lock (gate) return sessions.ContainsKey(session.SessionId) && IsValidCore(session, now);
     }
+
+    private bool IsValidCore(SessionContext session, DateTimeOffset now) => now < session.ExpiresAt && (session.ReauthenticationExpiresAt is null || now < session.ReauthenticationExpiresAt) && !revokedIdentities.Contains(session.IdentityId);
+    private static DateTimeOffset Min(DateTimeOffset left, DateTimeOffset right) => left <= right ? left : right;
 }

@@ -44,6 +44,7 @@ import { fetchEffectiveAccess, type EffectiveAccess } from "../../core/runtime/e
 import { useNavigationPreferences } from "./use-navigation-preferences.ts";
 import { Dialog } from "../../components/primitives/dialog.tsx";
 import { Tooltip, TooltipTrigger } from "../../components/primitives/tooltip.tsx";
+import { useSessionActivity, type SessionTiming } from "./use-session-activity.ts";
 
 type Screen = "loading" | "signed-out" | "authenticated" | "forbidden" | "error";
 type Session = {
@@ -52,6 +53,7 @@ type Session = {
   identityId: string;
   memberships?: Array<{ id: string; tenantId: string; displayName: string }> | undefined;
   context: { displayName?: string; legalEntities: Array<{ id: string; code: string; name: string }>; branches: Array<{ id: string; legalEntityId: string; code: string; name: string }> };
+  session?: { inactivityExpiresAt: string; reauthenticationExpiresAt: string } | undefined;
 };
 
 const fallbackModuleIds = ["home", "users", "domain-settings", "directory", "catalog", "invoicing", "payments", "accounting", "migration", "finbase", "pricing", "subledger", "tax", "inventory", "sales", "purchasing", "hr", "payroll", "crm", "pos", "expenses", "fixed-assets", "projects", "service", "banking", "preview", "settings"];
@@ -155,6 +157,22 @@ function formatBranchLabel(code: string, name: string, entityName?: string, isAr
   return `${cleanName || name} (${code})`;
 }
 
+function getSafeOAuthReturnUrl(): URL | null {
+  const raw = new URLSearchParams(window.location.search).get("oauth_return");
+  if (!raw) return null;
+  try {
+    const target = new URL(raw, window.location.origin);
+    const configuredApi = import.meta.env.VITE_API_URL as string | undefined;
+    const apiOrigin = configuredApi
+      ? new URL(configuredApi).origin
+      : import.meta.env.DEV ? new URL("http://127.0.0.1:5080").origin : window.location.origin;
+    if (target.origin !== apiOrigin || target.pathname !== "/connect/authorize" || !target.searchParams.get("client_id") || !target.searchParams.get("redirect_uri")) return null;
+    return target;
+  } catch {
+    return null;
+  }
+}
+
 let orgSwitchSequenceCounter = 0;
 let orgSwitchAbortController: AbortController | null = null;
 
@@ -183,6 +201,7 @@ export function AppShell() {
   const [error, setError] = useState<string | undefined>();
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [sessionTiming, setSessionTiming] = useState<SessionTiming | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
   const [openSidebarPanel, setOpenSidebarPanel] = useState<"favorites" | "recent" | null>(null);
   const [recentPopoverPosition, setRecentPopoverPosition] = useState({ top: 0, left: 0 });
@@ -204,6 +223,8 @@ export function AppShell() {
   const activeTaskDestination = allPermittedDestinations
     .filter(d => location.pathname === d.path || (d.path !== "/" && location.pathname.startsWith(`${d.path}/`)))
     .sort((left, right) => right.path.length - left.path.length)[0];
+
+  const sessionActivity = useSessionActivity(screen === "authenticated" ? sessionTiming : null, () => { void signOut(); });
 
   useEffect(() => {
     if (screen === "authenticated") {
@@ -332,6 +353,7 @@ export function AppShell() {
       if (response.status === 403) { setScreen("forbidden"); return; }
       if (!response.ok) throw new Error("session.load_failed");
       const session = await response.json() as Session;
+      setSessionTiming(session.session ? { inactivityExpiresAt: session.session.inactivityExpiresAt, reauthenticationExpiresAt: session.session.reauthenticationExpiresAt } : null);
       const identityId = session.identityId || session.memberships?.[0]?.id || "";
       const membershipId = session.memberships?.[0]?.id || "";
       setActiveTenantId(session.tenantId);
@@ -374,6 +396,8 @@ export function AppShell() {
       }
       loadNavigation(access);
       setScreen("authenticated");
+      const oauthReturnUrl = getSafeOAuthReturnUrl();
+      if (oauthReturnUrl) window.location.assign(oauthReturnUrl.toString());
     } catch {
       setEffectiveAccess(null);
       setPermissions(new PermissionSet());
@@ -409,6 +433,7 @@ export function AppShell() {
     setEffectiveAccess(null);
     setPermissions(new PermissionSet());
     setModules([]);
+    setSessionTiming(null);
     permCacheRef.current = {};
     try {
       clearCsrfToken();
@@ -978,6 +1003,21 @@ export function AppShell() {
             <kbd>Shift</kbd><span>+</span><kbd>?</kbd>
           </div>
         </div>
+      </Dialog>
+      <Dialog
+        isOpen={sessionActivity.warningOpen}
+        isDismissable={false}
+        title={t("common:shell.sessionWarningTitle")}
+        description={t("common:shell.sessionWarningDescription")}
+        size="small"
+        footer={
+          <>
+            <button type="button" className="ui-button ui-button-secondary" onClick={() => { void signOut(); }}>{t("common:shell.sessionSignOut")}</button>
+            <button type="button" className="ui-button ui-button-primary" onClick={() => { void sessionActivity.continueSession(); }}>{t("common:shell.sessionContinue")}</button>
+          </>
+        }
+      >
+        <p style={{ margin: 0 }}>{t("common:shell.sessionWarningBody")}</p>
       </Dialog>
     </div>
     </UndoToastProvider>

@@ -76,6 +76,44 @@ public sealed class SecurityServiceTests
     }
 
     [Fact]
+    public async Task SessionActivityIsBoundedAndCannotCrossReauthenticationDeadline()
+    {
+        var initial = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var clock = new FakeTimeProvider(initial);
+        var policy = new SessionPolicy(TimeSpan.FromMinutes(30), TimeSpan.FromHours(24), TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(5));
+        var service = new SessionService(clock, policy: policy);
+        var identity = new Core.Identity.Identity(IdentityId.New(), "A@EXAMPLE.COM", true, IdentityStatus.Active, initial, null, Guid.NewGuid());
+        var membership = new Membership(MembershipId.New(), TenantId.New(), identity.Id, "A", MembershipStatus.Active, null, null, "en", "UTC", initial, 1);
+        var session = (await service.CreateAsync(identity, membership))!;
+
+        clock.Advance(TimeSpan.FromSeconds(30));
+        Assert.True(await service.AcceptActivityAsync(session.SessionId, identity.Id, membership.TenantId));
+        var throttled = (await service.LoadAsync(session.SessionId, identity.Id, membership.TenantId))!;
+        Assert.Equal(session.LastActivityAt, throttled.LastActivityAt);
+
+        clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.True(await service.AcceptActivityAsync(session.SessionId, identity.Id, membership.TenantId));
+        var refreshed = (await service.LoadAsync(session.SessionId, identity.Id, membership.TenantId))!;
+        Assert.Equal(initial.AddMinutes(1).AddSeconds(30), refreshed.LastActivityAt);
+        Assert.True(refreshed.ExpiresAt <= refreshed.ReauthenticationExpiresAt);
+        Assert.False(await service.RevokeAsync(session.SessionId, TenantId.New()));
+    }
+
+    [Fact]
+    public async Task SessionMfaStepUpIsTenantBoundAndFreshnessIsPersisted()
+    {
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var service = new SessionService(new FakeTimeProvider(now));
+        var identity = new Core.Identity.Identity(IdentityId.New(), "A@EXAMPLE.COM", true, IdentityStatus.Active, now, null, Guid.NewGuid());
+        var membership = new Membership(MembershipId.New(), TenantId.New(), identity.Id, "A", MembershipStatus.Active, null, null, "en", "UTC", now, 1);
+        var session = (await service.CreateAsync(identity, membership))!;
+
+        Assert.False(await service.MarkMfaVerifiedAsync(session.SessionId, identity.Id, TenantId.New(), now));
+        Assert.True(await service.MarkMfaVerifiedAsync(session.SessionId, identity.Id, membership.TenantId, now));
+        Assert.Equal(now, (await service.LoadAsync(session.SessionId, identity.Id, membership.TenantId))!.MfaVerifiedAt);
+    }
+
+    [Fact]
     public void FilePolicyRejectsDeclaredSizeAndMagicMismatch()
     {
         var policy = new FileUploadPolicy(10);

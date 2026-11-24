@@ -1,0 +1,58 @@
+# TODIR Identity, Web Session, Mobile OAuth and Token Security Architecture
+
+Status: Web-session and native OAuth/OIDC foundation implemented locally; browser/production certificate acceptance remains a delivery gate.
+
+## Scope and trust boundaries
+
+The Platform Kernel owns identity, tenant-bound membership, web sessions, MFA credentials, CSRF protection, authentication schemes, and authorization subjects. PostgreSQL is authoritative for session validity and revocation. Browser clients receive only an `HttpOnly`, `Secure`, `SameSite=Strict` cookie; they never receive or persist a bearer access token.
+
+Tenant, legal-entity, branch, membership, device, and future OAuth-client scope are server-derived and independently validated. A client must not select a tenant by header or by token claim supplied by the browser.
+
+## Web session contract
+
+`platform.web_session` is the authoritative cross-instance registry. A cookie is valid only when its session identifier, identity, tenant, security stamp, active membership, and active identity match a live row under PostgreSQL RLS. Validation fails closed when the registry is unavailable. The ASP.NET cookie middleware does not use sliding expiration.
+
+The default policy is:
+
+| Rule | Default |
+| --- | ---: |
+| Inactivity timeout | 30 minutes |
+| Reauthentication deadline | 24 hours |
+| Activity write interval | 60 seconds |
+| Fresh MFA proof | 5 minutes |
+| Warning window | 2 minutes before inactivity expiry |
+
+Only meaningful browser activity (pointer, keyboard, touch, focus, or an explicit Continue action) can request a bounded activity write. Query polling, background refreshes, and rendering do not extend a session. Activity cannot move the inactivity expiry beyond the reauthentication deadline. Logout and global revocation mark the authoritative row unusable; no process-local revocation list is trusted for production sessions.
+
+## Cookie and bearer separation
+
+The browser ERP uses the cookie scheme and CSRF protection for state-changing requests. Future OAuth resource endpoints must use a separate bearer scheme and must not inherit browser-cookie authorization implicitly. CSRF is required for cookie-authenticated mutations and is not a substitute for bearer token validation.
+
+## Native mobile OAuth/OIDC contract
+
+The approved protocol is OpenIddict Authorization Code + PKCE with `S256`, public mobile clients, system-browser authorization, exact pre-registered redirect URIs, state and nonce validation, one-use authorization codes, short-lived access tokens, rotating refresh-token families, family reuse detection, revocation, discovery metadata, and published signing keys. Password Grant, Implicit Grant, embedded WebViews, and mobile client secrets are prohibited.
+
+The durable OpenIddict application/authorization/token store is owned by PostgreSQL under `platform`, and the authorization, token, revocation, introspection, discovery, and JWKS endpoints are enabled. The seeded native public client uses an exact custom redirect URI. Server configuration exposes only `S256`, enforces PKCE, issues five-minute access tokens, and uses rolling refresh tokens with zero reuse leeway so reuse invalidates the family. Bearer validation uses the local OpenIddict server and then revalidates the PostgreSQL session/security stamp on each authorized API request. A configured web login URI provides the system-browser bridge; the frontend returns only to a same-origin API `/connect/authorize` request after web authentication.
+
+Development uses OpenIddict development certificates. Non-development startup fails closed unless both encrypted signing and encryption PKCS#12 certificates with private keys are supplied through the explicit certificate settings. A document-only OAuth surface or an in-memory token test is not acceptance evidence.
+
+Future external API access is similarly bounded to registered clients, explicit tenant/scope grants, security-stamp/account-status checks, and auditable revocation. One bounded machine-to-machine client is a future acceptance fixture, not a browser session substitute.
+
+## Sensitive operations and MFA
+
+MFA verification is recorded with the server-side session and must be fresh for sensitive actions. Recovery codes are one-use digests. Enrollment, recovery, credential changes, session administration, and high-risk business commands must use an explicit step-up proof and must never infer MFA freshness from a frontend flag.
+
+## Acceptance matrix
+
+| Capability | Current evidence | Status |
+| --- | --- | --- |
+| PostgreSQL-backed session registry and RLS | Migration, Npgsql service, focused unit coverage | PASS locally after migration verification |
+| 30m inactivity / 24h reauth / bounded activity | Session policy and deterministic clock tests | PASS locally |
+| Cross-instance fail-closed validation | Authoritative row validation path | PASS by design; runtime multi-instance proof pending |
+| Cookie/CSRF browser boundary | Existing API middleware plus session claims | PASS locally |
+| Session warning and Continue UX | React activity hook, i18n, dialog | PASS by typecheck/build; real browser proof pending |
+| Native mobile OAuth/OIDC | Durable store, discovery/JWKS, code+PKCE HTTP flow, exact redirect and system-browser bridge | PASS locally; browser/mobile-client proof pending |
+| Refresh rotation, reuse detection, discovery/signing keys | Five-minute access tokens, rolling refresh family, zero-leeway reuse rejection, development/prod certificate fail-closed rules | PASS locally; production certificate rotation evidence pending |
+| Fresh MFA enforcement on sensitive operations | Server-side five-minute MFA proof, step-up endpoint, password/session/MFA-enrollment/replay guards | PASS for guarded platform operations; broader module-specific high-risk command audit remains a separate gate |
+
+The truthful delivery status remains **NOT COMPLETE** for production/mobile release until browser/mobile-client acceptance and production certificate rotation evidence are captured. The local backend foundation has repeatable HTTP evidence; this document does not claim production certification.

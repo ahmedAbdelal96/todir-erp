@@ -17,7 +17,8 @@ public sealed record AuthenticationFlowResult(
     string? ChallengeToken,
     SessionContext? Session,
     bool MfaVerified,
-    string? ErrorCode)
+    string? ErrorCode,
+    DateTimeOffset? MfaVerifiedAt = null)
 {
     public static AuthenticationFlowResult Rejected(string code) => new(AuthenticationNextStep.Rejected, null, null, false, code);
 }
@@ -195,8 +196,9 @@ public sealed class AuthenticationFlowService(
         if (identity.TenantId is null) return AuthenticationFlowResult.Rejected("auth.invalid_credentials");
         var membership = await identityStore.FindActiveMembershipAsync(identity.Id, identity.TenantId.Value, cancellationToken);
         if (membership is null) return AuthenticationFlowResult.Rejected("auth.invalid_credentials");
-        var session = await sessions.CreateAsync(identity, membership, cancellationToken);
-        return session is null ? AuthenticationFlowResult.Rejected("auth.invalid_credentials") : new(AuthenticationNextStep.Authenticated, null, session, mfaVerified, null);
+        DateTimeOffset? mfaVerifiedAt = mfaVerified ? clock.GetUtcNow() : null;
+        var session = await sessions.CreateAsync(identity, membership, mfaVerifiedAt, cancellationToken);
+        return session is null ? AuthenticationFlowResult.Rejected("auth.invalid_credentials") : new(AuthenticationNextStep.Authenticated, null, session, mfaVerified, null, mfaVerifiedAt);
     }
 }
 

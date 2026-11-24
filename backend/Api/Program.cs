@@ -163,7 +163,9 @@ app.UseRateLimiter();
 app.Use(async (context, next) =>
 {
     var providerWebhook = context.Request.Path.StartsWithSegments("/api/v1/payments/webhooks/reference");
-    if (!providerWebhook && (HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method) || HttpMethods.IsPatch(context.Request.Method) || HttpMethods.IsDelete(context.Request.Method)))
+    var oauthProtocolEndpoint = context.Request.Path.StartsWithSegments("/connect");
+    var bearerRequest = context.Request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
+    if (!providerWebhook && !oauthProtocolEndpoint && !bearerRequest && (HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method) || HttpMethods.IsPatch(context.Request.Method) || HttpMethods.IsDelete(context.Request.Method)))
     {
         try
         {

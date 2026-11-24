@@ -8,7 +8,10 @@ export const en = {
     favorites: "Favorites", recentPages: "Recent pages", addFavorite: "Add {{name}} to favorites", removeFavorite: "Remove {{name}} from favorites",
     navigationPreferencesSaveFailed: "Could not save this favorite. Try again.",
     displayPreferencesSaveFailed: "Could not save your display preferences to your account.",
-    couldNotLoadSession: "Could not load the session", couldNotUpdateScope: "Could not update the organization scope"
+    couldNotLoadSession: "Could not load the session", couldNotUpdateScope: "Could not update the organization scope",
+    sessionWarningTitle: "Your session is about to expire", sessionWarningDescription: "For your security, the session will expire after a period of inactivity.",
+    sessionWarningBody: "Continue working to keep this session active. A fresh sign-in may be required after the security deadline.",
+    sessionContinue: "Continue session", sessionSignOut: "Sign out"
   },
   preferences: {
     language: "Language", theme: "Theme", alternateTheme: "Dark", defaultTheme: "Default",
