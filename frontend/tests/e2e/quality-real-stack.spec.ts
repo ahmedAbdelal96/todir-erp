@@ -406,14 +406,30 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await createHoldBtn.click();
     await page.waitForTimeout(300);
 
+    // Verify server-side inspection search and live available stock indicator
+    const searchInput = page.locator('[data-testid="inspection-search-input"] input').or(page.getByLabel(/بحث في أوامر الفحص/i));
+    if (await searchInput.isVisible()) {
+      await searchInput.fill('QI-SEED-0001');
+      await page.waitForTimeout(400);
+    }
+    await expect(page.locator('[data-testid="available-stock-indicator"]')).toBeVisible({ timeout: 10000 });
+
+    // Verify insufficient stock validation and fail-closed button protection
+    const qtyInput = page.getByLabel(/الكمية المحتجزة/i).or(page.locator('input[type="number"]')).first();
+    await qtyInput.fill('999999');
+    await expect(page.locator('[data-testid="insufficient-stock-alert"]')).toBeVisible();
+    const submitHoldBtn = page.getByRole('button', { name: /تطبيق الحظر|حفظ/i }).last();
+    await expect(submitHoldBtn).toBeDisabled();
+
+    // Restore valid quantity within available stock (100)
+    await qtyInput.fill('100');
+    await expect(page.locator('[data-testid="insufficient-stock-alert"]')).not.toBeVisible();
+
     const reasonCode = `HOLD-QA-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-    const reasonCodeInput = page.getByLabel(/كود وسبب الحظر/i).or(page.locator('input[type="text"]').last());
+    const reasonCodeInput = page.getByLabel(/كود وسبب الحظر/i).first();
     await reasonCodeInput.fill(reasonCode);
 
-    const qtyInput = page.getByLabel(/الكمية المحتجزة/i).or(page.locator('input[type="number"]')).first();
-    await qtyInput.fill('100');
-
-    const submitHoldBtn = page.getByRole('button', { name: /تطبيق الحظر|حفظ/i }).last();
+    await expect(submitHoldBtn).toBeEnabled();
     await submitHoldBtn.click();
 
     await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
@@ -785,6 +801,13 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await expect(page.locator('[data-testid="quality-overview-page"]')).toBeVisible();
     const tabletOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     expect(tabletOverflow).toBe(false);
+
+    // Verify CAPA action buttons responsive layout on tablet
+    await page.goto('/quality/capas');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="quality-capas-page"]')).toBeVisible();
+    const capaOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    expect(capaOverflow).toBe(false);
 
     // Capture tablet artifact to demonstrate genuine responsiveness
     await saveArtifact(page, '17-multi-viewport-rtl-ltr.png');

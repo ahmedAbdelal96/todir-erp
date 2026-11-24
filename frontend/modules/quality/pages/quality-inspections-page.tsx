@@ -33,6 +33,7 @@ export function QualityInspectionsPage(): React.JSX.Element {
     legalEntityId,
     stateFilter === "ALL" ? null : stateFilter,
     eventFilter === "ALL" ? null : eventFilter,
+    null,
     50,
     pagination.cursor
   );

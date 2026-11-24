@@ -155,8 +155,8 @@ export const qualityApi = {
   // 2. Inspections & Execution
   // --------------------------------------------------------------------------
 
-  listInspections(legalEntityId: string, state?: string | null, eventType?: string | null, pageSize?: number, cursor?: string | null) {
-    const qs = toQueryString({ legalEntityId, state, eventType, pageSize, cursor });
+  listInspections(legalEntityId: string, state?: string | null, eventType?: string | null, search?: string | null, pageSize?: number, cursor?: string | null) {
+    const qs = toQueryString({ legalEntityId, state, eventType, search, pageSize, cursor });
     return httpClient<QualityPage<InspectionListItem>>(`${BASE_URL}/inspections${qs}`, { legalEntityId });
   },
 

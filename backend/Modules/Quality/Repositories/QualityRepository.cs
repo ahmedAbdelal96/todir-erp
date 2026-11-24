@@ -276,12 +276,12 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
         return await ReadInspectionAsync(context, tenant.Value, id, token) ?? throw new QualityException("quality.inspection_not_found");
     }, ct);
 
-    public Task<QualityPage<InspectionListItem>> ListInspectionsAsync(TenantId tenant, Guid legalEntityId, string? state, string? eventType, int? pageSize, string? cursor, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
+    public Task<QualityPage<InspectionListItem>> ListInspectionsAsync(TenantId tenant, Guid legalEntityId, string? state, string? eventType, string? search, int? pageSize, string? cursor, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
         var items = new List<InspectionListItem>();
         var boundedSize = Math.Clamp(pageSize ?? 50, 1, 100);
         var decoded = DecodeInspectionCursor(cursor);
-        await using var command = Command(context, "select id,number,event_type,state,decision_state,product_variant_id,source_document_id,lot_quantity,sample_size,created_at from business_quality.inspection where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or state=$3) and ($4::text is null or event_type=$4) and ($5::timestamptz is null or (created_at,id)<($5::timestamptz,$6::uuid)) order by created_at desc,id desc limit $7", tenant.Value, legalEntityId, Db(state), Db(eventType), Db(decoded?.CreatedAt), Db(decoded?.Id), boundedSize + 1);
+        await using var command = Command(context, "select id,number,event_type,state,decision_state,product_variant_id,source_document_id,lot_quantity,sample_size,created_at from business_quality.inspection where tenant_id=$1 and legal_entity_id=$2 and ($3::text is null or state=$3) and ($4::text is null or event_type=$4) and ($5::text is null or number ilike '%'||$5||'%') and ($6::timestamptz is null or (created_at,id)<($6::timestamptz,$7::uuid)) order by created_at desc,id desc limit $8", tenant.Value, legalEntityId, Db(state), Db(eventType), Db(string.IsNullOrWhiteSpace(search) ? null : search.Trim()), Db(decoded?.CreatedAt), Db(decoded?.Id), boundedSize + 1);
         await using var reader = await command.ExecuteReaderAsync(token);
         while (await reader.ReadAsync(token) && items.Count <= boundedSize) items.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetGuid(5), reader.IsDBNull(6) ? null : reader.GetGuid(6), reader.GetDecimal(7), reader.GetInt32(8), reader.GetFieldValue<DateTimeOffset>(9)));
         var hasMore = items.Count > boundedSize;
@@ -560,37 +560,63 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
             }
 
             // UOM validation / resolution
+            decimal factorToBase = 1m;
             if (unitOfMeasureId is not null)
             {
                 var uomRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
-                    "select 1 from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and uom_id=$3 and status='Active'",
+                    "select factor_to_base, is_base, status from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and uom_id=$3 and status='Active' order by (case when status='Active' then 0 else 1 end), effective_from desc limit 1",
                     token, tenant.Value, productVariantId.Value, unitOfMeasureId.Value), ct);
                 if (uomRow is null) throw new QualityException("quality.uom_invalid");
+                var rawFactor = uomRow[0];
+                if (rawFactor is null or DBNull) throw new QualityException("quality.uom_conversion_invalid");
+                factorToBase = Convert.ToDecimal(rawFactor, CultureInfo.InvariantCulture);
+                if (factorToBase <= 0m) throw new QualityException("quality.uom_conversion_invalid");
             }
             else
             {
                 var uomRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
-                    "select uom_id from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and is_base and status='Active' limit 1",
+                    "select uom_id, factor_to_base from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and is_base and status='Active' limit 1",
                     token, tenant.Value, productVariantId.Value), ct);
                 if (uomRow is not null && uomRow[0] is not DBNull)
                 {
                     unitOfMeasureId = (Guid)uomRow[0];
+                    factorToBase = 1m;
                 }
                 else
                 {
                     var fallbackUom = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
-                        "select uom_id from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and status='Active' limit 1",
+                        "select uom_id, factor_to_base from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and status='Active' limit 1",
                         token, tenant.Value, productVariantId.Value), ct);
-                    if (fallbackUom is not null && fallbackUom[0] is not DBNull) unitOfMeasureId = (Guid)fallbackUom[0];
+                    if (fallbackUom is not null && fallbackUom[0] is not DBNull)
+                    {
+                        unitOfMeasureId = (Guid)fallbackUom[0];
+                        factorToBase = fallbackUom[1] is not DBNull ? Convert.ToDecimal(fallbackUom[1], CultureInfo.InvariantCulture) : 1m;
+                    }
                     else throw new QualityException("quality.base_uom_not_found");
                 }
             }
 
-            // Available stock balance check
-            var availableQty = Convert.ToDecimal(await coordinator.ExecuteAsync(tenant, (context, token) => ScalarAsync(context,
-                "select coalesce(sum(on_hand_base_quantity - reserved_base_quantity), 0) from business_inventory.stock_balance where tenant_id=$1 and legal_entity_id=$2 and product_variant_id=$3 and warehouse_id=$4 and stock_status='Available'",
-                token, tenant.Value, legalEntityId, productVariantId.Value, warehouseId.Value), ct), CultureInfo.InvariantCulture);
-            if (request.Quantity > availableQty) throw new QualityException("quality.insufficient_available_stock");
+            // Available stock balance check against authoritative exact stock position (warehouse, location, lot, serial, and UOM factor)
+            decimal requiredBaseQuantity = request.Quantity.Value * factorToBase;
+            var availableBaseQty = Convert.ToDecimal(await coordinator.ExecuteAsync(tenant, async (context, token) =>
+            {
+                var sql = "select coalesce(sum(on_hand_base_quantity - reserved_base_quantity), 0) from business_inventory.stock_balance where tenant_id=$1 and legal_entity_id=$2 and product_variant_id=$3 and warehouse_id=$4 and stock_status='Available'";
+                if (locationId is not null) sql += " and location_id = $5";
+                if (lotId is not null) sql += " and lot_id = $6";
+                if (serialId is not null) sql += " and serial_id = $7";
+
+                await using var cmd = new NpgsqlCommand(sql, context.Connection, context.Transaction);
+                cmd.Parameters.AddWithValue(tenant.Value);
+                cmd.Parameters.AddWithValue(legalEntityId);
+                cmd.Parameters.AddWithValue(productVariantId.Value);
+                cmd.Parameters.AddWithValue(warehouseId.Value);
+                if (locationId is not null) cmd.Parameters.AddWithValue(locationId.Value);
+                if (lotId is not null) cmd.Parameters.AddWithValue(lotId.Value);
+                if (serialId is not null) cmd.Parameters.AddWithValue(serialId.Value);
+                return await cmd.ExecuteScalarAsync(token);
+            }, ct), CultureInfo.InvariantCulture);
+
+            if (requiredBaseQuantity > availableBaseQty) throw new QualityException("quality.insufficient_available_stock");
         }
 
         if (hasOwnerScope && (productVariantId is null || warehouseId is null || request.Quantity is not > 0m || unitOfMeasureId is null))
@@ -749,18 +775,38 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
 
             if (opStatus == "Confirmed")
             {
-                // Retrieve catalog UOM conversion factor to base
-                var factorVal = await coordinator.ExecuteAsync(tenant, (context, token) => ScalarAsync(context,
-                    "select factor_to_base from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and uom_id=$3 and status='Active' limit 1",
+                // Retrieve authoritative catalog UOM conversion evidence - reject unresolved or invalid conversions
+                var catalogUomRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
+                    "select factor_to_base, is_base, status from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and uom_id=$3 order by (case when status='Active' then 0 else 1 end), effective_from desc limit 1",
                     token, tenant.Value, productVariantId, unitOfMeasureId), ct);
-                decimal factorToBase = factorVal is not null and not DBNull ? Convert.ToDecimal(factorVal, CultureInfo.InvariantCulture) : 1m;
+
+                if (catalogUomRow is null)
+                {
+                    // Missing conversion in catalog: never assume or default to 1m; reject as conflict
+                    throw new QualityException("quality.idempotency_conflict");
+                }
+
+                var rawFactor = catalogUomRow[0];
+                var isBase = (bool)catalogUomRow[1];
+
+                if (rawFactor is null or DBNull)
+                {
+                    throw new QualityException("quality.idempotency_conflict");
+                }
+
+                var factorToBase = Convert.ToDecimal(rawFactor, CultureInfo.InvariantCulture);
+                if (factorToBase <= 0m || (isBase && factorToBase != 1m))
+                {
+                    throw new QualityException("quality.idempotency_conflict");
+                }
+
                 decimal expectedBaseQuantity = quantity * factorToBase;
 
                 // Authoritative stock movements verification
                 var movementsValid = await coordinator.ExecuteAsync(tenant, async (context, token) =>
                 {
                     await using var cmd = new NpgsqlCommand(
-                        "select stock_status, signed_base_quantity, entered_quantity, entered_uom_id, product_variant_id, warehouse_id, location_id, lot_id, serial_id, legal_entity_id, movement_type, source_module from business_inventory.stock_movement_entry where tenant_id=$1 and operation_id=$2",
+                        "select stock_status, signed_base_quantity, entered_quantity, entered_uom_id, product_variant_id, warehouse_id, location_id, lot_id, serial_id, legal_entity_id, movement_type, source_module, conversion_factor_snapshot from business_inventory.stock_movement_entry where tenant_id=$1 and operation_id=$2",
                         context.Connection, context.Transaction);
                     cmd.Parameters.AddWithValue(tenant.Value);
                     cmd.Parameters.AddWithValue(opId);
@@ -787,11 +833,13 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
                         var entryEntity = reader.GetGuid(9);
                         var movType = reader.GetString(10);
                         var srcMod = reader.GetString(11);
+                        var snapshotFactor = reader.GetDecimal(12);
 
                         // Every movement must match the restriction's authoritative stock identity, entity, UOM, and classification
                         if (entryEntity != legalEntityId || movType != "StatusChange" || srcMod != "inventory" ||
                             pvar != productVariantId || wh != warehouseId || (locationId is not null && loc != locationId) ||
-                            (lotId is not null && lot != lotId) || (serialId is not null && ser != serialId) || uom != unitOfMeasureId)
+                            (lotId is not null && lot != lotId) || (serialId is not null && ser != serialId) || uom != unitOfMeasureId ||
+                            snapshotFactor != factorToBase)
                         {
                             return false;
                         }

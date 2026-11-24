@@ -45,7 +45,7 @@ All user-facing Arabic microcopy strictly follows the authoritative Enterprise A
 | Test Gate | Scope & Purpose | Execution Result |
 | :--- | :--- | :---: |
 | **Quality Unit & Invariant Suite** | `node --test frontend/modules/quality/tests/quality-slice.test.ts` (6 tests covering Arabic key parity, Passed != Released invariant, Supplier Return invariant, Reconciliation idempotency, 6M root cause enumeration, and destination contract) | **6 / 6 PASS** |
-| **Quality Backend Acceptance Suite** | `dotnet test backend/Tests/Integration/QualityTests.csproj` (24 integration tests QA-01 to QA-24 covering authoritative hold creation, balance validation, reconciliation state machine, deterministic replay, administrative holds, and error conditions) | **24 / 24 PASS** |
+| **Quality Backend Acceptance Suite** | `dotnet test backend/Tests/Integration/QualityTests.csproj` (27 integration tests QA-01 to QA-27 covering authoritative hold creation, balance validation, reconciliation state machine, deterministic replay, administrative holds, UOM conversion, location scoping, and error conditions) | **27 / 27 PASS** |
 | **Permissions Manifest Audit** | `node --test frontend/tests/navigation/permissions-manifest-audit.test.ts` (14 tests verifying 100% manifest permissions sync across all modules including Quality) | **14 / 14 PASS** |
 | **Navigation Consistency Contract** | `node --test frontend/tests/navigation/navigation-consistency.test.ts` (7 tests validating all route registrations and legal-entity scopes) | **7 / 7 PASS** |
 | **Full Platform Frontend Suite** | `pnpm run test:frontend` (293 unit & slice tests across all platform modules) | **293 / 293 PASS** |
@@ -77,7 +77,7 @@ Executed via `pnpm --dir frontend exec playwright test --config=playwright.quali
 | **08** | **Strict Domain Invariant: Passed != Released:** Validates persistent warning banner on header asserting that passed inspection does not release held inventory. | `08-inspection-domain-invariant-warning.png` | **PASS** |
 | **09** | **Reinspection Workflow & Cycle Tracing:** Validates reinspection trigger and parent inspection cycle traceability. | `09-reinspection-workflow.png` | **PASS** |
 | **10** | **Material Holds & Restrictions Register:** Validates material hold register displaying initial quantity, released quantity, and remaining restricted balance with authoritative Inventory status hold. | `10-material-holds-restrictions.png` | **PASS** |
-| **11** | **Partial Quantity Release Dialog & Balance Calculation:** Validates partial release modal with remaining balance accounting and operational date selection; verifies live Inventory balance queries. | `11-partial-quantity-release-dialog.png` | **PASS** |
+| **11** | **Partial Quantity Release Dialog & Balance Calculation:** Validates partial release modal with remaining balance accounting and operational date selection; verifies live Inventory balance queries asserting exact 25-unit partial release from QualityHold into Available (-25 QualityHold / +25 Available). | `11-partial-quantity-release-dialog.png` | **PASS** |
 | **12** | **Dispositions Queue & MRB Technical Decisions:** Validates MRB dispositions queue with source hold binding (`HOLD:{id}`), decision types (`UseAsIs`, `Rework`, `Scrap`, `SupplierReturn`) and action buttons; verifies live Inventory balance queries. | `12-quality-dispositions-mrb.png` | **PASS** |
 | **13** | **Quality Issues Log & Defect Classification:** Validates quality issues listing categorized by source, severity, and defect classification. | `13-quality-issues-log.png` | **PASS** |
 | **14** | **Non-Conformance Reports (NCR) & Containment:** Validates NCR lifecycle with immediate containment action logging and severity badges. | `14-ncrs-containment-actions.png` | **PASS** |
@@ -114,7 +114,7 @@ Executed via `pnpm --dir frontend exec playwright test --config=playwright.quali
    - Added `restriction_id` to `business_quality.disposition` via migration `quality-forward-fix-disposition-restriction.sql`. All inventory-impacting decisions (`Accept`, `UseAsIs`, `Concession`, `Partial`, `Scrap`, `SupplierReturn`, `Return`) strictly require `restriction_id`, eliminating arbitrary fallback selection.
    - Forward migration `quality-forward-fix-restriction-operation-params.sql` adds `unit_of_measure_id`, `operational_date`, `posting_date` to `quality_restriction` to record initial operation parameters.
    - `ReconcileRestrictionAsync` implements an authoritative reconciliation state machine: inspects the linked `inventory_operation` and requires `status == 'Confirmed'`; validates that matching `stock_movement_entry` rows exist with opposite signed quantities, correct product variant, warehouse, location, UOM, and quantity. If unconfirmed or missing, safely replays via `inventoryCapability.ChangeQualityStatusAsync` with original parameters rather than current date.
-   - Successfully verified across all 24 backend integration tests in `QualityBackendAcceptanceTests.cs` and all 20 real-stack Playwright tests without mocks.
+   - Successfully verified across all 27 backend integration tests in `QualityBackendAcceptanceTests.cs` and all 20 real-stack Playwright tests without mocks.
 8. **Exact Stock Movement Conservation Laws & Catalog UOM Conversion (P0 Closure):**
    - In `ReconcileRestrictionAsync`, validates authoritative movement identity, operation type, status, tenant, legal entity, product, warehouse, location, lot/serial, unit conversion, movement direction, source/target status, and exact base-unit quantities using catalog UOM conversion factor (`foundation_catalog.product_uom.factor_to_base`).
    - Signed movement entries must balance to zero and exactly equal the original restriction base quantity. Reconciling a confirmed operation never emits duplicate movements.
@@ -122,9 +122,11 @@ Executed via `pnpm --dir frontend exec playwright test --config=playwright.quali
    - In `QualityRepository.CreateRestrictionAsync`, when Inventory succeeds but Quality confirmation fails, preserves recoverable `Unknown` state and original idempotency identity rather than declaring the operation failed.
    - In `QualityRepository.ReconcileRestrictionAsync`, concurrent confirmations are atomically serialized with conditional update (`owner_execution_status != 'Confirmed'`) and outbox deduplication check (`platform.outbox_message`), preventing duplicate outbox events.
    - Failure injection in `QA-20` is strictly isolated using thread/task-scoped `AsyncLocal<Action<Guid, Guid>?>` via `QualityFaultInjection`, eliminating public mutable static hooks.
-10. **Authentic Stock Selection & Downstream Administrative Hold Transparency:**
-    - Hold creation modal removes test UUID fixtures and queries live stock positions via `useStockBalances`, filtering eligible warehouses and locations and displaying available quantities.
+10. **Authentic Stock Selection, Search Keyset Pagination & Downstream Administrative Hold Transparency:**
+    - Hold creation modal removes test UUID fixtures and queries live stock positions via `useStockBalances`, strictly filtering eligible warehouses and locations to positive Available balances (zero fallback to all locations).
+    - Features debounced server-side inspection search and keyset cursor pagination, preserving currently selected inspection across queries.
     - Prevents silent physical-to-administrative hold downgrade when product variant context is missing by showing actionable warning and disabling submission.
+    - Clarifies downstream administrative hold reality: internal documentary records that emit zero inventory movements and do not move physical stock.
 11. **UI Layout Polish & Arabic Enterprise Localization:**
     - Fixed missing translation key on dispositions table by adding `fields.ownerExecutionStatus` and `fields.actions`, eliminating `النص غير متاح`.
     - Resolved button clipping on CAPA action buttons by enforcing `flexWrap: "wrap"` and `minWidth: "260px"`.
@@ -133,4 +135,6 @@ Executed via `pnpm --dir frontend exec playwright test --config=playwright.quali
     - In `QualityModule.cs`, direct queries with mismatched `legalEntityId` parameters while session is locked to the primary legal entity are strictly rejected with 403 Forbidden.
     - When session context is switched to the secondary legal entity (`SECONDARY_ENTITY_ID = 'd8eb39bb-b048-7c5d-bacd-e3a923eee21c'`), inspection queries succeed with zero records leaked from the main entity.
 13. **Strict Real-Stack Inventory Delta Accounting:**
-    - Playwright tests 11 & 12 enforce exact before/after inventory balance queries on `/api/v1/inventory/legal-entities/{id}/balances`, asserting -25 Available / +25 QualityHold on hold creation, and -75 QualityHold / +75 Available on release, matching exact warehouse, location, lot, serial, and stock status.
+    - Playwright test 10 verifies physical hold creation, asserting exact before/after balance deltas: -25 Available / +25 QualityHold.
+    - Playwright test 11 verifies partial release from QualityHold into Available, asserting exact before/after balance deltas: -25 QualityHold / +25 Available at the exact warehouse, location, lot, serial, and stock status.
+    - Playwright test 12 verifies final disposition release, asserting -75 QualityHold / +75 Available.

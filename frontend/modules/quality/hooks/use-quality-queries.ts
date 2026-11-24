@@ -41,8 +41,8 @@ export const QUALITY_QUERY_KEYS = {
     [...QUALITY_QUERY_KEYS.all, "samplingPlans", legalEntityId, search, pageSize, cursor] as const,
   samplingCalc: (samplingPlanVersionId: string, lotQuantity: number) =>
     [...QUALITY_QUERY_KEYS.all, "samplingCalc", samplingPlanVersionId, lotQuantity] as const,
-  inspections: (legalEntityId: string, state?: string | null, eventType?: string | null, pageSize?: number, cursor?: string | null) =>
-    [...QUALITY_QUERY_KEYS.all, "inspections", legalEntityId, state, eventType, pageSize, cursor] as const,
+  inspections: (legalEntityId: string, state?: string | null, eventType?: string | null, search?: string | null, pageSize?: number, cursor?: string | null) =>
+    [...QUALITY_QUERY_KEYS.all, "inspections", legalEntityId, state, eventType, search, pageSize, cursor] as const,
   inspection: (inspectionId: string) =>
     [...QUALITY_QUERY_KEYS.all, "inspection", inspectionId] as const,
   restrictions: (legalEntityId: string, status?: string | null, restrictionType?: string | null, search?: string | null, pageSize?: number, cursor?: string | null) =>
@@ -113,10 +113,10 @@ export function useSamplingCalculation(samplingPlanVersionId?: string | null, lo
   });
 }
 
-export function useQualityInspections(legalEntityId: string, state?: string | null, eventType?: string | null, pageSize?: number, cursor?: string | null) {
+export function useQualityInspections(legalEntityId: string, state?: string | null, eventType?: string | null, search?: string | null, pageSize?: number, cursor?: string | null) {
   return useQuery({
-    queryKey: QUALITY_QUERY_KEYS.inspections(legalEntityId, state, eventType, pageSize, cursor),
-    queryFn: () => qualityApi.listInspections(legalEntityId, state, eventType, pageSize, cursor),
+    queryKey: QUALITY_QUERY_KEYS.inspections(legalEntityId, state, eventType, search, pageSize, cursor),
+    queryFn: () => qualityApi.listInspections(legalEntityId, state, eventType, search, pageSize, cursor),
     enabled: Boolean(legalEntityId)
   });
 }

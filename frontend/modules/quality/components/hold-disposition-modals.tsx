@@ -13,6 +13,7 @@ import {
   useQualityInspections,
   useQualityInspection
 } from "../hooks/use-quality-queries.ts";
+import { useKeysetPagination } from "../hooks/use-keyset-pagination.ts";
 import { useWarehouses, useLocations, useStockBalances } from "../../inventory/public.ts";
 
 // --------------------------------------------------------------------------
@@ -38,18 +39,29 @@ export function CreateRestrictionModal({
 }: CreateRestrictionModalProps): React.JSX.Element | null {
   const { t } = useTranslation("quality");
   const createRestrictionMutation = useCreateRestrictionForInspection();
-  const [inspectionCursor, setInspectionCursor] = useState<string | null>(null);
+  const pagination = useKeysetPagination();
+  const [inspectionSearch, setInspectionSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  React.useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(inspectionSearch.trim());
+      pagination.reset();
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [inspectionSearch]);
+
   const { data: inspectionsData, isLoading: inspectionsLoading } = useQualityInspections(
     legalEntityId,
     null,
     null,
-    50,
-    inspectionCursor
+    debouncedSearch || null,
+    10,
+    pagination.cursor
   );
 
   const initialInspection = inspectionId || defaultInspectionId || "";
   const [selectedInspectionId, setSelectedInspectionId] = useState(initialInspection);
-  const [inspectionSearch, setInspectionSearch] = useState("");
   const singleInspectionQuery = useQualityInspection(selectedInspectionId || null);
 
   const matchedInspection = inspectionsData?.items?.find((i) => i.id === selectedInspectionId.trim());
@@ -69,43 +81,74 @@ export function CreateRestrictionModal({
   const missingProductVariant = isPhysical && Boolean(currentInspection) && !currentInspection?.productVariantId;
 
   // Query actual stock balances for the inspection's product variant
-  const { data: stockBalances = [] } = useStockBalances(
+  const stockBalancesQuery = useStockBalances(
     legalEntityId,
-    { productVariantId: currentInspection?.productVariantId || undefined },
+    currentInspection?.productVariantId ? { productVariantId: currentInspection.productVariantId } : undefined,
     Boolean(isPhysical && currentInspection?.productVariantId)
   );
+  const stockBalances = stockBalancesQuery.data ?? [];
+  const isStockLoading = stockBalancesQuery.isLoading;
 
-  // Filter warehouses and locations to those holding available stock for this variant
-  const eligibleWarehouseIds = React.useMemo(() => {
-    if (!isPhysical || !currentInspection?.productVariantId || stockBalances.length === 0) return null;
-    return new Set(stockBalances.filter((b) => b.stockStatus === "Available" && b.availableBaseQuantity > 0).map((b) => b.warehouseId));
+  // Filter warehouses and locations strictly to those holding available stock for this variant - ZERO unsafe fallbacks
+  const availableStockBalances = React.useMemo(() => {
+    if (!isPhysical || !currentInspection?.productVariantId) return [];
+    return stockBalances.filter((b) => b.stockStatus === "Available" && (b.availableBaseQuantity || 0) > 0);
   }, [isPhysical, currentInspection?.productVariantId, stockBalances]);
 
+  const eligibleWarehouseIds = React.useMemo(() => {
+    return new Set(availableStockBalances.map((b) => b.warehouseId));
+  }, [availableStockBalances]);
+
+  // ZERO unsafe fallbacks! If no eligible warehouse has available stock, list is empty
   const filteredWarehouses = React.useMemo(() => {
-    if (!eligibleWarehouseIds || eligibleWarehouseIds.size === 0) return warehouses;
+    if (!isPhysical || eligibleWarehouseIds.size === 0) return [];
     return warehouses.filter((w) => eligibleWarehouseIds.has(w.id));
-  }, [warehouses, eligibleWarehouseIds]);
+  }, [isPhysical, warehouses, eligibleWarehouseIds]);
+
+  // Auto-select single eligible warehouse or clear if invalid
+  React.useEffect(() => {
+    if (isPhysical && filteredWarehouses.length === 1 && !warehouseId) {
+      const firstWh = filteredWarehouses[0];
+      if (firstWh) setWarehouseId(firstWh.id);
+    } else if (isPhysical && warehouseId && !eligibleWarehouseIds.has(warehouseId)) {
+      setWarehouseId("");
+      setLocationId("");
+    }
+  }, [isPhysical, filteredWarehouses, warehouseId, eligibleWarehouseIds]);
 
   const eligibleLocationIds = React.useMemo(() => {
-    if (!isPhysical || !warehouseId || !currentInspection?.productVariantId || stockBalances.length === 0) return null;
+    if (!isPhysical || !warehouseId) return new Set<string>();
     return new Set(
-      stockBalances
-        .filter((b) => b.warehouseId === warehouseId && b.stockStatus === "Available" && b.availableBaseQuantity > 0)
+      availableStockBalances
+        .filter((b) => b.warehouseId === warehouseId)
         .map((b) => b.locationId)
+        .filter(Boolean) as string[]
     );
-  }, [isPhysical, warehouseId, currentInspection?.productVariantId, stockBalances]);
+  }, [isPhysical, warehouseId, availableStockBalances]);
 
+  // ZERO unsafe fallbacks!
   const filteredLocations = React.useMemo(() => {
-    if (!eligibleLocationIds || eligibleLocationIds.size === 0) return locations;
+    if (!isPhysical || !warehouseId || eligibleLocationIds.size === 0) return [];
     return locations.filter((loc) => eligibleLocationIds.has(loc.id));
-  }, [locations, eligibleLocationIds]);
+  }, [isPhysical, warehouseId, locations, eligibleLocationIds]);
 
+  // Auto-select single eligible location or clear if invalid
+  React.useEffect(() => {
+    if (isPhysical && filteredLocations.length === 1 && !locationId) {
+      const firstLoc = filteredLocations[0];
+      if (firstLoc) setLocationId(firstLoc.id);
+    } else if (isPhysical && locationId && !eligibleLocationIds.has(locationId)) {
+      setLocationId("");
+    }
+  }, [isPhysical, filteredLocations, locationId, eligibleLocationIds]);
+
+  // Exact available stock in current selection
   const availableStockInSelection = React.useMemo(() => {
-    if (!isPhysical || !currentInspection?.productVariantId || stockBalances.length === 0) return 0;
-    return stockBalances
-      .filter((b) => b.stockStatus === "Available" && (!warehouseId || b.warehouseId === warehouseId) && (!locationId || b.locationId === locationId))
+    if (!isPhysical || availableStockBalances.length === 0) return 0;
+    return availableStockBalances
+      .filter((b) => (!warehouseId || b.warehouseId === warehouseId) && (!locationId || b.locationId === locationId))
       .reduce((sum, b) => sum + (b.availableBaseQuantity || 0), 0);
-  }, [isPhysical, currentInspection?.productVariantId, stockBalances, warehouseId, locationId]);
+  }, [isPhysical, availableStockBalances, warehouseId, locationId]);
 
   // Update inspection when initial prop or inspectionsData load - zero test UUID fixtures
   React.useEffect(() => {
@@ -159,14 +202,17 @@ export function CreateRestrictionModal({
     }
   };
 
-  const allInspectionOptions = (inspectionsData?.items ?? []).map((ins) => ({
+  // Build selectable inspection options: ensure currentInspection is ALWAYS available in dropdown even across search & pagination
+  const inspectionItems = inspectionsData?.items ?? [];
+  const hasSelectedInPage = inspectionItems.some((i) => i.id === selectedInspectionId);
+  const displayInspections = currentInspection && !hasSelectedInPage
+    ? [currentInspection, ...inspectionItems]
+    : inspectionItems;
+
+  const allInspectionOptions = displayInspections.map((ins) => ({
     id: ins.id,
     label: `${ins.number} - ${t("eventTypes." + ins.eventType, ins.eventType)} (${ins.lotQuantity ?? 0})`
   }));
-
-  const filteredInspectionOptions = inspectionSearch.trim()
-    ? allInspectionOptions.filter((opt) => opt.label.toLowerCase().includes(inspectionSearch.toLowerCase()))
-    : allInspectionOptions;
 
   const warehouseOptions = filteredWarehouses.map((w) => ({
     id: w.id,
@@ -178,12 +224,23 @@ export function CreateRestrictionModal({
     label: `${loc.code} - ${loc.name}`
   }));
 
+  const numQty = Number(quantity);
+  const isQuantityExcessive = isPhysical && numQty > availableStockInSelection;
+  const isQuantityInvalid = isPhysical && (!quantity || isNaN(numQty) || numQty <= 0 || isQuantityExcessive);
+  const hasNoStockAvailable = isPhysical && !isStockLoading && currentInspection?.productVariantId && availableStockBalances.length === 0;
+
   const isSaveDisabled =
     createRestrictionMutation.isPending ||
     !selectedInspectionId.trim() ||
     !reasonCode.trim() ||
     missingProductVariant ||
-    (isPhysical && (!quantity || Number(quantity) <= 0));
+    (isPhysical && (
+      isStockLoading ||
+      hasNoStockAvailable ||
+      isQuantityInvalid ||
+      !warehouseId ||
+      (filteredLocations.length > 0 && !locationId)
+    ));
 
   return (
     <Dialog
@@ -193,21 +250,52 @@ export function CreateRestrictionModal({
       size="medium"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-        {!initialInspection && allInspectionOptions.length > 5 && (
+        {!initialInspection && (
           <TextField
+            data-testid="inspection-search-input"
             label={t("fields.searchInspection", "بحث في أوامر الفحص")}
             value={inspectionSearch}
             onChange={setInspectionSearch}
             placeholder={t("fields.searchInspectionPlaceholder", "ابحث برقم الفحص أو نوع الحدث...")}
           />
         )}
-        {!initialInspection && filteredInspectionOptions.length > 0 && (
-          <Select
-            label={t("navigation.inspections", "أمر الفحص المرتبط بالاحتجاز")}
-            selectedKey={selectedInspectionId}
-            onSelectionChange={(key) => handleInspectionChange(String(key))}
-            options={filteredInspectionOptions}
-          />
+        {!initialInspection && (
+          <>
+            <Select
+              data-testid="inspection-select-dropdown"
+              label={t("navigation.inspections", "أمر الفحص المرتبط بالاحتجاز")}
+              selectedKey={selectedInspectionId}
+              onSelectionChange={(key) => handleInspectionChange(String(key))}
+              options={allInspectionOptions}
+            />
+            <div data-testid="inspection-cursor-pagination-bar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "2px" }}>
+              <span style={{ fontSize: "11px", color: "var(--color-text-secondary, #64748b)" }}>
+                {t("pagination.page", "صفحة")} {pagination.cursorStack.length + 1}
+              </span>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <Button
+                  type="button"
+                  data-testid="inspection-prev-page-btn"
+                  variant="outline"
+                  size="small"
+                  isDisabled={!pagination.hasPrev || inspectionsLoading}
+                  onPress={() => pagination.goToPrev()}
+                >
+                  {t("actions.previous", "السابق")}
+                </Button>
+                <Button
+                  type="button"
+                  data-testid="inspection-next-page-btn"
+                  variant="outline"
+                  size="small"
+                  isDisabled={!inspectionsData?.nextCursor || inspectionsLoading}
+                  onPress={() => pagination.goToNext(inspectionsData?.nextCursor ?? null)}
+                >
+                  {t("actions.next", "التالي")}
+                </Button>
+              </div>
+            </div>
+          </>
         )}
 
         <Select
@@ -216,7 +304,7 @@ export function CreateRestrictionModal({
           onSelectionChange={(key) => setHoldScope(key as "physical" | "administrative")}
           options={[
             { id: "physical", label: t("fields.physicalHoldBound", "حظر مخزني فعلي (نقل الرصيد إلى رصيد حظر الجودة)") },
-            { id: "administrative", label: t("fields.administrativeHold", "حظر إداري ومستندي (منع المعاملات دون قفل مخزني)") }
+            { id: "administrative", label: t("fields.administrativeHold", "حظر إداري ومستندي (سجل جودة داخلي بدون قفل مخزني)") }
           ]}
         />
 
@@ -237,7 +325,7 @@ export function CreateRestrictionModal({
               <strong>{t("fields.inventoryScope", "نطاق حظر المخزون")}:</strong>{" "}
               {isPhysical
                 ? t("fields.physicalHoldBound", "حظر مخزني فعلي مرتبط بدفعة وصنف الفحص المعتمد")
-                : t("fields.administrativeHold", "حظر إداري ومستندي (بدون قفل مخزني فعلي)")}
+                : t("fields.administrativeHold", "حظر إداري ومستندي (سجل جودة داخلي بدون قفل مخزني)")}
             </div>
             {currentInspection.lotQuantity != null && (
               <div style={{ marginTop: "4px" }}>
@@ -248,7 +336,7 @@ export function CreateRestrictionModal({
               <strong>{t("fields.expectedEffect", "الأثر التشغيلي المتوقع")}:</strong>{" "}
               {isPhysical
                 ? t("fields.physicalHoldEffect", "سيتم نقل الكمية المحددة من الرصيد المتاح (Available) إلى رصيد حظر الجودة المخصص (QualityHold).")
-                : t("fields.administrativeHoldEffect", "حظر مستندي إداري يمنع استكمال الإجراءات لحين رفع الحظر دون تحريك أرصدة المخزون.")}
+                : t("fields.administrativeHoldEffect", "قيد توثيقي داخلي في نظام الجودة لأغراض التدقيق والمتابعة الإدارية؛ لا ينقل أرصدة المخزون ولا يفرض حظراً آلياً على الأنظمة الأخرى.")}
             </div>
           </div>
         )}
@@ -273,7 +361,41 @@ export function CreateRestrictionModal({
           </div>
         )}
 
-        {isPhysical && currentInspection?.productVariantId && stockBalances.length > 0 && (
+        {isPhysical && isStockLoading && (
+          <div
+            data-testid="stock-loading-indicator"
+            style={{
+              padding: "8px 12px",
+              backgroundColor: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: "6px",
+              fontSize: "12px",
+              color: "#64748b"
+            }}
+          >
+            {t("fields.loadingStockBalances", "جاري فحص أرصدة المخزون المتاحة...")}
+          </div>
+        )}
+
+        {hasNoStockAvailable && (
+          <div
+            role="alert"
+            data-testid="empty-stock-alert"
+            style={{
+              padding: "10px 12px",
+              backgroundColor: "#fef2f2",
+              border: "1px solid #fecaca",
+              borderRadius: "6px",
+              fontSize: "12px",
+              color: "#991b1b"
+            }}
+          >
+            <strong>{t("fields.noAvailableStockTitle", "لا يوجد رصيد متاح للحظر:")}</strong>{" "}
+            {t("fields.noAvailableStockMsg", "لا توجد أي أرصدة مخزنية متاحة (Available) لهذا الصنف لفرض حظر فعلي. يرجى اختيار فحص آخر أو التحويل للحظر الإداري.")}
+          </div>
+        )}
+
+        {isPhysical && availableStockBalances.length > 0 && (
           <div
             data-testid="available-stock-indicator"
             style={{
@@ -290,15 +412,33 @@ export function CreateRestrictionModal({
           </div>
         )}
 
+        {isPhysical && isQuantityExcessive && (
+          <div
+            role="alert"
+            data-testid="insufficient-stock-alert"
+            style={{
+              padding: "8px 12px",
+              backgroundColor: "#fff7ed",
+              border: "1px solid #fed7aa",
+              borderRadius: "6px",
+              fontSize: "12px",
+              color: "#c2410c"
+            }}
+          >
+            <strong>{t("fields.insufficientStockTitle", "كمية غير متاحة:")}</strong>{" "}
+            {t("fields.quantityExceedsAvailable", "الكمية المطلوبة تتجاوز الرصيد المتاح في الموقع المحدد.")}
+          </div>
+        )}
+
         {isPhysical && warehouseOptions.length > 0 && (
           <Select
-            label={t("fields.warehouse", "المستودع (اختياري / تلقائي من الرصيد)")}
+            label={t("fields.warehouse", "المستودع (إلزامي للحظر الفعلي)")}
             selectedKey={warehouseId}
             onSelectionChange={(key) => {
               setWarehouseId(String(key));
               setLocationId("");
             }}
-            options={[{ id: "", label: t("fields.autoSelectWarehouse", "تحديد تلقائي من الرصيد المتاح") }, ...warehouseOptions]}
+            options={[{ id: "", label: t("fields.autoSelectWarehouse", "اختر المستودع المتاح") }, ...warehouseOptions]}
           />
         )}
         {isPhysical && warehouseId && locationOptions.length > 0 && (
@@ -306,9 +446,58 @@ export function CreateRestrictionModal({
             label={t("fields.location", "موقع التخزين داخل المستودع")}
             selectedKey={locationId}
             onSelectionChange={(key) => setLocationId(String(key))}
-            options={[{ id: "", label: t("fields.autoSelectLocation", "تحديد تلقائي من الموقع الافتراضي") }, ...locationOptions]}
+            options={[{ id: "", label: t("fields.autoSelectLocation", "اختر موقع التخزين") }, ...locationOptions]}
           />
         )}
+
+        <Select
+          label={t("fields.restrictionType", "نوع الحظر والاحتجاز")}
+          selectedKey={restrictionType}
+          onSelectionChange={(key) => setRestrictionType(String(key))}
+          options={[
+            { id: "QualityHold", label: t("restrictionTypes.QualityHold", "احتجاز جودة (QualityHold)") },
+            { id: "Quarantine", label: t("restrictionTypes.Quarantine", "حجر صناعي وصحي (Quarantine)") },
+            { id: "Blocked", label: t("restrictionTypes.Blocked", "حظر جودة وتوريد (Blocked)") },
+            { id: "ReturnsInspection", label: t("restrictionTypes.ReturnsInspection", "فحص واحتجاز مرتجعات (ReturnsInspection)") }
+          ]}
+        />
+        <TextField
+          label={t("fields.reasonCode", "كود وسبب الحظر")}
+          value={reasonCode}
+          onChange={setReasonCode}
+          isRequired
+          autoFocus
+        />
+        {isPhysical ? (
+          <TextField
+            label={t("fields.quantity", "الكمية المحتجزة (مطلوبة للحظر المخزني)")}
+            type="number"
+            value={quantity}
+            onChange={setQuantity}
+            placeholder={t("fields.enterHoldQuantity", "أدخل الكمية المحتجزة")}
+            isRequired
+          />
+        ) : (
+          <TextField
+            label={t("fields.quantity", "الكمية الاسترشادية (اختيارية للحظر الإداري)")}
+            type="number"
+            value={quantity}
+            onChange={setQuantity}
+            placeholder={t("fields.optionalQuantity", "اختياري - بدون قفل مخزني")}
+          />
+        )}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "12px" }}>
+          <Button variant="outline" onPress={onClose} type="button">
+            {t("actions.cancel", "إلغاء")}
+          </Button>
+          <Button
+            variant="primary"
+            type="submit"
+            isDisabled={isSaveDisabled}
+          >
+            {createRestrictionMutation.isPending ? "..." : t("actions.save", "تطبيق الحظر")}
+          </Button>
+        </div>
 
         <Select
           label={t("fields.restrictionType", "نوع الحظر والاحتجاز")}
