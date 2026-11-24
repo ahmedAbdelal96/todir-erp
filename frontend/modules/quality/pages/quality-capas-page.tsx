@@ -89,14 +89,16 @@ export function QualityCapasPage(): React.JSX.Element {
                   return (
                     <tr key={c.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "10px 12px", fontWeight: 700, color: "#102a43" }}>{c.number}</td>
-                      <td style={{ padding: "10px 12px", color: "#475569" }}>{c.type}</td>
+                      <td style={{ padding: "10px 12px", color: "#475569" }}>
+                        {c.type === "Corrective" ? t("capas.typeCorrectiveShort", "تصحيحي") : t("capas.typePreventiveShort", "وقائي")}
+                      </td>
                       <td style={{ padding: "10px 12px", color: "#1e293b" }}>{c.title}</td>
                       <td style={{ padding: "10px 12px" }}>
                         <QualityStatusBadge status={c.state} />
                       </td>
                       <td style={{ padding: "10px 12px", fontWeight: 600 }}>{c.openActionCount}</td>
-                      <td style={{ padding: "10px 12px" }}>
-                        <div style={{ display: "flex", gap: "6px" }}>
+                      <td style={{ padding: "10px 12px", minWidth: "260px" }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
                           <Button
                             variant="primary"
                             isDisabled={isClosed || !canManageCapas || isReadOnly}

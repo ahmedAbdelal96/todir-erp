@@ -90,7 +90,7 @@ export function QualityDispositionsPage(): React.JSX.Element {
                   <th style={{ padding: "10px 12px" }}>{t("fields.initialQuantity", "الكمية الخاضعة")}</th>
                   <th style={{ padding: "10px 12px" }}>{t("fields.status", "حالة القرار")}</th>
                   <th style={{ padding: "10px 12px" }}>{t("fields.ownerExecutionStatus", "أثر المخزون والتنفيذ")}</th>
-                  <th style={{ padding: "10px 12px" }}>{t("actions.viewDetails", "الإجراءات")}</th>
+                  <th style={{ padding: "10px 12px" }}>{t("fields.actions", "الإجراءات")}</th>
                 </tr>
               </thead>
               <tbody>

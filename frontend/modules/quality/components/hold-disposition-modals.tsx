@@ -13,7 +13,7 @@ import {
   useQualityInspections,
   useQualityInspection
 } from "../hooks/use-quality-queries.ts";
-import { useWarehouses, useLocations } from "../../inventory/public.ts";
+import { useWarehouses, useLocations, useStockBalances } from "../../inventory/public.ts";
 
 // --------------------------------------------------------------------------
 // 1. Create Restriction (Quality Hold) Modal
@@ -38,31 +38,83 @@ export function CreateRestrictionModal({
 }: CreateRestrictionModalProps): React.JSX.Element | null {
   const { t } = useTranslation("quality");
   const createRestrictionMutation = useCreateRestrictionForInspection();
-  const { data: inspectionsData } = useQualityInspections(legalEntityId);
+  const [inspectionCursor, setInspectionCursor] = useState<string | null>(null);
+  const { data: inspectionsData, isLoading: inspectionsLoading } = useQualityInspections(
+    legalEntityId,
+    null,
+    null,
+    50,
+    inspectionCursor
+  );
 
   const initialInspection = inspectionId || defaultInspectionId || "";
   const [selectedInspectionId, setSelectedInspectionId] = useState(initialInspection);
   const [inspectionSearch, setInspectionSearch] = useState("");
   const singleInspectionQuery = useQualityInspection(selectedInspectionId || null);
 
-  const { data: warehouses = [] } = useWarehouses(legalEntityId);
-  const [warehouseId, setWarehouseId] = useState<string>("");
-  const { data: locations = [] } = useLocations(legalEntityId, warehouseId || undefined);
-  const [locationId, setLocationId] = useState<string>("");
+  const matchedInspection = inspectionsData?.items?.find((i) => i.id === selectedInspectionId.trim());
+  const currentInspection = matchedInspection || singleInspectionQuery.data;
 
   const [holdScope, setHoldScope] = useState<"physical" | "administrative">("physical");
   const [restrictionType, setRestrictionType] = useState("QualityHold");
   const [reasonCode, setReasonCode] = useState("RECEIVING_INSPECTION_HOLD");
   const [quantity, setQuantity] = useState(defaultQuantity ? String(defaultQuantity) : "");
 
-  // Update inspection when initial prop or inspectionsData load
+  const { data: warehouses = [] } = useWarehouses(legalEntityId);
+  const [warehouseId, setWarehouseId] = useState<string>("");
+  const { data: locations = [] } = useLocations(legalEntityId, warehouseId || undefined);
+  const [locationId, setLocationId] = useState<string>("");
+
+  const isPhysical = holdScope === "physical";
+  const missingProductVariant = isPhysical && Boolean(currentInspection) && !currentInspection?.productVariantId;
+
+  // Query actual stock balances for the inspection's product variant
+  const { data: stockBalances = [] } = useStockBalances(
+    legalEntityId,
+    { productVariantId: currentInspection?.productVariantId || undefined },
+    Boolean(isPhysical && currentInspection?.productVariantId)
+  );
+
+  // Filter warehouses and locations to those holding available stock for this variant
+  const eligibleWarehouseIds = React.useMemo(() => {
+    if (!isPhysical || !currentInspection?.productVariantId || stockBalances.length === 0) return null;
+    return new Set(stockBalances.filter((b) => b.stockStatus === "Available" && b.availableBaseQuantity > 0).map((b) => b.warehouseId));
+  }, [isPhysical, currentInspection?.productVariantId, stockBalances]);
+
+  const filteredWarehouses = React.useMemo(() => {
+    if (!eligibleWarehouseIds || eligibleWarehouseIds.size === 0) return warehouses;
+    return warehouses.filter((w) => eligibleWarehouseIds.has(w.id));
+  }, [warehouses, eligibleWarehouseIds]);
+
+  const eligibleLocationIds = React.useMemo(() => {
+    if (!isPhysical || !warehouseId || !currentInspection?.productVariantId || stockBalances.length === 0) return null;
+    return new Set(
+      stockBalances
+        .filter((b) => b.warehouseId === warehouseId && b.stockStatus === "Available" && b.availableBaseQuantity > 0)
+        .map((b) => b.locationId)
+    );
+  }, [isPhysical, warehouseId, currentInspection?.productVariantId, stockBalances]);
+
+  const filteredLocations = React.useMemo(() => {
+    if (!eligibleLocationIds || eligibleLocationIds.size === 0) return locations;
+    return locations.filter((loc) => eligibleLocationIds.has(loc.id));
+  }, [locations, eligibleLocationIds]);
+
+  const availableStockInSelection = React.useMemo(() => {
+    if (!isPhysical || !currentInspection?.productVariantId || stockBalances.length === 0) return 0;
+    return stockBalances
+      .filter((b) => b.stockStatus === "Available" && (!warehouseId || b.warehouseId === warehouseId) && (!locationId || b.locationId === locationId))
+      .reduce((sum, b) => sum + (b.availableBaseQuantity || 0), 0);
+  }, [isPhysical, currentInspection?.productVariantId, stockBalances, warehouseId, locationId]);
+
+  // Update inspection when initial prop or inspectionsData load - zero test UUID fixtures
   React.useEffect(() => {
     if (initialInspection) {
       setSelectedInspectionId(initialInspection);
     } else if (inspectionsData?.items && inspectionsData.items.length > 0 && !selectedInspectionId) {
-      const preferred = inspectionsData.items.find((i) => i.productVariantId === '0728eb34-de94-8c53-a1c5-d3434fec2f10') ||
-                        inspectionsData.items.find((i) => Boolean(i.productVariantId)) ||
-                        inspectionsData.items[0];
+      const preferred =
+        inspectionsData.items.find((i) => Boolean(i.productVariantId)) ||
+        inspectionsData.items[0];
       if (preferred) {
         setSelectedInspectionId(preferred.id);
         if (!quantity && preferred.lotQuantity) {
@@ -72,39 +124,20 @@ export function CreateRestrictionModal({
     }
   }, [initialInspection, inspectionsData, selectedInspectionId, quantity]);
 
-  const matchedInspection = inspectionsData?.items?.find((i) => i.id === selectedInspectionId.trim());
-  const currentInspection = matchedInspection || singleInspectionQuery.data;
-
-  // Sync hold scope with inspection capability
-  React.useEffect(() => {
-    if (currentInspection && !currentInspection.productVariantId) {
-      setHoldScope("administrative");
-    }
-  }, [currentInspection]);
-
   const handleInspectionChange = (inspId: string) => {
     setSelectedInspectionId(inspId);
     const found = inspectionsData?.items?.find((i) => i.id === inspId);
-    if (found) {
-      if (found.productVariantId) {
-        setHoldScope("physical");
-      } else {
-        setHoldScope("administrative");
-      }
-      if (!quantity && found.lotQuantity) {
-        setQuantity(String(found.lotQuantity));
-      }
+    if (found && !quantity && found.lotQuantity) {
+      setQuantity(String(found.lotQuantity));
     }
   };
-
-  const isPhysical = holdScope === "physical" && Boolean(currentInspection?.productVariantId);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalInspectionId = selectedInspectionId.trim();
     const qty = isPhysical ? Number(quantity) : (quantity ? Number(quantity) : null);
     if (!finalInspectionId || !reasonCode.trim()) return;
-    if (isPhysical && (!qty || qty <= 0)) return;
+    if (isPhysical && (!qty || qty <= 0 || missingProductVariant)) return;
 
     try {
       await createRestrictionMutation.mutateAsync({
@@ -128,19 +161,19 @@ export function CreateRestrictionModal({
 
   const allInspectionOptions = (inspectionsData?.items ?? []).map((ins) => ({
     id: ins.id,
-    label: `${ins.number} - ${ins.eventType} (${ins.lotQuantity ?? 0})`
+    label: `${ins.number} - ${t("eventTypes." + ins.eventType, ins.eventType)} (${ins.lotQuantity ?? 0})`
   }));
 
   const filteredInspectionOptions = inspectionSearch.trim()
     ? allInspectionOptions.filter((opt) => opt.label.toLowerCase().includes(inspectionSearch.toLowerCase()))
     : allInspectionOptions;
 
-  const warehouseOptions = warehouses.map((w) => ({
+  const warehouseOptions = filteredWarehouses.map((w) => ({
     id: w.id,
     label: `${w.code} - ${w.name}`
   }));
 
-  const locationOptions = locations.map((loc) => ({
+  const locationOptions = filteredLocations.map((loc) => ({
     id: loc.id,
     label: `${loc.code} - ${loc.name}`
   }));
@@ -149,6 +182,7 @@ export function CreateRestrictionModal({
     createRestrictionMutation.isPending ||
     !selectedInspectionId.trim() ||
     !reasonCode.trim() ||
+    missingProductVariant ||
     (isPhysical && (!quantity || Number(quantity) <= 0));
 
   return (
@@ -216,6 +250,43 @@ export function CreateRestrictionModal({
                 ? t("fields.physicalHoldEffect", "سيتم نقل الكمية المحددة من الرصيد المتاح (Available) إلى رصيد حظر الجودة المخصص (QualityHold).")
                 : t("fields.administrativeHoldEffect", "حظر مستندي إداري يمنع استكمال الإجراءات لحين رفع الحظر دون تحريك أرصدة المخزون.")}
             </div>
+          </div>
+        )}
+
+        {missingProductVariant && (
+          <div
+            role="alert"
+            data-testid="hold-missing-variant-alert"
+            style={{
+              padding: "10px 12px",
+              backgroundColor: "#fef2f2",
+              border: "1px solid #fecaca",
+              borderRadius: "6px",
+              fontSize: "12px",
+              color: "#991b1b"
+            }}
+          >
+            <strong>{t("fields.physicalHoldMissingVariantTitle", "تنبيه: لا يمكن تطبيق الحظر الفعلي")}</strong>
+            <p style={{ margin: "4px 0 0 0" }}>
+              {t("fields.physicalHoldMissingVariantMsg", "أمر الفحص المختار غير مرتبط بصنف مخزني (Product Variant). الحظر الفعلي يتطلب صنفاً مخزنياً لحجز الرصيد. يرجى اختيار فحص مرتبط بصنف أو تغيير نطاق الحظر إلى 'حظر إداري ومستندي'.")}
+            </p>
+          </div>
+        )}
+
+        {isPhysical && currentInspection?.productVariantId && stockBalances.length > 0 && (
+          <div
+            data-testid="available-stock-indicator"
+            style={{
+              padding: "8px 12px",
+              backgroundColor: "#f0fdf4",
+              border: "1px solid #bbf7d0",
+              borderRadius: "6px",
+              fontSize: "12px",
+              color: "#166534"
+            }}
+          >
+            <strong>{t("fields.availableStock", "الرصيد المتاح القابل للحظر")}:</strong>{" "}
+            <BdiText>{String(availableStockInSelection)}</BdiText>
           </div>
         )}
 

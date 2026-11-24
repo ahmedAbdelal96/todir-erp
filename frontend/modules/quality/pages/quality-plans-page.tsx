@@ -152,7 +152,7 @@ export function QualityPlansPage(): React.JSX.Element {
                     <tr key={p.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "10px 12px", fontWeight: 700, color: "#102a43" }}>{p.code}</td>
                       <td style={{ padding: "10px 12px", color: "#1e293b" }}>{p.name}</td>
-                      <td style={{ padding: "10px 12px", color: "#64748b" }}>{p.eventType}</td>
+                      <td style={{ padding: "10px 12px", color: "#64748b" }}>{p.eventType ? t("eventTypes." + p.eventType, p.eventType) : "-"}</td>
                       <td style={{ padding: "10px 12px" }}>
                         <QualityStatusBadge status={p.status} />
                       </td>
@@ -209,7 +209,7 @@ export function QualityPlansPage(): React.JSX.Element {
                     <tr key={c.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "10px 12px", fontWeight: 700, color: "#102a43" }}>{c.code}</td>
                       <td style={{ padding: "10px 12px", color: "#1e293b" }}>{c.name}</td>
-                      <td style={{ padding: "10px 12px", color: "#64748b" }}>{c.dataType}</td>
+                      <td style={{ padding: "10px 12px", color: "#64748b" }}>{c.dataType ? t("dataTypes." + c.dataType, c.dataType) : "-"}</td>
                       <td style={{ padding: "10px 12px", color: "#64748b" }}>{c.baseUomCode || "-"}</td>
                     </tr>
                   ))}

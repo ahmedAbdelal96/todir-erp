@@ -17,7 +17,6 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
     IPurchasingQualityDispositionCapabilities? purchasingDisposition = null,
     IManufacturingQualityDispositionCapabilities? manufacturingDisposition = null) : IQualityDecisionCapabilities, IQualityReceivingCapabilities
 {
-    public static Action<Guid, Guid>? PostInventoryPreQualityConfirmationHook { get; set; }
     private readonly Shared.Contracts.Quality.IInventoryQualityCapabilities? inventoryCapability = inventory;
     private readonly IInventoryQualityDispositionCapabilities? inventoryDispositionCapability = inventoryDisposition;
     private readonly IPurchasingQualityDispositionCapabilities? purchasingDispositionCapability = purchasingDisposition;
@@ -624,7 +623,7 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
                     ownerOperationId = ownerResult.OperationId;
 
                     // Fault-injection hook at post-inventory/pre-quality-confirmation boundary
-                    PostInventoryPreQualityConfirmationHook?.Invoke(id, ownerResult.OperationId);
+                    QualityFaultInjection.OnPostInventoryPreQualityConfirmation(id, ownerResult.OperationId);
 
                     await coordinator.ExecuteAsync<bool>(tenant, async (context, token) =>
                     {
@@ -732,7 +731,7 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
 
         // 1. Authoritative check: Look up existing inventory operation for this idempotency key
         var existingOp = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
-            "select id, status, legal_entity_id, operation_type from business_inventory.inventory_operation where tenant_id=$1 and idempotency_key=$2",
+            "select id, status, legal_entity_id, operation_type, source_module from business_inventory.inventory_operation where tenant_id=$1 and idempotency_key=$2",
             token, tenant.Value, ownerKey), ct);
 
         if (existingOp is not null)
@@ -740,19 +739,28 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
             var opId = (Guid)existingOp[0];
             var opStatus = (string)existingOp[1];
             var opLegalEntityId = (Guid)existingOp[2];
+            var opType = (string)existingOp[3];
+            var sourceModule = (string)existingOp[4];
 
-            if (opLegalEntityId != legalEntityId)
+            if (opLegalEntityId != legalEntityId || opType != "StatusChange" || sourceModule != "inventory")
             {
                 throw new QualityException("quality.idempotency_conflict");
             }
 
             if (opStatus == "Confirmed")
             {
+                // Retrieve catalog UOM conversion factor to base
+                var factorVal = await coordinator.ExecuteAsync(tenant, (context, token) => ScalarAsync(context,
+                    "select factor_to_base from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and uom_id=$3 and status='Active' limit 1",
+                    token, tenant.Value, productVariantId, unitOfMeasureId), ct);
+                decimal factorToBase = factorVal is not null and not DBNull ? Convert.ToDecimal(factorVal, CultureInfo.InvariantCulture) : 1m;
+                decimal expectedBaseQuantity = quantity * factorToBase;
+
                 // Authoritative stock movements verification
                 var movementsValid = await coordinator.ExecuteAsync(tenant, async (context, token) =>
                 {
                     await using var cmd = new NpgsqlCommand(
-                        "select stock_status, signed_base_quantity, entered_quantity, entered_uom_id, product_variant_id, warehouse_id, location_id, lot_id, serial_id from business_inventory.stock_movement_entry where tenant_id=$1 and operation_id=$2",
+                        "select stock_status, signed_base_quantity, entered_quantity, entered_uom_id, product_variant_id, warehouse_id, location_id, lot_id, serial_id, legal_entity_id, movement_type, source_module from business_inventory.stock_movement_entry where tenant_id=$1 and operation_id=$2",
                         context.Connection, context.Transaction);
                     cmd.Parameters.AddWithValue(tenant.Value);
                     cmd.Parameters.AddWithValue(opId);
@@ -776,36 +784,41 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
                         var loc = reader.IsDBNull(6) ? (Guid?)null : reader.GetGuid(6);
                         var lot = reader.IsDBNull(7) ? (Guid?)null : reader.GetGuid(7);
                         var ser = reader.IsDBNull(8) ? (Guid?)null : reader.GetGuid(8);
+                        var entryEntity = reader.GetGuid(9);
+                        var movType = reader.GetString(10);
+                        var srcMod = reader.GetString(11);
 
-                        // Every movement must match the restriction's authoritative stock identity and UOM
-                        if (pvar != productVariantId || wh != warehouseId || (locationId is not null && loc != locationId) || (lotId is not null && lot != lotId) || (serialId is not null && ser != serialId) || uom != unitOfMeasureId)
+                        // Every movement must match the restriction's authoritative stock identity, entity, UOM, and classification
+                        if (entryEntity != legalEntityId || movType != "StatusChange" || srcMod != "inventory" ||
+                            pvar != productVariantId || wh != warehouseId || (locationId is not null && loc != locationId) ||
+                            (lotId is not null && lot != lotId) || (serialId is not null && ser != serialId) || uom != unitOfMeasureId)
                         {
                             return false;
                         }
 
                         totalSignedBase += signedBaseQty;
 
-                        if (stStatus == "Available" && signedBaseQty < 0)
+                        if (stStatus == "Available" && signedBaseQty == -expectedBaseQuantity && enteredQty == quantity)
                         {
                             outAvailableEntered += enteredQty;
                         }
-                        else if (stStatus == targetStatus && signedBaseQty > 0)
+                        else if (stStatus == targetStatus && signedBaseQty == expectedBaseQuantity && enteredQty == quantity)
                         {
                             inTargetEntered += enteredQty;
                         }
                         else
                         {
-                            // Unexpected status or movement direction
+                            // Unexpected status, base quantity, or movement direction
                             return false;
                         }
                     }
 
                     // Conservation laws:
-                    // 1. Signed base quantities must sum to exactly zero (conservation of mass)
-                    // 2. Must have at least 2 entries (one out from Available, one in to target status)
+                    // 1. Exactly 2 entries (one out from Available, one in to target status)
+                    // 2. Signed base quantities must sum to exactly zero (conservation of mass)
                     // 3. Entered quantity out from Available must exactly match restriction requested quantity
                     // 4. Entered quantity in to target status must exactly match restriction requested quantity
-                    return entryCount >= 2 && totalSignedBase == 0m && outAvailableEntered == quantity && inTargetEntered == quantity;
+                    return entryCount == 2 && totalSignedBase == 0m && outAvailableEntered == quantity && inTargetEntered == quantity;
                 }, ct);
 
                 if (!movementsValid)
@@ -813,15 +826,24 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
                     throw new QualityException("quality.idempotency_conflict");
                 }
 
-                // Inventory operation is genuine and confirmed with matching stock movements
+                // Inventory operation is genuine and confirmed with matching stock movements.
+                // Atomic claim and durable Outbox idempotency:
                 await coordinator.ExecuteAsync<bool>(tenant, async (context, token) =>
                 {
-                    await ExecuteAsync(context,
-                        "update business_quality.quality_restriction set owner_execution_status='Confirmed',inventory_operation_id=$3 where tenant_id=$1 and id=$2",
+                    var rowsUpdated = await ExecuteAsync(context,
+                        "update business_quality.quality_restriction set owner_execution_status='Confirmed',inventory_operation_id=$3 where tenant_id=$1 and id=$2 and owner_execution_status != 'Confirmed'",
                         token, tenant.Value, restrictionId, opId);
-                    context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1",
-                        JsonSerializer.Serialize(new { restrictionId, legalEntityId, productVariantId, warehouseId, locationId, lotId, serialId, quantity, restrictionType, ownerOperationId = opId }),
-                        tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), restrictionId, "quality"));
+
+                    var outboxExists = await ScalarAsync(context,
+                        "select 1 from platform.outbox_message where tenant_id=$1 and causation_id=$2 and message_type='QualityRestrictionCreatedV1' limit 1",
+                        token, tenant.Value, restrictionId) is not null;
+
+                    if (rowsUpdated > 0 && !outboxExists)
+                    {
+                        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1",
+                            JsonSerializer.Serialize(new { restrictionId, legalEntityId, productVariantId, warehouseId, locationId, lotId, serialId, quantity, restrictionType, ownerOperationId = opId }),
+                            tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), restrictionId, "quality"));
+                    }
                     return true;
                 }, ct);
 
@@ -846,12 +868,20 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
             {
                 await coordinator.ExecuteAsync<bool>(tenant, async (context, token) =>
                 {
-                    await ExecuteAsync(context,
-                        "update business_quality.quality_restriction set owner_execution_status='Confirmed',inventory_operation_id=$3 where tenant_id=$1 and id=$2",
+                    var rowsUpdated = await ExecuteAsync(context,
+                        "update business_quality.quality_restriction set owner_execution_status='Confirmed',inventory_operation_id=$3 where tenant_id=$1 and id=$2 and owner_execution_status != 'Confirmed'",
                         token, tenant.Value, restrictionId, ownerResult.OperationId);
-                    context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1",
-                        JsonSerializer.Serialize(new { restrictionId, legalEntityId, productVariantId, warehouseId, locationId, lotId, serialId, quantity, restrictionType, ownerOperationId = ownerResult.OperationId }),
-                        tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), restrictionId, "quality"));
+
+                    var outboxExists = await ScalarAsync(context,
+                        "select 1 from platform.outbox_message where tenant_id=$1 and causation_id=$2 and message_type='QualityRestrictionCreatedV1' limit 1",
+                        token, tenant.Value, restrictionId) is not null;
+
+                    if (rowsUpdated > 0 && !outboxExists)
+                    {
+                        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1",
+                            JsonSerializer.Serialize(new { restrictionId, legalEntityId, productVariantId, warehouseId, locationId, lotId, serialId, quantity, restrictionType, ownerOperationId = ownerResult.OperationId }),
+                            tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), restrictionId, "quality"));
+                    }
                     return true;
                 }, ct);
             }

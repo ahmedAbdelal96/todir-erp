@@ -117,7 +117,7 @@ export function QualityOverviewPage(): React.JSX.Element {
                 <tbody>
                   {pendingInspections.slice(0, 5).map((insp) => (
                     <tr key={insp.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "8px 12px", fontWeight: 600, color: "#102a43" }}>{insp.eventType}</td>
+                      <td style={{ padding: "8px 12px", fontWeight: 600, color: "#102a43" }}>{insp.eventType ? t("eventTypes." + insp.eventType, insp.eventType) : "-"}</td>
                       <td style={{ padding: "8px 12px", color: "#475569" }}>{insp.number || "-"}</td>
                       <td style={{ padding: "8px 12px" }}>{insp.lotQuantity}</td>
                       <td style={{ padding: "8px 12px" }}>

@@ -511,26 +511,23 @@ public sealed class QualityBackendAcceptanceTests
         var stock = await ReadStockAsync(connection, factory.Services.GetRequiredService<InventoryService>());
         var inspection = await CreatePassedInspectionAsync(quality, connection, stock, "QA-20");
 
-        // Real fault injection at the actual post-inventory/pre-quality-confirmation boundary
-        QualityRepository.PostInventoryPreQualityConfirmationHook = (rId, opId) =>
+        // Real fault injection at the actual post-inventory/pre-quality-confirmation boundary using isolated AsyncLocal scope
+        QualityException? caughtEx = null;
+        using (QualityFaultInjection.SetPostInventoryPreQualityConfirmationHook((rId, opId) =>
         {
             throw new InvalidOperationException("Simulated post-inventory persistence crash at transaction boundary");
-        };
-
-        QualityException? caughtEx = null;
-        try
+        }))
         {
-            await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
-                new("QualityHold", "QA20-FAULT", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
-                AtlasEntity, CancellationToken.None);
-        }
-        catch (QualityException qex)
-        {
-            caughtEx = qex;
-        }
-        finally
-        {
-            QualityRepository.PostInventoryPreQualityConfirmationHook = null;
+            try
+            {
+                await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+                    new("QualityHold", "QA20-FAULT", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
+                    AtlasEntity, CancellationToken.None);
+            }
+            catch (QualityException qex)
+            {
+                caughtEx = qex;
+            }
         }
 
         Assert.NotNull(caughtEx);
@@ -565,6 +562,10 @@ public sealed class QualityBackendAcceptanceTests
         // Verify exactly-once movements (no duplicate movements created during reconciliation)
         var movCountAfter = await CountAsync(connection, "select count(*) from business_inventory.stock_movement_entry where tenant_id=$1 and operation_id=$2", AtlasTenant.Value, invOpId);
         Assert.Equal(2L, movCountAfter);
+
+        // Verify exactly-once outbox event publication under concurrent reconciliation
+        var outboxCount = await CountAsync(connection, "select count(*) from platform.outbox_message where tenant_id=$1 and causation_id=$2 and message_type='QualityRestrictionCreatedV1'", AtlasTenant.Value, holdId);
+        Assert.Equal(1L, outboxCount);
 
         await quality.ReleaseRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), holdId, new("QA-20 cleanup", 1m, stock.UnitId), CancellationToken.None);
     }
@@ -845,8 +846,18 @@ public sealed class QualityBackendAcceptanceTests
     private static string RequireConnection()
     {
         var conn = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
-            ?? Environment.GetEnvironmentVariable("TODIR_QUALITY_TEST_CONNECTION")
-            ?? "Host=127.0.0.1;Port=15432;Database=todir_quality_acceptance;Username=erp_app;Password=todir-app-dev";
+            ?? Environment.GetEnvironmentVariable("TODIR_QUALITY_TEST_CONNECTION");
+        if (string.IsNullOrWhiteSpace(conn))
+        {
+            var host = Environment.GetEnvironmentVariable("TODIR_DB_HOST") ?? "127.0.0.1";
+            var port = Environment.GetEnvironmentVariable("TODIR_DB_PORT") ?? "15432";
+            var db = Environment.GetEnvironmentVariable("TODIR_ACCEPTANCE_DB") ?? "todir_quality_acceptance";
+            var user = Environment.GetEnvironmentVariable("TODIR_DB_USER") ?? "erp_app";
+            var pass = Environment.GetEnvironmentVariable("TODIR_DB_PASSWORD")
+                ?? Environment.GetEnvironmentVariable("ERP_DEV_PASSWORD")
+                ?? throw new InvalidOperationException("FATAL SAFETY VIOLATION: Database password not provided in environment (TODIR_DB_PASSWORD or ERP_DEV_PASSWORD). Refusing hardcoded fallback.");
+            conn = $"Host={host};Port={port};Database={db};Username={user};Password={pass}";
+        }
         AssertAcceptanceDatabase(conn);
         return conn;
     }

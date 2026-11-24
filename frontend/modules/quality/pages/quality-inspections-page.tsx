@@ -126,7 +126,7 @@ export function QualityInspectionsPage(): React.JSX.Element {
               <tbody>
                 {inspections.map((insp) => (
                   <tr key={insp.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <td style={{ padding: "10px 12px", fontWeight: 700, color: "#102a43" }}>{insp.eventType}</td>
+                    <td style={{ padding: "10px 12px", fontWeight: 700, color: "#102a43" }}>{insp.eventType ? t("eventTypes." + insp.eventType, insp.eventType) : "-"}</td>
                     <td style={{ padding: "10px 12px", color: "#475569" }}>{insp.number || "-"}</td>
                     <td style={{ padding: "10px 12px" }}>{insp.lotQuantity}</td>
                     <td style={{ padding: "10px 12px" }}>{insp.sampleSize}</td>

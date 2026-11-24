@@ -89,19 +89,22 @@ export const qualityEn = {
 
   eventTypes: {
     Receiving: "Goods Receiving (Purchasing)",
+    Production: "Production (In-Process)",
     InProcess: "In-Process (Manufacturing)",
     Final: "Final Product Inspection",
     RoutingOperation: "Specific Routing Operation",
     Shipping: "Customer Outbound Shipping",
     Periodic: "Periodic / Shelf-Life Inspection",
     Inventory: "Periodic / Shelf-Life Inspection",
-    Outgoing: "Outbound Shipping Inspection"
+    Outgoing: "Outbound Shipping Inspection",
+    InternalTransfer: "Internal Transfer"
   },
 
   dataTypes: {
     Numeric: "Numeric Standard",
     Text: "Text / Technical Note",
-    Boolean: "Pass / Fail (Boolean)"
+    Boolean: "Pass / Fail (Boolean)",
+    Categorical: "Categorical / Descriptive"
   },
 
   samplingMethods: {
@@ -188,6 +191,26 @@ export const qualityEn = {
   },
 
   fields: {
+    ownerExecutionStatus: "Inventory & Execution Status",
+    actions: "Actions",
+    searchInspection: "Search Inspections",
+    searchInspectionPlaceholder: "Search by inspection number or event...",
+    holdScope: "Hold Scope & Nature",
+    physicalHoldBound: "Physical Stock Hold (Transfers stock to QualityHold balance)",
+    administrativeHold: "Administrative Hold (Documentary restriction without stock movement)",
+    inspectionNumber: "Inspection Order Number",
+    inventoryScope: "Inventory Scope",
+    expectedEffect: "Expected Operational Impact",
+    physicalHoldEffect: "Specified quantity will be moved from Available to QualityHold balance.",
+    administrativeHoldEffect: "Documentary hold preventing subsequent workflows without stock movement.",
+    warehouse: "Warehouse (Optional / Auto-selected)",
+    autoSelectWarehouse: "Auto-select from available stock",
+    location: "Storage Location within Warehouse",
+    autoSelectLocation: "Auto-select from default location",
+    physicalHoldMissingVariantTitle: "Warning: Physical Hold Cannot Be Applied",
+    physicalHoldMissingVariantMsg: "Selected inspection has no linked product variant. Physical holds require an authoritative product variant to restrict stock. Please choose an inspection with a product variant or switch to Administrative scope.",
+    availableStock: "Available Stock for Hold",
+    quantityExceedsAvailable: "Requested quantity exceeds available stock in selected location.",
     enterHoldQuantity: "Enter held quantity",
     enterQuantity: "Enter quantity",
     requiredYes: "Required",
@@ -299,6 +322,8 @@ export const qualityEn = {
     type: "CAPA Type",
     typeCorrective: "Corrective Action (Prevent Recurrence)",
     typePreventive: "Preventive Action (Prevent Occurrence)",
+    typeCorrectiveShort: "Corrective",
+    typePreventiveShort: "Preventive",
     problemStatement: "Problem Statement (5W2H)",
     createTitle: "Create CAPA Case",
     addActionTitle: "Assign Execution Action",

@@ -447,13 +447,23 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const holdDetail = await holdDetailRes.json();
     const variantId = holdDetail.productVariantId;
     const warehouseId = holdDetail.warehouseId;
+    const locationId = holdDetail.locationId;
+    const lotId = holdDetail.lotId;
+    const serialId = holdDetail.serialId;
+
+    const matchStock = (b: { stockStatus: string; warehouseId: string; locationId?: string; lotId?: string; serialId?: string; onHandBaseQuantity: number }, status: string) =>
+      b.stockStatus === status &&
+      b.warehouseId === warehouseId &&
+      (!locationId || b.locationId === locationId) &&
+      (!lotId || b.lotId === lotId) &&
+      (!serialId || b.serialId === serialId);
 
     // Get baseline inventory balances before release
     const balBeforeRes = await page.request.get(`/api/v1/inventory/legal-entities/${ATLAS_ENTITY_ID}/balances?productVariantId=${variantId}`);
     expect(balBeforeRes.ok()).toBeTruthy();
     const balancesBefore = await balBeforeRes.json();
-    const availBefore = Number(balancesBefore.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'Available' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
-    const holdBefore = Number(balancesBefore.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'QualityHold' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
+    const availBefore = Number(balancesBefore.find((b: any) => matchStock(b, 'Available'))?.onHandBaseQuantity ?? 0);
+    const holdBefore = Number(balancesBefore.find((b: any) => matchStock(b, 'QualityHold'))?.onHandBaseQuantity ?? 0);
 
     // Click release button on active hold
     const releaseBtn = page.getByRole('button', { name: /إفراج مخزني/i }).first();
@@ -482,12 +492,12 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     expect(releasedHold.releasedQuantity).toBe(25);
     expect(releasedHold.ownerExecutionStatus).toBe('Confirmed');
 
-    // Strict Inventory Balance Reconciliation: exact delta verification
+    // Strict Inventory Balance Reconciliation: exact delta verification matching exact stock position
     const balAfterRes = await page.request.get(`/api/v1/inventory/legal-entities/${ATLAS_ENTITY_ID}/balances?productVariantId=${variantId}`);
     expect(balAfterRes.ok()).toBeTruthy();
     const balancesAfter = await balAfterRes.json();
-    const availAfter = Number(balancesAfter.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'Available' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
-    const holdAfter = Number(balancesAfter.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'QualityHold' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
+    const availAfter = Number(balancesAfter.find((b: any) => matchStock(b, 'Available'))?.onHandBaseQuantity ?? 0);
+    const holdAfter = Number(balancesAfter.find((b: any) => matchStock(b, 'QualityHold'))?.onHandBaseQuantity ?? 0);
 
     expect(holdAfter).toBe(holdBefore - 25);
     expect(availAfter).toBe(availBefore + 25);
@@ -554,11 +564,21 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const holdDetail = await holdDetailRes.json();
     const variantId = holdDetail.productVariantId;
     const warehouseId = holdDetail.warehouseId;
+    const locationId = holdDetail.locationId;
+    const lotId = holdDetail.lotId;
+    const serialId = holdDetail.serialId;
+
+    const matchStock = (b: { stockStatus: string; warehouseId: string; locationId?: string; lotId?: string; serialId?: string; onHandBaseQuantity: number }, status: string) =>
+      b.stockStatus === status &&
+      b.warehouseId === warehouseId &&
+      (!locationId || b.locationId === locationId) &&
+      (!lotId || b.lotId === lotId) &&
+      (!serialId || b.serialId === serialId);
 
     const balBeforeExecRes = await page.request.get(`/api/v1/inventory/legal-entities/${ATLAS_ENTITY_ID}/balances?productVariantId=${variantId}`);
     const balBeforeExec = await balBeforeExecRes.json();
-    const holdBeforeExec = Number(balBeforeExec.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'QualityHold' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
-    const availBeforeExec = Number(balBeforeExec.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'Available' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
+    const holdBeforeExec = Number(balBeforeExec.find((b: any) => matchStock(b, 'QualityHold'))?.onHandBaseQuantity ?? 0);
+    const availBeforeExec = Number(balBeforeExec.find((b: any) => matchStock(b, 'Available'))?.onHandBaseQuantity ?? 0);
 
     // Execute the disposition to trigger owner integration
     const executeBtn = page.getByRole('button', { name: /تنفيذ.*أثر/i }).first();
@@ -588,8 +608,8 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const balAfterExecRes = await page.request.get(`/api/v1/inventory/legal-entities/${ATLAS_ENTITY_ID}/balances?productVariantId=${variantId}`);
     expect(balAfterExecRes.ok()).toBeTruthy();
     const balAfterExec = await balAfterExecRes.json();
-    const holdAfterExec = Number(balAfterExec.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'QualityHold' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
-    const availAfterExec = Number(balAfterExec.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'Available' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
+    const holdAfterExec = Number(balAfterExec.find((b: any) => matchStock(b, 'QualityHold'))?.onHandBaseQuantity ?? 0);
+    const availAfterExec = Number(balAfterExec.find((b: any) => matchStock(b, 'Available'))?.onHandBaseQuantity ?? 0);
 
     expect(holdAfterExec).toBe(holdBeforeExec - 75);
     expect(availAfterExec).toBe(availBeforeExec + 75);

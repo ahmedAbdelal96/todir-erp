@@ -142,7 +142,7 @@ export function InspectionWorkspacePage(): React.JSX.Element {
               {inspection.decisionState && <QualityStatusBadge status={inspection.decisionState} />}
             </div>
             <p style={{ margin: 0, fontSize: "0.875rem", color: "#64748b" }}>
-              {t("fields.eventType", "نوع الحدث")}: <strong style={{ color: "#0f172a" }}>{inspection.eventType}</strong>
+              {t("fields.eventType", "نوع الحدث")}: <strong style={{ color: "#0f172a" }}>{inspection.eventType ? t("eventTypes." + inspection.eventType, inspection.eventType) : "-"}</strong>
               {" · "}
               {t("fields.lotQuantity", "كمية الدفعة")}: <strong style={{ color: "#0f172a" }}><BdiText>{String(inspection.lotQuantity)}</BdiText></strong>
               {" · "}
@@ -299,7 +299,7 @@ export function InspectionWorkspacePage(): React.JSX.Element {
                         )}
                       </td>
                       <td style={{ padding: "0.75rem 0.5rem", color: "#64748b" }}>
-                        {char.dataType}
+                        {char.dataType ? t("dataTypes." + char.dataType, char.dataType) : "-"}
                         {char.baseUomCode && <span style={{ marginInlineStart: "4px" }}>(<BdiText>{char.baseUomCode}</BdiText>)</span>}
                       </td>
                       <td style={{ padding: "0.75rem 0.5rem" }}>

@@ -89,19 +89,22 @@ export const qualityAr = {
 
   eventTypes: {
     Receiving: "استلام بضاعة (مشتريات)",
+    Production: "إنتاج وتشغيل (Production)",
     InProcess: "أثناء التشغيل (إنتاج مرحلي)",
     Final: "فحص نهائي (منتج تام الصنع)",
     RoutingOperation: "عملية تشغيلية محددة",
     Shipping: "شحن وتسليم عملاء",
     Periodic: "فحص دوري / مخزني",
     Inventory: "فحص دوري / مخزني",
-    Outgoing: "فحص تسليم خارجي"
+    Outgoing: "فحص تسليم خارجي",
+    InternalTransfer: "تحويل داخلي (Internal Transfer)"
   },
 
   dataTypes: {
     Numeric: "قيمة رقمية قياسية",
     Text: "نص / ملاحظة فنية",
-    Boolean: "مطابق / غير مطابق (نعم/لا)"
+    Boolean: "مطابق / غير مطابق (نعم/لا)",
+    Categorical: "وصفي / تصنيفي (Categorical)"
   },
 
   samplingMethods: {
@@ -188,6 +191,26 @@ export const qualityAr = {
   },
 
   fields: {
+    ownerExecutionStatus: "أثر المخزون والتنفيذ",
+    actions: "الإجراءات",
+    searchInspection: "بحث في أوامر الفحص",
+    searchInspectionPlaceholder: "ابحث برقم الفحص أو نوع الحدث...",
+    holdScope: "نطاق وطبيعة الحظر",
+    physicalHoldBound: "حظر مخزني فعلي (نقل الرصيد إلى رصيد حظر الجودة)",
+    administrativeHold: "حظر إداري ومستندي (منع المعاملات دون قفل مخزني)",
+    inspectionNumber: "رقم أمر الفحص",
+    inventoryScope: "نطاق حظر المخزون",
+    expectedEffect: "الأثر التشغيلي المتوقع",
+    physicalHoldEffect: "سيتم نقل الكمية المحددة من الرصيد المتاح (Available) إلى رصيد حظر الجودة المخصص (QualityHold).",
+    administrativeHoldEffect: "حظر مستندي إداري يمنع استكمال الإجراءات لحين رفع الحظر دون تحريك أرصدة المخزون.",
+    warehouse: "المستودع (اختياري / تلقائي من الرصيد)",
+    autoSelectWarehouse: "تحديد تلقائي من الرصيد المتاح",
+    location: "موقع التخزين داخل المستودع",
+    autoSelectLocation: "تحديد تلقائي من الموقع الافتراضي",
+    physicalHoldMissingVariantTitle: "تنبيه: لا يمكن تطبيق الحظر الفعلي",
+    physicalHoldMissingVariantMsg: "أمر الفحص المختار غير مرتبط بصنف مخزني (Product Variant). الحظر الفعلي يتطلب صنفاً مخزنياً لحجز الرصيد. يرجى اختيار فحص مرتبط بصنف أو تغيير نطاق الحظر إلى 'حظر إداري ومستندي'.",
+    availableStock: "الرصيد المتاح القابل للحظر",
+    quantityExceedsAvailable: "الكمية المطلوبة تتجاوز الرصيد المتاح في الموقع المحدد.",
     enterHoldQuantity: "أدخل الكمية المحتجزة",
     enterQuantity: "أدخل الكمية",
     requiredYes: "إلزامي",
@@ -299,6 +322,8 @@ export const qualityAr = {
     type: "نوع الإجراء",
     typeCorrective: "تصحيحي (Corrective — لمنع التكرار)",
     typePreventive: "وقائي (Preventive — لمنع الحدوث)",
+    typeCorrectiveShort: "تصحيحي",
+    typePreventiveShort: "وقائي",
     problemStatement: "صياغة وتوصيف المشكلة (5W2H)",
     createTitle: "فتح ملف إجراء تصحيحي/وقائي (CAPA)",
     addActionTitle: "إسناد وتكليف بإجراء تنفيذي",

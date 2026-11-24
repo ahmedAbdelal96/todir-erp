@@ -115,13 +115,22 @@ Executed via `pnpm --dir frontend exec playwright test --config=playwright.quali
    - Forward migration `quality-forward-fix-restriction-operation-params.sql` adds `unit_of_measure_id`, `operational_date`, `posting_date` to `quality_restriction` to record initial operation parameters.
    - `ReconcileRestrictionAsync` implements an authoritative reconciliation state machine: inspects the linked `inventory_operation` and requires `status == 'Confirmed'`; validates that matching `stock_movement_entry` rows exist with opposite signed quantities, correct product variant, warehouse, location, UOM, and quantity. If unconfirmed or missing, safely replays via `inventoryCapability.ChangeQualityStatusAsync` with original parameters rather than current date.
    - Successfully verified across all 24 backend integration tests in `QualityBackendAcceptanceTests.cs` and all 20 real-stack Playwright tests without mocks.
-8. **Exact Stock Movement Conservation Laws (P0 Closure):**
-   - In ReconcileRestrictionAsync, validates authoritative movement identity, operation type, status, tenant, legal entity, product, warehouse, location, lot/serial, unit conversion, movement direction, source/target status, and exact base-unit quantities.
-   - Signed movement entries must balance to zero and exactly equal the original restriction quantity. Reconciling a confirmed operation never emits duplicate movements.
-9. **Uncertain Inventory Execution Classification & Fault Injection (P0 Closure):**
-   - In QualityRepository.CreateRestrictionAsync, when Inventory succeeds but Quality confirmation fails, preserves recoverable Unknown state and original idempotency identity rather than declaring the operation failed. Verified via hook QualityRepository.PostInventoryPreQualityConfirmationHook in backend acceptance test QA-20.
-10. **Same-Tenant Cross-Legal-Entity Session Locking & Security Invariants:**
-    - In QualityModule.cs, direct queries with mismatched legalEntityId parameters while session is locked to the primary legal entity are strictly rejected with 403 Forbidden.
-    - When session context is switched to the secondary legal entity (SECONDARY_ENTITY_ID = 'd8eb39bb-b048-7c5d-bacd-e3a923eee21c'), inspection queries succeed with zero records leaked from the main entity.
-11. **Strict Real-Stack Inventory Delta Accounting:**
-    - Playwright tests 11 & 12 enforce exact before/after inventory balance queries on /api/v1/inventory/legal-entities/{id}/balances, asserting -25 Available / +25 QualityHold on hold creation, and -75 QualityHold / +75 Available on release, replacing weak array existence checks.
+8. **Exact Stock Movement Conservation Laws & Catalog UOM Conversion (P0 Closure):**
+   - In `ReconcileRestrictionAsync`, validates authoritative movement identity, operation type, status, tenant, legal entity, product, warehouse, location, lot/serial, unit conversion, movement direction, source/target status, and exact base-unit quantities using catalog UOM conversion factor (`foundation_catalog.product_uom.factor_to_base`).
+   - Signed movement entries must balance to zero and exactly equal the original restriction base quantity. Reconciling a confirmed operation never emits duplicate movements.
+9. **Atomic Reconciliation, Durable Outbox Deduplication & Scoped Fault Injection (P0 Closure):**
+   - In `QualityRepository.CreateRestrictionAsync`, when Inventory succeeds but Quality confirmation fails, preserves recoverable `Unknown` state and original idempotency identity rather than declaring the operation failed.
+   - In `QualityRepository.ReconcileRestrictionAsync`, concurrent confirmations are atomically serialized with conditional update (`owner_execution_status != 'Confirmed'`) and outbox deduplication check (`platform.outbox_message`), preventing duplicate outbox events.
+   - Failure injection in `QA-20` is strictly isolated using thread/task-scoped `AsyncLocal<Action<Guid, Guid>?>` via `QualityFaultInjection`, eliminating public mutable static hooks.
+10. **Authentic Stock Selection & Downstream Administrative Hold Transparency:**
+    - Hold creation modal removes test UUID fixtures and queries live stock positions via `useStockBalances`, filtering eligible warehouses and locations and displaying available quantities.
+    - Prevents silent physical-to-administrative hold downgrade when product variant context is missing by showing actionable warning and disabling submission.
+11. **UI Layout Polish & Arabic Enterprise Localization:**
+    - Fixed missing translation key on dispositions table by adding `fields.ownerExecutionStatus` and `fields.actions`, eliminating `النص غير متاح`.
+    - Resolved button clipping on CAPA action buttons by enforcing `flexWrap: "wrap"` and `minWidth: "260px"`.
+    - Localized raw operational enum values (e.g., event types, CAPA types, characteristic data types).
+12. **Same-Tenant Cross-Legal-Entity Session Locking & Security Invariants:**
+    - In `QualityModule.cs`, direct queries with mismatched `legalEntityId` parameters while session is locked to the primary legal entity are strictly rejected with 403 Forbidden.
+    - When session context is switched to the secondary legal entity (`SECONDARY_ENTITY_ID = 'd8eb39bb-b048-7c5d-bacd-e3a923eee21c'`), inspection queries succeed with zero records leaked from the main entity.
+13. **Strict Real-Stack Inventory Delta Accounting:**
+    - Playwright tests 11 & 12 enforce exact before/after inventory balance queries on `/api/v1/inventory/legal-entities/{id}/balances`, asserting -25 Available / +25 QualityHold on hold creation, and -75 QualityHold / +75 Available on release, matching exact warehouse, location, lot, serial, and stock status.
