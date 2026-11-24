@@ -12,20 +12,23 @@ namespace Core.Identity;
 /// </summary>
 public sealed class SessionAuthorityRequirement : IAuthorizationRequirement;
 
-public sealed class SessionAuthorityHandler(ISessionService sessions) : AuthorizationHandler<SessionAuthorityRequirement>
+public sealed class SessionAuthorityHandler(ISessionService sessions, IMobileSessionService mobileSessions) : AuthorizationHandler<SessionAuthorityRequirement>
 {
     protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context, SessionAuthorityRequirement requirement)
     {
         if (context.User.Identity?.IsAuthenticated != true ||
             !Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.User.FindFirstValue(OpenIddictConstants.Claims.Subject), out var identityId) ||
-            !Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId) ||
-            !Guid.TryParse(context.User.FindFirstValue("session_id"), out var sessionId))
+            !Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId))
         {
             return;
         }
 
         var securityStamp = Guid.TryParse(context.User.FindFirstValue("security_stamp"), out var parsedStamp) ? parsedStamp : Guid.Empty;
-        if (await sessions.ValidateAsync(sessionId, new(identityId), new(tenantId), securityStamp, CancellationToken.None))
+        var valid = Guid.TryParse(context.User.FindFirstValue("mobile_session_id"), out var mobileSessionId)
+            ? await mobileSessions.ValidateAsync(mobileSessionId, new(identityId), new(tenantId), securityStamp, CancellationToken.None)
+            : Guid.TryParse(context.User.FindFirstValue("session_id"), out var sessionId)
+                && await sessions.ValidateAsync(sessionId, new(identityId), new(tenantId), securityStamp, CancellationToken.None);
+        if (valid)
         {
             context.Succeed(requirement);
         }

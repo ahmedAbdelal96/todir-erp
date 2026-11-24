@@ -15,6 +15,7 @@ public sealed record SessionPolicy(
     TimeSpan MfaFreshness)
 {
     public static SessionPolicy Default { get; } = new(TimeSpan.FromMinutes(30), TimeSpan.FromHours(24), TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(5));
+    public TimeSpan MobileSessionLifetime { get; init; } = TimeSpan.FromDays(30);
 
     public static SessionPolicy FromConfiguration(Microsoft.Extensions.Configuration.IConfiguration configuration)
     {
@@ -23,7 +24,8 @@ public sealed record SessionPolicy(
             Read(configuration, "TODIR_SESSION_REAUTHENTICATION_HOURS", Default.ReauthenticationTimeout.TotalHours, true),
             Read(configuration, "TODIR_SESSION_ACTIVITY_WRITE_SECONDS", Default.ActivityWriteInterval.TotalSeconds, false, true),
             Read(configuration, "TODIR_SESSION_MFA_FRESHNESS_MINUTES", Default.MfaFreshness.TotalMinutes));
-        if (policy.InactivityTimeout <= TimeSpan.Zero || policy.ReauthenticationTimeout <= policy.InactivityTimeout || policy.ActivityWriteInterval <= TimeSpan.Zero || policy.MfaFreshness <= TimeSpan.Zero)
+        policy = policy with { MobileSessionLifetime = Read(configuration, "TODIR_MOBILE_SESSION_DAYS", Default.MobileSessionLifetime.TotalDays) };
+        if (policy.InactivityTimeout <= TimeSpan.Zero || policy.ReauthenticationTimeout <= policy.InactivityTimeout || policy.ActivityWriteInterval <= TimeSpan.Zero || policy.MfaFreshness <= TimeSpan.Zero || policy.MobileSessionLifetime <= TimeSpan.Zero)
             throw new InvalidOperationException("identity.session_policy_invalid");
         return policy;
     }
@@ -87,7 +89,8 @@ public sealed class NpgsqlSessionService(NpgsqlDataSource dataSource, TimeProvid
                   join platform.identity i on i.tenant_id = s.tenant_id and i.id = s.identity_id
                   join platform.membership m on m.tenant_id = s.tenant_id and m.id = s.membership_id and m.identity_id = s.identity_id
                  where s.id = $1 and s.tenant_id = $2 and s.identity_id = $3
-                   and s.status = 'Active' and i.status = 'Active' and m.status = 'Active'
+                   and s.status = 'Active' and s.security_stamp = i.security_stamp
+                   and i.status = 'Active' and m.status = 'Active'
                  limit 1
                 """, connection, transaction);
             command.Parameters.AddWithValue(sessionId);

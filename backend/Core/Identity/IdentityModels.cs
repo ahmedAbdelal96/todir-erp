@@ -50,6 +50,8 @@ public sealed record SessionContext(
     DateTimeOffset? ReauthenticationExpiresAt = null,
     DateTimeOffset? MfaVerifiedAt = null);
 
+public sealed record MobileSessionContext(IdentityId IdentityId, MembershipId MembershipId, TenantId TenantId, DateTimeOffset IssuedAt, DateTimeOffset ExpiresAt, Guid SecurityStamp, Guid SessionId, DateTimeOffset? MfaVerifiedAt = null);
+
 public static class LoginDomainConventions
 {
     private static readonly System.Text.RegularExpressions.Regex DomainPattern = new(
@@ -97,6 +99,16 @@ public interface ISessionService
     Task<bool> RevokeAsync(Guid sessionId, TenantId tenantId, CancellationToken cancellationToken = default);
     Task RevokeAsync(IdentityId identityId, CancellationToken cancellationToken = default);
     bool IsValid(SessionContext session, DateTimeOffset now);
+}
+
+public interface IMobileSessionService
+{
+    Task<MobileSessionContext?> CreateAsync(Identity identity, Membership membership, DateTimeOffset? mfaVerifiedAt = null, CancellationToken cancellationToken = default);
+    Task<MobileSessionContext?> LoadAsync(Guid sessionId, IdentityId identityId, TenantId tenantId, CancellationToken cancellationToken = default);
+    Task<bool> ValidateAsync(Guid sessionId, IdentityId identityId, TenantId tenantId, Guid securityStamp, CancellationToken cancellationToken = default);
+    Task<bool> MarkMfaVerifiedAsync(Guid sessionId, IdentityId identityId, TenantId tenantId, DateTimeOffset verifiedAt, CancellationToken cancellationToken = default);
+    Task<bool> RevokeAsync(Guid sessionId, TenantId tenantId, CancellationToken cancellationToken = default);
+    Task RevokeAsync(IdentityId identityId, CancellationToken cancellationToken = default);
 }
 
 public static class IdentityConventions

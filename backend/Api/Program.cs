@@ -31,6 +31,9 @@ using Modules.Service;
 using Modules.Quality;
 using Npgsql;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using OpenIddict.Validation.AspNetCore;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -164,8 +167,13 @@ app.Use(async (context, next) =>
 {
     var providerWebhook = context.Request.Path.StartsWithSegments("/api/v1/payments/webhooks/reference");
     var oauthProtocolEndpoint = context.Request.Path.StartsWithSegments("/connect");
-    var bearerRequest = context.Request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
-    if (!providerWebhook && !oauthProtocolEndpoint && !bearerRequest && (HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method) || HttpMethods.IsPatch(context.Request.Method) || HttpMethods.IsDelete(context.Request.Method)))
+    var mutative = HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method) || HttpMethods.IsPatch(context.Request.Method) || HttpMethods.IsDelete(context.Request.Method);
+    var cookieAuthentication = mutative ? await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme) : null;
+    var bearerAuthentication = mutative && context.Request.Headers.Authorization.Count > 0
+        ? await context.AuthenticateAsync(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)
+        : null;
+    var bearerOnly = bearerAuthentication?.Succeeded == true && cookieAuthentication?.Succeeded != true;
+    if (!providerWebhook && !oauthProtocolEndpoint && !bearerOnly && mutative)
     {
         try
         {

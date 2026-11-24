@@ -64,6 +64,40 @@ public sealed class SecurityServiceTests
     }
 
     [Fact]
+    public async Task MfaEnrollmentRequiresConfirmationAndConsumesEnrollmentTokenOnce()
+    {
+        var identityId = IdentityId.New();
+        var manager = new MfaCredentialManager(new DeterministicMfaService(), new InMemoryMfaCredentialStore(), DataProtectionProvider.Create("mfa-enrollment-tests"));
+        var policy = SessionPolicy.Default;
+        var pending = await manager.BeginEnrollmentAsync(identityId, policy);
+
+        Assert.False(await manager.IsEnabledAsync(identityId));
+        Assert.False(await manager.ConfirmEnrollmentAsync(identityId, pending.EnrollmentToken, "000000", DateTimeOffset.UtcNow));
+        Assert.True(await manager.ConfirmEnrollmentAsync(identityId, pending.EnrollmentToken, "123456", DateTimeOffset.UtcNow));
+        Assert.True(await manager.IsEnabledAsync(identityId));
+        Assert.False(await manager.ConfirmEnrollmentAsync(identityId, pending.EnrollmentToken, "123456", DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
+    public async Task MobileSessionSurvivesIndependentWebSessionRevocation()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var policy = SessionPolicy.Default;
+        var web = new SessionService(clock, policy: policy);
+        var mobile = new MobileSessionService(clock, policy);
+        var identity = new Core.Identity.Identity(IdentityId.New(), "A@EXAMPLE.COM", true, IdentityStatus.Active, clock.GetUtcNow(), null, Guid.NewGuid(), TenantId: TenantId.New());
+        var membership = new Membership(MembershipId.New(), identity.TenantId!.Value, identity.Id, "A", MembershipStatus.Active, null, null, "en", "UTC", clock.GetUtcNow(), 1);
+
+        var webSession = (await web.CreateAsync(identity, membership))!;
+        var mobileSession = (await mobile.CreateAsync(identity, membership))!;
+        await web.RevokeAsync(webSession.SessionId, membership.TenantId);
+
+        Assert.False(web.IsValid(webSession, clock.GetUtcNow()));
+        Assert.True(await mobile.ValidateAsync(mobileSession.SessionId, identity.Id, membership.TenantId, identity.SecurityStamp));
+        Assert.False(await mobile.ValidateAsync(mobileSession.SessionId, identity.Id, membership.TenantId, Guid.NewGuid()));
+    }
+
+    [Fact]
     public async Task SessionRevocationInvalidatesExistingSession()
     {
         var service = new SessionService(TimeProvider.System);
@@ -199,5 +233,13 @@ public sealed class SecurityServiceTests
         private DateTimeOffset current = initialTime;
         public override DateTimeOffset GetUtcNow() => current;
         public void Advance(TimeSpan amount) => current = current.Add(amount);
+    }
+
+    private sealed class DeterministicMfaService : IMfaService
+    {
+        public MfaEnrollment CreateEnrollment(int recoveryCodeCount = 10) => new("JBSWY3DPEHPK3PXP", ["RECOVERY-1"], ["digest"]);
+        public bool VerifyTotp(string secretBase32, string code, DateTimeOffset now) => secretBase32 == "JBSWY3DPEHPK3PXP" && code == "123456";
+        public bool VerifyRecoveryCode(string code, IReadOnlyCollection<string> recoveryCodeDigests) => false;
+        public string DigestRecoveryCode(string code) => "digest";
     }
 }

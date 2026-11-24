@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.WebUtilities;
 using Npgsql;
 using System.Security.Cryptography;
+using System.Text;
 using Shared.Primitives.Identifiers;
 
 namespace Core.Identity;
@@ -142,9 +144,26 @@ public sealed class NpgsqlMfaCredentialStore(NpgsqlDataSource dataSource) : IMfa
     }
 }
 
-public sealed class MfaCredentialManager(IMfaService service, IMfaCredentialStore store, IDataProtectionProvider protectionProvider)
+public sealed class MfaCredentialManager(IMfaService service, IMfaCredentialStore store, IDataProtectionProvider protectionProvider, IMfaEnrollmentStore? enrollmentStore = null)
 {
     private readonly IDataProtector protector = protectionProvider.CreateProtector("platform-mfa-secret-v1");
+    private readonly IMfaEnrollmentStore enrollments = enrollmentStore ?? new InMemoryMfaEnrollmentStore(store);
+
+    public sealed record PendingEnrollment(Guid EnrollmentId, string EnrollmentToken, string SecretBase32, IReadOnlyList<string> RecoveryCodes);
+
+    public async Task<PendingEnrollment> BeginEnrollmentAsync(IdentityId identityId, SessionPolicy policy, CancellationToken cancellationToken = default)
+    {
+        var enrollment = service.CreateEnrollment(); var token = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32)); var enrollmentId = Guid.CreateVersion7(); var now = DateTimeOffset.UtcNow;
+        await enrollments.CreateAsync(identityId, enrollmentId, HashToken(token), protector.Protect(enrollment.SecretBase32), enrollment.RecoveryCodeDigests, now, now.Add(policy.MfaFreshness), cancellationToken);
+        return new PendingEnrollment(enrollmentId, token, enrollment.SecretBase32, enrollment.RecoveryCodes);
+    }
+
+    public async Task<bool> ConfirmEnrollmentAsync(IdentityId identityId, string token, string code, DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(code)) return false; var tokenHash = HashToken(token); var pending = await enrollments.FindAsync(identityId, tokenHash, now, cancellationToken); if (pending is null) return false;
+        try { if (!service.VerifyTotp(protector.Unprotect(pending.ProtectedSecret), code, now)) return false; } catch (CryptographicException) { return false; }
+        return await enrollments.ConsumeAsync(identityId, pending.EnrollmentId, tokenHash, now, cancellationToken);
+    }
 
     public async Task<MfaEnrollment> EnrollAsync(IdentityId identityId, CancellationToken cancellationToken = default)
     {
@@ -181,4 +200,6 @@ public sealed class MfaCredentialManager(IMfaService service, IMfaCredentialStor
         var digest = service.DigestRecoveryCode(code);
         return await store.ConsumeRecoveryCodeAsync(identityId, digest, cancellationToken);
     }
+
+    private static string HashToken(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
 }

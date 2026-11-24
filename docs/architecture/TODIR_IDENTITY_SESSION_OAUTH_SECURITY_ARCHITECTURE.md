@@ -1,6 +1,6 @@
 # TODIR Identity, Web Session, Mobile OAuth and Token Security Architecture
 
-Status: Web-session and native OAuth/OIDC foundation implemented locally; browser/production certificate acceptance remains a delivery gate.
+Status: Web-session, native OAuth/OIDC, and local critical identity-correction evidence implemented; production certificate rotation and external deployment acceptance remain delivery gates.
 
 ## Scope and trust boundaries
 
@@ -32,7 +32,7 @@ The browser ERP uses the cookie scheme and CSRF protection for state-changing re
 
 The approved protocol is OpenIddict Authorization Code + PKCE with `S256`, public mobile clients, system-browser authorization, exact pre-registered redirect URIs, state and nonce validation, one-use authorization codes, short-lived access tokens, rotating refresh-token families, family reuse detection, revocation, discovery metadata, and published signing keys. Password Grant, Implicit Grant, embedded WebViews, and mobile client secrets are prohibited.
 
-The durable OpenIddict application/authorization/token store is owned by PostgreSQL under `platform`, and the authorization, token, revocation, introspection, discovery, and JWKS endpoints are enabled. The seeded native public client uses an exact custom redirect URI. Server configuration exposes only `S256`, enforces PKCE, issues five-minute access tokens, and uses rolling refresh tokens with zero reuse leeway so reuse invalidates the family. Bearer validation uses the local OpenIddict server and then revalidates the PostgreSQL session/security stamp on each authorized API request. A configured web login URI provides the system-browser bridge; the frontend returns only to a same-origin API `/connect/authorize` request after web authentication.
+The durable OpenIddict application/authorization/token store is owned by PostgreSQL under `platform`, and the authorization, token, revocation, introspection, discovery, and JWKS endpoints are enabled. The seeded native public client uses an exact custom redirect URI. Server configuration exposes only `S256`, enforces PKCE, issues five-minute access tokens, and uses rolling refresh tokens with zero reuse leeway so reuse invalidates the family. Each authorization creates a durable `platform.mobile_session`; mobile bearer claims carry only that mobile session identity, never the browser `session_id`. Browser inactivity or browser logout therefore does not revoke an unrelated mobile session, while the authoritative identity security stamp, account status, membership status, and explicit global revocation invalidate both. Bearer validation uses the local OpenIddict server and then revalidates the PostgreSQL mobile session/security stamp on each authorized API request. A configured web login URI provides the system-browser bridge; the frontend returns only to a same-origin API `/connect/authorize` request after web authentication.
 
 Development uses OpenIddict development certificates. Non-development startup fails closed unless both encrypted signing and encryption PKCS#12 certificates with private keys are supplied through the explicit certificate settings. A document-only OAuth surface or an in-memory token test is not acceptance evidence.
 
@@ -40,19 +40,19 @@ Future external API access is similarly bounded to registered clients, explicit 
 
 ## Sensitive operations and MFA
 
-MFA verification is recorded with the server-side session and must be fresh for sensitive actions. Recovery codes are one-use digests. Enrollment, recovery, credential changes, session administration, and high-risk business commands must use an explicit step-up proof and must never infer MFA freshness from a frontend flag.
+MFA verification is recorded with the server-side session and must be fresh for sensitive actions. Recovery codes are one-use digests. Enrollment is staged in a short-lived, token-hashed server challenge and only becomes active after a confirmed TOTP; replacement and other sensitive operations require a fresh server-side proof. No-MFA accounts do not satisfy a sensitive-operation MFA requirement, and frontend claims are not trusted.
 
 ## Acceptance matrix
 
 | Capability | Current evidence | Status |
 | --- | --- | --- |
-| PostgreSQL-backed session registry and RLS | Migration, Npgsql service, focused unit coverage | PASS locally after migration verification |
+| PostgreSQL-backed session registry, security-stamp comparison, and RLS | Migration, Npgsql service, focused unit coverage, real HTTP old-cookie rejection after identity stamp change | PASS locally |
 | 30m inactivity / 24h reauth / bounded activity | Session policy and deterministic clock tests | PASS locally |
-| Cross-instance fail-closed validation | Authoritative row validation path | PASS by design; runtime multi-instance proof pending |
-| Cookie/CSRF browser boundary | Existing API middleware plus session claims | PASS locally |
+| Cross-instance fail-closed validation | Authoritative row validation path; shared PostgreSQL session authority | PASS by design; multi-process runtime evidence remains a deployment gate |
+| Cookie/CSRF browser boundary | Actual cookie/bearer authentication result is used; forged bearer headers do not bypass CSRF | PASS locally |
 | Session warning and Continue UX | React activity hook, i18n, dialog | PASS by typecheck/build; real browser proof pending |
-| Native mobile OAuth/OIDC | Durable store, discovery/JWKS, code+PKCE HTTP flow, exact redirect and system-browser bridge | PASS locally; browser/mobile-client proof pending |
+| Native mobile OAuth/OIDC | Durable store, discovery/JWKS, code+PKCE HTTP flow, exact redirect, dedicated mobile session, and system-browser bridge | PASS locally; production/mobile-client release proof pending |
 | Refresh rotation, reuse detection, discovery/signing keys | Five-minute access tokens, rolling refresh family, zero-leeway reuse rejection, development/prod certificate fail-closed rules | PASS locally; production certificate rotation evidence pending |
-| Fresh MFA enforcement on sensitive operations | Server-side five-minute MFA proof, step-up endpoint, password/session/MFA-enrollment/replay guards | PASS for guarded platform operations; broader module-specific high-risk command audit remains a separate gate |
+| Fresh MFA enforcement on sensitive operations | Server-side five-minute MFA proof, staged enrollment confirmation, password/session/admin-reset/login-domain/replay guards | PASS for guarded platform operations; broader module-specific high-risk command audit remains a separate gate |
 
 The truthful delivery status remains **NOT COMPLETE** for production/mobile release until browser/mobile-client acceptance and production certificate rotation evidence are captured. The local backend foundation has repeatable HTTP evidence; this document does not claim production certification.

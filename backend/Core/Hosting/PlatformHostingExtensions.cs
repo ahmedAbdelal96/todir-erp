@@ -181,9 +181,13 @@ public static class PlatformHostingExtensions
         services.AddSingleton<ISessionService>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
             ? new NpgsqlSessionService(dataSource, provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<SessionPolicy>())
             : new SessionService(provider.GetRequiredService<TimeProvider>(), policy: provider.GetRequiredService<SessionPolicy>()));
+        services.AddSingleton<IMobileSessionService>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource
+            ? new NpgsqlMobileSessionService(dataSource, provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<SessionPolicy>())
+            : new MobileSessionService(provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<SessionPolicy>()));
         services.AddSingleton<IMfaService, MfaService>();
         services.AddDataProtection();
         services.AddSingleton<IMfaCredentialStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlMfaCredentialStore(dataSource) : new InMemoryMfaCredentialStore());
+        services.AddSingleton<IMfaEnrollmentStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlMfaEnrollmentStore(dataSource) : new InMemoryMfaEnrollmentStore(provider.GetRequiredService<IMfaCredentialStore>()));
         services.AddSingleton<MfaCredentialManager>();
         services.AddSingleton<IAuthenticationChallengeStore>(provider => provider.GetService<NpgsqlDataSource>() is { } dataSource ? new NpgsqlAuthenticationChallengeStore(dataSource) : new InMemoryAuthenticationChallengeStore(provider.GetRequiredService<TimeProvider>()));
         services.AddSingleton<AuthenticationFlowService>();
@@ -236,7 +240,7 @@ public static class PlatformHostingExtensions
 
     public static WebApplication MapCore(this WebApplication app)
     {
-        app.MapMethods("/connect/authorize", [HttpMethods.Get, HttpMethods.Post], async (HttpContext context, ISessionService sessions, IConfiguration configuration, CancellationToken cancellationToken) =>
+        app.MapMethods("/connect/authorize", [HttpMethods.Get, HttpMethods.Post], async (HttpContext context, ISessionService sessions, IMobileSessionService mobileSessions, IConfiguration configuration, CancellationToken cancellationToken) =>
         {
             var request = Microsoft.AspNetCore.OpenIddictServerAspNetCoreHelpers.GetOpenIddictServerRequest(context);
             if (request is null) return Results.BadRequest(new { error = "invalid_request" });
@@ -253,18 +257,21 @@ public static class PlatformHostingExtensions
             if (!TryGetSessionScope(context, out var sessionId, out var tenantId) || !Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
             var session = await sessions.LoadAsync(sessionId, new(identityId), tenantId, cancellationToken);
             if (session is null) return Results.Unauthorized();
+            var mobileSession = await mobileSessions.CreateAsync(new Core.Identity.Identity(new(identityId), string.Empty, true, IdentityStatus.Active, session.IssuedAt, null, session.SecurityStamp, TenantId: tenantId), new Core.Identity.Membership(session.MembershipId, tenantId, new(identityId), string.Empty, MembershipStatus.Active, session.LegalEntityId, session.BranchId, null, null, session.IssuedAt, 0), session.MfaVerifiedAt, cancellationToken);
+            if (mobileSession is null) return Results.Unauthorized();
             var identity = new ClaimsIdentity(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme, ClaimTypes.Name, ClaimTypes.Role);
             identity.AddClaim(new Claim(OpenIddictConstants.Claims.Subject, identityId.ToString("D")));
             identity.AddClaim(new Claim("tenant_id", tenantId.Value.ToString("D")));
-            identity.AddClaim(new Claim("session_id", sessionId.ToString("D")));
-            identity.AddClaim(new Claim("security_stamp", session.SecurityStamp.ToString("D")));
+            identity.AddClaim(new Claim("membership_id", session.MembershipId.Value.ToString("D")));
+            identity.AddClaim(new Claim("mobile_session_id", mobileSession.SessionId.ToString("D")));
+            identity.AddClaim(new Claim("security_stamp", mobileSession.SecurityStamp.ToString("D")));
             var principal = new ClaimsPrincipal(identity);
             principal.SetScopes(request.GetScopes());
             principal.SetResources("todir-api");
             principal.SetDestinations(static claim => claim.Type switch
             {
                 OpenIddictConstants.Claims.Subject => [OpenIddictConstants.Destinations.AccessToken, OpenIddictConstants.Destinations.IdentityToken],
-                "tenant_id" or "session_id" => [OpenIddictConstants.Destinations.AccessToken],
+                "tenant_id" or "membership_id" or "mobile_session_id" or "security_stamp" => [OpenIddictConstants.Destinations.AccessToken],
                 _ => [OpenIddictConstants.Destinations.AccessToken]
             });
             return Results.SignIn(principal, authenticationScheme: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
@@ -301,29 +308,36 @@ public static class PlatformHostingExtensions
         group.MapPost("/auth/mfa/enroll", async (HttpContext context, MfaCredentialManager mfa, SessionPolicy policy, CancellationToken cancellationToken) =>
         {
             if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
-            if (!await HasFreshMfaAsync(context, new(identityId), mfa, policy, cancellationToken)) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_step_up_required", "Recent multi-factor verification is required");
-            var enrollment = await mfa.EnrollAsync(new(identityId), cancellationToken);
-            return Results.Ok(new { secretBase32 = enrollment.SecretBase32, recoveryCodes = enrollment.RecoveryCodes });
+            if (await mfa.IsEnabledAsync(new(identityId), cancellationToken) && !await HasFreshMfaAsync(context, new(identityId), mfa, policy, cancellationToken)) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_step_up_required", "Recent multi-factor verification is required");
+            var enrollment = await mfa.BeginEnrollmentAsync(new(identityId), policy, cancellationToken);
+            return Results.Ok(new { enrollmentId = enrollment.EnrollmentId, enrollmentToken = enrollment.EnrollmentToken, secretBase32 = enrollment.SecretBase32, recoveryCodes = enrollment.RecoveryCodes });
         }).RequireAuthorization();
-        group.MapPost("/auth/mfa/step-up", async (MfaStepUpRequest request, HttpContext context, MfaCredentialManager mfa, ISessionService sessions, SessionPolicy policy, CancellationToken cancellationToken) =>
+        group.MapPost("/auth/mfa/confirm", async (MfaEnrollmentConfirmationRequest request, HttpContext context, MfaCredentialManager mfa, CancellationToken cancellationToken) =>
         {
-            if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId) || !TryGetSessionScope(context, out var sessionId, out var tenantId)) return Results.Unauthorized();
+            if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
+            return await mfa.ConfirmEnrollmentAsync(new(identityId), request.EnrollmentToken, request.Code, context.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow(), cancellationToken) ? Results.NoContent() : Problem(StatusCodes.Status400BadRequest, "auth.mfa_enrollment_invalid", "Multi-factor enrollment could not be confirmed");
+        }).RequireAuthorization();
+        group.MapPost("/auth/mfa/step-up", async (MfaStepUpRequest request, HttpContext context, MfaCredentialManager mfa, ISessionService sessions, IMobileSessionService mobileSessions, SessionPolicy policy, CancellationToken cancellationToken) =>
+        {
+            if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId) || !TryGetCurrentSessionScope(context, out var sessionId, out var tenantId, out var mobile)) return Results.Unauthorized();
             var now = context.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow();
             var proof = await mfa.VerifyStepUpAsync(new(identityId), request.Code, now, cancellationToken);
-            if (proof is null || proof.ExpiresAt - now > policy.MfaFreshness || !await sessions.MarkMfaVerifiedAsync(sessionId, new(identityId), tenantId, now, cancellationToken)) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_step_up_failed", "Multi-factor verification could not be completed");
+            var marked = mobile ? await mobileSessions.MarkMfaVerifiedAsync(sessionId, new(identityId), tenantId, now, cancellationToken) : await sessions.MarkMfaVerifiedAsync(sessionId, new(identityId), tenantId, now, cancellationToken);
+            if (proof is null || proof.ExpiresAt - now > policy.MfaFreshness || !marked) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_step_up_failed", "Multi-factor verification could not be completed");
             return Results.NoContent();
         }).RequireAuthorization();
-        group.MapPost("/auth/logout", async (HttpContext context, ISessionService sessions, CancellationToken cancellationToken) =>
+        group.MapPost("/auth/logout", async (HttpContext context, ISessionService sessions, IMobileSessionService mobileSessions, CancellationToken cancellationToken) =>
         {
-            if (TryGetSessionScope(context, out var sessionId, out var tenantId)) await sessions.RevokeAsync(sessionId, tenantId, cancellationToken);
+            if (TryGetCurrentSessionScope(context, out var sessionId, out var tenantId, out var mobile)) { if (mobile) await mobileSessions.RevokeAsync(sessionId, tenantId, cancellationToken); else await sessions.RevokeAsync(sessionId, tenantId, cancellationToken); }
             await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return Results.NoContent();
         }).RequireAuthorization();
-        group.MapPost("/auth/sessions/revoke", async (HttpContext context, IIdentityStore store, MfaCredentialManager mfa, SessionPolicy policy, CancellationToken cancellationToken) =>
+        group.MapPost("/auth/sessions/revoke", async (HttpContext context, IIdentityStore store, IMobileSessionService mobileSessions, MfaCredentialManager mfa, SessionPolicy policy, CancellationToken cancellationToken) =>
         {
             if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId)) return Results.Unauthorized();
             if (!await HasFreshMfaAsync(context, new(identityId), mfa, policy, cancellationToken)) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_step_up_required", "Recent multi-factor verification is required");
             await store.RevokeSessionsAsync(new(identityId), cancellationToken);
+            await mobileSessions.RevokeAsync(new(identityId), cancellationToken);
             if (TryGetSessionScope(context, out var sessionId, out var tenantId)) await context.RequestServices.GetRequiredService<ISessionService>().RevokeAsync(sessionId, tenantId, cancellationToken);
             await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return Results.NoContent();
@@ -567,10 +581,10 @@ public static class PlatformHostingExtensions
             if (!await HasTenantPermissionAsync(context, tenant, "platform.identity.read", subjectStore, authorizer, cancellationToken)) return Results.Forbid();
             return await users.FindAsync(tenant, new(identityId), cancellationToken) is { } user ? Results.Ok(user) : Results.NotFound();
         }).RequireAuthorization();
-        group.MapPost("/tenants/{tenantId:guid}/users/{identityId:guid}/password-reset", async (Guid tenantId, Guid identityId, HttpContext context, IUserAccountAdminStore users, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
+        group.MapPost("/tenants/{tenantId:guid}/users/{identityId:guid}/password-reset", async (Guid tenantId, Guid identityId, HttpContext context, IUserAccountAdminStore users, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, MfaCredentialManager mfa, SessionPolicy policy, CancellationToken cancellationToken) =>
         {
             var tenant = new TenantId(tenantId);
-            if (!await HasTenantPermissionAsync(context, tenant, "platform.identity.manage", subjectStore, authorizer, cancellationToken)) return Results.Forbid();
+            if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId) || !await HasTenantPermissionAsync(context, tenant, "platform.identity.manage", subjectStore, authorizer, cancellationToken) || !await HasFreshMfaAsync(context, new(actorId), mfa, policy, cancellationToken)) return Results.Forbid();
             return await users.ResetPasswordAsync(tenant, new(identityId), cancellationToken) is { } password ? Results.Ok(new { temporaryPassword = password }) : Results.NotFound();
         }).RequireAuthorization();
         group.MapPost("/tenants/{tenantId:guid}/users/{identityId:guid}/deactivate", (Guid tenantId, Guid identityId, HttpContext context, IUserAccountAdminStore users, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) => SetUserActiveAsync(false, tenantId, identityId, context, users, subjectStore, authorizer, cancellationToken)).RequireAuthorization();
@@ -581,10 +595,10 @@ public static class PlatformHostingExtensions
             if (!await HasTenantPermissionAsync(context, tenant, "platform.tenancy.read", subjectStore, authorizer, cancellationToken)) return Results.Forbid();
             return await users.LoadLoginDomainAsync(tenant, cancellationToken) is { } domain ? Results.Ok(new { loginDomain = domain }) : Results.NotFound();
         }).RequireAuthorization();
-        group.MapPut("/tenants/{tenantId:guid}/login-domain", async (Guid tenantId, LoginDomainRequest request, HttpContext context, IUserAccountAdminStore users, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, CancellationToken cancellationToken) =>
+        group.MapPut("/tenants/{tenantId:guid}/login-domain", async (Guid tenantId, LoginDomainRequest request, HttpContext context, IUserAccountAdminStore users, IAuthorizationSubjectStore subjectStore, IPermissionAuthorizer authorizer, MfaCredentialManager mfa, SessionPolicy policy, CancellationToken cancellationToken) =>
         {
             var tenant = new TenantId(tenantId);
-            if (!await HasTenantPermissionAsync(context, tenant, "platform.tenancy.manage", subjectStore, authorizer, cancellationToken) || !string.Equals(context.User.FindFirstValue("mfa_verified"), "true", StringComparison.OrdinalIgnoreCase)) return Results.Forbid();
+            if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId) || !await HasTenantPermissionAsync(context, tenant, "platform.tenancy.manage", subjectStore, authorizer, cancellationToken) || !await HasFreshMfaAsync(context, new(actorId), mfa, policy, cancellationToken)) return Results.Forbid();
             try { return Results.Ok(new { loginDomain = await users.ChangeLoginDomainAsync(tenant, request.LoginDomain, cancellationToken) }); }
             catch (ArgumentException exception) { return Problem(StatusCodes.Status400BadRequest, "tenant.login_domain_invalid", exception.Message); }
             catch (InvalidOperationException exception) when (exception.Message is "tenant.login_domain_already_used" or "tenant.not_found") { return Problem(StatusCodes.Status409Conflict, exception.Message, "Login domain could not be changed"); }
@@ -665,6 +679,7 @@ public static class PlatformHostingExtensions
     private sealed record LoginRequest(string Email, string Password);
     private sealed record MfaVerificationRequest(string ChallengeToken, string Code);
     private sealed record MfaStepUpRequest(string Code);
+    private sealed record MfaEnrollmentConfirmationRequest(string EnrollmentToken, string Code);
     private sealed record InitialPasswordChangeRequest(string ChallengeToken, string NewPassword);
     private sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
     private sealed record CreateUserRequest(string Name, string EmailPrefix, Guid[]? RoleIds);
@@ -676,11 +691,11 @@ public static class PlatformHostingExtensions
 
     private static async Task<bool> HasFreshMfaAsync(HttpContext context, IdentityId identityId, MfaCredentialManager mfa, SessionPolicy policy, CancellationToken cancellationToken)
     {
-        if (!await mfa.IsEnabledAsync(identityId, cancellationToken)) return true;
-        if (!TryGetSessionScope(context, out var sessionId, out var tenantId)) return false;
-        var session = await context.RequestServices.GetRequiredService<ISessionService>().LoadAsync(sessionId, identityId, tenantId, cancellationToken);
+        if (!await mfa.IsEnabledAsync(identityId, cancellationToken)) return false;
+        if (!TryGetCurrentSessionScope(context, out var sessionId, out var tenantId, out var mobile)) return false;
+        var mfaVerifiedAt = mobile ? (await context.RequestServices.GetRequiredService<IMobileSessionService>().LoadAsync(sessionId, identityId, tenantId, cancellationToken))?.MfaVerifiedAt : (await context.RequestServices.GetRequiredService<ISessionService>().LoadAsync(sessionId, identityId, tenantId, cancellationToken))?.MfaVerifiedAt;
         var now = context.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow();
-        return session?.MfaVerifiedAt is { } verifiedAt && verifiedAt <= now && now - verifiedAt <= policy.MfaFreshness && session.ReauthenticationExpiresAt is { } reauth && now < reauth;
+        return mfaVerifiedAt is { } verifiedAt && verifiedAt <= now && now - verifiedAt <= policy.MfaFreshness;
     }
 
     private static X509Certificate2 LoadOAuthCertificate(IConfiguration configuration, string certificateKey, string passwordKey)
@@ -731,6 +746,12 @@ public static class PlatformHostingExtensions
         sessionId = Guid.Empty;
         tenantId = default;
         return false;
+    }
+
+    private static bool TryGetCurrentSessionScope(HttpContext context, out Guid sessionId, out TenantId tenantId, out bool mobile)
+    {
+        if (Guid.TryParse(context.User.FindFirstValue("mobile_session_id"), out sessionId) && Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var mobileTenant)) { tenantId = new TenantId(mobileTenant); mobile = true; return true; }
+        mobile = false; return TryGetSessionScope(context, out sessionId, out tenantId);
     }
 
     private static async Task<IResult> RenderAuthenticationResult(AuthenticationFlowResult result, HttpContext context)
