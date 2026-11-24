@@ -28,8 +28,8 @@
 | **QF-16** | Supplier Quality, SCAR Queue, and COA/COC | Supplier Quality Lead | `/quality/suppliers`, `/quality/certificates` | `PUT /supplier-profiles`, `POST /scars`, `POST /certificates` | `quality.supplier.manage`, `quality.certificate.manage` | Yes | Unit + E2E | `16-supplier-quality-scar-certificates.png` | **PASS** |
 | **QF-17** | Multi-Viewport & Arabic/English Responsive | All Quality Users | `/quality` | RTL Arabic & LTR English layout, tablet (768px), mobile (375px) | Platform Core | Yes | E2E | `17-multi-viewport-rtl-ltr.png` | **PASS** |
 | **QF-18** | Granular Authorization & Read-Only Protection | Auditor / Restricted (`sales@atlas.com`) | `/quality/*` | `useQualityAccess` granular capability checks & lifecycle locks, 403 API rejection | `quality.read` + Granular | Yes | E2E (Real Live API) | `18-permission-lifecycle-protection.png` | **PASS** |
-| **QF-19** | Keyset Pagination & Cursor Navigation | All Quality Users | `/quality/inspections` | Keyset pagination bar & server cursor tracking (132+ real records) | `quality.read` | Yes | E2E (Real DB Keyset Cursors) | Playwright Spec 19 | **PASS** |
-| **QF-20** | Fail-Closed Security & Access Invariant Verification | System / Security | `/api/v1/quality/*` | Multi-tenant & legal entity isolation, 401 anonymous, 403 unauthorized, cross-tenant rejection (`admin@delta.com`), zero DB leakage | Security Core | Yes | E2E (Live API & DB Verification) | Playwright Spec 20 | **PASS** |
+| **QF-19** | Keyset Pagination & Cursor Navigation | All Quality Users | `/quality/inspections` | Keyset pagination bar & server cursor tracking (132+ real records) | `quality.read` | Yes | E2E (Real DB Keyset Cursors) | Playwright Spec 19 (Zero duplicates, exact restore) | **PASS** |
+| **QF-20** | Fail-Closed Security & Access Invariant Verification | System / Security | `/api/v1/quality/*` | Multi-tenant & same-tenant legal entity session isolation (MAIN vs SECONDARY `d8eb39bb-b048-7c5d-bacd-e3a923eee21c`), 401 anonymous, 403 unauthorized (`sales@atlas.com`), cross-tenant rejection (`admin@delta.com`), zero DB leakage | Security Core | Yes | E2E (Live API & DB Verification) | Playwright Spec 20 | **PASS** |
 
 ---
 
@@ -40,18 +40,27 @@ All 18 visual artifacts have been generated through real-stack Playwright execut
 1. `01-quality-overview.png`: High-contrast Oxford Navy shell, 3-headline KPI ribbon (`#0284c7`, `#d97706`, `#dc2626`), scoped labels ("في طابور العمل المباشر"), and quick priority queues.
 2. `02-quality-plans-register.png`: Quality Plans register, active version status badges, and plan creation modal trigger.
 3. `03-quality-characteristics-catalog.png`: Characteristic specifications catalog with quantitative target limits and qualitative standards.
-4. `04-quality-sampling-plans.png`: Sampling plans register displaying AQL sampling tables, normal/tightened inspection levels.
+4. `04-quality-sampling-plans.png`: Sampling plans register displaying AQL sampling tables, normal/tightened inspection levels, sample sizes, and localized sampling methods.
 5. `05-quality-inspections-queue.png`: Operational inspection work queue filtered by status (`Pending`, `InProgress`, `Passed`, `Failed`) and event type.
 6. `06-inspection-workbench-active.png`: Deep inspection workbench (`/quality/inspections/:id`) with characteristic-by-characteristic entry and frozen plan snapshot.
 7. `07-inspection-evaluation-completed.png`: Conformance evaluation with pass/fail decision recording and inspector assignment.
 8. `08-inspection-domain-invariant-warning.png`: Prominent system warning banner: *"Passed != Released"* (نجاح الفحص لا يعني الإفراج التلقائي عن المخزون).
 9. `09-reinspection-workflow.png`: Reinspection trigger and linked parent-inspection cycle history.
-10. `10-material-holds-restrictions.png`: Active hold restrictions register with initial, released, and remaining quantity accounting.
-11. `11-partial-quantity-release-dialog.png`: Partial release modal enforcing remaining balance validation and operational release logging.
-12. `12-quality-dispositions-mrb.png`: Material Review Board (MRB) dispositions queue with source hold banner and technical decision tracking (`UseAsIs`, `Rework`, `Scrap`, `SupplierReturn`).
-13. `13-quality-issues-log.png`: Quality issues log categorized by source, severity, and defect classification.
-14. `14-ncrs-containment-actions.png`: Non-Conformance Report (NCR) lifecycle with immediate containment action tracking.
-15. `15-capa-root-cause-investigation.png`: CAPA workflow with Ishikawa 6M root cause logging and action tracking.
+10. `10-material-holds-restrictions.png`: Active hold restrictions register with initial, released, and remaining quantity accounting, supporting physical inventory holds and administrative restrictions.
+11. `11-partial-quantity-release-dialog.png`: Partial release modal enforcing remaining balance validation and operational release logging, with strict before/after inventory balance delta checks (asserting exact -25 and +25 balance updates).
+12. `12-quality-dispositions-mrb.png`: Material Review Board (MRB) dispositions queue with source hold banner and technical decision tracking (`UseAsIs`, `Rework`, `Scrap`, `SupplierReturn`), column header for inventory execution effect, and exact -75 / +75 inventory balance delta assertions.
+13. `13-quality-issues-log.png`: Quality issues log categorized by source, severity, and defect classification with localized severity levels (`Minor`, `Major`, `Critical`).
+14. `14-ncrs-containment-actions.png`: Non-Conformance Report (NCR) lifecycle with immediate containment action tracking and localized states (`Contained`, `UnderInvestigation`).
+15. `15-capa-root-cause-investigation.png`: CAPA workflow with Ishikawa 6M root cause logging and action tracking with localized lifecycle states (`Approved`, `Executed`, `Closed`).
 16. `16-supplier-quality-scar-certificates.png`: Supplier quality profiles, SCAR dispute workflows, and Certificate of Analysis (COA/COC) issuance register.
-17. `17-multi-viewport-rtl-ltr.png`: Responsive verification on Desktop (1440px), Tablet (768px), Mobile (375px), and English LTR alignment.
-18. `18-permission-lifecycle-protection.png`: Granular RBAC permission enforcement and lifecycle ReadOnly locks preventing unauthorized mutation.
+17. `17-multi-viewport-rtl-ltr.png`: Responsive verification captured at tablet viewport (768x1024), demonstrating complete RTL alignment and zero horizontal overflow.
+18. `18-permission-lifecycle-protection.png`: Visual evidence captured under restricted user (`sales@atlas.com`), demonstrating disabled creation/mutation controls and fail-closed permission enforcement.
+
+---
+
+## 3. Transactional Integrity & Acceptance Protection
+
+1. **Exact Stock Movement Conservation Laws**: In `ReconcileRestrictionAsync`, validates authoritative movement identity, operation type, status, tenant, legal entity, product, warehouse, location, lot/serial, unit conversion, movement direction, source/target status, and exact base-unit quantities. Signed entries must balance to zero and match original restriction quantity.
+2. **Uncertain Inventory Execution Classification & Fault Injection**: In `QualityRepository.CreateRestrictionAsync`, when Inventory succeeds but Quality confirmation fails, preserves recoverable `Unknown` state and original idempotency identity without declaring operation failed. Tested via hook `QualityRepository.PostInventoryPreQualityConfirmationHook` in backend acceptance test `QA-20`.
+3. **Fail-Closed Acceptance Entry Protection**: In `QualityBackendAcceptanceTests.cs`, fail-closed database validation (`AssertAcceptanceDatabase`) prevents execution against protected production or development databases (`todir`, `todir_dev`, `postgres`).
+4. **Isolated Acceptance Database Role Protection**: Acceptance runs use dedicated credentials targeting disposable databases without mutating shared cluster passwords (`erp_app`).

@@ -45,8 +45,8 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   use: {
     baseURL: 'http://127.0.0.1:5178',
-    trace: 'retain-on-failure',
-    screenshot: 'on',
+    trace: 'off',
+    screenshot: 'off',
   },
   projects: [
     {
@@ -57,7 +57,10 @@ export default defineConfig({
           args: [
             '--no-sandbox',
             '--disable-gpu',
-            '--disable-dev-shm-usage'
+            '--disable-dev-shm-usage',
+            '--disable-extensions',
+            '--disable-background-networking',
+            '--disable-breakpad'
           ],
         },
       },

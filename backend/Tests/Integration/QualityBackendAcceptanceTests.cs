@@ -510,23 +510,63 @@ public sealed class QualityBackendAcceptanceTests
         var quality = factory.Services.GetRequiredService<QualityRepository>();
         var stock = await ReadStockAsync(connection, factory.Services.GetRequiredService<InventoryService>());
         var inspection = await CreatePassedInspectionAsync(quality, connection, stock, "QA-20");
-        var hold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
-            new("QualityHold", "QA20-FAULT", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
-            AtlasEntity, CancellationToken.None);
 
-        Assert.Equal("Confirmed", hold.OwnerExecutionStatus);
-        var opId = hold.OwnerOperationId;
-        Assert.NotNull(opId);
+        // Real fault injection at the actual post-inventory/pre-quality-confirmation boundary
+        QualityRepository.PostInventoryPreQualityConfirmationHook = (rId, opId) =>
+        {
+            throw new InvalidOperationException("Simulated post-inventory persistence crash at transaction boundary");
+        };
 
-        // Simulate that quality restriction was left in 'Unknown' state with null inventory_operation_id
-        await ExecuteAsync(connection, "update business_quality.quality_restriction set owner_execution_status='Unknown', inventory_operation_id=null where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id);
+        QualityException? caughtEx = null;
+        try
+        {
+            await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+                new("QualityHold", "QA20-FAULT", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
+                AtlasEntity, CancellationToken.None);
+        }
+        catch (QualityException qex)
+        {
+            caughtEx = qex;
+        }
+        finally
+        {
+            QualityRepository.PostInventoryPreQualityConfirmationHook = null;
+        }
 
-        // Reconcile must inspect inventory_operation and stock_movement_entry, verify Confirmed status, and update restriction to Confirmed
-        var reconciled = await quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None);
-        Assert.Equal("Confirmed", reconciled.OwnerExecutionStatus);
-        Assert.Equal(opId, reconciled.OwnerOperationId);
+        Assert.NotNull(caughtEx);
+        Assert.Equal("quality.inventory_owner_execution_unknown", caughtEx.Code);
 
-        await quality.ReleaseRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, new("QA-20 cleanup", 1m, stock.UnitId), CancellationToken.None);
+        // Find the created restriction in the database
+        var holdId = (Guid)(await ScalarAsync(connection, "select id from business_quality.quality_restriction where tenant_id=$1 and reason_code='QA20-FAULT' order by created_at desc limit 1", AtlasTenant.Value))!;
+        var holdStatus = (string)(await ScalarAsync(connection, "select owner_execution_status from business_quality.quality_restriction where tenant_id=$1 and id=$2", AtlasTenant.Value, holdId))!;
+        Assert.Equal("Unknown", holdStatus);
+
+        var invOpId = (Guid)(await ScalarAsync(connection, "select inventory_operation_id from business_quality.quality_restriction where tenant_id=$1 and id=$2", AtlasTenant.Value, holdId))!;
+        Assert.NotEqual(Guid.Empty, invOpId);
+
+        // Verify Inventory operation status is Confirmed
+        var opStatus = (string)(await ScalarAsync(connection, "select status from business_inventory.inventory_operation where tenant_id=$1 and id=$2", AtlasTenant.Value, invOpId))!;
+        Assert.Equal("Confirmed", opStatus);
+
+        // Movement count before reconcile
+        var movCountBefore = await CountAsync(connection, "select count(*) from business_inventory.stock_movement_entry where tenant_id=$1 and operation_id=$2", AtlasTenant.Value, invOpId);
+        Assert.Equal(2L, movCountBefore);
+
+        // Concurrent reconcile simulation: deterministic replay and exactly-once safety
+        var recon1Task = quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), holdId, CancellationToken.None);
+        var recon2Task = quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), holdId, CancellationToken.None);
+        var results = await Task.WhenAll(recon1Task, recon2Task);
+
+        Assert.Equal("Confirmed", results[0].OwnerExecutionStatus);
+        Assert.Equal("Confirmed", results[1].OwnerExecutionStatus);
+        Assert.Equal(invOpId, results[0].OwnerOperationId);
+        Assert.Equal(invOpId, results[1].OwnerOperationId);
+
+        // Verify exactly-once movements (no duplicate movements created during reconciliation)
+        var movCountAfter = await CountAsync(connection, "select count(*) from business_inventory.stock_movement_entry where tenant_id=$1 and operation_id=$2", AtlasTenant.Value, invOpId);
+        Assert.Equal(2L, movCountAfter);
+
+        await quality.ReleaseRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), holdId, new("QA-20 cleanup", 1m, stock.UnitId), CancellationToken.None);
     }
 
     [Fact(DisplayName = "QA-21 incomplete inventory operation is rejected by reconciliation")]
@@ -568,15 +608,29 @@ public sealed class QualityBackendAcceptanceTests
             new("QualityHold", "QA22-CONFLICT", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
             AtlasEntity, CancellationToken.None);
 
-        // Tamper restriction product variant to simulate a mismatch/conflict against committed stock movements
+        // 1. Tamper restriction product variant to simulate a mismatch/conflict against committed stock movements
         await ExecuteAsync(connection, "update business_quality.quality_restriction set product_variant_id=gen_random_uuid(), owner_execution_status='Unknown', inventory_operation_id=null where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id);
 
-        var ex = await Assert.ThrowsAsync<QualityException>(() =>
+        var exVariant = await Assert.ThrowsAsync<QualityException>(() =>
             quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None));
-        Assert.Equal("quality.idempotency_conflict", ex.Code);
+        Assert.Equal("quality.idempotency_conflict", exVariant.Code);
 
-        // Restore correct product variant and cleanup
-        await ExecuteAsync(connection, "update business_quality.quality_restriction set product_variant_id=$3 where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id, stock.ProductVariantId);
+        // 2. Tamper restriction quantity (mismatched amount) to simulate conservation violation
+        await ExecuteAsync(connection, "update business_quality.quality_restriction set product_variant_id=$3, quantity=999 where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id, stock.ProductVariantId);
+
+        var exQty = await Assert.ThrowsAsync<QualityException>(() =>
+            quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None));
+        Assert.Equal("quality.idempotency_conflict", exQty.Code);
+
+        // 3. Tamper restriction UOM to simulate UOM mismatch
+        await ExecuteAsync(connection, "update business_quality.quality_restriction set quantity=1, unit_of_measure_id=gen_random_uuid() where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id);
+
+        var exUom = await Assert.ThrowsAsync<QualityException>(() =>
+            quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None));
+        Assert.Equal("quality.idempotency_conflict", exUom.Code);
+
+        // Restore correct attributes and cleanup
+        await ExecuteAsync(connection, "update business_quality.quality_restriction set unit_of_measure_id=$3 where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id, stock.UnitId);
         await quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None);
         await quality.ReleaseRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, new("QA-22 cleanup", 1m, stock.UnitId), CancellationToken.None);
     }
@@ -739,7 +793,18 @@ public sealed class QualityBackendAcceptanceTests
     private static async Task<object?> ScalarAsync(NpgsqlConnection db, string sql, params object[] values) { await using var command = new NpgsqlCommand(sql, db); for (var i = 0; i < values.Length; i++) command.Parameters.AddWithValue(values[i]); return await command.ExecuteScalarAsync(); }
     private static async Task<object?> ScalarUnscopedAsync(NpgsqlConnection db, string sql) { await using var command = new NpgsqlCommand(sql, db); return await command.ExecuteScalarAsync(); }
     private static async Task SetTenantAsync(NpgsqlConnection connection) { await using var command = new NpgsqlCommand("select set_config('app.tenant_id',$1::text,false)", connection); command.Parameters.AddWithValue(AtlasTenant.Value.ToString("D")); await command.ExecuteNonQueryAsync(); }
-    private static WebApplicationFactory<Program> CreateFactory(string connection) => new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.UseEnvironment("Development").ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["TODIR_DATABASE_CONNECTION"] = connection })).UseSetting("TODIR_DATABASE_CONNECTION", connection).UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
+    private static WebApplicationFactory<Program> CreateFactory(string connection) => new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
+        .UseEnvironment("Development")
+        .ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Development",
+            ["DOTNET_ENVIRONMENT"] = "Development",
+            ["TODIR_DATABASE_CONNECTION"] = connection
+        }))
+        .UseSetting("ASPNETCORE_ENVIRONMENT", "Development")
+        .UseSetting("DOTNET_ENVIRONMENT", "Development")
+        .UseSetting("TODIR_DATABASE_CONNECTION", connection)
+        .UseSetting("TODIR_RABBITMQ_HOST", string.Empty));
     private static Process StartQualityWorker(string connection, string host, int port, string user, string password, string vhost)
     {
         var repository = new DirectoryInfo(Environment.GetEnvironmentVariable("TODIR_REPOSITORY_ROOT") ?? AppContext.BaseDirectory);
@@ -751,7 +816,40 @@ public sealed class QualityBackendAcceptanceTests
     private static void StopWorker(Process process) { try { if (!process.HasExited) process.Kill(true); } catch { } process.Dispose(); }
     private static async Task<bool> EventuallyAsync(Func<Task<bool>> predicate)
     { for (var i = 0; i < 40; i++) { if (await predicate()) return true; await Task.Delay(500); } return false; }
-    private static string RequireConnection() => Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION") ?? Environment.GetEnvironmentVariable("TODIR_QUALITY_TEST_CONNECTION") ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION or TODIR_QUALITY_TEST_CONNECTION.");
+    private static void AssertAcceptanceDatabase(string connectionString)
+    {
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        var dbName = builder.Database;
+        if (string.IsNullOrWhiteSpace(dbName) ||
+            string.Equals(dbName, "todir", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(dbName, "todir_dev", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(dbName, "postgres", StringComparison.OrdinalIgnoreCase) ||
+            (!dbName.Contains("acceptance", StringComparison.OrdinalIgnoreCase) && !dbName.Contains("test", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException($"FATAL SAFETY INVARIANT VIOLATION: Quality backend acceptance tests must run against an isolated disposable database (e.g. 'todir_quality_acceptance'). Refusing to run on '{dbName}'.");
+        }
+
+        using var conn = new NpgsqlConnection(connectionString);
+        conn.Open();
+        using var cmd = new NpgsqlCommand("SELECT current_database();", conn);
+        var actualDb = (string)cmd.ExecuteScalar()!;
+        if (string.Equals(actualDb, "todir", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(actualDb, "todir_dev", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(actualDb, "postgres", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(actualDb, dbName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"FATAL SAFETY INVARIANT VIOLATION: Expected connected database to be '{dbName}', but PostgreSQL reported '{actualDb}'. Aborting immediately.");
+        }
+    }
+
+    private static string RequireConnection()
+    {
+        var conn = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? Environment.GetEnvironmentVariable("TODIR_QUALITY_TEST_CONNECTION")
+            ?? "Host=127.0.0.1;Port=15432;Database=todir_quality_acceptance;Username=erp_app;Password=todir-app-dev";
+        AssertAcceptanceDatabase(conn);
+        return conn;
+    }
 }
 
 [CollectionDefinition("Quality acceptance", DisableParallelization = true)]

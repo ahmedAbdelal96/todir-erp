@@ -15,9 +15,8 @@ const DEV_PASSWORD =
   process.env['SEED_DEFAULT_PASSWORD'] ||
   'TodirDev2026!';
 
-test.describe.configure({ mode: 'serial' });
-
 test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional Acceptance Suite', () => {
+  test.describe.configure({ mode: 'serial' });
   test.setTimeout(180_000);
 
   test.beforeAll(async () => {
@@ -125,7 +124,7 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const createBtn = page.getByRole('button', { name: /إنشاء خطة جودة جديدة/i });
     await expect(createBtn).toBeVisible();
 
-    const planCode = `QP-REAL-${Date.now().toString().slice(-4)}`;
+    const planCode = `QP-REAL-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     await createBtn.click();
     await page.waitForTimeout(300);
 
@@ -168,7 +167,7 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await createCharBtn.click();
     await page.waitForTimeout(300);
 
-    const charCode = `QC-DIM-${Date.now().toString().slice(-4)}`;
+    const charCode = `QC-DIM-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const codeInput = page.locator('input[type="text"]').first();
     await codeInput.fill(charCode);
     const nameInput = page.locator('input[type="text"]').nth(1);
@@ -207,7 +206,7 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await createSamplingBtn.click();
     await page.waitForTimeout(300);
 
-    const samplingCode = `SP-AQL-${Date.now().toString().slice(-4)}`;
+    const samplingCode = `SP-AQL-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const codeInput = page.locator('input[type="text"]').first();
     await codeInput.fill(samplingCode);
     const nameInput = page.locator('input[type="text"]').nth(1);
@@ -242,7 +241,7 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await createInspBtn.click();
     await page.waitForTimeout(400);
 
-    const lotRef = `LOT-TX-${Date.now().toString().slice(-5)}`;
+    const lotRef = `LOT-TX-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const lotQtyInput = page.getByLabel(/حجم التشغيلة|كمية الدفعة/i).or(page.locator('input[type="number"]')).first();
     await lotQtyInput.fill('150');
     const lotRefInput = page.getByLabel(/رقم التشغيلة|اللوت/i).or(page.locator('input[type="text"]').last());
@@ -407,7 +406,7 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await createHoldBtn.click();
     await page.waitForTimeout(300);
 
-    const reasonCode = `HOLD-QA-${Date.now().toString().slice(-4)}`;
+    const reasonCode = `HOLD-QA-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const reasonCodeInput = page.getByLabel(/كود وسبب الحظر/i).or(page.locator('input[type="text"]').last());
     await reasonCodeInput.fill(reasonCode);
 
@@ -440,6 +439,22 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await page.goto('/quality/restrictions');
     await page.waitForLoadState('networkidle');
 
+    expect(createdHoldId).toBeTruthy();
+
+    // Query restriction details to identify the product variant, warehouse, and location
+    const holdDetailRes = await page.request.get(`/api/v1/quality/restrictions/${createdHoldId}`);
+    expect(holdDetailRes.ok()).toBeTruthy();
+    const holdDetail = await holdDetailRes.json();
+    const variantId = holdDetail.productVariantId;
+    const warehouseId = holdDetail.warehouseId;
+
+    // Get baseline inventory balances before release
+    const balBeforeRes = await page.request.get(`/api/v1/inventory/legal-entities/${ATLAS_ENTITY_ID}/balances?productVariantId=${variantId}`);
+    expect(balBeforeRes.ok()).toBeTruthy();
+    const balancesBefore = await balBeforeRes.json();
+    const availBefore = Number(balancesBefore.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'Available' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
+    const holdBefore = Number(balancesBefore.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'QualityHold' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
+
     // Click release button on active hold
     const releaseBtn = page.getByRole('button', { name: /إفراج مخزني/i }).first();
     await expect(releaseBtn).toBeVisible();
@@ -462,17 +477,20 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const holdsRes = await page.request.get(`/api/v1/quality/restrictions?legalEntityId=${ATLAS_ENTITY_ID}`);
     expect(holdsRes.ok()).toBeTruthy();
     const holdsData = await holdsRes.json();
-    expect(createdHoldId).toBeTruthy();
     const releasedHold = holdsData.items.find((h: { id: string }) => h.id === createdHoldId);
     expect(releasedHold).toBeDefined();
     expect(releasedHold.releasedQuantity).toBe(25);
     expect(releasedHold.ownerExecutionStatus).toBe('Confirmed');
 
-    // Assert real inventory balances via Inventory API
-    const balRes = await page.request.get(`/api/v1/inventory/legal-entities/${ATLAS_ENTITY_ID}/balances?productVariantId=${releasedHold.productVariantId}`);
-    expect(balRes.ok()).toBeTruthy();
-    const balances = await balRes.json();
-    expect(Array.isArray(balances)).toBeTruthy();
+    // Strict Inventory Balance Reconciliation: exact delta verification
+    const balAfterRes = await page.request.get(`/api/v1/inventory/legal-entities/${ATLAS_ENTITY_ID}/balances?productVariantId=${variantId}`);
+    expect(balAfterRes.ok()).toBeTruthy();
+    const balancesAfter = await balAfterRes.json();
+    const availAfter = Number(balancesAfter.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'Available' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
+    const holdAfter = Number(balancesAfter.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'QualityHold' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
+
+    expect(holdAfter).toBe(holdBefore - 25);
+    expect(availAfter).toBe(availBefore + 25);
 
     await saveArtifact(page, '11-partial-quantity-release-dialog.png');
   });
@@ -531,6 +549,17 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await confirmApproveBtn.click();
     await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
 
+    // Read balances immediately before execution
+    const holdDetailRes = await page.request.get(`/api/v1/quality/restrictions/${createdHoldId}`);
+    const holdDetail = await holdDetailRes.json();
+    const variantId = holdDetail.productVariantId;
+    const warehouseId = holdDetail.warehouseId;
+
+    const balBeforeExecRes = await page.request.get(`/api/v1/inventory/legal-entities/${ATLAS_ENTITY_ID}/balances?productVariantId=${variantId}`);
+    const balBeforeExec = await balBeforeExecRes.json();
+    const holdBeforeExec = Number(balBeforeExec.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'QualityHold' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
+    const availBeforeExec = Number(balBeforeExec.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'Available' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
+
     // Execute the disposition to trigger owner integration
     const executeBtn = page.getByRole('button', { name: /تنفيذ.*أثر/i }).first();
     await expect(executeBtn).toBeVisible();
@@ -555,11 +584,15 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     expect(finalHold.releasedQuantity).toBe(100);
     expect(finalHold.status).toBe('Released');
 
-    // Assert real inventory balances reflect full disposition release
-    const balRes = await page.request.get(`/api/v1/inventory/legal-entities/${ATLAS_ENTITY_ID}/balances?productVariantId=${finalHold.productVariantId}`);
-    expect(balRes.ok()).toBeTruthy();
-    const balances = await balRes.json();
-    expect(Array.isArray(balances)).toBeTruthy();
+    // Assert real inventory balances reflect full disposition release (remaining 75 released)
+    const balAfterExecRes = await page.request.get(`/api/v1/inventory/legal-entities/${ATLAS_ENTITY_ID}/balances?productVariantId=${variantId}`);
+    expect(balAfterExecRes.ok()).toBeTruthy();
+    const balAfterExec = await balAfterExecRes.json();
+    const holdAfterExec = Number(balAfterExec.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'QualityHold' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
+    const availAfterExec = Number(balAfterExec.find((b: { stockStatus: string; warehouseId: string; onHandBaseQuantity: number }) => b.stockStatus === 'Available' && b.warehouseId === warehouseId)?.onHandBaseQuantity ?? 0);
+
+    expect(holdAfterExec).toBe(holdBeforeExec - 75);
+    expect(availAfterExec).toBe(availBeforeExec + 75);
 
     await saveArtifact(page, '12-quality-dispositions-mrb.png');
   });
@@ -580,7 +613,7 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await createIssueBtn.click();
     await page.waitForTimeout(300);
 
-    const issueTitle = `رصد تشققات مجهرية في دفعات السحب ${Date.now().toString().slice(-4)}`;
+    const issueTitle = `رصد تشققات مجهرية في دفعات السحب ${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const titleInput = page.getByLabel(/عنوان المشكلة/i).or(page.locator('input[type="text"]').first());
     await titleInput.fill(issueTitle);
 
@@ -616,7 +649,7 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await createNcrBtn.click();
     await page.waitForTimeout(300);
 
-    const ncrTitle = `تقرير عدم مطابقة لشحنة الألومنيوم ${Date.now().toString().slice(-4)}`;
+    const ncrTitle = `تقرير عدم مطابقة لشحنة الألومنيوم ${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const titleInput = page.getByLabel(/عنوان تقرير عدم المطابقة|عنوان/i).or(page.locator('input[type="text"]').first());
     await titleInput.fill(ncrTitle);
 
@@ -652,7 +685,7 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await createCapaBtn.click();
     await page.waitForTimeout(300);
 
-    const capaTitle = `خطة تصحيحية لمنع انحراف المعايرة الحرارية ${Date.now().toString().slice(-4)}`;
+    const capaTitle = `خطة تصحيحية لمنع انحراف المعايرة الحرارية ${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const titleInput = page.getByLabel(/عنوان طلب|عنوان/i).or(page.locator('input[type="text"]').first());
     await titleInput.fill(capaTitle);
 
@@ -725,13 +758,16 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const desktopOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     expect(desktopOverflow).toBe(false);
 
-    // Tablet Viewport (768px)
+    // Tablet Viewport (768px) - demonstrate genuine responsiveness
     await page.setViewportSize({ width: 768, height: 1024 });
     await page.goto('/quality');
     await page.waitForLoadState('networkidle');
     await expect(page.locator('[data-testid="quality-overview-page"]')).toBeVisible();
     const tabletOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     expect(tabletOverflow).toBe(false);
+
+    // Capture tablet artifact to demonstrate genuine responsiveness
+    await saveArtifact(page, '17-multi-viewport-rtl-ltr.png');
 
     // Mobile Viewport (375px)
     await page.setViewportSize({ width: 375, height: 812 });
@@ -761,8 +797,6 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await langBtn.click();
     await page.waitForTimeout(1000);
     expect(await page.locator('html').getAttribute('dir')).toBe('rtl');
-
-    await saveArtifact(page, '17-multi-viewport-rtl-ltr.png');
   });
 
   test('18 — Permission & Lifecycle Guard Verification', async ({ page }) => {
@@ -791,15 +825,16 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     // Direct mutation attempt via API as sales@atlas.com is strictly rejected with 403 Forbidden
     const csrfToken = await getCsrfToken(page);
     const deniedRes = await page.request.post('/api/v1/quality/plans', {
-      data: { code: `DENIED-${Date.now().toString().slice(-4)}`, name: 'Unauthorized Quality Plan', legalEntityId: ATLAS_ENTITY_ID },
+      data: { code: `DENIED-${Date.now()}-${Math.floor(Math.random() * 10000)}`, name: 'Unauthorized Quality Plan', legalEntityId: ATLAS_ENTITY_ID },
       headers: { 'X-CSRF-TOKEN': csrfToken }
     });
     expect(deniedRes.status()).toBe(403);
 
+    // Save screenshot AS restricted user (sales@atlas.com) to demonstrate genuine access control and disabled UI
+    await saveArtifact(page, '18-permission-lifecycle-protection.png');
+
     // Restore admin session for subsequent tests
     await loginUser(page, 'admin@atlas.com');
-
-    await saveArtifact(page, '18-permission-lifecycle-protection.png');
   });
 
   test('19 — Keyset Pagination & Cursor Navigation', async ({ page }) => {
@@ -814,10 +849,14 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const prevBtn = page.getByRole('button', { name: /السابق/i }).first();
     await expect(prevBtn).toBeDisabled();
 
-    // Capture first row text on Page 1 from real PostgreSQL records
-    const firstRowPage1 = page.locator('table tbody tr').first();
-    await expect(firstRowPage1).toBeVisible();
-    const page1Text = await firstRowPage1.innerText();
+    // Capture complete record row texts on Page 1 from real PostgreSQL records
+    const page1Rows = page.locator('table tbody tr');
+    const page1Count = await page1Rows.count();
+    expect(page1Count).toBeGreaterThan(0);
+    const page1Texts: string[] = [];
+    for (let i = 0; i < page1Count; i++) {
+      page1Texts.push(await page1Rows.nth(i).innerText());
+    }
 
     // Verify Next button is enabled and navigate to Page 2
     const nextBtn = page.getByRole('button', { name: /التالي/i }).first();
@@ -826,11 +865,18 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(500);
 
-    // Verify Page 2 items loaded and first row is different from Page 1
-    const firstRowPage2 = page.locator('table tbody tr').first();
-    await expect(firstRowPage2).toBeVisible();
-    const page2Text = await firstRowPage2.innerText();
-    expect(page2Text).not.toBe(page1Text);
+    // Verify Page 2 items loaded
+    const page2Rows = page.locator('table tbody tr');
+    const page2Count = await page2Rows.count();
+    expect(page2Count).toBeGreaterThan(0);
+    const page2Texts: string[] = [];
+    for (let i = 0; i < page2Count; i++) {
+      page2Texts.push(await page2Rows.nth(i).innerText());
+    }
+
+    // Assert complete record identity separation: ZERO duplicates between page 1 and page 2
+    const duplicates = page1Texts.filter(t => page2Texts.includes(t));
+    expect(duplicates).toHaveLength(0);
 
     // Verify Previous is now enabled on Page 2 and navigate back to Page 1
     await expect(prevBtn).toBeEnabled();
@@ -838,10 +884,12 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(500);
 
-    // Verify back on Page 1
-    const restoredRowPage1 = page.locator('table tbody tr').first();
-    await expect(restoredRowPage1).toBeVisible();
-    expect(await restoredRowPage1.innerText()).toBe(page1Text);
+    // Verify exactly restored to Page 1 records in exact same order
+    const restoredRows = page.locator('table tbody tr');
+    expect(await restoredRows.count()).toBe(page1Count);
+    for (let i = 0; i < page1Count; i++) {
+      expect(await restoredRows.nth(i).innerText()).toBe(page1Texts[i]);
+    }
     await expect(prevBtn).toBeDisabled();
   });
 
@@ -870,7 +918,39 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     });
     expect(unauthRes.status()).toBe(403);
 
-    // 3. Cross-Tenant Isolation: delta admin (admin@delta.com) attempting to mutate Atlas legal entity is rejected
+    // 3. Same-Tenant Cross-Legal-Entity Isolation:
+    // Records belonging to MAIN entity must never be visible under SECONDARY entity (d8eb39bb-b048-7c5d-bacd-e3a923eee21c)
+    await loginUser(page, 'admin@atlas.com');
+    const SECONDARY_ENTITY_ID = 'd8eb39bb-b048-7c5d-bacd-e3a923eee21c';
+
+    // 3a. Direct query with mismatched legalEntityId while session is locked to MAIN entity is strictly denied (403 Forbidden)
+    const crossEntityDirectRes = await page.request.get(`/api/v1/quality/inspections?legalEntityId=${SECONDARY_ENTITY_ID}`);
+    expect(crossEntityDirectRes.status()).toBe(403);
+
+    // 3b. Switch session context to SECONDARY entity; verify MAIN entity inspection is strictly isolated (zero leakage)
+    const adminCsrf = await getCsrfToken(page);
+    const switchRes = await page.request.post('/api/v1/context/organization', {
+      data: { legalEntityId: SECONDARY_ENTITY_ID },
+      headers: { 'X-CSRF-TOKEN': adminCsrf }
+    });
+    expect(switchRes.status()).toBe(204);
+
+    const secondaryInspectionsRes = await page.request.get(`/api/v1/quality/inspections?legalEntityId=${SECONDARY_ENTITY_ID}`);
+    expect(secondaryInspectionsRes.ok()).toBeTruthy();
+    const secondaryInspections = await secondaryInspectionsRes.json();
+    if (createdInspectionId) {
+      const leakedInspection = secondaryInspections.items?.find((i: { id: string }) => i.id === createdInspectionId);
+      expect(leakedInspection).toBeUndefined();
+    }
+
+    // Restore session context back to MAIN entity
+    const restoreRes = await page.request.post('/api/v1/context/organization', {
+      data: { legalEntityId: ATLAS_ENTITY_ID },
+      headers: { 'X-CSRF-TOKEN': adminCsrf }
+    });
+    expect(restoreRes.status()).toBe(204);
+
+    // 4. Cross-Tenant Isolation: delta admin (admin@delta.com) attempting to mutate Atlas legal entity is rejected
     await loginUser(page, 'admin@delta.com');
     const deltaCsrf = await getCsrfToken(page);
     const crossTenantRes = await page.request.post('/api/v1/quality/plans', {
@@ -879,7 +959,7 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     });
     expect([400, 401, 403, 404]).toContain(crossTenantRes.status());
 
-    // 4. Restore admin@atlas.com and verify none of the unauthorized attempts created database records
+    // 5. Restore admin@atlas.com and verify none of the unauthorized attempts created database records
     await loginUser(page, 'admin@atlas.com');
     const checkRes = await page.request.get(`/api/v1/quality/plans?legalEntityId=${ATLAS_ENTITY_ID}`);
     expect(checkRes.ok()).toBeTruthy();

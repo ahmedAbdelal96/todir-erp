@@ -17,6 +17,7 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
     IPurchasingQualityDispositionCapabilities? purchasingDisposition = null,
     IManufacturingQualityDispositionCapabilities? manufacturingDisposition = null) : IQualityDecisionCapabilities, IQualityReceivingCapabilities
 {
+    public static Action<Guid, Guid>? PostInventoryPreQualityConfirmationHook { get; set; }
     private readonly Shared.Contracts.Quality.IInventoryQualityCapabilities? inventoryCapability = inventory;
     private readonly IInventoryQualityDispositionCapabilities? inventoryDispositionCapability = inventoryDisposition;
     private readonly IPurchasingQualityDispositionCapabilities? purchasingDispositionCapability = purchasingDisposition;
@@ -612,12 +613,19 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
 
         if (hasOwnerScope)
         {
+            InventoryQualityStatusResult? ownerResult = null;
+            bool inventorySucceeded = false;
             try
             {
-                var ownerResult = await inventoryCapability!.ChangeQualityStatusAsync(tenant.Value, actor, new InventoryQualityStatusRequest(legalEntityId, productVariantId!.Value, warehouseId!.Value, locationId, unitOfMeasureId!.Value, request.Quantity!.Value, "Available", InventoryStatusForRestriction(request.RestrictionType), opDate, postDate, ownerKey!, lotId, serialId), ct);
+                ownerResult = await inventoryCapability!.ChangeQualityStatusAsync(tenant.Value, actor, new InventoryQualityStatusRequest(legalEntityId, productVariantId!.Value, warehouseId!.Value, locationId, unitOfMeasureId!.Value, request.Quantity!.Value, "Available", InventoryStatusForRestriction(request.RestrictionType), opDate, postDate, ownerKey!, lotId, serialId), ct);
                 if (ownerResult.Status == "Confirmed")
                 {
+                    inventorySucceeded = true;
                     ownerOperationId = ownerResult.OperationId;
+
+                    // Fault-injection hook at post-inventory/pre-quality-confirmation boundary
+                    PostInventoryPreQualityConfirmationHook?.Invoke(id, ownerResult.OperationId);
+
                     await coordinator.ExecuteAsync<bool>(tenant, async (context, token) =>
                     {
                         await ExecuteAsync(context, "update business_quality.quality_restriction set owner_execution_status='Confirmed',inventory_operation_id=$3 where tenant_id=$1 and id=$2", token, tenant.Value, id, ownerResult.OperationId);
@@ -635,6 +643,16 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
             }
             catch (Exception ex)
             {
+                if (inventorySucceeded)
+                {
+                    // Inventory committed successfully, but Quality confirmation or outbox write failed!
+                    // NEVER mark it definitively Failed; preserve recoverable Unknown state with the inventory operation id!
+                    await coordinator.ExecuteAsync<int>(tenant, (context, token) => ExecuteAsync(context,
+                        "update business_quality.quality_restriction set owner_execution_status='Unknown',inventory_operation_id=$3 where tenant_id=$1 and id=$2",
+                        token, tenant.Value, id, ownerResult!.OperationId), CancellationToken.None);
+                    throw new QualityException("quality.inventory_owner_execution_unknown");
+                }
+
                 var codeProp = ex.GetType().GetProperty("Code");
                 var errCode = codeProp?.GetValue(ex) as string ?? (ex is QualityDispositionOwnerException qoe ? qoe.Code : ex.Message);
                 var isConcurrencyOrTransient = errCode == "inventory.concurrency_conflict" || ex is TimeoutException || ex is OperationCanceledException;
@@ -740,14 +758,17 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
                     cmd.Parameters.AddWithValue(opId);
                     await using var reader = await cmd.ExecuteReaderAsync(token);
 
-                    bool hasNegativeAvailable = false;
-                    bool hasPositiveHeld = false;
                     var targetStatus = InventoryStatusForRestriction(restrictionType);
+                    decimal totalSignedBase = 0m;
+                    decimal outAvailableEntered = 0m;
+                    decimal inTargetEntered = 0m;
+                    int entryCount = 0;
 
                     while (await reader.ReadAsync(token))
                     {
+                        entryCount++;
                         var stStatus = reader.GetString(0);
-                        var signedQty = reader.GetDecimal(1);
+                        var signedBaseQty = reader.GetDecimal(1);
                         var enteredQty = reader.GetDecimal(2);
                         var uom = reader.GetGuid(3);
                         var pvar = reader.GetGuid(4);
@@ -756,22 +777,35 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
                         var lot = reader.IsDBNull(7) ? (Guid?)null : reader.GetGuid(7);
                         var ser = reader.IsDBNull(8) ? (Guid?)null : reader.GetGuid(8);
 
-                        if (pvar != productVariantId || wh != warehouseId || (locationId is not null && loc != locationId) || (lotId is not null && lot != lotId) || (serialId is not null && ser != serialId))
+                        // Every movement must match the restriction's authoritative stock identity and UOM
+                        if (pvar != productVariantId || wh != warehouseId || (locationId is not null && loc != locationId) || (lotId is not null && lot != lotId) || (serialId is not null && ser != serialId) || uom != unitOfMeasureId)
                         {
                             return false;
                         }
 
-                        if (stStatus == "Available" && signedQty < 0)
+                        totalSignedBase += signedBaseQty;
+
+                        if (stStatus == "Available" && signedBaseQty < 0)
                         {
-                            hasNegativeAvailable = true;
+                            outAvailableEntered += enteredQty;
                         }
-                        else if (stStatus == targetStatus && signedQty > 0)
+                        else if (stStatus == targetStatus && signedBaseQty > 0)
                         {
-                            hasPositiveHeld = true;
+                            inTargetEntered += enteredQty;
+                        }
+                        else
+                        {
+                            // Unexpected status or movement direction
+                            return false;
                         }
                     }
 
-                    return hasNegativeAvailable && hasPositiveHeld;
+                    // Conservation laws:
+                    // 1. Signed base quantities must sum to exactly zero (conservation of mass)
+                    // 2. Must have at least 2 entries (one out from Available, one in to target status)
+                    // 3. Entered quantity out from Available must exactly match restriction requested quantity
+                    // 4. Entered quantity in to target status must exactly match restriction requested quantity
+                    return entryCount >= 2 && totalSignedBase == 0m && outAvailableEntered == quantity && inTargetEntered == quantity;
                 }, ct);
 
                 if (!movementsValid)

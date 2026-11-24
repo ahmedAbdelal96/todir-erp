@@ -242,7 +242,7 @@ export function QualityPlansPage(): React.JSX.Element {
                     <th style={{ padding: "10px 12px" }}>{t("fields.code", "الكود")}</th>
                     <th style={{ padding: "10px 12px" }}>{t("fields.name", "الاسم")}</th>
                     <th style={{ padding: "10px 12px" }}>{t("fields.method", "طريقة العينة")}</th>
-                    <th style={{ padding: "10px 12px" }}>{t("fields.status", "الحالة")}</th>
+                    <th style={{ padding: "10px 12px" }}>{t("fields.sampleSize", "حجم أو نسبة العينة")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -250,9 +250,15 @@ export function QualityPlansPage(): React.JSX.Element {
                     <tr key={s.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "10px 12px", fontWeight: 700, color: "#102a43" }}>{s.code}</td>
                       <td style={{ padding: "10px 12px", color: "#1e293b" }}>{s.name}</td>
-                      <td style={{ padding: "10px 12px", color: "#64748b" }}>{s.method}</td>
                       <td style={{ padding: "10px 12px", color: "#64748b" }}>
-                        {s.fixedQuantity != null ? s.fixedQuantity : s.percentage != null ? s.percentage : "-"}
+                        {t(`samplingMethods.${s.method}`, s.method)}
+                      </td>
+                      <td style={{ padding: "10px 12px", color: "#64748b" }}>
+                        {s.fixedQuantity != null
+                          ? `${s.fixedQuantity} ${t("fields.units", "وحدة")}`
+                          : s.percentage != null
+                            ? t("fields.percentageFormat", { value: s.percentage })
+                            : "-"}
                       </td>
                     </tr>
                   ))}

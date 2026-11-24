@@ -89,7 +89,7 @@ export function QualityDispositionsPage(): React.JSX.Element {
                   <th style={{ padding: "10px 12px" }}>{t("fields.evaluation", "نوع القرار (Decision)")}</th>
                   <th style={{ padding: "10px 12px" }}>{t("fields.initialQuantity", "الكمية الخاضعة")}</th>
                   <th style={{ padding: "10px 12px" }}>{t("fields.status", "حالة القرار")}</th>
-                  <th style={{ padding: "10px 12px" }}>{t("fields.targetWarehouse", "المستودع / الأثر")}</th>
+                  <th style={{ padding: "10px 12px" }}>{t("fields.ownerExecutionStatus", "أثر المخزون والتنفيذ")}</th>
                   <th style={{ padding: "10px 12px" }}>{t("actions.viewDetails", "الإجراءات")}</th>
                 </tr>
               </thead>
@@ -101,7 +101,9 @@ export function QualityDispositionsPage(): React.JSX.Element {
 
                   return (
                     <tr key={d.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "10px 12px", fontWeight: 700, color: "#102a43" }}>{d.decision}</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700, color: "#102a43" }}>
+                        {t(`decisions.${d.decision}`, d.decision)}
+                      </td>
                       <td style={{ padding: "10px 12px" }}>{d.quantity}</td>
                       <td style={{ padding: "10px 12px" }}>
                         <QualityStatusBadge status={d.state} />

@@ -79,7 +79,12 @@ export const qualityEn = {
     Accepted: "Accepted",
     Rejected: "Rejected",
     Revoked: "Revoked",
-    Superseded: "Superseded"
+    Superseded: "Superseded",
+    Minor: "Minor",
+    Major: "Major",
+    Contained: "Contained",
+    Approved: "Approved",
+    Executed: "Executed"
   },
 
   eventTypes: {
@@ -230,6 +235,7 @@ export const qualityEn = {
     required: "Required Characteristic",
     method: "Sampling Method",
     percentage: "Sampling Percentage (%)",
+    percentageFormat: "{{value}}%",
     fixedQty: "Fixed Sample Quantity",
     sourceHold: "Source Hold",
     heldRemaining: "Eligible Held Balance",

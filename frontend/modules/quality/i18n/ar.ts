@@ -79,7 +79,12 @@ export const qualityAr = {
     Accepted: "مقبول ومعتمد",
     Rejected: "مرفوض ومردود",
     Revoked: "ملغى / مسحوب",
-    Superseded: "مستبدل بنسخة أحدث"
+    Superseded: "مستبدل بنسخة أحدث",
+    Minor: "طفيف (Minor)",
+    Major: "رئيسي / جسيم (Major)",
+    Contained: "محتوى بإجراء فوري (Contained)",
+    Approved: "معتمد (Approved)",
+    Executed: "منفذ في المخزون (Executed)"
   },
 
   eventTypes: {
@@ -230,6 +235,7 @@ export const qualityAr = {
     required: "خاصية فحص إلزامية",
     method: "طريقة سحب العينة",
     percentage: "النسبة المئوية (٪)",
+    percentageFormat: "{{value}}%",
     fixedQty: "الكمية الثابتة للعينة",
     sourceHold: "الحظر المصدر",
     heldRemaining: "الرصيد المحتجز المتاح للتصرف",

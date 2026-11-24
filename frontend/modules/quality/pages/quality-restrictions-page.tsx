@@ -86,33 +86,40 @@ export function QualityRestrictionsPage(): React.JSX.Element {
               <tbody>
                 {restrictions.map((r) => {
                   const remaining = Math.max(0, (r.quantity ?? 0) - r.releasedQuantity);
-                  const canRelease = r.status === "Active" && remaining > 0;
+                  const canRelease = r.status === "Active" && (r.quantity != null ? remaining > 0 : true);
+                  const isFullyReleased = r.status === "Released" || (r.quantity != null && remaining <= 0);
                   return (
                     <tr key={r.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "10px 12px", fontWeight: 700, color: "#102a43" }}>{r.reasonCode}</td>
-                      <td style={{ padding: "10px 12px" }}>{r.quantity}</td>
+                      <td style={{ padding: "10px 12px" }}>{r.quantity != null ? r.quantity : "-"}</td>
                       <td style={{ padding: "10px 12px", color: "#166534" }}>{r.releasedQuantity}</td>
                       <td style={{ padding: "10px 12px", fontWeight: 700, color: remaining > 0 ? "#b91c1c" : "#64748b" }}>
-                        {remaining}
+                        {r.quantity != null ? remaining : "-"}
                       </td>
                       <td style={{ padding: "10px 12px" }}>
                         <QualityStatusBadge status={r.status} />
                       </td>
                       <td style={{ padding: "10px 12px" }}>
                         <div style={{ display: "flex", gap: "6px" }}>
-                          <Button
-                            variant="primary"
-                            isDisabled={!canRelease || !canManageHolds || isReadOnly}
-                            onPress={() => {
-                              setSelectedHold(r);
-                              setIsReleaseOpen(true);
-                            }}
-                          >
-                            {t("actions.releaseRestriction", "إفراج مخزني")}
-                          </Button>
+                          {isFullyReleased ? (
+                            <span style={{ fontSize: "12px", color: "#64748b", padding: "4px 8px" }}>
+                              {t("status.Released", "مُفرَج عنه")}
+                            </span>
+                          ) : (
+                            <Button
+                              variant="primary"
+                              isDisabled={!canRelease || !canManageHolds || isReadOnly}
+                              onPress={() => {
+                                setSelectedHold(r);
+                                setIsReleaseOpen(true);
+                              }}
+                            >
+                              {t("actions.releaseRestriction", "إفراج مخزني")}
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
-                            isDisabled={!canManageDispositions || isReadOnly}
+                            isDisabled={!canManageDispositions || isReadOnly || isFullyReleased}
                             onPress={() => {
                               setSelectedHold(r);
                               setIsDispositionOpen(true);

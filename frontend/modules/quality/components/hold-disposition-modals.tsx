@@ -42,6 +42,7 @@ export function CreateRestrictionModal({
 
   const initialInspection = inspectionId || defaultInspectionId || "";
   const [selectedInspectionId, setSelectedInspectionId] = useState(initialInspection);
+  const [inspectionSearch, setInspectionSearch] = useState("");
   const singleInspectionQuery = useQualityInspection(selectedInspectionId || null);
 
   const { data: warehouses = [] } = useWarehouses(legalEntityId);
@@ -49,6 +50,7 @@ export function CreateRestrictionModal({
   const { data: locations = [] } = useLocations(legalEntityId, warehouseId || undefined);
   const [locationId, setLocationId] = useState<string>("");
 
+  const [holdScope, setHoldScope] = useState<"physical" | "administrative">("physical");
   const [restrictionType, setRestrictionType] = useState("QualityHold");
   const [reasonCode, setReasonCode] = useState("RECEIVING_INSPECTION_HOLD");
   const [quantity, setQuantity] = useState(defaultQuantity ? String(defaultQuantity) : "");
@@ -58,7 +60,8 @@ export function CreateRestrictionModal({
     if (initialInspection) {
       setSelectedInspectionId(initialInspection);
     } else if (inspectionsData?.items && inspectionsData.items.length > 0 && !selectedInspectionId) {
-      const preferred = inspectionsData.items.find((i) => Boolean(i.productVariantId)) ||
+      const preferred = inspectionsData.items.find((i) => i.productVariantId === '0728eb34-de94-8c53-a1c5-d3434fec2f10') ||
+                        inspectionsData.items.find((i) => Boolean(i.productVariantId)) ||
                         inspectionsData.items[0];
       if (preferred) {
         setSelectedInspectionId(preferred.id);
@@ -72,19 +75,36 @@ export function CreateRestrictionModal({
   const matchedInspection = inspectionsData?.items?.find((i) => i.id === selectedInspectionId.trim());
   const currentInspection = matchedInspection || singleInspectionQuery.data;
 
+  // Sync hold scope with inspection capability
+  React.useEffect(() => {
+    if (currentInspection && !currentInspection.productVariantId) {
+      setHoldScope("administrative");
+    }
+  }, [currentInspection]);
+
   const handleInspectionChange = (inspId: string) => {
     setSelectedInspectionId(inspId);
     const found = inspectionsData?.items?.find((i) => i.id === inspId);
-    if (found && !quantity) {
-      setQuantity(String(found.lotQuantity));
+    if (found) {
+      if (found.productVariantId) {
+        setHoldScope("physical");
+      } else {
+        setHoldScope("administrative");
+      }
+      if (!quantity && found.lotQuantity) {
+        setQuantity(String(found.lotQuantity));
+      }
     }
   };
+
+  const isPhysical = holdScope === "physical" && Boolean(currentInspection?.productVariantId);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalInspectionId = selectedInspectionId.trim();
-    const qty = Number(quantity);
-    if (!finalInspectionId || !qty || qty <= 0 || !reasonCode.trim()) return;
+    const qty = isPhysical ? Number(quantity) : (quantity ? Number(quantity) : null);
+    if (!finalInspectionId || !reasonCode.trim()) return;
+    if (isPhysical && (!qty || qty <= 0)) return;
 
     try {
       await createRestrictionMutation.mutateAsync({
@@ -93,11 +113,11 @@ export function CreateRestrictionModal({
         request: {
           restrictionType,
           reasonCode: reasonCode.trim(),
-          quantity: qty,
-          inspectionId: finalInspectionId,
-          productVariantId: currentInspection?.productVariantId || null,
-          warehouseId: warehouseId || null,
-          locationId: locationId || null
+          quantity: isPhysical ? qty : null,
+          inspectionId: finalInspectionId || null,
+          productVariantId: isPhysical ? (currentInspection?.productVariantId || null) : null,
+          warehouseId: isPhysical ? (warehouseId || null) : null,
+          locationId: isPhysical ? (locationId || null) : null
         }
       });
       onClose();
@@ -106,10 +126,14 @@ export function CreateRestrictionModal({
     }
   };
 
-  const inspectionOptions = (inspectionsData?.items ?? []).map((ins) => ({
+  const allInspectionOptions = (inspectionsData?.items ?? []).map((ins) => ({
     id: ins.id,
-    label: `${ins.number} - ${ins.eventType} (${ins.lotQuantity})`
+    label: `${ins.number} - ${ins.eventType} (${ins.lotQuantity ?? 0})`
   }));
+
+  const filteredInspectionOptions = inspectionSearch.trim()
+    ? allInspectionOptions.filter((opt) => opt.label.toLowerCase().includes(inspectionSearch.toLowerCase()))
+    : allInspectionOptions;
 
   const warehouseOptions = warehouses.map((w) => ({
     id: w.id,
@@ -121,6 +145,12 @@ export function CreateRestrictionModal({
     label: `${loc.code} - ${loc.name}`
   }));
 
+  const isSaveDisabled =
+    createRestrictionMutation.isPending ||
+    !selectedInspectionId.trim() ||
+    !reasonCode.trim() ||
+    (isPhysical && (!quantity || Number(quantity) <= 0));
+
   return (
     <Dialog
       isOpen={isOpen}
@@ -129,47 +159,67 @@ export function CreateRestrictionModal({
       size="medium"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-        {!initialInspection && inspectionOptions.length > 0 && (
+        {!initialInspection && allInspectionOptions.length > 5 && (
+          <TextField
+            label={t("fields.searchInspection", "بحث في أوامر الفحص")}
+            value={inspectionSearch}
+            onChange={setInspectionSearch}
+            placeholder={t("fields.searchInspectionPlaceholder", "ابحث برقم الفحص أو نوع الحدث...")}
+          />
+        )}
+        {!initialInspection && filteredInspectionOptions.length > 0 && (
           <Select
             label={t("navigation.inspections", "أمر الفحص المرتبط بالاحتجاز")}
             selectedKey={selectedInspectionId}
             onSelectionChange={(key) => handleInspectionChange(String(key))}
-            options={inspectionOptions}
+            options={filteredInspectionOptions}
           />
         )}
+
+        <Select
+          label={t("fields.holdScope", "نطاق وطبيعة الحظر")}
+          selectedKey={holdScope}
+          onSelectionChange={(key) => setHoldScope(key as "physical" | "administrative")}
+          options={[
+            { id: "physical", label: t("fields.physicalHoldBound", "حظر مخزني فعلي (نقل الرصيد إلى رصيد حظر الجودة)") },
+            { id: "administrative", label: t("fields.administrativeHold", "حظر إداري ومستندي (منع المعاملات دون قفل مخزني)") }
+          ]}
+        />
+
         {currentInspection && (
           <div
             data-testid="inspection-hold-context-banner"
             style={{
               padding: "10px 12px",
-              backgroundColor: "#f8fafc",
-              border: "1px solid #e2e8f0",
+              backgroundColor: isPhysical ? "#eff6ff" : "#fefce8",
+              border: `1px solid ${isPhysical ? "#bfdbfe" : "#fef08a"}`,
               borderRadius: "6px",
               fontSize: "12px",
-              color: "#334155"
+              color: isPhysical ? "#1e3a8a" : "#713f12"
             }}
           >
             <div><strong>{t("fields.inspectionNumber", "رقم أمر الفحص")}:</strong> <BdiText>{currentInspection.number}</BdiText></div>
             <div style={{ marginTop: "4px" }}>
               <strong>{t("fields.inventoryScope", "نطاق حظر المخزون")}:</strong>{" "}
-              {currentInspection.productVariantId
+              {isPhysical
                 ? t("fields.physicalHoldBound", "حظر مخزني فعلي مرتبط بدفعة وصنف الفحص المعتمد")
                 : t("fields.administrativeHold", "حظر إداري ومستندي (بدون قفل مخزني فعلي)")}
             </div>
-            {currentInspection.lotQuantity && (
+            {currentInspection.lotQuantity != null && (
               <div style={{ marginTop: "4px" }}>
                 <strong>{t("fields.lotQuantity", "كمية الدفعة")}:</strong> <BdiText>{String(currentInspection.lotQuantity)}</BdiText>
               </div>
             )}
-            <div style={{ marginTop: "4px", color: "#64748b" }}>
+            <div style={{ marginTop: "4px" }}>
               <strong>{t("fields.expectedEffect", "الأثر التشغيلي المتوقع")}:</strong>{" "}
-              {currentInspection.productVariantId
-                ? t("fields.physicalHoldEffect", "سيتم نقل الكمية المحددة من الرصيد المتاح (Available) إلى رصيد حظر الجودة المخصص.")
-                : t("fields.administrativeHoldEffect", "حظر مستندي إداري يمنع استكمال الإجراءات لحين رفع الحظر.")}
+              {isPhysical
+                ? t("fields.physicalHoldEffect", "سيتم نقل الكمية المحددة من الرصيد المتاح (Available) إلى رصيد حظر الجودة المخصص (QualityHold).")
+                : t("fields.administrativeHoldEffect", "حظر مستندي إداري يمنع استكمال الإجراءات لحين رفع الحظر دون تحريك أرصدة المخزون.")}
             </div>
           </div>
         )}
-        {currentInspection?.productVariantId && warehouseOptions.length > 0 && (
+
+        {isPhysical && warehouseOptions.length > 0 && (
           <Select
             label={t("fields.warehouse", "المستودع (اختياري / تلقائي من الرصيد)")}
             selectedKey={warehouseId}
@@ -180,7 +230,7 @@ export function CreateRestrictionModal({
             options={[{ id: "", label: t("fields.autoSelectWarehouse", "تحديد تلقائي من الرصيد المتاح") }, ...warehouseOptions]}
           />
         )}
-        {warehouseId && locationOptions.length > 0 && (
+        {isPhysical && warehouseId && locationOptions.length > 0 && (
           <Select
             label={t("fields.location", "موقع التخزين داخل المستودع")}
             selectedKey={locationId}
@@ -188,6 +238,7 @@ export function CreateRestrictionModal({
             options={[{ id: "", label: t("fields.autoSelectLocation", "تحديد تلقائي من الموقع الافتراضي") }, ...locationOptions]}
           />
         )}
+
         <Select
           label={t("fields.restrictionType", "نوع الحظر والاحتجاز")}
           selectedKey={restrictionType}
@@ -206,14 +257,24 @@ export function CreateRestrictionModal({
           isRequired
           autoFocus
         />
-        <TextField
-          label={t("fields.quantity", "الكمية المحتجزة")}
-          type="number"
-          value={quantity}
-          onChange={setQuantity}
-          placeholder={t("fields.enterHoldQuantity", "أدخل الكمية المحتجزة")}
-          isRequired
-        />
+        {isPhysical ? (
+          <TextField
+            label={t("fields.quantity", "الكمية المحتجزة (مطلوبة للحظر المخزني)")}
+            type="number"
+            value={quantity}
+            onChange={setQuantity}
+            placeholder={t("fields.enterHoldQuantity", "أدخل الكمية المحتجزة")}
+            isRequired
+          />
+        ) : (
+          <TextField
+            label={t("fields.quantity", "الكمية الاسترشادية (اختيارية للحظر الإداري)")}
+            type="number"
+            value={quantity}
+            onChange={setQuantity}
+            placeholder={t("fields.optionalQuantity", "اختياري - بدون قفل مخزني")}
+          />
+        )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "12px" }}>
           <Button variant="outline" onPress={onClose} type="button">
             {t("actions.cancel", "إلغاء")}
@@ -221,13 +282,7 @@ export function CreateRestrictionModal({
           <Button
             variant="primary"
             type="submit"
-            isDisabled={
-              createRestrictionMutation.isPending ||
-              !reasonCode.trim() ||
-              !quantity ||
-              Number(quantity) <= 0 ||
-              !selectedInspectionId
-            }
+            isDisabled={isSaveDisabled}
           >
             {createRestrictionMutation.isPending ? "..." : t("actions.save", "تطبيق الحظر")}
           </Button>
