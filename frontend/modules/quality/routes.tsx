@@ -170,6 +170,18 @@ export const qualityRoutes: ModuleRouteRegistration = {
       )
     },
     {
+      path: "quality/supplier-quality",
+      element: (
+        <PermissionGuard
+          permission={{ anyOf: ["quality.supplier.manage", "quality.read"] }}
+          moduleId="quality"
+          mode="mixed"
+        >
+          <SupplierQualityPage />
+        </PermissionGuard>
+      )
+    },
+    {
       path: "quality/certificates",
       element: (
         <PermissionGuard

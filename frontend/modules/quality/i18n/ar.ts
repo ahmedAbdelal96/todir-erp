@@ -85,7 +85,9 @@ export const qualityAr = {
     Final: "فحص نهائي (منتج تام الصنع)",
     RoutingOperation: "عملية تشغيلية محددة",
     Shipping: "شحن وتسليم عملاء",
-    Periodic: "فحص دوري / مخزني"
+    Periodic: "فحص دوري / مخزني",
+    Inventory: "فحص دوري / مخزني",
+    Outgoing: "فحص تسليم خارجي"
   },
 
   dataTypes: {
@@ -96,15 +98,21 @@ export const qualityAr = {
 
   samplingMethods: {
     FixedSize: "حجم عينة ثابت",
+    Fixed: "عينة بعدد ثابت",
+    Full: "فحص شامل (100٪)",
     Percentage: "نسبة مئوية من حجم الدفعة",
     AqlStandard: "المعيار العسكري (ISO 2859 / AQL)"
   },
 
   decisions: {
+    Accept: "قبول تام وإفراج (Accept)",
+    Reject: "رفض وحظر نهائي (Reject)",
     UseAsIs: "قبول للاستخدام بحالته (Use As Is)",
     Rework: "إعادة تشغيل وتصنيع (Rework)",
     Scrap: "تخريد وإتلاف نهائي (Scrap)",
     ReturnToSupplier: "رد مرتجع للمورد (Return to Supplier)",
+    SupplierReturn: "إرجاع للمورد (Supplier Return)",
+    Concession: "سماح وتجاوز فني (Concession)",
     Regrade: "تخفيض الرتبة والتصنيف (Regrade)"
   },
 
@@ -156,10 +164,19 @@ export const qualityAr = {
     issuing: "جاري الإصدار...",
     close: "إغلاق",
     viewDetails: "عرض التفاصيل",
-    openWorkspace: "فتح ورشة الفحص"
+    openWorkspace: "فتح ورشة الفحص",
+    previous: "السابق",
+    next: "التالي",
+    reMeasure: "تعديل / إعادة قياس",
+    measure: "+ تسجيل القياس"
   },
 
   fields: {
+    enterHoldQuantity: "أدخل الكمية المحتجزة",
+    enterQuantity: "أدخل الكمية",
+    requiredYes: "إلزامي",
+    requiredNo: "اختياري",
+    document: "مستند",
     legalEntity: "الكيان القانوني",
     code: "الكود التعريفي",
     name: "الاسم والتوصيف",
@@ -183,7 +200,26 @@ export const qualityAr = {
     reworkOrderNumber: "أمر إعادة التشغيل",
     scrapReasonCode: "كود سبب التخريد والإهلاك",
     supplierRmaNumber: "رقم إذن إرجاع المورد (RMA)",
-    notes: "ملاحظات إيضاحية"
+    notes: "ملاحظات إيضاحية",
+    restrictionType: "نوع الحظر والاحتجاز",
+    reasonCode: "كود وسبب الحظر",
+    quantity: "الكمية",
+    reason: "المبرر والأسباب الفنية",
+    effectiveFrom: "ساري اعتباراً من",
+    effectiveTo: "ساري حتى (تاريخ الانتهاء)",
+    decision: "نوع القرار الفني",
+    numericValue: "القيمة المقاسة فعلياً",
+    textValue: "البيان المرصود",
+    booleanValue: "حالة المطابقة",
+    evidence: "مرجع الإثبات / الوثيقة",
+    instrumentRef: "جهاز القياس المستخدم",
+    mandatory: "إلزامي لمنع التداول قبل الفحص",
+    dataType: "نوع البيانات",
+    uom: "وحدة القياس",
+    required: "خاصية فحص إلزامية",
+    method: "طريقة سحب العينة",
+    percentage: "النسبة المئوية (٪)",
+    fixedQty: "الكمية الثابتة للعينة"
   },
 
   severity: {
@@ -324,7 +360,15 @@ export const qualityAr = {
     success: "تم تنفيذ العملية بنجاح تام.",
     confirmAction: "هل أنت متأكد من تنفيذ هذا الإجراء؟ لا يمكن التراجع عن العمليات المعتمدة.",
     passedNote: "تنبيه تشغيلي صارم: نجاح الفحص لا يعني الإفراج التلقائي عن المخزون؛ يتطلب الإفراج إجراءً صريحاً.",
-    reconcileNote: "مطابقة الأثر: في حال كان الأثر المخزني معلقاً، يتم التحقق وإعادة المحاولة بنفس المفتاح لمنع التكرار."
+    reconcileNote: "مطابقة الأثر: في حال كان الأثر المخزني معلقاً، يتم التحقق وإعادة المحاولة بنفس المفتاح لمنع التكرار.",
+    supplierReturnSafetyNotice: "أمان المخزون: إرجاع المورد يُصرَف مباشرة من رصيد احتجاز الجودة (QualityHold) ولا يمر إطلاقاً برصيد المتاح للبيع.",
+    irreversibleWarning: "تنبيه: اعتماد القرار الفني يتيح تنفيذه مباشرة عبر الموديول المالك (المخزون / المشتريات / التصنيع) ولا يمكن التراجع عنه بعد التأكيد.",
+    inspectionPassedNotice: "تنبيه تشغيلي: نجاح الفحص لا يفرج تلقائياً عن المخزون المحتجز. يجب تنفيذ إجراء الإفراج أو اعتماد القرار الفني بعد اكتمال التقييم.",
+    releaseQuantityExceeded: "تنبيه: لا يمكن الإفراج عن كمية أكبر من الرصيد المحتجز المتبقي",
+    scrapWarning: "تنبيه مالي وإتلاف: تخريد المخزون ينتج عنه قيد مالي إتلافي وإسقاط نهائي من الأرصدة المستودعية ولا يمكن التراجع عنه.",
+    keysetNav: "تصفح الخادم (Keyset Navigation)",
+    registeredCharacteristicsCount: "{{count}} خاصية مسجلة",
+    awaitingMeasurement: "بانتظار القياس"
   }
 };
 

@@ -1,10 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { QualityHeader } from "../components/quality-header.tsx";
 import { QualityStatusBadge } from "../components/quality-status-badge.tsx";
 import { QualityNoScopePrompt } from "../components/quality-no-scope-prompt.tsx";
+import { QualityPaginationBar } from "../components/quality-pagination-bar.tsx";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
 import { useQualityNcrs, useQualityIssues } from "../hooks/use-quality-queries.ts";
+import { useKeysetPagination } from "../hooks/use-keyset-pagination.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import {
@@ -25,8 +27,30 @@ export function QualityNcrsPage(): React.JSX.Element {
   const [isContainmentOpen, setIsContainmentOpen] = useState(false);
   const [isCapaOpen, setIsCapaOpen] = useState(false);
 
-  const { data: ncrsPage, isLoading: ncrsLoading } = useQualityNcrs(legalEntityId);
-  const { data: issuesPage, isLoading: issuesLoading } = useQualityIssues(legalEntityId);
+  const ncrsPagination = useKeysetPagination();
+  const issuesPagination = useKeysetPagination();
+
+  useEffect(() => {
+    ncrsPagination.reset();
+    issuesPagination.reset();
+  }, [legalEntityId, activeTab]);
+
+  const { data: ncrsPage, isLoading: ncrsLoading } = useQualityNcrs(
+    legalEntityId,
+    null,
+    null,
+    null,
+    50,
+    ncrsPagination.cursor
+  );
+  const { data: issuesPage, isLoading: issuesLoading } = useQualityIssues(
+    legalEntityId,
+    null,
+    null,
+    null,
+    50,
+    issuesPagination.cursor
+  );
 
   if (!isReady) {
     return <QualityNoScopePrompt />;
@@ -127,6 +151,13 @@ export function QualityNcrsPage(): React.JSX.Element {
               </table>
             </div>
           )}
+          <QualityPaginationBar
+            hasPrev={ncrsPagination.hasPrev}
+            hasNext={Boolean(ncrsPage?.nextCursor)}
+            onPrev={ncrsPagination.goToPrev}
+            onNext={() => ncrsPagination.goToNext(ncrsPage?.nextCursor ?? null)}
+            isLoading={ncrsLoading}
+          />
         </Surface>
       )}
 
@@ -165,6 +196,13 @@ export function QualityNcrsPage(): React.JSX.Element {
               </table>
             </div>
           )}
+          <QualityPaginationBar
+            hasPrev={issuesPagination.hasPrev}
+            hasNext={Boolean(issuesPage?.nextCursor)}
+            onPrev={issuesPagination.goToPrev}
+            onNext={() => issuesPagination.goToNext(issuesPage?.nextCursor ?? null)}
+            isLoading={issuesLoading}
+          />
         </Surface>
       )}
 

@@ -1,11 +1,13 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { QualityHeader } from "../components/quality-header.tsx";
 import { QualityStatusBadge } from "../components/quality-status-badge.tsx";
 import { QualityNoScopePrompt } from "../components/quality-no-scope-prompt.tsx";
+import { QualityPaginationBar } from "../components/quality-pagination-bar.tsx";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
 import { useQualityInspections } from "../hooks/use-quality-queries.ts";
+import { useKeysetPagination } from "../hooks/use-keyset-pagination.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
@@ -19,10 +21,18 @@ export function QualityInspectionsPage(): React.JSX.Element {
   const [eventFilter, setEventFilter] = useState<string>("ALL");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
+  const pagination = useKeysetPagination();
+
+  useEffect(() => {
+    pagination.reset();
+  }, [stateFilter, eventFilter, legalEntityId]);
+
   const { data: pageData, isLoading } = useQualityInspections(
     legalEntityId,
     stateFilter === "ALL" ? null : stateFilter,
-    eventFilter === "ALL" ? null : eventFilter
+    eventFilter === "ALL" ? null : eventFilter,
+    50,
+    pagination.cursor
   );
 
   if (!isReady) {
@@ -145,6 +155,13 @@ export function QualityInspectionsPage(): React.JSX.Element {
             </table>
           </div>
         )}
+        <QualityPaginationBar
+          hasPrev={pagination.hasPrev}
+          hasNext={Boolean(pageData?.nextCursor)}
+          onPrev={pagination.goToPrev}
+          onNext={() => pagination.goToNext(pageData?.nextCursor ?? null)}
+          isLoading={isLoading}
+        />
       </Surface>
 
       <CreateInspectionModal

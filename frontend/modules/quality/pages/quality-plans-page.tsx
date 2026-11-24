@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { QualityHeader } from "../components/quality-header.tsx";
 import { QualityStatusBadge } from "../components/quality-status-badge.tsx";
 import { QualityNoScopePrompt } from "../components/quality-no-scope-prompt.tsx";
+import { QualityPaginationBar } from "../components/quality-pagination-bar.tsx";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
 import {
   useQualityPlans,
@@ -10,6 +11,7 @@ import {
   useQualitySamplingPlans,
   useActivateQualityPlanVersion
 } from "../hooks/use-quality-queries.ts";
+import { useKeysetPagination } from "../hooks/use-keyset-pagination.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import {
@@ -30,9 +32,34 @@ export function QualityPlansPage(): React.JSX.Element {
   const [isCreateCharacteristicOpen, setIsCreateCharacteristicOpen] = useState(false);
   const [isCreateSamplingOpen, setIsCreateSamplingOpen] = useState(false);
 
-  const { data: plansPage, isLoading: plansLoading } = useQualityPlans(legalEntityId);
-  const { data: characteristicsPage, isLoading: charsLoading } = useQualityCharacteristics(legalEntityId);
-  const { data: samplingPage, isLoading: samplingLoading } = useQualitySamplingPlans(legalEntityId);
+  const plansPagination = useKeysetPagination();
+  const charsPagination = useKeysetPagination();
+  const samplingPagination = useKeysetPagination();
+
+  useEffect(() => {
+    plansPagination.reset();
+    charsPagination.reset();
+    samplingPagination.reset();
+  }, [legalEntityId, activeTab]);
+
+  const { data: plansPage, isLoading: plansLoading } = useQualityPlans(
+    legalEntityId,
+    null,
+    50,
+    plansPagination.cursor
+  );
+  const { data: characteristicsPage, isLoading: charsLoading } = useQualityCharacteristics(
+    legalEntityId,
+    null,
+    50,
+    charsPagination.cursor
+  );
+  const { data: samplingPage, isLoading: samplingLoading } = useQualitySamplingPlans(
+    legalEntityId,
+    null,
+    50,
+    samplingPagination.cursor
+  );
   const activateVersionMutation = useActivateQualityPlanVersion();
 
   if (!isReady) {
@@ -134,6 +161,13 @@ export function QualityPlansPage(): React.JSX.Element {
               </table>
             </div>
           )}
+          <QualityPaginationBar
+            hasPrev={plansPagination.hasPrev}
+            hasNext={Boolean(plansPage?.nextCursor)}
+            onPrev={plansPagination.goToPrev}
+            onNext={() => plansPagination.goToNext(plansPage?.nextCursor ?? null)}
+            isLoading={plansLoading}
+          />
         </Surface>
       )}
 
@@ -168,6 +202,13 @@ export function QualityPlansPage(): React.JSX.Element {
               </table>
             </div>
           )}
+          <QualityPaginationBar
+            hasPrev={charsPagination.hasPrev}
+            hasNext={Boolean(characteristicsPage?.nextCursor)}
+            onPrev={charsPagination.goToPrev}
+            onNext={() => charsPagination.goToNext(characteristicsPage?.nextCursor ?? null)}
+            isLoading={charsLoading}
+          />
         </Surface>
       )}
 
@@ -204,6 +245,13 @@ export function QualityPlansPage(): React.JSX.Element {
               </table>
             </div>
           )}
+          <QualityPaginationBar
+            hasPrev={samplingPagination.hasPrev}
+            hasNext={Boolean(samplingPage?.nextCursor)}
+            onPrev={samplingPagination.goToPrev}
+            onNext={() => samplingPagination.goToNext(samplingPage?.nextCursor ?? null)}
+            isLoading={samplingLoading}
+          />
         </Surface>
       )}
 

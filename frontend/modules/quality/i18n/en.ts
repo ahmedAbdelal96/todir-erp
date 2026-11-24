@@ -85,7 +85,9 @@ export const qualityEn = {
     Final: "Final Product Inspection",
     RoutingOperation: "Specific Routing Operation",
     Shipping: "Customer Outbound Shipping",
-    Periodic: "Periodic / Shelf-Life Inspection"
+    Periodic: "Periodic / Shelf-Life Inspection",
+    Inventory: "Periodic / Shelf-Life Inspection",
+    Outgoing: "Outbound Shipping Inspection"
   },
 
   dataTypes: {
@@ -96,15 +98,21 @@ export const qualityEn = {
 
   samplingMethods: {
     FixedSize: "Fixed Sample Size",
+    Fixed: "Fixed Sample Size",
+    Full: "Full 100% Inspection",
     Percentage: "Batch Percentage",
     AqlStandard: "Military Standard (ISO 2859 / AQL)"
   },
 
   decisions: {
+    Accept: "Full Acceptance & Release (Accept)",
+    Reject: "Final Rejection & Hold (Reject)",
     UseAsIs: "Use As Is (Concession)",
     Rework: "Rework / Reprocess",
     Scrap: "Scrap / Dispose",
     ReturnToSupplier: "Return to Supplier",
+    SupplierReturn: "Return to Supplier (Supplier Return)",
+    Concession: "Technical Concession",
     Regrade: "Downgrade / Regrade"
   },
 
@@ -156,10 +164,19 @@ export const qualityEn = {
     issuing: "Issuing...",
     close: "Close",
     viewDetails: "View Details",
-    openWorkspace: "Open Inspection Workbench"
+    openWorkspace: "Open Inspection Workbench",
+    previous: "Previous",
+    next: "Next",
+    reMeasure: "Edit / Re-measure",
+    measure: "+ Record Measurement"
   },
 
   fields: {
+    enterHoldQuantity: "Enter held quantity",
+    enterQuantity: "Enter quantity",
+    requiredYes: "Required",
+    requiredNo: "Optional",
+    document: "Document",
     legalEntity: "Legal Entity",
     code: "Code",
     name: "Name",
@@ -183,7 +200,26 @@ export const qualityEn = {
     reworkOrderNumber: "Rework Order Number",
     scrapReasonCode: "Scrap Reason Code",
     supplierRmaNumber: "Supplier RMA Number",
-    notes: "Notes"
+    notes: "Notes",
+    restrictionType: "Hold & Restriction Type",
+    reasonCode: "Hold Reason Code",
+    quantity: "Quantity",
+    reason: "Technical Justification & Reason",
+    effectiveFrom: "Effective From",
+    effectiveTo: "Effective To",
+    decision: "Technical Decision",
+    numericValue: "Measured Numeric Value",
+    textValue: "Observed Text Value",
+    booleanValue: "Conformance Status",
+    evidence: "Evidence Reference / Document",
+    instrumentRef: "Measurement Instrument",
+    mandatory: "Mandatory Inspection",
+    dataType: "Data Type",
+    uom: "Unit of Measure (UOM)",
+    required: "Required Characteristic",
+    method: "Sampling Method",
+    percentage: "Sampling Percentage (%)",
+    fixedQty: "Fixed Sample Quantity"
   },
 
   severity: {
@@ -324,7 +360,15 @@ export const qualityEn = {
     success: "Operation completed successfully.",
     confirmAction: "Are you sure you want to execute this action? Confirmed operations cannot be undone.",
     passedNote: "Strict Operational Policy: Inspection Passed does not release held inventory automatically; explicit release is required.",
-    reconcileNote: "Inventory Reconciliation: For pending inventory effects, status is queried and retried using the existing idempotency key to prevent double execution."
+    reconcileNote: "Inventory Reconciliation: For pending inventory effects, status is queried and retried using the existing idempotency key to prevent double execution.",
+    supplierReturnSafetyNotice: "Inventory Safety: Supplier returns are dispatched directly from the QualityHold balance and never pass through Available-to-Sell inventory.",
+    irreversibleWarning: "Warning: Approving the disposition allows execution directly through the owning module (Inventory / Purchasing / Manufacturing) and cannot be reversed once confirmed.",
+    inspectionPassedNotice: "Operational Notice: Inspection pass does not automatically release restricted inventory. A formal release action or approved disposition must be executed.",
+    releaseQuantityExceeded: "Warning: Cannot release quantity greater than remaining held balance",
+    scrapWarning: "Financial & Scrap Warning: Scrapping inventory generates a write-off ledger entry and permanently drops warehouse balances; this action cannot be undone.",
+    keysetNav: "Server Navigation (Keyset)",
+    registeredCharacteristicsCount: "{{count}} registered characteristic(s)",
+    awaitingMeasurement: "Awaiting measurement"
   }
 };
 

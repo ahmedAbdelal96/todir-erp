@@ -58,9 +58,9 @@ All user-facing Arabic microcopy strictly follows the authoritative Enterprise A
 
 ## 3. Real-Stack Playwright Acceptance Suite
 
-Executed via `playwright test tests/e2e/quality-real-stack.spec.ts --project=chromium` against the live PostgreSQL-backed backend on port 5080 and Vite on port 5173.
+Executed via `pnpm --dir frontend exec playwright test --config=playwright.quality.config.ts` against the live PostgreSQL-backed backend on port 5088 and Vite on port 5178 targeting disposable database `todir_quality_acceptance`.
 
-**Execution Result:** `16 passed (1.7m)` — 100% PASS with 16 captured artifacts.
+**Execution Result:** `16 passed (1.8m)` — 100% PASS with 16 captured artifacts. Target disposable database isolation enforced fail-closed by `assertDisposableDatabase()` and `assertApiDatabaseContext()`.
 
 ### 3.1 Verified Scenarios & Visual Artifacts
 

@@ -10,7 +10,8 @@ import {
   useSubmitScarResponse,
   useReviewScar,
   useIssueCertificate,
-  useQualityCertificate
+  useQualityCertificate,
+  useQualityInspections
 } from "../hooks/use-quality-queries.ts";
 import { QualityStatusBadge } from "./quality-status-badge.tsx";
 
@@ -418,10 +419,20 @@ interface IssueCertificateModalProps {
 export function IssueCertificateModal({ legalEntityId, inspectionId, isOpen, onClose }: IssueCertificateModalProps): React.JSX.Element | null {
   const { t } = useTranslation("quality");
   const issueMutation = useIssueCertificate();
+  const { data: inspectionsData } = useQualityInspections(legalEntityId);
 
-  const [targetInspectionId, setTargetInspectionId] = useState(inspectionId);
+  const [targetInspectionId, setTargetInspectionId] = useState(inspectionId || "");
   const [certificateType, setCertificateType] = useState("COA");
   const [customerReference, setCustomerReference] = useState("");
+
+  React.useEffect(() => {
+    if (inspectionId) {
+      setTargetInspectionId(inspectionId);
+    } else if (inspectionsData?.items && inspectionsData.items.length > 0 && !targetInspectionId) {
+      const first = inspectionsData.items[0];
+      if (first) setTargetInspectionId(first.id);
+    }
+  }, [inspectionId, inspectionsData, targetInspectionId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -439,6 +450,11 @@ export function IssueCertificateModal({ legalEntityId, inspectionId, isOpen, onC
     onClose();
   };
 
+  const inspectionOptions = (inspectionsData?.items ?? []).map((ins) => ({
+    id: ins.id,
+    label: `${ins.number} - ${ins.eventType} (${ins.lotQuantity})`
+  }));
+
   return (
     <Dialog
       isOpen={isOpen}
@@ -447,14 +463,21 @@ export function IssueCertificateModal({ legalEntityId, inspectionId, isOpen, onC
       size="medium"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-        {!inspectionId && (
+        {!inspectionId && inspectionOptions.length > 0 ? (
+          <Select
+            label={t("certificates.inspectionId", "رقم أمر الفحص المرجعي")}
+            selectedKey={targetInspectionId}
+            onSelectionChange={(val) => val && setTargetInspectionId(String(val))}
+            options={inspectionOptions}
+          />
+        ) : !inspectionId ? (
           <TextField
-            label={t("certificates.inspectionId")}
+            label={t("certificates.inspectionId", "رقم أمر الفحص المرجعي")}
             value={targetInspectionId}
             onChange={(val) => setTargetInspectionId(val)}
             required
           />
-        )}
+        ) : null}
 
         <Select
           label={t("certificates.certificateType")}

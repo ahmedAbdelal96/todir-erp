@@ -1,10 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { QualityHeader } from "../components/quality-header.tsx";
 import { QualityStatusBadge } from "../components/quality-status-badge.tsx";
 import { QualityNoScopePrompt } from "../components/quality-no-scope-prompt.tsx";
+import { QualityPaginationBar } from "../components/quality-pagination-bar.tsx";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
 import { useQualityRestrictions } from "../hooks/use-quality-queries.ts";
+import { useKeysetPagination } from "../hooks/use-keyset-pagination.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import {
@@ -23,7 +25,20 @@ export function QualityRestrictionsPage(): React.JSX.Element {
   const [isReleaseOpen, setIsReleaseOpen] = useState(false);
   const [isDispositionOpen, setIsDispositionOpen] = useState(false);
 
-  const { data: pageData, isLoading } = useQualityRestrictions(legalEntityId);
+  const pagination = useKeysetPagination();
+
+  useEffect(() => {
+    pagination.reset();
+  }, [legalEntityId]);
+
+  const { data: pageData, isLoading } = useQualityRestrictions(
+    legalEntityId,
+    null,
+    null,
+    null,
+    50,
+    pagination.cursor
+  );
 
   if (!isReady) {
     return <QualityNoScopePrompt />;
@@ -36,6 +51,7 @@ export function QualityRestrictionsPage(): React.JSX.Element {
       <QualityHeader
         title={t("navigation.restrictions", "حظر واحتجاز الجودة")}
         subtitle={t("tabs.restrictions", "الحظر واحتجاز الجودة (Holds)")}
+        showHoldBanner={true}
         primaryAction={
           <Button variant="primary" onPress={() => setIsCreateOpen(true)}>
             + {t("actions.createRestriction", "حظر واحتجاز الدفعة")}
@@ -107,6 +123,13 @@ export function QualityRestrictionsPage(): React.JSX.Element {
             </table>
           </div>
         )}
+        <QualityPaginationBar
+          hasPrev={pagination.hasPrev}
+          hasNext={Boolean(pageData?.nextCursor)}
+          onPrev={pagination.goToPrev}
+          onNext={() => pagination.goToNext(pageData?.nextCursor ?? null)}
+          isLoading={isLoading}
+        />
       </Surface>
 
       {/* Modals */}
@@ -119,6 +142,7 @@ export function QualityRestrictionsPage(): React.JSX.Element {
       {selectedHoldId && (
         <ReleaseRestrictionModal
           restrictionId={selectedHoldId}
+          remainingQuantity={selectedHoldRemaining}
           maxQuantity={selectedHoldRemaining}
           isOpen={isReleaseOpen}
           onClose={() => {

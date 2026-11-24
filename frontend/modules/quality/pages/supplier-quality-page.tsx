@@ -1,13 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { QualityHeader } from "../components/quality-header.tsx";
 import { QualityStatusBadge } from "../components/quality-status-badge.tsx";
 import { QualityNoScopePrompt } from "../components/quality-no-scope-prompt.tsx";
+import { QualityPaginationBar } from "../components/quality-pagination-bar.tsx";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
 import {
   useQualitySupplierProfiles,
   useQualityScars
 } from "../hooks/use-quality-queries.ts";
+import { useKeysetPagination } from "../hooks/use-keyset-pagination.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import {
@@ -28,8 +30,29 @@ export function SupplierQualityPage(): React.JSX.Element {
   const [isSubmitResponseOpen, setIsSubmitResponseOpen] = useState(false);
   const [isReviewScarOpen, setIsReviewScarOpen] = useState(false);
 
-  const { data: profilesPage, isLoading: profilesLoading } = useQualitySupplierProfiles(legalEntityId);
-  const { data: scarsPage, isLoading: scarsLoading } = useQualityScars(legalEntityId);
+  const profilesPagination = useKeysetPagination();
+  const scarsPagination = useKeysetPagination();
+
+  useEffect(() => {
+    profilesPagination.reset();
+    scarsPagination.reset();
+  }, [legalEntityId, activeTab]);
+
+  const { data: profilesPage, isLoading: profilesLoading } = useQualitySupplierProfiles(
+    legalEntityId,
+    null,
+    null,
+    50,
+    profilesPagination.cursor
+  );
+  const { data: scarsPage, isLoading: scarsLoading } = useQualityScars(
+    legalEntityId,
+    null,
+    undefined,
+    null,
+    50,
+    scarsPagination.cursor
+  );
 
   if (!isReady) {
     return <QualityNoScopePrompt />;
@@ -111,6 +134,13 @@ export function SupplierQualityPage(): React.JSX.Element {
               </table>
             </div>
           )}
+          <QualityPaginationBar
+            hasPrev={profilesPagination.hasPrev}
+            hasNext={Boolean(profilesPage?.nextCursor)}
+            onPrev={profilesPagination.goToPrev}
+            onNext={() => profilesPagination.goToNext(profilesPage?.nextCursor ?? null)}
+            isLoading={profilesLoading}
+          />
         </Surface>
       )}
 
@@ -181,6 +211,13 @@ export function SupplierQualityPage(): React.JSX.Element {
               </table>
             </div>
           )}
+          <QualityPaginationBar
+            hasPrev={scarsPagination.hasPrev}
+            hasNext={Boolean(scarsPage?.nextCursor)}
+            onPrev={scarsPagination.goToPrev}
+            onNext={() => scarsPagination.goToNext(scarsPage?.nextCursor ?? null)}
+            isLoading={scarsLoading}
+          />
         </Surface>
       )}
 

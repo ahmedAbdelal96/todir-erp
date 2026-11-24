@@ -8,7 +8,8 @@ import {
   useCreateInspection,
   useAddInspectionResult,
   useCompleteInspection,
-  useReinspect
+  useReinspect,
+  useQualityCharacteristics
 } from "../hooks/use-quality-queries.ts";
 
 // --------------------------------------------------------------------------
@@ -100,7 +101,8 @@ export function CreateInspectionModal({ legalEntityId, isOpen, onClose }: Create
 
 interface RecordResultModalProps {
   inspectionId: string;
-  characteristicId: string;
+  legalEntityId?: string;
+  characteristicId?: string;
   characteristicName?: string;
   dataType?: string;
   uomCode?: string | null;
@@ -110,15 +112,22 @@ interface RecordResultModalProps {
 
 export function RecordResultModal({
   inspectionId,
-  characteristicId,
-  characteristicName,
-  dataType = "Numeric",
-  uomCode,
+  legalEntityId,
+  characteristicId: initialCharId,
+  characteristicName: initialCharName,
+  dataType: initialDataType = "Numeric",
+  uomCode: initialUom,
   isOpen,
   onClose
 }: RecordResultModalProps): React.JSX.Element | null {
   const { t } = useTranslation("quality");
   const addResultMutation = useAddInspectionResult();
+  const { data: charsData } = useQualityCharacteristics(legalEntityId ?? "");
+
+  const [activeCharId, setActiveCharId] = useState(initialCharId || "");
+  const [activeDataType, setActiveDataType] = useState(initialDataType);
+  const [activeUom, setActiveUom] = useState(initialUom);
+  const [activeName, setActiveName] = useState(initialCharName || "");
 
   const [numericValue, setNumericValue] = useState("");
   const [textValue, setTextValue] = useState("");
@@ -126,35 +135,82 @@ export function RecordResultModal({
   const [evidenceReference, setEvidenceReference] = useState("");
   const [instrumentReference, setInstrumentReference] = useState("");
 
+  // Sync state if initial props change
+  React.useEffect(() => {
+    if (initialCharId) {
+      setActiveCharId(initialCharId);
+      setActiveDataType(initialDataType);
+      setActiveUom(initialUom);
+      setActiveName(initialCharName || "");
+    } else if (charsData?.items && charsData.items.length > 0 && !activeCharId) {
+      const first = charsData.items[0];
+      if (first) {
+        setActiveCharId(first.id);
+        setActiveDataType(first.dataType || "Numeric");
+        setActiveUom(first.baseUomCode || null);
+        setActiveName(first.name);
+      }
+    }
+  }, [initialCharId, initialDataType, initialUom, initialCharName, charsData]);
+
+  const handleCharSelect = (charId: string) => {
+    setActiveCharId(charId);
+    const found = charsData?.items?.find((c) => c.id === charId);
+    if (found) {
+      setActiveDataType(found.dataType || "Numeric");
+      setActiveUom(found.baseUomCode || null);
+      setActiveName(found.name);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!activeCharId) return;
 
     await addResultMutation.mutateAsync({
       inspectionId,
       request: {
-        characteristicId,
-        numericValue: dataType === "Numeric" && numericValue !== "" ? Number(numericValue) : null,
-        textValue: dataType === "Text" ? textValue.trim() : null,
-        booleanValue: dataType === "Boolean" ? booleanValue === "true" : null,
-        uomCode: uomCode || null,
+        characteristicId: activeCharId,
+        numericValue: activeDataType === "Numeric" && numericValue !== "" ? Number(numericValue) : null,
+        textValue: activeDataType === "Text" ? textValue.trim() : null,
+        booleanValue: activeDataType === "Boolean" ? booleanValue === "true" : null,
+        uomCode: activeUom || null,
         evidenceReference: evidenceReference.trim() || null,
-        instrumentReference: instrumentReference.trim() || null
+        instrumentReference: instrumentReference.trim() || null,
+        calibrationStatus: instrumentReference.trim() ? "Valid" : null
       }
     });
+    setNumericValue("");
+    setTextValue("");
+    setEvidenceReference("");
+    setInstrumentReference("");
     onClose();
   };
+
+  const charOptions = (charsData?.items ?? []).map((c) => ({
+    id: c.id,
+    label: `${c.code} - ${c.name} (${c.dataType})`
+  }));
 
   return (
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
-      title={characteristicName ? `${t("actions.enterResults", "تسجيل نتائج القياس")}: ${characteristicName}` : t("actions.enterResults", "تسجيل نتائج القياس")}
+      title={activeName ? `${t("actions.enterResults", "تسجيل نتائج القياس")}: ${activeName}` : t("actions.enterResults", "تسجيل نتائج القياس")}
       size="medium"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-        {dataType === "Numeric" && (
+        {!initialCharId && charOptions.length > 0 && (
+          <Select
+            label={t("fields.name", "خاصية الفحص")}
+            selectedKey={activeCharId}
+            onSelectionChange={(key) => handleCharSelect(String(key))}
+            options={charOptions}
+          />
+        )}
+        {activeDataType === "Numeric" && (
           <TextField
-            label={uomCode ? `${t("fields.numericValue", "القيمة المقاسة فعلياً")} (${uomCode})` : t("fields.numericValue", "القيمة المقاسة فعلياً")}
+            label={activeUom ? `${t("fields.numericValue", "القيمة المقاسة فعلياً")} (${activeUom})` : t("fields.numericValue", "القيمة المقاسة فعلياً")}
             type="number"
             value={numericValue}
             onChange={setNumericValue}
@@ -162,7 +218,7 @@ export function RecordResultModal({
             autoFocus
           />
         )}
-        {dataType === "Text" && (
+        {activeDataType === "Text" && (
           <TextField
             label={t("fields.textValue", "البيان المرصود")}
             value={textValue}
@@ -171,7 +227,7 @@ export function RecordResultModal({
             autoFocus
           />
         )}
-        {dataType === "Boolean" && (
+        {activeDataType === "Boolean" && (
           <Select
             label={t("fields.booleanValue", "حالة المطابقة")}
             selectedKey={booleanValue}
@@ -199,7 +255,7 @@ export function RecordResultModal({
           <Button
             variant="primary"
             type="submit"
-            isDisabled={addResultMutation.isPending}
+            isDisabled={addResultMutation.isPending || !activeCharId}
           >
             {addResultMutation.isPending ? "..." : t("actions.save", "تسجيل النتيجة")}
           </Button>

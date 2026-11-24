@@ -1,14 +1,16 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { QualityHeader } from "../components/quality-header.tsx";
 import { QualityStatusBadge } from "../components/quality-status-badge.tsx";
 import { QualityNoScopePrompt } from "../components/quality-no-scope-prompt.tsx";
+import { QualityPaginationBar } from "../components/quality-pagination-bar.tsx";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
 import {
   useQualityDispositions,
   useExecuteDisposition,
   useReconcileDisposition
 } from "../hooks/use-quality-queries.ts";
+import { useKeysetPagination } from "../hooks/use-keyset-pagination.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import {
@@ -24,7 +26,20 @@ export function QualityDispositionsPage(): React.JSX.Element {
   const [selectedDispositionId, setSelectedDispositionId] = useState<string | null>(null);
   const [isApproveOpen, setIsApproveOpen] = useState(false);
 
-  const { data: pageData, isLoading } = useQualityDispositions(legalEntityId);
+  const pagination = useKeysetPagination();
+
+  useEffect(() => {
+    pagination.reset();
+  }, [legalEntityId]);
+
+  const { data: pageData, isLoading } = useQualityDispositions(
+    legalEntityId,
+    null,
+    null,
+    null,
+    50,
+    pagination.cursor
+  );
   const executeMutation = useExecuteDisposition();
   const reconcileMutation = useReconcileDisposition();
 
@@ -47,6 +62,7 @@ export function QualityDispositionsPage(): React.JSX.Element {
       <QualityHeader
         title={t("navigation.dispositions", "القرارات الفنية والتصرف")}
         subtitle={t("tabs.dispositions", "القرارات الفنية (MRB)")}
+        showHoldBanner={true}
         primaryAction={
           <Button variant="primary" onPress={() => setIsCreateOpen(true)}>
             + {t("actions.createDisposition", "إصدار قرار فني جديد")}
@@ -127,6 +143,13 @@ export function QualityDispositionsPage(): React.JSX.Element {
             </table>
           </div>
         )}
+        <QualityPaginationBar
+          hasPrev={pagination.hasPrev}
+          hasNext={Boolean(pageData?.nextCursor)}
+          onPrev={pagination.goToPrev}
+          onNext={() => pagination.goToNext(pageData?.nextCursor ?? null)}
+          isLoading={isLoading}
+        />
       </Surface>
 
       {/* Modals */}
