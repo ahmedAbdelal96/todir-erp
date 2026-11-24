@@ -95,6 +95,7 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
   // Shared state across tests
   let createdPlanId: string = '';
   let createdInspectionId: string = '';
+  let createdInspectionNumber: string = '';
   let createdHoldId: string = '';
 
   test('01 — Quality Overview & KPI Priority Ribbon', async ({ page }) => {
@@ -257,10 +258,18 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const inspRes = await page.request.get(`/api/v1/quality/inspections?legalEntityId=${ATLAS_ENTITY_ID}`);
     expect(inspRes.ok()).toBeTruthy();
     const inspData = await inspRes.json();
-    const persisted = inspData.items.find((i: { lotReference?: string; lotQuantity: number }) => i.lotQuantity === 150);
+    const persisted = inspData.items.find((i: { lotQuantity: number }) => i.lotQuantity === 150) ?? inspData.items[0];
     expect(persisted).toBeDefined();
     expect(persisted.state).toBe('InProgress');
+    expect(persisted.lotQuantity).toBe(150);
     createdInspectionId = persisted.id;
+    createdInspectionNumber = persisted.number;
+
+    // Verify exact lotReference persistence via authoritative detail endpoint
+    const detailRes = await page.request.get(`/api/v1/quality/inspections/${createdInspectionId}`);
+    expect(detailRes.ok()).toBeTruthy();
+    const detailData = await detailRes.json();
+    expect(detailData.lotReference).toBe(lotRef);
 
     await saveArtifact(page, '05-quality-inspections-queue.png');
   });
@@ -409,7 +418,7 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     // Verify server-side inspection search and live available stock indicator
     const searchInput = page.locator('[data-testid="inspection-search-input"] input').or(page.getByLabel(/بحث في أوامر الفحص/i));
     if (await searchInput.isVisible()) {
-      await searchInput.fill('QI-SEED-0001');
+      await searchInput.fill(createdInspectionNumber || 'QI-SEED-0001');
       await page.waitForTimeout(400);
     }
     await expect(page.locator('[data-testid="available-stock-indicator"]')).toBeVisible({ timeout: 10000 });
@@ -774,11 +783,15 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
 
     await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
 
-    // Assert backend persistence
+    // Assert backend persistence with exact certificate identity and status
     const certsRes = await page.request.get(`/api/v1/quality/certificates?legalEntityId=${ATLAS_ENTITY_ID}`);
     expect(certsRes.ok()).toBeTruthy();
     const certsData = await certsRes.json();
     expect(certsData.items.length).toBeGreaterThan(0);
+    const persistedCert = certsData.items.find((c: { customerReference?: string }) => c.customerReference === 'PO-CUST-2026-990');
+    expect(persistedCert).toBeDefined();
+    expect(persistedCert.state).toBe('Issued');
+    expect(persistedCert.certificateType).toBe('COA');
 
     await saveArtifact(page, '16-supplier-quality-scar-certificates.png');
   });

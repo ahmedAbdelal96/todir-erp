@@ -2,7 +2,7 @@
 
 **Module:** Module 27 — Quality Management (`إدارة الجودة الشاملة`)  
 **Canonical Specification:** `docs/modules/27_ERP_SAAS_QUALITY_MANAGEMENT_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`  
-**Delivery Gate:** `FRONTEND COMPLETE — READY FOR HUMAN PRODUCT/UX ACCEPTANCE`  
+**Delivery Gate:** `ENGINEERING VERIFIED — READY FOR PRODUCT OWNER SIGN-OFF`  
 
 ---
 

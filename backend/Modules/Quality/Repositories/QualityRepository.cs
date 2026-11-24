@@ -601,9 +601,10 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
             var availableBaseQty = Convert.ToDecimal(await coordinator.ExecuteAsync(tenant, async (context, token) =>
             {
                 var sql = "select coalesce(sum(on_hand_base_quantity - reserved_base_quantity), 0) from business_inventory.stock_balance where tenant_id=$1 and legal_entity_id=$2 and product_variant_id=$3 and warehouse_id=$4 and stock_status='Available'";
-                if (locationId is not null) sql += " and location_id = $5";
-                if (lotId is not null) sql += " and lot_id = $6";
-                if (serialId is not null) sql += " and serial_id = $7";
+                var paramIndex = 5;
+                if (locationId is not null) sql += $" and location_id = ${paramIndex++}";
+                if (lotId is not null) sql += $" and lot_id = ${paramIndex++}";
+                if (serialId is not null) sql += $" and serial_id = ${paramIndex++}";
 
                 await using var cmd = new NpgsqlCommand(sql, context.Connection, context.Transaction);
                 cmd.Parameters.AddWithValue(tenant.Value);

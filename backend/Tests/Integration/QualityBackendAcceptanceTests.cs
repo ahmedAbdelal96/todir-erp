@@ -708,31 +708,129 @@ public sealed class QualityBackendAcceptanceTests
         var stock = await ReadStockAsync(connection, inventory);
         var inspection = await CreatePassedInspectionAsync(quality, connection, stock, "QA-25");
 
-        // 1. Create a genuine confirmed hold
-        var hold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
-            new("QualityHold", "QA25-UOM", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
-            AtlasEntity, CancellationToken.None);
+        // 1. Configure non-base unit CARTON (factor = 10.0) in foundation_catalog.product_uom
+        var cartonUomId = (Guid)(await ScalarAsync(connection, "select id from foundation_catalog.uom where tenant_id=$1 and code='CARTON' limit 1", AtlasTenant.Value))!;
+        var existingProductUomId = await ScalarAsync(connection, "select id from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and uom_id=$3", AtlasTenant.Value, stock.ProductVariantId, cartonUomId);
+        var configuredUomRowId = (Guid?)existingProductUomId;
+        var createdUomRow = false;
 
-        // 2. Missing conversion test: set unit_of_measure_id to a non-existent UOM in catalog
-        var fakeUomId = Guid.CreateVersion7();
-        await ExecuteAsync(connection, "update business_quality.quality_restriction set unit_of_measure_id=$3, owner_execution_status='Unknown' where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id, fakeUomId);
+        if (configuredUomRowId is null)
+        {
+            configuredUomRowId = Guid.CreateVersion7();
+            await ExecuteAsync(connection, "insert into foundation_catalog.product_uom(tenant_id, id, variant_id, uom_id, factor_to_base, is_base, effective_from, status, version, usage_flags) values($1, $2, $3, $4, 10.0, false, now() - interval '30 days', 'Active', 1, '{}')",
+                AtlasTenant.Value, configuredUomRowId.Value, stock.ProductVariantId, cartonUomId);
+            createdUomRow = true;
+        }
+        else
+        {
+            await ExecuteAsync(connection, "update foundation_catalog.product_uom set factor_to_base=10.0, is_base=false, status='Active', effective_from=now() - interval '30 days' where tenant_id=$1 and id=$2", AtlasTenant.Value, configuredUomRowId.Value);
+        }
 
-        var missingUomEx = await Assert.ThrowsAsync<QualityException>(() =>
-            quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None));
-        Assert.Equal("quality.idempotency_conflict", missingUomEx.Code);
+        // Ensure sufficient stock in base units (2 CARTON = 20 Base Units)
+        if (stock.AvailableQuantity < 25m)
+        {
+            await inventory.ReceiveAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity,
+                new ConfirmStockMovementRequest(stock.ProductVariantId, stock.WarehouseId, stock.LocationId, stock.UnitId, 50m,
+                    DateOnly.FromDateTime(DateTime.UtcNow.Date), DateOnly.FromDateTime(DateTime.UtcNow.Date),
+                    $"qa25-seed:{Guid.NewGuid():N}", "quality-acceptance", Guid.CreateVersion7(), StockStatus.Available),
+                Guid.CreateVersion7(), null, CancellationToken.None);
+        }
 
-        // 3. Changed catalog status after confirmed operation:
-        // Set unit back to stock.UnitId, change catalog row status to 'Archived'
-        await ExecuteAsync(connection, "update foundation_catalog.product_uom set status='Archived' where tenant_id=$1 and variant_id=$2 and uom_id=$3", AtlasTenant.Value, stock.ProductVariantId, stock.UnitId);
-        await ExecuteAsync(connection, "update business_quality.quality_restriction set unit_of_measure_id=$3, owner_execution_status='Unknown' where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id, stock.UnitId);
+        var balanceAvailBefore = await StockQuantityAsync(connection, stock.ProductVariantId, stock.WarehouseId, stock.LocationId, "Available");
+        var balanceHoldBefore = await StockQuantityAsync(connection, stock.ProductVariantId, stock.WarehouseId, stock.LocationId, "QualityHold");
 
-        // Reconcile must succeed by reading the historical catalog factor (1.0) and matching snapshot
-        var reconciledHistorical = await quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None);
-        Assert.Equal("Confirmed", reconciledHistorical.OwnerExecutionStatus);
+        QualityRestrictionView? hold = null;
+        try
+        {
+            // 2. Create a genuine confirmed hold using non-base UOM (2 CARTON = 20 base units)
+            hold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+                new("QualityHold", "QA25-UOM-NONBASE", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 2m, UnitOfMeasureId: cartonUomId, InspectionId: inspection.Id),
+                AtlasEntity, CancellationToken.None);
 
-        // Restore catalog status and cleanup
-        await ExecuteAsync(connection, "update foundation_catalog.product_uom set status='Active' where tenant_id=$1 and variant_id=$2 and uom_id=$3", AtlasTenant.Value, stock.ProductVariantId, stock.UnitId);
-        await quality.ReleaseRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, new("QA-25 cleanup", 1m, stock.UnitId), CancellationToken.None);
+            Assert.Equal("Confirmed", hold.OwnerExecutionStatus);
+            Assert.Equal(2m, hold.Quantity);
+            Assert.Equal(cartonUomId, hold.UnitOfMeasureId);
+            Assert.NotNull(hold.OwnerOperationId);
+
+            // Assert exact base stock balance changes: -20 Available, +20 QualityHold
+            var balanceAvailAfter = await StockQuantityAsync(connection, stock.ProductVariantId, stock.WarehouseId, stock.LocationId, "Available");
+            var balanceHoldAfter = await StockQuantityAsync(connection, stock.ProductVariantId, stock.WarehouseId, stock.LocationId, "QualityHold");
+
+            Assert.Equal(balanceAvailBefore - 20m, balanceAvailAfter);
+            Assert.Equal(balanceHoldBefore + 20m, balanceHoldAfter);
+
+            // Assert stock movement entries: conservation and snapshot factor
+            var movEntries = new List<(decimal EnteredQty, decimal Factor, decimal BaseQty, decimal SignedBaseQty)>();
+            await using (var db = new NpgsqlConnection(connection))
+            {
+                await db.OpenAsync();
+                await SetTenantAsync(db);
+                await using var cmd = new NpgsqlCommand("select entered_quantity, conversion_factor_snapshot, base_quantity, signed_base_quantity from business_inventory.stock_movement_entry where tenant_id=$1 and operation_id=$2 order by sequence", db);
+                cmd.Parameters.AddWithValue(AtlasTenant.Value);
+                cmd.Parameters.AddWithValue(hold.OwnerOperationId!.Value);
+                await using var rdr = await cmd.ExecuteReaderAsync();
+                while (await rdr.ReadAsync())
+                {
+                    movEntries.Add((rdr.GetDecimal(0), rdr.GetDecimal(1), rdr.GetDecimal(2), rdr.GetDecimal(3)));
+                }
+            }
+
+            Assert.Equal(2, movEntries.Count);
+            // Both entries have snapshot factor = 10.0
+            Assert.All(movEntries, e => Assert.Equal(10.0m, e.Factor));
+            // Conservation: sum of signed base quantities must equal zero
+            Assert.Equal(0m, movEntries.Sum(e => e.SignedBaseQty));
+            Assert.Contains(movEntries, e => e.SignedBaseQty == -20m);
+            Assert.Contains(movEntries, e => e.SignedBaseQty == 20m);
+
+            // 3. Reconcile with non-base UOM:
+            // Simulate recoverable unknown state
+            await ExecuteAsync(connection, "update business_quality.quality_restriction set owner_execution_status='Unknown' where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id);
+
+            var reconciledNonBase = await quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None);
+            Assert.Equal("Confirmed", reconciledNonBase.OwnerExecutionStatus);
+
+            // 4. Missing conversion test: set unit_of_measure_id to a non-existent UOM in catalog
+            var fakeUomId = Guid.CreateVersion7();
+            await ExecuteAsync(connection, "update business_quality.quality_restriction set unit_of_measure_id=$3, owner_execution_status='Unknown' where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id, fakeUomId);
+
+            var missingUomEx = await Assert.ThrowsAsync<QualityException>(() =>
+                quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None));
+            Assert.Equal("quality.idempotency_conflict", missingUomEx.Code);
+
+            // 5. Changed catalog status after confirmed operation:
+            // Set unit back to cartonUomId, change catalog row status to 'Archived'
+            await ExecuteAsync(connection, "update foundation_catalog.product_uom set status='Archived' where tenant_id=$1 and id=$2", AtlasTenant.Value, configuredUomRowId.Value);
+            await ExecuteAsync(connection, "update business_quality.quality_restriction set unit_of_measure_id=$3, owner_execution_status='Unknown' where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id, cartonUomId);
+
+            // Reconcile must succeed by reading the historical catalog factor (10.0) and matching snapshot
+            var reconciledHistorical = await quality.ReconcileRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, CancellationToken.None);
+            Assert.Equal("Confirmed", reconciledHistorical.OwnerExecutionStatus);
+        }
+        finally
+        {
+            // Clean up hold
+            if (hold is not null)
+            {
+                var currentStatus = (string?)(await ScalarAsync(connection, "select status from business_quality.quality_restriction where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id));
+                if (currentStatus == "Active")
+                {
+                    await ExecuteAsync(connection, "update foundation_catalog.product_uom set status='Active' where tenant_id=$1 and id=$2", AtlasTenant.Value, configuredUomRowId.Value);
+                    await ExecuteAsync(connection, "update business_quality.quality_restriction set unit_of_measure_id=$3, owner_execution_status='Confirmed' where tenant_id=$1 and id=$2", AtlasTenant.Value, hold.Id, cartonUomId);
+                    await quality.ReleaseRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), hold.Id, new("QA-25 cleanup", 2m, cartonUomId), CancellationToken.None);
+                }
+            }
+
+            // Restore or clean up product_uom
+            if (createdUomRow)
+            {
+                await ExecuteAsync(connection, "delete from foundation_catalog.product_uom where tenant_id=$1 and id=$2", AtlasTenant.Value, configuredUomRowId.Value);
+            }
+            else
+            {
+                await ExecuteAsync(connection, "update foundation_catalog.product_uom set status='Active' where tenant_id=$1 and id=$2", AtlasTenant.Value, configuredUomRowId.Value);
+            }
+        }
     }
 
     [Fact(DisplayName = "QA-26 authoritative stock position and location validation")]
@@ -749,23 +847,78 @@ public sealed class QualityBackendAcceptanceTests
         var secondLocId = Guid.CreateVersion7();
         await ExecuteAsync(connection, "insert into business_inventory.location(tenant_id,legal_entity_id,warehouse_id,id,code,name,location_type,status,created_at) values($1,$2,$3,$4,'QA-LOC2','موقع اختبار ثانٍ','Standard','Active',now())", AtlasTenant.Value, AtlasEntity, stock.WarehouseId, secondLocId);
 
-        // Attempting to hold stock in secondLocId (which has 0 available balance) must fail closed
-        var emptyLocEx = await Assert.ThrowsAsync<QualityException>(() =>
-            quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
-                new("QualityHold", "QA26-EMPTY-LOC", stock.ProductVariantId, stock.WarehouseId, secondLocId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
-                AtlasEntity, CancellationToken.None));
-        Assert.Equal("quality.insufficient_available_stock", emptyLocEx.Code);
+        try
+        {
+            // Attempting to hold stock in secondLocId (which has 0 available balance) must fail closed
+            var emptyLocEx = await Assert.ThrowsAsync<QualityException>(() =>
+                quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+                    new("QualityHold", "QA26-EMPTY-LOC", stock.ProductVariantId, stock.WarehouseId, secondLocId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
+                    AtlasEntity, CancellationToken.None));
+            Assert.Equal("quality.insufficient_available_stock", emptyLocEx.Code);
 
-        // 2. Requesting quantity that exceeds available balance in the real location must fail closed
-        var excessQty = stock.AvailableQuantity + 9999m;
-        var excessQtyEx = await Assert.ThrowsAsync<QualityException>(() =>
-            quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
-                new("QualityHold", "QA26-EXCESS", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: excessQty, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
-                AtlasEntity, CancellationToken.None));
-        Assert.Equal("quality.insufficient_available_stock", excessQtyEx.Code);
+            // 2. Requesting quantity that exceeds available balance in the real location must fail closed
+            var excessQty = stock.AvailableQuantity + 9999m;
+            var excessQtyEx = await Assert.ThrowsAsync<QualityException>(() =>
+                quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+                    new("QualityHold", "QA26-EXCESS", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: excessQty, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
+                    AtlasEntity, CancellationToken.None));
+            Assert.Equal("quality.insufficient_available_stock", excessQtyEx.Code);
 
-        // Clean up dummy location
-        await ExecuteAsync(connection, "delete from business_inventory.location where tenant_id=$1 and id=$2", AtlasTenant.Value, secondLocId);
+            // 3. Non-existent lot ID must fail closed with lot_not_found
+            var nonExistentLotId = Guid.CreateVersion7();
+            var nonExistentLotEx = await Assert.ThrowsAsync<QualityException>(() =>
+                quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+                    new("QualityHold", "QA26-FAKELOT", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id, LotId: nonExistentLotId),
+                    AtlasEntity, CancellationToken.None));
+            Assert.Equal("quality.lot_not_found", nonExistentLotEx.Code);
+
+            // 4. Mismatched lot ID (lot belonging to a different product variant) must fail closed with lot_not_found
+            var otherVariantIdObj = await ScalarAsync(connection, "select id from foundation_catalog.product_variant where tenant_id=$1 and id != $2 limit 1", AtlasTenant.Value, stock.ProductVariantId);
+            if (otherVariantIdObj is not null and not DBNull)
+            {
+                var otherVariantId = (Guid)otherVariantIdObj;
+                var otherLotIdObj = await ScalarAsync(connection, "select id from business_inventory.lot where tenant_id=$1 and product_variant_id=$2 limit 1", AtlasTenant.Value, otherVariantId);
+                Guid mismatchedLotId;
+                if (otherLotIdObj is not null and not DBNull)
+                {
+                    mismatchedLotId = (Guid)otherLotIdObj;
+                }
+                else
+                {
+                    var createdLot = await inventory.CreateLotAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity,
+                        new CreateLotRequest(otherVariantId, $"QA-MISMATCH-{Guid.NewGuid():N}", DateOnly.FromDateTime(DateTime.UtcNow.Date), null, "quality-acceptance"),
+                        Guid.CreateVersion7(), CancellationToken.None);
+                    mismatchedLotId = createdLot.Id;
+                }
+
+                var mismatchLotEx = await Assert.ThrowsAsync<QualityException>(() =>
+                    quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+                        new("QualityHold", "QA26-MISMATCHLOT", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id, LotId: mismatchedLotId),
+                        AtlasEntity, CancellationToken.None));
+                Assert.Equal("quality.lot_not_found", mismatchLotEx.Code);
+            }
+
+            // 5. Serial stock validation: random serial must fail closed with insufficient_available_stock
+            var fakeSerialId = Guid.CreateVersion7();
+            var fakeSerialEx = await Assert.ThrowsAsync<QualityException>(() =>
+                quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+                    new("QualityHold", "QA26-FAKESERIAL", stock.ProductVariantId, stock.WarehouseId, stock.LocationId, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id, SerialId: fakeSerialId),
+                    AtlasEntity, CancellationToken.None));
+            Assert.Equal("quality.insufficient_available_stock", fakeSerialEx.Code);
+
+            // 6. Dynamic SQL positional parameter validation: null location + lot
+            // Verifies that positional indexing does not throw NpgsqlException: Parameter $6 does not exist
+            var dynamicSqlEx = await Assert.ThrowsAsync<QualityException>(() =>
+                quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+                    new("QualityHold", "QA26-DYNSQL", stock.ProductVariantId, stock.WarehouseId, LocationId: null, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id, LotId: nonExistentLotId),
+                    AtlasEntity, CancellationToken.None));
+            Assert.Equal("quality.lot_not_found", dynamicSqlEx.Code);
+        }
+        finally
+        {
+            // Clean up dummy location
+            await ExecuteAsync(connection, "delete from business_inventory.location where tenant_id=$1 and id=$2", AtlasTenant.Value, secondLocId);
+        }
     }
 
     [Fact(DisplayName = "QA-27 administrative hold enforces documentary invariant without inventory movement")]

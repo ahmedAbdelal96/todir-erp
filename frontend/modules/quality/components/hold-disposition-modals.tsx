@@ -178,7 +178,7 @@ export function CreateRestrictionModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalInspectionId = selectedInspectionId.trim();
-    const qty = isPhysical ? Number(quantity) : (quantity ? Number(quantity) : null);
+    const qty = isPhysical ? Number(quantity) : null;
     if (!finalInspectionId || !reasonCode.trim()) return;
     if (isPhysical && (!qty || qty <= 0 || missingProductVariant)) return;
 
@@ -233,8 +233,8 @@ export function CreateRestrictionModal({
     createRestrictionMutation.isPending ||
     !selectedInspectionId.trim() ||
     !reasonCode.trim() ||
-    missingProductVariant ||
     (isPhysical && (
+      missingProductVariant ||
       isStockLoading ||
       hasNoStockAvailable ||
       isQuantityInvalid ||
@@ -468,7 +468,7 @@ export function CreateRestrictionModal({
           isRequired
           autoFocus
         />
-        {isPhysical ? (
+        {isPhysical && (
           <TextField
             label={t("fields.quantity", "الكمية المحتجزة (مطلوبة للحظر المخزني)")}
             type="number"
@@ -476,63 +476,6 @@ export function CreateRestrictionModal({
             onChange={setQuantity}
             placeholder={t("fields.enterHoldQuantity", "أدخل الكمية المحتجزة")}
             isRequired
-          />
-        ) : (
-          <TextField
-            label={t("fields.quantity", "الكمية الاسترشادية (اختيارية للحظر الإداري)")}
-            type="number"
-            value={quantity}
-            onChange={setQuantity}
-            placeholder={t("fields.optionalQuantity", "اختياري - بدون قفل مخزني")}
-          />
-        )}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "12px" }}>
-          <Button variant="outline" onPress={onClose} type="button">
-            {t("actions.cancel", "إلغاء")}
-          </Button>
-          <Button
-            variant="primary"
-            type="submit"
-            isDisabled={isSaveDisabled}
-          >
-            {createRestrictionMutation.isPending ? "..." : t("actions.save", "تطبيق الحظر")}
-          </Button>
-        </div>
-
-        <Select
-          label={t("fields.restrictionType", "نوع الحظر والاحتجاز")}
-          selectedKey={restrictionType}
-          onSelectionChange={(key) => setRestrictionType(String(key))}
-          options={[
-            { id: "QualityHold", label: t("restrictionTypes.QualityHold", "احتجاز جودة (QualityHold)") },
-            { id: "Quarantine", label: t("restrictionTypes.Quarantine", "حجر صناعي وصحي (Quarantine)") },
-            { id: "Blocked", label: t("restrictionTypes.Blocked", "حظر جودة وتوريد (Blocked)") },
-            { id: "ReturnsInspection", label: t("restrictionTypes.ReturnsInspection", "فحص واحتجاز مرتجعات (ReturnsInspection)") }
-          ]}
-        />
-        <TextField
-          label={t("fields.reasonCode", "كود وسبب الحظر")}
-          value={reasonCode}
-          onChange={setReasonCode}
-          isRequired
-          autoFocus
-        />
-        {isPhysical ? (
-          <TextField
-            label={t("fields.quantity", "الكمية المحتجزة (مطلوبة للحظر المخزني)")}
-            type="number"
-            value={quantity}
-            onChange={setQuantity}
-            placeholder={t("fields.enterHoldQuantity", "أدخل الكمية المحتجزة")}
-            isRequired
-          />
-        ) : (
-          <TextField
-            label={t("fields.quantity", "الكمية الاسترشادية (اختيارية للحظر الإداري)")}
-            type="number"
-            value={quantity}
-            onChange={setQuantity}
-            placeholder={t("fields.optionalQuantity", "اختياري - بدون قفل مخزني")}
           />
         )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "12px" }}>
