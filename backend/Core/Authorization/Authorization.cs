@@ -32,10 +32,19 @@ public sealed class PermissionAuthorizer : IPermissionAuthorizer
 {
     public bool Authorize(AuthorizationSubject subject, string permissionCode, PermissionScope resourceScope)
     {
-        if (subject.TenantId != resourceScope.TenantId) return false;
-        var roleIds = subject.Assignments.Where(a => a.TenantId == subject.TenantId && a.Scope.Contains(resourceScope)).Select(a => a.RoleId).ToHashSet();
-        return subject.Roles.Any(r => roleIds.Contains(r.Id) && r.IsActive)
-            && subject.Permissions.Any(p => roleIds.Contains(p.RoleId) && p.TenantId == subject.TenantId && p.PermissionCode == permissionCode);
+        if (subject.TenantId != resourceScope.TenantId || string.IsNullOrWhiteSpace(permissionCode) || permissionCode is "*" or "admin") return false;
+        return subject.Roles.Any(role =>
+            role.TenantId == subject.TenantId
+            && role.IsActive
+            && subject.Assignments.Any(assignment =>
+                assignment.TenantId == subject.TenantId
+                && assignment.MembershipId == subject.MembershipId
+                && assignment.RoleId == role.Id
+                && assignment.Scope.Contains(resourceScope))
+            && subject.Permissions.Any(permission =>
+                permission.TenantId == subject.TenantId
+                && permission.RoleId == role.Id
+                && permission.PermissionCode == permissionCode));
     }
 
     // Authorization subjects are loaded from the authoritative store for each request. Keeping no process-wide decision cache prevents role, assignment, and lifecycle changes from remaining effective after a revocation.

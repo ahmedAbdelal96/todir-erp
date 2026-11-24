@@ -472,18 +472,18 @@ public static class PlatformHostingExtensions
             var isSuper = activeRolesInScope.Any(r => r.Code is "administrator" or "admin");
 
             HashSet<string> effectivePermissions = [];
+            var activeRoleIds = activeRolesInScope.Select(r => r.Id).ToHashSet();
             if (isSuper)
             {
                 effectivePermissions.Add("*");
-                foreach (var p in subject.Permissions)
+                foreach (var p in subject.Permissions.Where(p => activeRoleIds.Contains(p.RoleId) && p.TenantId == subject.TenantId))
                 {
                     effectivePermissions.Add(p.PermissionCode);
                 }
             }
             else
             {
-                var activeRoleIds = activeRolesInScope.Select(r => r.Id).ToHashSet();
-                foreach (var p in subject.Permissions.Where(p => activeRoleIds.Contains(p.RoleId) && p.TenantId == subject.TenantId))
+                foreach (var p in subject.Permissions.Where(p => activeRoleIds.Contains(p.RoleId) && p.TenantId == subject.TenantId && p.PermissionCode is not "*" and not "admin"))
                 {
                     effectivePermissions.Add(p.PermissionCode);
                 }

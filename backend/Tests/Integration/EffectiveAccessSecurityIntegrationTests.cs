@@ -101,7 +101,9 @@ public sealed class EffectiveAccessSecurityIntegrationTests : DatabaseIntegratio
             values ('{roleInactiveAdmin}', '{tenant.Value}', 'admin', 'Inactive Admin', false, false, 1);
 
             insert into platform.role_permission (tenant_id, role_id, permission_code)
-            values ('{tenant.Value}', '{roleInactiveAdmin}', '*');
+            values
+                ('{tenant.Value}', '{roleInactiveAdmin}', '*'),
+                ('{tenant.Value}', '{roleInactiveAdmin}', 'platform.identity.manage');
 
             insert into platform.membership_role_assignment (tenant_id, membership_id, role_id, scope_type)
             values ('{tenant.Value}', '{membershipId.Value}', '{roleInactiveAdmin}', 'Tenant');
@@ -162,6 +164,7 @@ public sealed class EffectiveAccessSecurityIntegrationTests : DatabaseIntegratio
             Assert.Contains("banking.cash.count", permissionsEntityA);
             Assert.Contains("banking.transfers.initiate", permissionsEntityA);
             Assert.DoesNotContain("*", permissionsEntityA); // Inactive admin role permission must NOT be present!
+            Assert.DoesNotContain("platform.identity.manage", permissionsEntityA); // No permission from an inactive role may be projected.
 
             // 5. Query effective-access for Entity B (Entity A's role must NOT leak into Entity B!)
             var resEntityB = await client.GetAsync($"/api/v1/authorization/effective-access?legalEntityId={entityB}");
