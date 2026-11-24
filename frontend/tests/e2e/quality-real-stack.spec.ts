@@ -462,11 +462,11 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const holdsRes = await page.request.get(`/api/v1/quality/restrictions?legalEntityId=${ATLAS_ENTITY_ID}`);
     expect(holdsRes.ok()).toBeTruthy();
     const holdsData = await holdsRes.json();
+    expect(createdHoldId).toBeTruthy();
     const releasedHold = holdsData.items.find((h: { id: string }) => h.id === createdHoldId);
-    if (releasedHold) {
-      expect(releasedHold.releasedQuantity).toBe(25);
-      expect(releasedHold.ownerExecutionStatus).toBe('Confirmed');
-    }
+    expect(releasedHold).toBeDefined();
+    expect(releasedHold.releasedQuantity).toBe(25);
+    expect(releasedHold.ownerExecutionStatus).toBe('Confirmed');
 
     await saveArtifact(page, '11-partial-quantity-release-dialog.png');
   });
@@ -542,12 +542,12 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
 
     // Verify underlying hold was fully released
     const finalHoldRes = await page.request.get(`/api/v1/quality/restrictions?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(finalHoldRes.ok()).toBeTruthy();
     const finalHoldData = await finalHoldRes.json();
     const finalHold = finalHoldData.items.find((h: { id: string }) => h.id === createdHoldId);
-    if (finalHold) {
-      expect(finalHold.releasedQuantity).toBe(100);
-      expect(finalHold.status).toBe('Released');
-    }
+    expect(finalHold).toBeDefined();
+    expect(finalHold.releasedQuantity).toBe(100);
+    expect(finalHold.status).toBe('Released');
 
     await saveArtifact(page, '12-quality-dispositions-mrb.png');
   });
@@ -705,31 +705,50 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
   test('17 — Multi-Viewport & Arabic/English Responsive Verification', async ({ page }) => {
     await loginUser(page);
 
+    // Desktop Viewport (1440px)
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/quality');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="quality-overview-page"]')).toBeVisible();
+    const desktopOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    expect(desktopOverflow).toBe(false);
+
     // Tablet Viewport (768px)
     await page.setViewportSize({ width: 768, height: 1024 });
     await page.goto('/quality');
     await page.waitForLoadState('networkidle');
     await expect(page.locator('[data-testid="quality-overview-page"]')).toBeVisible();
+    const tabletOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    expect(tabletOverflow).toBe(false);
 
     // Mobile Viewport (375px)
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto('/quality');
     await page.waitForLoadState('networkidle');
     await expect(page.locator('[data-testid="quality-overview-page"]')).toBeVisible();
+    const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    expect(mobileOverflow).toBe(false);
+
+    // Arabic RTL Direction Verification
+    const dirAr = await page.locator('html').getAttribute('dir');
+    expect(dirAr).toBe('rtl');
 
     // English LTR Verification
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.evaluate(() => {
-      localStorage.setItem('i18nextLng', 'en');
-    });
-    await page.goto('/quality');
-    await page.waitForLoadState('networkidle');
-    await expect(page.locator('[data-testid="quality-overview-page"]')).toBeVisible();
+    const langBtn = page.locator('button.topbar-lang-btn').first();
+    await expect(langBtn).toBeVisible({ timeout: 10000 });
+    const currentDir = await page.locator('html').getAttribute('dir');
+    if (currentDir === 'rtl') {
+      await langBtn.click();
+      await page.waitForTimeout(1000);
+    }
+    const dirEn = await page.locator('html').getAttribute('dir');
+    expect(dirEn).toBe('ltr');
 
     // Restore Arabic
-    await page.evaluate(() => {
-      localStorage.setItem('i18nextLng', 'ar');
-    });
+    await langBtn.click();
+    await page.waitForTimeout(1000);
+    expect(await page.locator('html').getAttribute('dir')).toBe('rtl');
 
     await saveArtifact(page, '17-multi-viewport-rtl-ltr.png');
   });
@@ -747,6 +766,22 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const createBtn = page.getByRole('button', { name: /إنشاء خطة جودة جديدة/i });
     await expect(createBtn).toBeEnabled();
 
+    // Verify restricted/read-only user: intercept effective-access to simulate read-only role
+    await page.route('**/api/v1/authorization/effective-access**', async route => {
+      const response = await route.fetch();
+      const json = await response.json();
+      json.isSuper = false;
+      json.moduleStatuses = { ...(json.moduleStatuses || {}), quality: 'ReadOnly' };
+      json.permissions = ['quality.read'];
+      await route.fulfill({ response, json });
+    });
+
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    const restrictedCreateBtn = page.getByRole('button', { name: /إنشاء خطة جودة جديدة/i });
+    await expect(restrictedCreateBtn).toBeDisabled();
+    await page.unroute('**/api/v1/authorization/effective-access**');
+
     await saveArtifact(page, '18-permission-lifecycle-protection.png');
   });
 
@@ -754,33 +789,116 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginUser(page);
 
+    // Mock two pages of inspections to test keyset pagination forward and backward
+    await page.route('**/api/v1/quality/inspections*', async route => {
+      const url = new URL(route.request().url());
+      const cursor = url.searchParams.get('cursor');
+      if (cursor === 'page-2-cursor') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [
+              {
+                id: '01931b64-0002-7000-0000-000000000002',
+                number: 'QI-PAGE-2',
+                eventType: 'Receiving',
+                state: 'Completed',
+                decisionState: 'Passed',
+                productVariantId: null,
+                sourceDocumentId: null,
+                lotQuantity: 20,
+                sampleSize: 2,
+                createdAt: '2026-11-24T10:05:00Z'
+              }
+            ],
+            nextCursor: null
+          })
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [
+              {
+                id: '01931b64-0001-7000-0000-000000000001',
+                number: 'QI-PAGE-1',
+                eventType: 'Receiving',
+                state: 'Completed',
+                decisionState: 'Passed',
+                productVariantId: null,
+                sourceDocumentId: null,
+                lotQuantity: 10,
+                sampleSize: 1,
+                createdAt: '2026-11-24T10:00:00Z'
+              }
+            ],
+            nextCursor: 'page-2-cursor'
+          })
+        });
+      }
+    });
+
     await page.goto('/quality/inspections');
     await page.waitForLoadState('networkidle');
     await expect(page.locator('[data-testid="quality-inspections-page"]')).toBeVisible();
 
-    // Verify pagination controls are rendered
-    const paginationContainer = page.locator('nav[aria-label="pagination"], div').filter({ hasText: /السابق|التالي/i }).first();
-    await expect(paginationContainer).toBeVisible();
+    // Verify Page 1 item is visible
+    await expect(page.getByText('QI-PAGE-1')).toBeVisible();
 
-    // Verify Previous button is initially disabled on first page
+    // Verify Previous is disabled on first page
     const prevBtn = page.getByRole('button', { name: /السابق/i }).first();
     await expect(prevBtn).toBeDisabled();
+
+    // Verify Next button is enabled and click to navigate to Page 2
+    const nextBtn = page.getByRole('button', { name: /التالي/i }).first();
+    await expect(nextBtn).toBeEnabled();
+    await nextBtn.click();
+    await page.waitForTimeout(300);
+
+    // Verify Page 2 item is visible and Page 1 item is gone
+    await expect(page.getByText('QI-PAGE-2')).toBeVisible();
+    await expect(page.getByText('QI-PAGE-1')).not.toBeVisible();
+
+    // Verify Next is now disabled on last page
+    await expect(nextBtn).toBeDisabled();
+
+    // Verify Previous is now enabled and click to return to Page 1
+    await expect(prevBtn).toBeEnabled();
+    await prevBtn.click();
+    await page.waitForTimeout(300);
+
+    // Verify back on Page 1
+    await expect(page.getByText('QI-PAGE-1')).toBeVisible();
+    await expect(page.getByText('QI-PAGE-2')).not.toBeVisible();
+    await expect(prevBtn).toBeDisabled();
+
+    await page.unroute('**/api/v1/quality/inspections*');
   });
 
-  test('20 — Fail-Closed Security & Access Invariant Verification', async ({ page }) => {
+  test('20 — Fail-Closed Security & Access Invariant Verification', async ({ playwright, page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginUser(page);
 
-    // Verify inspections page protects mutations
+    // Verify inspections page renders securely
     await page.goto('/quality/inspections');
     await page.waitForLoadState('networkidle');
     await expect(page.locator('[data-testid="quality-inspections-page"]')).toBeVisible();
 
-    // Verify that attempting direct API mutations without tenant context is rejected (401/403)
-    const unauthorizedRes = await page.request.post('/api/v1/quality/plans', {
+    // Verify that an unauthenticated / unauthorized request without tenant/cookie context is strictly rejected (401 or 403)
+    // and NEVER returns 201 Created.
+    const anonymousContext = await playwright.request.newContext();
+    const unauthorizedRes = await anonymousContext.post('http://127.0.0.1:5088/api/v1/quality/plans', {
       data: { code: 'UNAUTH-01', name: 'Unauthorized Plan', legalEntityId: ATLAS_ENTITY_ID }
     });
-    // Either unauthorized or csrf/tenant protected
-    expect([201, 400, 401, 403, 404]).toContain(unauthorizedRes.status());
+    expect([401, 403]).toContain(unauthorizedRes.status());
+
+    // Verify backend state remains unchanged (plan does not exist)
+    const checkRes = await page.request.get(`/api/v1/quality/plans?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(checkRes.ok()).toBeTruthy();
+    const checkData = await checkRes.json();
+    const foundPlan = checkData.items.find((p: { code: string }) => p.code === 'UNAUTH-01');
+    expect(foundPlan).toBeUndefined();
   });
 });

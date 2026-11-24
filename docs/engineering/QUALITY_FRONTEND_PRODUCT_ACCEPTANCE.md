@@ -106,3 +106,9 @@ Executed via `pnpm --dir frontend exec playwright test --config=playwright.quali
    - In `QualityRepository.CreateRestrictionAsync`, arbitrary fallback queries selecting random variants from `business_inventory.stock_balance` or `foundation_catalog.product_variant` have been eliminated.
    - Physical restrictions (`QualityHold`, etc.) strictly require authoritative product/variant, warehouse, location, and UOM. Missing product variant context immediately fails closed with `quality.owner_scope_incomplete`.
    - UI selection prioritizes canonical receiving inspections (`QI-SEED-0001`) with authoritative inventory balances or requires explicit variant specification, preventing fail-open submissions.
+6. **Authoritative Hold Identity & Scope Invariant:**
+   - Validates inspection tenant and legal entity matching; rejects requested product variant conflicting with linked inspection; resolves authoritative warehouse, location, and base unit from inspection.
+   - In `QualityRepository.ReleaseRestrictionAsync`, validates release quantity > 0 and <= remaining restricted quantity with optimistic concurrency and idempotency.
+7. **Disposition Restriction Binding & Reconciliation:**
+   - Added `restriction_id` to `business_quality.disposition` via migration `quality-forward-fix-disposition-restriction.sql`.
+   - Reconciles uncertain owner execution via `POST /api/v1/quality/restrictions/{id}/reconcile` and `ReconcileRestrictionAsync` safely reusing idempotency tokens.

@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const acceptanceDb = process.env['TODIR_ACCEPTANCE_DB'] || 'todir_quality_acceptance';
-const dbHost = process.env['TODIR_DB_HOST'] || 'localhost';
+const dbHost = process.env['TODIR_DB_HOST'] || '127.0.0.1';
 const dbPort = process.env['TODIR_DB_PORT'] || '15432';
 const dbUser = process.env['TODIR_DB_USER'] || 'erp_app';
 const dbPassword = process.env['TODIR_DB_PASSWORD'] || process.env['ERP_DEV_PASSWORD'];
@@ -74,6 +74,7 @@ export default defineConfig({
       timeout: 120 * 1000,
       env: {
         TODIR_DATABASE_CONNECTION: connectionString,
+        ConnectionStrings__DefaultConnection: connectionString,
         TODIR_CORS_ORIGINS: 'http://127.0.0.1:5178,http://localhost:5178',
         ASPNETCORE_ENVIRONMENT: 'Development',
         TODIR_ENABLE_ACCEPTANCE_DIAGNOSTICS: 'true',

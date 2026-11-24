@@ -43,16 +43,13 @@ export function CreateRestrictionModal({
   const [restrictionType, setRestrictionType] = useState("QualityHold");
   const [reasonCode, setReasonCode] = useState("RECEIVING_INSPECTION_HOLD");
   const [quantity, setQuantity] = useState(defaultQuantity ? String(defaultQuantity) : "");
-  const [customProductVariantId, setCustomProductVariantId] = useState("");
 
   // Update inspection when initial prop or inspectionsData load
   React.useEffect(() => {
     if (initialInspection) {
       setSelectedInspectionId(initialInspection);
     } else if (inspectionsData?.items && inspectionsData.items.length > 0 && !selectedInspectionId) {
-      // Prioritize canonical seeded receiving inspection or first inspection with authoritative product variant linkage
-      const preferred = inspectionsData.items.find((i) => i.number === "QI-SEED-0001") ||
-                        inspectionsData.items.find((i) => Boolean(i.productVariantId)) ||
+      const preferred = inspectionsData.items.find((i) => Boolean(i.productVariantId)) ||
                         inspectionsData.items[0];
       if (preferred) {
         setSelectedInspectionId(preferred.id);
@@ -79,7 +76,6 @@ export function CreateRestrictionModal({
     const qty = Number(quantity);
     if (!finalInspectionId || !qty || qty <= 0 || !reasonCode.trim()) return;
 
-    const resolvedProductVariantId = matchedInspection?.productVariantId || customProductVariantId.trim() || null;
     try {
       await createRestrictionMutation.mutateAsync({
         inspectionId: finalInspectionId,
@@ -89,7 +85,7 @@ export function CreateRestrictionModal({
           reasonCode: reasonCode.trim(),
           quantity: qty,
           inspectionId: finalInspectionId,
-          productVariantId: resolvedProductVariantId
+          productVariantId: matchedInspection?.productVariantId || null
         }
       });
       onClose();
@@ -119,6 +115,32 @@ export function CreateRestrictionModal({
             options={inspectionOptions}
           />
         )}
+        {matchedInspection && (
+          <div
+            data-testid="inspection-hold-context-banner"
+            style={{
+              padding: "10px 12px",
+              backgroundColor: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: "6px",
+              fontSize: "12px",
+              color: "#334155"
+            }}
+          >
+            <div><strong>{t("fields.inspectionNumber", "رقم أمر الفحص")}:</strong> <BdiText>{matchedInspection.number}</BdiText></div>
+            <div style={{ marginTop: "4px" }}>
+              <strong>{t("fields.inventoryScope", "نطاق حظر المخزون")}:</strong>{" "}
+              {matchedInspection.productVariantId
+                ? t("fields.physicalHoldBound", "حظر مخزني فعلي مرتبط بدفعة وصنف الفحص المعتمد")
+                : t("fields.administrativeHold", "حظر إداري ومستندي (بدون قفل مخزني فعلي)")}
+            </div>
+            {matchedInspection.lotQuantity && (
+              <div style={{ marginTop: "4px" }}>
+                <strong>{t("fields.lotQuantity", "كمية الدفعة")}:</strong> <BdiText>{String(matchedInspection.lotQuantity)}</BdiText>
+              </div>
+            )}
+          </div>
+        )}
         <Select
           label={t("fields.restrictionType", "نوع الحظر والاحتجاز")}
           selectedKey={restrictionType}
@@ -145,15 +167,6 @@ export function CreateRestrictionModal({
           placeholder={t("fields.enterHoldQuantity", "أدخل الكمية المحتجزة")}
           isRequired
         />
-        {matchedInspection && !matchedInspection.productVariantId && (
-          <TextField
-            label={t("fields.productVariantId", "معرف صنف المنتج (مطلوب لربط حظر المخزون)")}
-            value={customProductVariantId}
-            onChange={setCustomProductVariantId}
-            placeholder={t("fields.enterProductVariantId", "أدخل معرف صنف المنتج")}
-            isRequired
-          />
-        )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "12px" }}>
           <Button variant="outline" onPress={onClose} type="button">
             {t("actions.cancel", "إلغاء")}
@@ -166,8 +179,7 @@ export function CreateRestrictionModal({
               !reasonCode.trim() ||
               !quantity ||
               Number(quantity) <= 0 ||
-              !selectedInspectionId ||
-              Boolean(matchedInspection && !matchedInspection.productVariantId && !customProductVariantId.trim())
+              !selectedInspectionId
             }
           >
             {createRestrictionMutation.isPending ? "..." : t("actions.save", "تطبيق الحظر")}
@@ -378,6 +390,7 @@ export function CreateDispositionModal({
         reason: reason.trim(),
         quantity: numQty,
         inspectionId: selectedInspectionId || null,
+        restrictionId: holdId || null,
         externalReference: holdId ? `HOLD:${holdId}` : null
       }
     });

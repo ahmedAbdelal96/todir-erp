@@ -275,6 +275,7 @@ export interface QualityDispositionListItem {
   id: string;
   legalEntityId: string;
   inspectionId: string | null;
+  restrictionId: string | null;
   decision: string; // "Accept" | "Reject" | "UseAsIs" | "Concession" | "Return" | "SupplierReturn" | "Scrap" | "Rework" | "Partial"
   state: string; // "Draft" | "Approved" | "Executing" | "Executed" | "Failed" | "Unknown"
   quantity: number | null;
@@ -286,6 +287,7 @@ export interface QualityDispositionListItem {
 export interface QualityDispositionView {
   id: string;
   inspectionId: string | null;
+  restrictionId: string | null;
   decision: string;
   state: string;
   quantity: number | null;
@@ -299,6 +301,7 @@ export interface CreateDispositionRequest {
   decision: string;
   reason: string;
   inspectionId?: string | null;
+  restrictionId?: string | null;
   quantity?: number | null;
   externalReference?: string | null;
   unitOfMeasureId?: string | null;
