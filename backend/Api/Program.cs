@@ -37,6 +37,7 @@ using OpenIddict.Validation.AspNetCore;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
+using Core.Identity;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Serialization;
@@ -163,6 +164,20 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseRequestContextLogging();
 app.UseRateLimiter();
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/v1") && context.Request.Headers.Authorization.Count > 0)
+    {
+        var bearer = await context.AuthenticateAsync(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
+        if (bearer.Succeeded && !OAuthScopeAuthorization.IsAllowed(context, bearer.Principal!))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "oauth.scope_required", extensions: new Dictionary<string, object?> { ["code"] = "oauth.scope_required" }).ExecuteAsync(context);
+            return;
+        }
+    }
+    await next(context);
+});
 app.Use(async (context, next) =>
 {
     var providerWebhook = context.Request.Path.StartsWithSegments("/api/v1/payments/webhooks/reference");

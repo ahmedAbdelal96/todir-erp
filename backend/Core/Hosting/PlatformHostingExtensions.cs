@@ -322,8 +322,9 @@ public static class PlatformHostingExtensions
             if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var identityId) || !TryGetCurrentSessionScope(context, out var sessionId, out var tenantId, out var mobile)) return Results.Unauthorized();
             var now = context.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow();
             var proof = await mfa.VerifyStepUpAsync(new(identityId), request.Code, now, cancellationToken);
+            if (proof is null || proof.IdentityId != new IdentityId(identityId) || proof.ExpiresAt <= now || proof.ExpiresAt - now > policy.MfaFreshness) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_step_up_failed", "Multi-factor verification could not be completed");
             var marked = mobile ? await mobileSessions.MarkMfaVerifiedAsync(sessionId, new(identityId), tenantId, now, cancellationToken) : await sessions.MarkMfaVerifiedAsync(sessionId, new(identityId), tenantId, now, cancellationToken);
-            if (proof is null || proof.ExpiresAt - now > policy.MfaFreshness || !marked) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_step_up_failed", "Multi-factor verification could not be completed");
+            if (!marked) return Problem(StatusCodes.Status403Forbidden, "auth.mfa_step_up_failed", "Multi-factor verification could not be completed");
             return Results.NoContent();
         }).RequireAuthorization();
         group.MapPost("/auth/logout", async (HttpContext context, ISessionService sessions, IMobileSessionService mobileSessions, CancellationToken cancellationToken) =>
