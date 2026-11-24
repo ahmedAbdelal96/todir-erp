@@ -14,5 +14,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <ProjectReference Include="../../Shared/BuildingBlocks/BuildingBlocks.csproj" />
+    <ProjectReference Include="../../Core/Core.csproj" />
+    <ProjectReference Include="../../Worker/Worker.csproj" />
   </ItemGroup>
 </Project>

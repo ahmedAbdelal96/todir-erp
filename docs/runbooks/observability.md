@@ -44,8 +44,9 @@ Keep the receiver local. For a repeatable availability drill, stop only the disp
 
 - `/health/live` means the process can answer and does not query dependencies.
 - API `/health/ready` requires a bounded PostgreSQL `select 1`; Redis is optional because PostgreSQL fallback is supported.
-- Worker `/health/ready` requires a recent successful bounded processing cycle; a running but stalled process is not healthy.
-- RabbitMQ and Outbox health are diagnosed from Worker scrape metrics, broker state, and database backlog age.
+- Worker `/health/ready` requires a recent successful Outbox cycle plus independently healthy PostgreSQL and RabbitMQ dependencies. A running, polling-only, dependency-missing, or stalled process is not ready.
+- `todir_worker_postgres_available`, `todir_worker_rabbitmq_available`, `todir_worker_successful_cycle_age_seconds`, and `todir_worker_ready` are separate signals. Consumer progress and failures are exported separately through `todir_worker_consumer_processing_*` and `todir_worker_consumer_failures_total`; an idle consumer has no success-age requirement and is not treated as failed merely because it has no messages.
+- RabbitMQ and Outbox health are diagnosed from Worker scrape metrics, MassTransit bus health, broker state, and database backlog age. Successful Outbox polling does not prove that every consumer or scheduled job is healthy.
 - Redis failure is a degraded-cache condition when PostgreSQL fallback remains available, not an ERP outage.
 
 ## Data protection

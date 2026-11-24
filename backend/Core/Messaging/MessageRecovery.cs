@@ -2,6 +2,7 @@ using MassTransit;
 using Npgsql;
 using Core.Services;
 using Shared.Primitives.Identifiers;
+using Shared.BuildingBlocks.Observability;
 
 namespace Core.Messaging;
 
@@ -9,10 +10,15 @@ public sealed class MessageFailureObserver(IMessageErrorStore errorStore) : ICon
 {
     public Task PreConsume<T>(ConsumeContext<T> context) where T : class => Task.CompletedTask;
 
-    public Task PostConsume<T>(ConsumeContext<T> context) where T : class => Task.CompletedTask;
+    public Task PostConsume<T>(ConsumeContext<T> context) where T : class
+    {
+        WorkerMetrics.MarkConsumerProcessed();
+        return Task.CompletedTask;
+    }
 
     public Task ConsumeFault<T>(ConsumeContext<T> context, Exception exception) where T : class
     {
+        WorkerMetrics.MarkConsumerFailed();
         if (context.Message is not OutboxPublishedMessage message || context.MessageId is not { } messageId) return Task.CompletedTask;
 
         return errorStore.RecordAsync(

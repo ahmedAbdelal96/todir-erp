@@ -80,7 +80,6 @@ public static class ObservabilityExtensions
             await next(context);
         });
 }
-
 public static class CoreMetrics
 {
     public static readonly Meter Meter = new("Core", "1.0.0");
@@ -106,14 +105,18 @@ public static class CoreMetrics
         Volatile.Write(ref outboxOldestAgeSeconds, Math.Max(0, oldestAgeSeconds));
     }
 }
-
 public static class WorkerMetrics
 {
     public static readonly Meter Meter = new("Todir.Worker", "1.0.0");
     public static readonly Counter<long> CycleFailures = Meter.CreateCounter<long>("todir.worker.cycle.failures", "{cycle}");
     public static readonly Counter<long> MessagesProcessed = Meter.CreateCounter<long>("todir.worker.messages.processed", "{message}");
+    public static readonly Counter<long> ConsumerFailures = Meter.CreateCounter<long>("todir.worker.consumer.failures", "{failure}");
+    public static readonly Counter<long> ConsumerMessagesProcessed = Meter.CreateCounter<long>("todir.worker.consumer.messages.processed", "{message}");
     private static long lastCycleStartedUnixSeconds;
     private static long lastCycleSucceededUnixSeconds;
+    private static long lastConsumerProcessedUnixSeconds;
+    private static int postgresAvailable;
+    private static int rabbitMqAvailable;
 
     public static readonly ObservableGauge<double> CycleAge = Meter.CreateObservableGauge(
         "todir.worker.cycle.age",
@@ -123,17 +126,60 @@ public static class WorkerMetrics
         "todir.worker.successful_cycle.age",
         () => SuccessfulCycleAgeSeconds,
         "s");
+    public static readonly ObservableGauge<int> SuccessfulCycleAvailable = Meter.CreateObservableGauge(
+        "todir.worker.successful_cycle.available",
+        () => SuccessfulCycleAvailableValue);
+    public static readonly ObservableGauge<int> PostgresAvailable = Meter.CreateObservableGauge(
+        "todir.worker.postgres.available",
+        () => Volatile.Read(ref postgresAvailable));
+    public static readonly ObservableGauge<int> RabbitMqAvailable = Meter.CreateObservableGauge(
+        "todir.worker.rabbitmq.available",
+        () => Volatile.Read(ref rabbitMqAvailable));
+    public static readonly ObservableGauge<double> ConsumerProcessingAge = Meter.CreateObservableGauge(
+        "todir.worker.consumer.processing.age",
+        () => ConsumerProcessingAgeSeconds,
+        "s");
+    public static readonly ObservableGauge<int> ConsumerProcessingAvailable = Meter.CreateObservableGauge(
+        "todir.worker.consumer.processing.available",
+        () => ConsumerProcessingAvailableValue);
+    public static readonly ObservableGauge<int> Ready = Meter.CreateObservableGauge(
+        "todir.worker.ready",
+        () => IsReady() ? 1 : 0);
 
     public static double CycleAgeSeconds => AgeSeconds(lastCycleStartedUnixSeconds);
     public static double SuccessfulCycleAgeSeconds => AgeSeconds(lastCycleSucceededUnixSeconds);
+    public static int SuccessfulCycleAvailableValue => lastCycleSucceededUnixSeconds > 0 ? 1 : 0;
+    public static int PostgresAvailableValue => Volatile.Read(ref postgresAvailable);
+    public static int RabbitMqAvailableValue => Volatile.Read(ref rabbitMqAvailable);
+    public static double ConsumerProcessingAgeSeconds => AgeSeconds(lastConsumerProcessedUnixSeconds);
+    public static int ConsumerProcessingAvailableValue => lastConsumerProcessedUnixSeconds > 0 ? 1 : 0;
 
     public static void MarkCycleStarted() => Interlocked.Exchange(ref lastCycleStartedUnixSeconds, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
     public static void MarkCycleSucceeded() => Interlocked.Exchange(ref lastCycleSucceededUnixSeconds, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
     public static void MarkCycleFailed() => CycleFailures.Add(1);
     public static void MarkMessageProcessed() => MessagesProcessed.Add(1);
+    public static void MarkConsumerProcessed()
+    {
+        Interlocked.Exchange(ref lastConsumerProcessedUnixSeconds, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        ConsumerMessagesProcessed.Add(1);
+    }
+    public static void MarkConsumerFailed() => ConsumerFailures.Add(1);
+    public static void MarkPostgresAvailable() => Interlocked.Exchange(ref postgresAvailable, 1);
+    public static void MarkPostgresUnavailable() => Interlocked.Exchange(ref postgresAvailable, 0);
+    public static void MarkRabbitMqAvailable() => Interlocked.Exchange(ref rabbitMqAvailable, 1);
+    public static void MarkRabbitMqUnavailable() => Interlocked.Exchange(ref rabbitMqAvailable, 0);
+
+    public static bool IsReady(TimeSpan? maximumSuccessfulCycleAge = null)
+    {
+        var maximumAge = maximumSuccessfulCycleAge ?? TimeSpan.FromSeconds(30);
+        return Volatile.Read(ref postgresAvailable) == 1
+            && Volatile.Read(ref rabbitMqAvailable) == 1
+            && SuccessfulCycleAvailableValue == 1
+            && SuccessfulCycleAgeSeconds <= maximumAge.TotalSeconds;
+    }
 
     private static double AgeSeconds(long timestamp) => timestamp <= 0
-        ? double.PositiveInfinity
+        ? 0
         : Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - timestamp);
 }
 

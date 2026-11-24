@@ -126,7 +126,7 @@ builder.Services.AddHostedService<ServiceMaintenanceWorker>();
 WorkerMetrics.MarkCycleStarted();
 var app = builder.Build();
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
-app.MapGet("/health/ready", () => WorkerMetrics.CycleAgeSeconds <= 30 && WorkerMetrics.SuccessfulCycleAgeSeconds <= 30
+app.MapGet("/health/ready", () => WorkerMetrics.IsReady()
     ? Results.Ok(new { status = "ready" })
     : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
 if (metricsEnabled)

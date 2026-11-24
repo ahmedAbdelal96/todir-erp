@@ -36,11 +36,53 @@ public sealed class OutboxDispatchWorker(
 
     private async Task DrainAsync(CancellationToken cancellationToken)
     {
+        try
+        {
+            await DrainCoreAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is NpgsqlException or TimeoutException)
+        {
+            WorkerMetrics.MarkPostgresUnavailable();
+            throw;
+        }
+    }
+
+    private async Task DrainCoreAsync(CancellationToken cancellationToken)
+    {
         var dataSource = services.GetService<NpgsqlDataSource>();
+        if (dataSource is null)
+        {
+            WorkerMetrics.MarkPostgresUnavailable();
+            throw new InvalidOperationException("worker.postgres_dependency_unavailable");
+        }
+
         await using var scope = services.CreateAsyncScope();
         var publisher = scope.ServiceProvider.GetService<IPublishEndpoint>();
-        if (dataSource is null || publisher is null) return;
+        var bus = scope.ServiceProvider.GetService<IBusControl>();
+        if (publisher is null || bus is null)
+        {
+            WorkerMetrics.MarkRabbitMqUnavailable();
+            throw new InvalidOperationException("worker.rabbitmq_dependency_unavailable");
+        }
+
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        WorkerMetrics.MarkPostgresAvailable();
+        BusHealthResult busHealth;
+        try
+        {
+            busHealth = bus.CheckHealth();
+        }
+        catch
+        {
+            WorkerMetrics.MarkRabbitMqUnavailable();
+            throw;
+        }
+        if (busHealth.Status != BusHealthStatus.Healthy)
+        {
+            WorkerMetrics.MarkRabbitMqUnavailable();
+            throw new InvalidOperationException("worker.rabbitmq_transport_unavailable");
+        }
+        WorkerMetrics.MarkRabbitMqAvailable();
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var backlog = new NpgsqlCommand("select pending_count, oldest_age_seconds from platform.observe_pending_outbox()", connection, transaction);
         await using (var backlogReader = await backlog.ExecuteReaderAsync(cancellationToken))
@@ -53,19 +95,28 @@ public sealed class OutboxDispatchWorker(
         while (await reader.ReadAsync(cancellationToken)) messages.Add(new OutboxPublishedMessage(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), new TenantId(reader.GetGuid(3)), reader.GetFieldValue<DateTimeOffset>(4), reader.GetGuid(5), reader.GetGuid(6), reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetInt32(9)));
         await reader.DisposeAsync();
         if (messages.Count > 0) PendingSelected(logger, messages.Count, null);
+        var messageProcessingFailed = false;
         foreach (var message in messages)
         {
             try
             {
-                await publisher.Publish(new OutboxPublishedMessage(message.MessageId, message.MessageType, message.Payload, message.TenantId, message.OccurredAt, message.CorrelationId, message.CausationId, message.SourceModule, message.TraceParent, message.Attempts), context =>
+                try
                 {
-                    context.MessageId = message.MessageId;
-                    context.Headers.Set("message_type", message.MessageType);
-                    context.Headers.Set("tenant_id", message.TenantId.Value.ToString("D"));
-                    context.Headers.Set("correlation_id", message.CorrelationId.ToString("D"));
-                    context.Headers.Set("causation_id", message.CausationId.ToString("D"));
-                    if (message.TraceParent is not null) context.Headers.Set("traceparent", message.TraceParent);
-                }, cancellationToken);
+                    await publisher.Publish(new OutboxPublishedMessage(message.MessageId, message.MessageType, message.Payload, message.TenantId, message.OccurredAt, message.CorrelationId, message.CausationId, message.SourceModule, message.TraceParent, message.Attempts), context =>
+                    {
+                        context.MessageId = message.MessageId;
+                        context.Headers.Set("message_type", message.MessageType);
+                        context.Headers.Set("tenant_id", message.TenantId.Value.ToString("D"));
+                        context.Headers.Set("correlation_id", message.CorrelationId.ToString("D"));
+                        context.Headers.Set("causation_id", message.CausationId.ToString("D"));
+                        if (message.TraceParent is not null) context.Headers.Set("traceparent", message.TraceParent);
+                    }, cancellationToken);
+                }
+                catch (Exception publishException) when (publishException is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                {
+                    WorkerMetrics.MarkRabbitMqUnavailable();
+                    throw;
+                }
                 await using var tenantContext = new NpgsqlCommand("select set_config('app.tenant_id', $1, true)", connection, transaction);
                 tenantContext.Parameters.AddWithValue(message.TenantId.Value.ToString("D"));
                 await tenantContext.ExecuteNonQueryAsync(cancellationToken);
@@ -77,6 +128,7 @@ public sealed class OutboxDispatchWorker(
             }
             catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
+                messageProcessingFailed = true;
                 var decision = retryPolicy.Decide(message.Attempts, DateTimeOffset.UtcNow, exception);
                 await using var tenantContext = new NpgsqlCommand("select set_config('app.tenant_id', $1, true)", connection, transaction);
                 tenantContext.Parameters.AddWithValue(message.TenantId.Value.ToString("D"));
@@ -91,5 +143,6 @@ public sealed class OutboxDispatchWorker(
             }
         }
         await transaction.CommitAsync(cancellationToken);
+        if (messageProcessingFailed) throw new InvalidOperationException("worker.outbox_message_processing_failed");
     }
 }

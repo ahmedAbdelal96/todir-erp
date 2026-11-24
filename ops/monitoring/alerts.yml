@@ -20,12 +20,48 @@ groups:
           runbook: docs/runbooks/worker-outage.md
 
       - alert: WorkerStalled
-        expr: todir_worker_successful_cycle_age_seconds{job="worker"} > 60
+        expr: todir_worker_successful_cycle_available{job="worker"} == 1 and todir_worker_successful_cycle_age_seconds{job="worker"} > 60
         for: 2m
         labels:
           severity: critical
         annotations:
           summary: Worker process is reachable but has not completed a cycle recently.
+          runbook: docs/runbooks/worker-outage.md
+
+      - alert: WorkerNotReady
+        expr: up{job="worker"} == 1 and todir_worker_ready{job="worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Worker is alive but its required processing contract is not ready.
+          runbook: docs/runbooks/worker-outage.md
+
+      - alert: WorkerPostgresUnavailable
+        expr: todir_worker_postgres_available{job="worker"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Worker cannot verify its PostgreSQL processing dependency.
+          runbook: docs/runbooks/worker-outage.md
+
+      - alert: WorkerRabbitMqUnavailable
+        expr: todir_worker_rabbitmq_available{job="worker"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Worker cannot verify RabbitMQ transport availability.
+          runbook: docs/runbooks/worker-outage.md
+
+      - alert: WorkerConsumerFailures
+        expr: increase(todir_worker_consumer_failures_total{job="worker"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: A Worker consumer reported a processing failure in the last five minutes.
           runbook: docs/runbooks/worker-outage.md
 
       - alert: ApiErrorRateHigh
