@@ -410,77 +410,68 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
         var serialId = request.SerialId;
 
         // If productVariantId is not explicitly provided but inspectionId is, resolve from the inspection
-        if (productVariantId is null && request.InspectionId is not null)
+        string? lotReference = null;
+        if (request.InspectionId is not null)
         {
             var inspRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
-                "select product_variant_id from business_quality.inspection where tenant_id=$1 and id=$2", token, tenant.Value, request.InspectionId.Value), ct);
-            if (inspRow is not null && inspRow[0] is not DBNull)
+                "select product_variant_id, lot_reference from business_quality.inspection where tenant_id=$1 and id=$2", token, tenant.Value, request.InspectionId.Value), ct);
+            if (inspRow is not null)
             {
-                productVariantId = (Guid)inspRow[0];
+                if (productVariantId is null && inspRow[0] is not DBNull)
+                {
+                    productVariantId = (Guid)inspRow[0];
+                }
+                if (inspRow[1] is not DBNull)
+                {
+                    lotReference = (string)inspRow[1];
+                }
             }
         }
 
-        // If productVariantId is still null and hasOwnerScope is true, resolve from stock or catalog
-        if (productVariantId is null && hasOwnerScope)
+        // If hasOwnerScope is true, productVariantId is strictly required. Never guess or select an unrelated variant!
+        if (hasOwnerScope && productVariantId is null)
         {
-            var pvStockRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
-                "select product_variant_id, warehouse_id, location_id from business_inventory.stock_balance where tenant_id=$1 and legal_entity_id=$2 and stock_status='Available' and on_hand_base_quantity >= $3 order by on_hand_base_quantity desc limit 1",
-                token, tenant.Value, legalEntityId, request.Quantity ?? 0m), ct);
-            if (pvStockRow is not null && pvStockRow[0] is not DBNull)
-            {
-                productVariantId = (Guid)pvStockRow[0];
-                if (warehouseId is null && pvStockRow[1] is not DBNull) warehouseId = (Guid)pvStockRow[1];
-                if (locationId is null && pvStockRow[2] is not DBNull) locationId = (Guid)pvStockRow[2];
-            }
-            else
-            {
-                var anyStockRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
-                    "select product_variant_id, warehouse_id, location_id from business_inventory.stock_balance where tenant_id=$1 and legal_entity_id=$2 and stock_status='Available' and on_hand_base_quantity > 0 order by on_hand_base_quantity desc limit 1",
-                    token, tenant.Value, legalEntityId), ct);
-                if (anyStockRow is not null && anyStockRow[0] is not DBNull)
-                {
-                    productVariantId = (Guid)anyStockRow[0];
-                    if (warehouseId is null && anyStockRow[1] is not DBNull) warehouseId = (Guid)anyStockRow[1];
-                    if (locationId is null && anyStockRow[2] is not DBNull) locationId = (Guid)anyStockRow[2];
-                }
-                else
-                {
-                    var pvRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
-                        "select id from foundation_catalog.product_variant where tenant_id=$1 and status='Active' order by id limit 1",
-                        token, tenant.Value), ct);
-                    if (pvRow is not null && pvRow[0] is not DBNull)
-                    {
-                        productVariantId = (Guid)pvRow[0];
-                    }
-                }
-            }
+            throw new QualityException("quality.owner_scope_incomplete");
         }
 
-        // If warehouseId is missing and productVariantId is known, resolve warehouse with available stock or default warehouse
+        // If warehouseId is missing and productVariantId is known, resolve warehouse where THAT specific product variant has available inventory
         if (warehouseId is null && productVariantId is not null)
         {
             var whRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
-                "select warehouse_id, location_id from business_inventory.stock_balance where tenant_id=$1 and legal_entity_id=$2 and product_variant_id=$3 and stock_status='Available' and on_hand_base_quantity > 0 order by on_hand_base_quantity desc limit 1",
-                token, tenant.Value, legalEntityId, productVariantId.Value), ct);
+                "select warehouse_id, location_id from business_inventory.stock_balance where tenant_id=$1 and legal_entity_id=$2 and product_variant_id=$3 and stock_status='Available' and on_hand_base_quantity >= $4 order by on_hand_base_quantity desc limit 1",
+                token, tenant.Value, legalEntityId, productVariantId.Value, request.Quantity ?? 0m), ct);
             if (whRow is not null && whRow[0] is not DBNull)
             {
                 warehouseId = (Guid)whRow[0];
                 if (locationId is null && whRow[1] is not DBNull) locationId = (Guid)whRow[1];
             }
-            else
+        }
+
+        // If locationId is missing but warehouseId is known, resolve default location for that warehouse
+        if (locationId is null && warehouseId is not null)
+        {
+            var defLocRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
+                "select default_location_id from business_inventory.warehouse where tenant_id=$1 and legal_entity_id=$2 and id=$3 and status='Active'",
+                token, tenant.Value, legalEntityId, warehouseId.Value), ct);
+            if (defLocRow is not null && defLocRow[0] is not DBNull)
             {
-                var defWh = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
-                    "select id, default_location_id from business_inventory.warehouse where tenant_id=$1 and legal_entity_id=$2 and status='Active' order by id limit 1",
-                    token, tenant.Value, legalEntityId), ct);
-                if (defWh is not null && defWh[0] is not DBNull)
-                {
-                    warehouseId = (Guid)defWh[0];
-                    if (locationId is null && defWh[1] is not DBNull) locationId = (Guid)defWh[1];
-                }
+                locationId = (Guid)defLocRow[0];
             }
         }
 
-        // If unitOfMeasureId is missing and productVariantId is known, resolve base UOM from catalog
+        // If lotId is missing, try to resolve from lotReference for this specific productVariant
+        if (lotId is null && productVariantId is not null && !string.IsNullOrWhiteSpace(lotReference))
+        {
+            var lotRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,
+                "select id from business_inventory.lot where tenant_id=$1 and legal_entity_id=$2 and product_variant_id=$3 and lot_number=$4 limit 1",
+                token, tenant.Value, legalEntityId, productVariantId.Value, lotReference.Trim()), ct);
+            if (lotRow is not null && lotRow[0] is not DBNull)
+            {
+                lotId = (Guid)lotRow[0];
+            }
+        }
+
+        // If unitOfMeasureId is missing and productVariantId is known, resolve base UOM from catalog for this specific variant
         if (unitOfMeasureId is null && productVariantId is not null)
         {
             var uomRow = await coordinator.ExecuteAsync(tenant, (context, token) => ReadSingleAsync(context,

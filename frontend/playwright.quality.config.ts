@@ -54,7 +54,11 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {
-          args: ['--no-sandbox', '--disable-gpu'],
+          args: [
+            '--no-sandbox',
+            '--disable-gpu',
+            '--disable-dev-shm-usage'
+          ],
         },
       },
     },

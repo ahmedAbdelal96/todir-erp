@@ -35,3 +35,4 @@
 6. **Frozen Plan Snapshot Integration:** Inspection workspace loads frozen snapshot characteristics from backend JSONB rather than catalog.
 7. **Source Hold Context Preservation:** Disposition modal preserves hold id, remaining balance, and product variant without arbitrary inspection selection.
 8. **Truthful KPI Scopes:** Ribbon KPI numbers clearly indicate scope ("في طابور العمل المباشر") without misleading full-tenant aggregations.
+9. **Elimination of Arbitrary Inventory Fallback (P0):** `QualityRepository.CreateRestrictionAsync` strictly rejects holds lacking an authoritative product variant, failing closed with `quality.owner_scope_incomplete`. UI modal prioritizes canonical receiving inspections with active balances.

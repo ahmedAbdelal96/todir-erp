@@ -43,17 +43,21 @@ export function CreateRestrictionModal({
   const [restrictionType, setRestrictionType] = useState("QualityHold");
   const [reasonCode, setReasonCode] = useState("RECEIVING_INSPECTION_HOLD");
   const [quantity, setQuantity] = useState(defaultQuantity ? String(defaultQuantity) : "");
+  const [customProductVariantId, setCustomProductVariantId] = useState("");
 
   // Update inspection when initial prop or inspectionsData load
   React.useEffect(() => {
     if (initialInspection) {
       setSelectedInspectionId(initialInspection);
     } else if (inspectionsData?.items && inspectionsData.items.length > 0 && !selectedInspectionId) {
-      const first = inspectionsData.items[0];
-      if (first) {
-        setSelectedInspectionId(first.id);
-        if (!quantity && first.lotQuantity) {
-          setQuantity(String(first.lotQuantity));
+      // Prioritize canonical seeded receiving inspection or first inspection with authoritative product variant linkage
+      const preferred = inspectionsData.items.find((i) => i.number === "QI-SEED-0001") ||
+                        inspectionsData.items.find((i) => Boolean(i.productVariantId)) ||
+                        inspectionsData.items[0];
+      if (preferred) {
+        setSelectedInspectionId(preferred.id);
+        if (!quantity && preferred.lotQuantity) {
+          setQuantity(String(preferred.lotQuantity));
         }
       }
     }
@@ -67,13 +71,15 @@ export function CreateRestrictionModal({
     }
   };
 
+  const matchedInspection = inspectionsData?.items?.find((i) => i.id === selectedInspectionId.trim());
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalInspectionId = selectedInspectionId.trim();
     const qty = Number(quantity);
     if (!finalInspectionId || !qty || qty <= 0 || !reasonCode.trim()) return;
 
-    const matchedInspection = inspectionsData?.items?.find((i) => i.id === finalInspectionId);
+    const resolvedProductVariantId = matchedInspection?.productVariantId || customProductVariantId.trim() || null;
     try {
       await createRestrictionMutation.mutateAsync({
         inspectionId: finalInspectionId,
@@ -83,7 +89,7 @@ export function CreateRestrictionModal({
           reasonCode: reasonCode.trim(),
           quantity: qty,
           inspectionId: finalInspectionId,
-          productVariantId: matchedInspection?.productVariantId ?? null
+          productVariantId: resolvedProductVariantId
         }
       });
       onClose();
@@ -139,6 +145,15 @@ export function CreateRestrictionModal({
           placeholder={t("fields.enterHoldQuantity", "أدخل الكمية المحتجزة")}
           isRequired
         />
+        {matchedInspection && !matchedInspection.productVariantId && (
+          <TextField
+            label={t("fields.productVariantId", "معرف صنف المنتج (مطلوب لربط حظر المخزون)")}
+            value={customProductVariantId}
+            onChange={setCustomProductVariantId}
+            placeholder={t("fields.enterProductVariantId", "أدخل معرف صنف المنتج")}
+            isRequired
+          />
+        )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "12px" }}>
           <Button variant="outline" onPress={onClose} type="button">
             {t("actions.cancel", "إلغاء")}
@@ -146,7 +161,14 @@ export function CreateRestrictionModal({
           <Button
             variant="primary"
             type="submit"
-            isDisabled={createRestrictionMutation.isPending || !reasonCode.trim() || !quantity || Number(quantity) <= 0 || !selectedInspectionId}
+            isDisabled={
+              createRestrictionMutation.isPending ||
+              !reasonCode.trim() ||
+              !quantity ||
+              Number(quantity) <= 0 ||
+              !selectedInspectionId ||
+              Boolean(matchedInspection && !matchedInspection.productVariantId && !customProductVariantId.trim())
+            }
           >
             {createRestrictionMutation.isPending ? "..." : t("actions.save", "تطبيق الحظر")}
           </Button>

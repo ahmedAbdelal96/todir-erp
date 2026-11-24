@@ -102,3 +102,7 @@ Executed via `pnpm --dir frontend exec playwright test --config=playwright.quali
 4. **SaaS Entitlement & Lifecycle Invariant:**
    - Quality module is purchasable (`"purchasable": true`).
    - Entitlement is enforced fail-closed via `platform.entitlement_snapshot` and `platform.module_instance`.
+5. **Strict Authoritative Inventory Scope (P0 Closure):**
+   - In `QualityRepository.CreateRestrictionAsync`, arbitrary fallback queries selecting random variants from `business_inventory.stock_balance` or `foundation_catalog.product_variant` have been eliminated.
+   - Physical restrictions (`QualityHold`, etc.) strictly require authoritative product/variant, warehouse, location, and UOM. Missing product variant context immediately fails closed with `quality.owner_scope_incomplete`.
+   - UI selection prioritizes canonical receiving inspections (`QI-SEED-0001`) with authoritative inventory balances or requires explicit variant specification, preventing fail-open submissions.
