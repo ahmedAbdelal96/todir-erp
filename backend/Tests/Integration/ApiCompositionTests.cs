@@ -14,6 +14,8 @@ namespace KernelIntegrationTests;
 [Collection("database-integration")]
 public sealed class ApiCompositionTests : DatabaseIntegrationTestBase
 {
+    private static readonly string[] PhysicalCountQueryParameters = ["entityId", "warehouseId", "status", "page", "pageSize"];
+
     [Fact]
     public void ApiBuildsWithValidatedPostgresTransactionAndInboxServices()
     {
@@ -114,6 +116,10 @@ public sealed class ApiCompositionTests : DatabaseIntegrationTestBase
         Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/incoming", out _));
         Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/outgoing", out _));
         Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{paymentId}/complete", out _));
+        Assert.True(paths.TryGetProperty("/api/v1/inventory/legal-entities/{entityId}/counts", out var physicalCounts));
+        Assert.True(physicalCounts.TryGetProperty("get", out var physicalCountsGet));
+        var countQueryParameters = physicalCountsGet.GetProperty("parameters").EnumerateArray().Select(parameter => parameter.GetProperty("name").GetString()).ToHashSet(StringComparer.Ordinal);
+        Assert.True(PhysicalCountQueryParameters.All(countQueryParameters.Contains));
         Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{paymentId}/applications", out _));
         Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{paymentId}/refunds", out _));
         Assert.True(paths.TryGetProperty("/api/v1/payments/legal-entities/{entityId}/{paymentId}/provider-refunds", out _));

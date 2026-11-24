@@ -263,12 +263,12 @@ export function PartyRecordPage({ partyId = "", onBack }: PartyRecordPageProps):
   const activeCustomer = party.roles.some(r => r.code === "Customer" && r.status === "Active");
   const activeSupplier = party.roles.some(r => r.code === "Supplier" && r.status === "Active");
 
-  const canEdit = perms?.hasPermission("directory.party.edit") ?? true;
-  const canArchive = perms?.hasPermission("directory.party.archive") ?? true;
-  const canMerge = perms?.hasPermission("directory.party.merge") ?? true;
-  const canManageVisibility = perms?.hasPermission("directory.visibility.manage") ?? true;
-  const canManageIdentifiers = perms?.hasPermission("directory.party.identifier.manage") ?? true;
-  const canManageContacts = perms?.hasPermission("directory.contact.manage") ?? true;
+  const canEdit = Boolean(perms?.hasPermission("directory.party.edit"));
+  const canArchive = Boolean(perms?.hasPermission("directory.party.archive"));
+  const canMerge = Boolean(perms?.hasPermission("directory.party.merge"));
+  const canManageVisibility = Boolean(perms?.hasPermission("directory.visibility.manage"));
+  const canManageIdentifiers = Boolean(perms?.hasPermission("directory.party.identifier.manage"));
+  const canManageContacts = Boolean(perms?.hasPermission("directory.contact.manage"));
 
   const handleToggleRole = async (roleCode: PartyRoleCode, currentlyActive: boolean) => {
     if (!canEdit) {

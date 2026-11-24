@@ -17,8 +17,8 @@ export function InventoryPolicySettings(): React.JSX.Element {
   const runtimePermissions = useOptionalPermissions();
   const legalEntityId = outletContext?.legalEntityId ?? runtimeEntity?.legalEntityId;
   const permissions = outletContext?.permissions ?? runtimePermissions;
-  const canRead = permissions ? permissions.hasPermission("inventory.stock.read") : true;
-  const canManage = permissions ? permissions.hasPermission("inventory.policy.manage") : true;
+  const canRead = Boolean(permissions?.hasPermission("inventory.stock.read"));
+  const canManage = Boolean(permissions?.hasPermission("inventory.policy.manage"));
   const policyQuery = useInventoryPolicy(legalEntityId ?? "", Boolean(legalEntityId) && canRead);
   const [isEditOpen, setIsEditOpen] = useState(false);
 

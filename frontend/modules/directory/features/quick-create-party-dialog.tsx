@@ -64,7 +64,7 @@ export function QuickCreatePartyDialog({
   } catch {
     perms = null;
   }
-  const canOverrideDuplicate = perms?.hasPermission("directory.duplicate.override") ?? true;
+  const canOverrideDuplicate = Boolean(perms?.hasPermission("directory.duplicate.override"));
 
   const createParty = useCreateParty();
   const createPartyWithOverride = useCreatePartyWithOverride();

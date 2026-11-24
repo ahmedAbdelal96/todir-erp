@@ -31,13 +31,13 @@ export function PurchasingOverviewPage(): React.JSX.Element {
   const capabilities = useOptionalCapabilities();
   const permissions = useOptionalPermissions();
 
-  const isInventoryCapabilityActive = capabilities ? capabilities.isActivated("inventory.receipts") : true;
-  const isMatchingCapabilityActive = capabilities ? capabilities.isActivated("purchasing.matching") : true;
-  const isReturnsCapabilityActive = capabilities ? capabilities.isActivated("purchasing.returns") : true;
+  const isInventoryCapabilityActive = Boolean(capabilities?.isActivated("inventory.receipts"));
+  const isMatchingCapabilityActive = Boolean(capabilities?.isActivated("purchasing.matching"));
+  const isReturnsCapabilityActive = Boolean(capabilities?.isActivated("purchasing.returns"));
 
-  const hasPriceReadPermission = permissions ? permissions.hasPermission("purchasing.price.read") : true;
-  const hasPriceOverridePermission = permissions ? permissions.hasPermission("purchasing.price.override") : true;
-  const hasMatchOverridePermission = permissions ? permissions.hasPermission("purchasing.match.override") : true;
+  const hasPriceReadPermission = Boolean(permissions?.hasPermission("purchasing.price.read"));
+  const hasPriceOverridePermission = Boolean(permissions?.hasPermission("purchasing.price.override"));
+  const hasMatchOverridePermission = Boolean(permissions?.hasPermission("purchasing.match.override"));
 
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);

@@ -36,7 +36,7 @@ public sealed class IdentityAuthorizationTests
     }
 
     [Fact]
-    public void PermissionCacheIsInvalidatedAfterAssignmentChange()
+    public void AuthorizationReflectsSubjectChangesWithoutAStaleDecisionCache()
     {
         var tenant = TenantId.New();
         var membershipId = Guid.NewGuid();
@@ -44,8 +44,20 @@ public sealed class IdentityAuthorizationTests
         var subject = new AuthorizationSubject(tenant, membershipId, [new(tenant, membershipId, role.Id, PermissionScope.ForTenant(tenant))], [role], [new(tenant, role.Id, "a.read")], 1);
         var authorizer = new PermissionAuthorizer();
         Assert.True(authorizer.Authorize(subject, "a.read", PermissionScope.ForTenant(tenant)));
-        authorizer.Invalidate(tenant, membershipId);
         var changed = subject with { Permissions = [] };
         Assert.False(authorizer.Authorize(changed, "a.read", PermissionScope.ForTenant(tenant)));
+    }
+
+    [Fact]
+    public void InactiveRoleAndWildcardPermissionDoNotGrantAConcretePermission()
+    {
+        var tenant = TenantId.New();
+        var membershipId = Guid.NewGuid();
+        var role = new Role(Guid.NewGuid(), tenant, "inactive", "Inactive", false, false, 2);
+        var subject = new AuthorizationSubject(tenant, membershipId,
+            [new(tenant, membershipId, role.Id, PermissionScope.ForTenant(tenant))],
+            [role], [new(tenant, role.Id, "*")], 2);
+
+        Assert.False(new PermissionAuthorizer().Authorize(subject, "a.write", PermissionScope.ForTenant(tenant)));
     }
 }

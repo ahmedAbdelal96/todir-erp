@@ -35,6 +35,15 @@ for (const file of files) {
     for (const operation of frozen) if (!actual.has(operation)) throw new Error(`${file}: endpoint is not implemented: ${operation}`);
     if ([...frozen].some(operation => /\b(setstock|setquantity|setbalance|setcost)\b/i.test(operation)))
       throw new Error(`${file}: direct stock or cost mutation endpoint is prohibited`);
+
+      const countsPath = document.paths["/api/v1/inventory/legal-entities/{entityId}/counts"];
+      if (!countsPath?.get || !countsPath?.post) throw new Error(`${file}: physical counts must declare both GET and POST operations`);
+      const countGetParameters = new Set((countsPath.get.parameters ?? []).map(parameter => parameter.name));
+      for (const parameter of ["entityId", "warehouseId", "status", "page", "pageSize"])
+        if (!countGetParameters.has(parameter)) throw new Error(`${file}: physical counts GET is missing '${parameter}' parameter`);
+      const countPageSchema = countsPath.get.responses?.["200"]?.content?.["application/json"]?.schema;
+      if (!countPageSchema || (countPageSchema.$ref !== "#/components/schemas/PhysicalCountsPage" && countPageSchema[""] !== "#/components/schemas/PhysicalCountsPage"))
+        throw new Error(`${file}: physical counts GET must return the paginated PhysicalCountsPage schema`);
   }
   if (file === "docs/api/sales-openapi.json") {
     const source = fs.readFileSync("backend/Modules/Sales/Controllers/SalesModuleExtensions.cs", "utf8");

@@ -36,6 +36,8 @@ The durable OpenIddict application/authorization/token store is owned by Postgre
 
 Resource scope enforcement is centralized at the API boundary. Cookie-authenticated web requests continue through the ERP permission, tenant, legal-entity, branch, entitlement, lifecycle, RLS, and CSRF controls. A valid bearer request must also carry `tenant.read` for reads or `tenant.write` for mutations; `tenant.write` is a superset for read operations. A scope never grants an ERP permission, and missing or unrecognized resource scopes fail closed before a module handler runs. OpenIddict application permissions and the registered resource scopes are explicit; there is no implicit unrestricted API scope.
 
+Authorization freshness is fail-closed. `PermissionAuthorizer` evaluates the tenant-bound subject loaded from PostgreSQL for the current request and does not retain process-wide allow/deny decisions. Role assignments, active-role state, wildcard handling, module lifecycle, and revocation therefore cannot be bypassed by a stale decision cache. The `/authorization/permissions` projection uses the same active roles and current tenant/legal-entity/branch scope as the effective-access projection; frontend permission checks remain advisory and never replace backend authorization.
+
 Development uses OpenIddict development certificates. Non-development startup fails closed unless both encrypted signing and encryption PKCS#12 certificates with private keys are supplied through the explicit certificate settings. A document-only OAuth surface or an in-memory token test is not acceptance evidence.
 
 Future external API access is similarly bounded to registered clients, explicit tenant/scope grants, security-stamp/account-status checks, and auditable revocation. One bounded machine-to-machine client is a future acceptance fixture, not a browser session substitute.
@@ -53,6 +55,7 @@ MFA verification is recorded with the server-side session and must be fresh for 
 | Cross-instance fail-closed validation | Authoritative row validation path; shared PostgreSQL session authority | PASS by design; multi-process runtime evidence remains a deployment gate |
 | Cookie/CSRF browser boundary | Actual cookie/bearer authentication result is used; forged bearer headers do not bypass CSRF | PASS locally |
 | Bearer resource scopes | Central tenant.read/tenant.write boundary before API handlers, with ERP permissions still authoritative | PASS locally; external-client scope catalog remains a deployment gate |
+| Authorization freshness and effective-access projection | PostgreSQL subject loaded per request; active scoped roles only; inactive roles and raw wildcard entries do not grant concrete permissions | PASS locally |
 | Session warning and Continue UX | React activity hook, i18n, dialog | PASS by typecheck/build; real browser proof pending |
 | Native mobile OAuth/OIDC | Durable store, discovery/JWKS, code+PKCE HTTP flow, exact redirect, dedicated mobile session, and system-browser bridge | PASS locally; production/mobile-client release proof pending |
 | Refresh rotation, reuse detection, discovery/signing keys | Five-minute access tokens, rolling refresh family, zero-leeway reuse rejection, development/prod certificate fail-closed rules | PASS locally; production certificate rotation evidence pending |

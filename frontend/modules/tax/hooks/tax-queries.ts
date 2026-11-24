@@ -55,26 +55,26 @@ export const taxQueryKeys = {
 export function useTaxPermissions() {
   const permissions = useOptionalPermissions();
   return {
-    canRead: permissions ? permissions.hasPermission("tax.read") : true,
-    canConfigureCapability: permissions ? permissions.hasPermission("tax.capability.configure") : true,
-    canReadRegistrations: permissions ? permissions.hasPermission("tax.registration.read") : true,
-    canManageRegistrations: permissions ? permissions.hasPermission("tax.registration.manage") : true,
-    canReadPartyProfiles: permissions ? permissions.hasPermission("tax.party_profile.read") : true,
-    canManagePartyProfiles: permissions ? permissions.hasPermission("tax.party_profile.manage") : true,
-    canReadProductProfiles: permissions ? permissions.hasPermission("tax.product_profile.read") : true,
-    canManageProductProfiles: permissions ? permissions.hasPermission("tax.product_profile.manage") : true,
-    canReadPolicies: permissions ? permissions.hasPermission("tax.policy.read") : true,
-    canManagePolicies: permissions ? permissions.hasPermission("tax.policy.manage") : true,
-    canReadRules: permissions ? permissions.hasPermission("tax.rule.read") : true,
-    canManageRules: permissions ? permissions.hasPermission("tax.rule.manage") : true,
-    canActivateRules: permissions ? permissions.hasPermission("tax.rule.activate") : true,
-    canSimulate: permissions ? permissions.hasPermission("tax.simulate") : true,
-    canViewAudit: permissions ? permissions.hasPermission("tax.audit.view") : true,
-    canImport: permissions ? permissions.hasPermission("tax.import") : true,
-    canExport: permissions ? permissions.hasPermission("tax.export") : true,
-    canReadCountryPacks: permissions ? permissions.hasPermission("tax.country_pack.read") : true,
-    canManageCountryPacks: permissions ? permissions.hasPermission("tax.country_pack.manage") : true,
-    canActivateCountryPacks: permissions ? permissions.hasPermission("tax.country_pack.activate") : true
+    canRead: Boolean(permissions?.hasPermission("tax.read")),
+    canConfigureCapability: Boolean(permissions?.hasPermission("tax.capability.configure")),
+    canReadRegistrations: Boolean(permissions?.hasPermission("tax.registration.read")),
+    canManageRegistrations: Boolean(permissions?.hasPermission("tax.registration.manage")),
+    canReadPartyProfiles: Boolean(permissions?.hasPermission("tax.party_profile.read")),
+    canManagePartyProfiles: Boolean(permissions?.hasPermission("tax.party_profile.manage")),
+    canReadProductProfiles: Boolean(permissions?.hasPermission("tax.product_profile.read")),
+    canManageProductProfiles: Boolean(permissions?.hasPermission("tax.product_profile.manage")),
+    canReadPolicies: Boolean(permissions?.hasPermission("tax.policy.read")),
+    canManagePolicies: Boolean(permissions?.hasPermission("tax.policy.manage")),
+    canReadRules: Boolean(permissions?.hasPermission("tax.rule.read")),
+    canManageRules: Boolean(permissions?.hasPermission("tax.rule.manage")),
+    canActivateRules: Boolean(permissions?.hasPermission("tax.rule.activate")),
+    canSimulate: Boolean(permissions?.hasPermission("tax.simulate")),
+    canViewAudit: Boolean(permissions?.hasPermission("tax.audit.view")),
+    canImport: Boolean(permissions?.hasPermission("tax.import")),
+    canExport: Boolean(permissions?.hasPermission("tax.export")),
+    canReadCountryPacks: Boolean(permissions?.hasPermission("tax.country_pack.read")),
+    canManageCountryPacks: Boolean(permissions?.hasPermission("tax.country_pack.manage")),
+    canActivateCountryPacks: Boolean(permissions?.hasPermission("tax.country_pack.activate"))
   };
 }
 

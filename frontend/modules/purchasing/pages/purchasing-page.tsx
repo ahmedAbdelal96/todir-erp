@@ -68,27 +68,27 @@ export function PurchasingPage(): React.JSX.Element {
 
   const isInventoryCapabilityActive = capabilities
     ? capabilities.isActivated("inventory.receipts") && !isInventoryExplicitlyOff
-    : !isInventoryExplicitlyOff;
+    : false;
 
   const isMatchingCapabilityActive = capabilities
     ? capabilities.isActivated("purchasing.matching") && !isMatchingExplicitlyOff
-    : !isMatchingExplicitlyOff;
+    : false;
 
   const isReturnsCapabilityActive = capabilities
     ? capabilities.isActivated("purchasing.returns")
-    : true;
+    : false;
 
   const hasPriceReadPermission = permissions
     ? permissions.hasPermission("purchasing.price.read") && !isPriceReadForbidden
-    : !isPriceReadForbidden;
+    : false;
 
   const hasPriceOverridePermission = permissions
     ? permissions.hasPermission("purchasing.price.override")
-    : true;
+    : false;
 
   const hasMatchOverridePermission = permissions
     ? permissions.hasPermission("purchasing.match.override")
-    : true;
+    : false;
 
   // Pagination & Filters
   const [page, setPage] = useState(1);

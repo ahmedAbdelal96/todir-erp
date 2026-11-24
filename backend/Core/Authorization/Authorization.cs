@@ -30,22 +30,14 @@ public interface IPermissionAuthorizer
 
 public sealed class PermissionAuthorizer : IPermissionAuthorizer
 {
-    private readonly Dictionary<(TenantId TenantId, Guid MembershipId, string Permission, PermissionScope Resource), (DateTimeOffset Expires, bool Allowed)> cache = [];
-    private readonly object gate = new();
-
     public bool Authorize(AuthorizationSubject subject, string permissionCode, PermissionScope resourceScope)
     {
         if (subject.TenantId != resourceScope.TenantId) return false;
-        var key = (subject.TenantId, subject.MembershipId, permissionCode, resourceScope);
-        lock (gate) if (cache.TryGetValue(key, out var hit) && hit.Expires > DateTimeOffset.UtcNow) return hit.Allowed;
         var roleIds = subject.Assignments.Where(a => a.TenantId == subject.TenantId && a.Scope.Contains(resourceScope)).Select(a => a.RoleId).ToHashSet();
-        var allowed = subject.Roles.Any(r => roleIds.Contains(r.Id) && r.IsActive) && subject.Permissions.Any(p => roleIds.Contains(p.RoleId) && p.TenantId == subject.TenantId && p.PermissionCode == permissionCode);
-        lock (gate) cache[key] = (DateTimeOffset.UtcNow.AddSeconds(30), allowed);
-        return allowed;
+        return subject.Roles.Any(r => roleIds.Contains(r.Id) && r.IsActive)
+            && subject.Permissions.Any(p => roleIds.Contains(p.RoleId) && p.TenantId == subject.TenantId && p.PermissionCode == permissionCode);
     }
 
-    public void Invalidate(TenantId tenantId, Guid membershipId)
-    {
-        lock (gate) foreach (var key in cache.Keys.Where(key => key.TenantId == tenantId && key.MembershipId == membershipId).ToArray()) cache.Remove(key);
-    }
+    // Authorization subjects are loaded from the authoritative store for each request. Keeping no process-wide decision cache prevents role, assignment, and lifecycle changes from remaining effective after a revocation.
+    public void Invalidate(TenantId tenantId, Guid membershipId) { }
 }

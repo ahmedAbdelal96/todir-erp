@@ -19,6 +19,10 @@ public sealed class EffectiveAccessSecurityIntegrationTests : DatabaseIntegratio
     {
         var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
             ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for the effective access security test.");
+        var runtimeConnectionString = Environment.GetEnvironmentVariable("TODIR_DATABASE_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_DATABASE_CONNECTION for the effective access security test.");
+        var originalAppPassword = new NpgsqlConnectionStringBuilder(runtimeConnectionString).Password;
+        if (string.IsNullOrWhiteSpace(originalAppPassword)) throw new InvalidOperationException("TODIR_DATABASE_CONNECTION must include the runtime password for restoration.");
 
         var appPassword = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
         var tenant = TenantId.New();
@@ -187,6 +191,13 @@ public sealed class EffectiveAccessSecurityIntegrationTests : DatabaseIntegratio
             Assert.Equal("Disabled", moduleStatuses.GetProperty("pos").GetString());
             Assert.Equal("ReadOnly", moduleStatuses.GetProperty("inventory").GetString());
             Assert.Equal("Active", moduleStatuses.GetProperty("banking").GetString());
+
+            // The legacy permission projection must use the active roles in the current session scope as well;
+            // an inactive admin role must never turn into a wildcard permission for the frontend.
+            var permissionsResponse = await client.GetAsync("/api/v1/authorization/permissions");
+            Assert.Equal(HttpStatusCode.OK, permissionsResponse.StatusCode);
+            var permissions = await permissionsResponse.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.DoesNotContain("*", permissions.EnumerateArray().Select(permission => permission.GetString()));
         }
         finally
         {
@@ -206,6 +217,7 @@ public sealed class EffectiveAccessSecurityIntegrationTests : DatabaseIntegratio
                 reset role;
             ";
             await ExecuteAsync(admin, cleanupSql);
+            await ExecuteAsync(admin, $"alter role erp_app password '{originalAppPassword.Replace("'", "''", StringComparison.Ordinal)}';");
         }
     }
 

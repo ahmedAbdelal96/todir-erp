@@ -419,8 +419,23 @@ public static class PlatformHostingExtensions
             if (!Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId) || !Guid.TryParse(context.User.FindFirstValue("membership_id"), out var membershipId)) return Results.Unauthorized();
             var subject = await subjectStore.LoadAsync(new(tenantId), membershipId, cancellationToken);
             if (subject is null) return Results.Forbid();
-            var isSuper = subject.Roles.Any(r => r.Code is "administrator" or "admin");
-            var perms = subject.Permissions.Select(p => p.PermissionCode).Distinct().ToList();
+            var scope = Guid.TryParse(context.User.FindFirstValue("branch_id"), out var branchId) && Guid.TryParse(context.User.FindFirstValue("legal_entity_id"), out var entityId)
+                ? PermissionScope.ForBranch(new(tenantId), new(entityId), new(branchId))
+                : Guid.TryParse(context.User.FindFirstValue("legal_entity_id"), out entityId)
+                    ? PermissionScope.ForLegalEntity(new(tenantId), new(entityId))
+                    : PermissionScope.ForTenant(new(tenantId));
+            var roleIdsInScope = subject.Assignments
+                .Where(a => a.TenantId == subject.TenantId && a.Scope.Contains(scope))
+                .Select(a => a.RoleId)
+                .ToHashSet();
+            var activeRolesInScope = subject.Roles.Where(r => roleIdsInScope.Contains(r.Id) && r.IsActive).ToList();
+            var isSuper = activeRolesInScope.Any(r => r.Code is "administrator" or "admin");
+            var activeRoleIds = activeRolesInScope.Select(r => r.Id).ToHashSet();
+            var perms = subject.Permissions
+                .Where(p => p.TenantId == subject.TenantId && activeRoleIds.Contains(p.RoleId) && (isSuper || (p.PermissionCode != "*" && p.PermissionCode != "admin")))
+                .Select(p => p.PermissionCode)
+                .Distinct()
+                .ToList();
             if (isSuper) perms.Add("*");
             return Results.Ok(perms);
         }).RequireAuthorization();

@@ -22,8 +22,8 @@ export function PurchasingMatchingPage(): React.JSX.Element {
   const legalEntityId = outletCtx?.legalEntityId ?? contextEntityId ?? "";
 
   const permissions = useOptionalPermissions();
-  const hasPriceReadPermission = permissions ? permissions.hasPermission("purchasing.price.read") : true;
-  const hasMatchOverridePermission = permissions ? permissions.hasPermission("purchasing.match.override") : true;
+  const hasPriceReadPermission = Boolean(permissions?.hasPermission("purchasing.price.read"));
+  const hasMatchOverridePermission = Boolean(permissions?.hasPermission("purchasing.match.override"));
 
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [matchOrderId, setMatchOrderId] = useState<string | null>(null);

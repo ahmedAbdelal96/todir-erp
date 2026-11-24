@@ -25,7 +25,7 @@ export function PurchasingReceiptsPage(): React.JSX.Element {
   const legalEntityId = outletCtx?.legalEntityId ?? contextEntityId ?? "";
 
   const permissions = useOptionalPermissions();
-  const hasPriceReadPermission = permissions ? permissions.hasPermission("purchasing.price.read") : true;
+  const hasPriceReadPermission = Boolean(permissions?.hasPermission("purchasing.price.read"));
 
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [receiveOrderId, setReceiveOrderId] = useState<string | null>(null);
