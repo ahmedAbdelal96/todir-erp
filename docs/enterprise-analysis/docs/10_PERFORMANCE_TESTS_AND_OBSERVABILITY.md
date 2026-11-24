@@ -71,3 +71,7 @@ Each release report requires: exact commit SHA, env config (sanitized), DB datas
 ## 7. Guard against overengineering
 
 Do not provision DWH, cache cluster, Kafka, vector DB, GPU, Kubernetes node group, Python model-serving API or separate RabbitMQ vhost by default. They are allowed **only if one measured gate cannot be satisfied** within current architecture, and ADR records evidence, price, failure and rollback.
+# P0 evidence supplement
+
+The disposable harness was inspected but not executed. See [`P0-02_OPERATIONAL_BASELINE.md`](../evidence/p0/P0-02_OPERATIONAL_BASELINE.md); no latency, throughput, query-plan, queue-lag, or regression number is approved or claimed.
+

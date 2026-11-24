@@ -91,3 +91,7 @@
 ## Decision authority
 
 Product owner decides business value and workflow changes, with design and engineering challenge. Finance owners decide official calculation semantics, security defines access, performance engineering certifies SLO baselines, architecture owner approves ADR/module graph; no agent can silently override these responsibilities. Unresolved **Critical** risks block implementation of affected slice, not discovery or documentation.
+# P0 evidence supplement
+
+The current risk register and P1 decision brief are maintained in [`P0-06_ARCHITECTURE_RISK_REGISTER.md`](../evidence/p0/P0-06_ARCHITECTURE_RISK_REGISTER.md) and [`P0-08_P1_DECISION_BRIEF.md`](../evidence/p0/P0-08_P1_DECISION_BRIEF.md).
+

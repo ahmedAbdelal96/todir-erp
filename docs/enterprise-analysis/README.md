@@ -3,12 +3,14 @@
 **Version:** 0.9 + audit correction — Architecture/Product design baseline; **NOT approved for implementation**  
 **Prepared:** 2026-11-22  
 **Reference branch:** `dev`  
-**Audit source commit:** `e26de6f6192fdcf7a28802150c53cf124a5cb771` (audited locally on 2026-11-24)  
+**Audit source commit:** `e9f7626953daf4c7cd426a49199dfd46fde69a8c` (audited locally on 2026-11-24)  
 **Audience:** Product Owner, ERP Architect, Backend/DB, Frontend, Security, Performance, QA, implementation agents.
 
 > **ما هذه الحزمة؟** مجموعة مواصفات مرتبة لتنفيذ تحليلات الأعمال والتوصيات داخل ToDir، مع الحفاظ على أداء ووظائف ERP الحالية. هذه وثائق تصميم لا تعني أن أي جداول أو APIs أو Worker جديد قد تم إنشاؤه. لم تُجر اختبارات runtime/benchmark في إعداد هذه الحزمة.
 
 > **نتيجة التدقيق:** تم تدقيق الحزمة مقابل `dev` الحالي وتصحيح الفهرسة والنسخة المكررة وبعض الحدود المعمارية. النتيجة **REQUIRES_CORRECTIONS**: لا يبدأ P2 قبل إغلاق قرارات طبقة الموديول/الـWorker، وإثبات عقود القراءة والبيانات الزمنية، وقياس خط أساس الأداء. راجع [تقرير التدقيق](AUDIT_REPORT_2026-11-24.md).
+
+> **نتيجة P0:** `P0_PARTIALLY_VERIFIED`. اكتملت مراجعة المصدر والعقود والحدود، لكن baseline التشغيلي لم يُقَس لأن Docker API رفض الاتصال في بيئة التنفيذ. راجع [فهرس أدلة P0](evidence/p0/README.md).
 
 ## القرارات التي نقلناها من متطلبات صاحب المنتج [USER-LOCKED]
 
@@ -45,7 +47,7 @@
 | `docs/17_PER_ANALYSIS_SPECIFICATION_TEMPLATE.md` | قالب تفصيلي إلزامي قبل تنفيذ تحليل جديد في أي موديول |
 | `docs/18_IMPLEMENTATION_STRUCTURE_MODULE_MAP.md` | هيكل الكود والـDI وعقود التكامل وتسلسل تنفيذ أول Slice |
 
-تقرير التدقيق الحالي هو `AUDIT_REPORT_2026-11-24.md` ويُقرأ بعد `README.md` وقبل الوثائق المرقمة. وهو سجل تدقيق، وليس مصدر متطلبات بديلًا. أما `reference/` فيحتوي تقارير تاريخية أو نسخًا مجمعة غير معيارية لأغراض المقارنة فقط.
+تقرير التدقيق الحالي هو `AUDIT_REPORT_2026-11-24.md` ويُقرأ بعد `README.md` وقبل الوثائق المرقمة. أدلة P0 الحالية موجودة في `evidence/p0/` ويجب قراءتها قبل أي P1/P2 قرار. التقرير والأدلة سجلات تحقق، وليسا مصدر متطلبات بديلًا. أما `reference/` فيحتوي تقارير تاريخية أو نسخًا مجمعة غير معيارية لأغراض المقارنة فقط.
 
 ## وضع الملفات داخل مستودع ToDir لاحقًا
 
@@ -54,7 +56,7 @@
 ## قواعد استخدام الحزمة
 
 - **ORDER:** ابدأ بمرحلة Discovery + baseline؛ ثم Architecture ADR/product sign-off؛ ثم Core foundation؛ ثم Pilot موثق؛ ثم التوسع. لا تقفز من الفكرة إلى تنفيذ كل الموديولات.
-- **SOURCES:** نتائج التدقيق مبنية على `e26de6f6192fdcf7a28802150c53cf124a5cb771` محليًا، مع وجود تغييرات عمل غير ملتزم بها في المستودع. عند التنفيذ يجب إعادة مراجعة `origin/dev` الحالي ومقارنة الفروقات؛ الوثائق لا تدّعي أن اختبارًا أو benchmark تم تشغيله.
+- **SOURCES:** نتائج P0 مبنية على `e9f7626953daf4c7cd426a49199dfd46fde69a8c` محليًا والمطابق لـ`origin/dev` وقت التحقق. لا تدّعي الوثائق تشغيل benchmark؛ سبب عدم القياس موثق في `evidence/p0/P0-02_OPERATIONAL_BASELINE.md`.
 - **STATUS:** `USER-LOCKED` = متطلب صريح؛ `EXISTING-VERIFIED` = ظهر من قراءة ملفات repo؛ `PROPOSED-ADR` = قرار هندسي مرشح يحتاج اعتماد؛ `TO-VERIFY` = لا يجوز افتراضه قبل الاختبار؛ `BLOCKED` = متوقف على prerequisite محدد؛ `DEFERRED` = مؤجل عمدًا؛ `FUTURE` = خارج النسخة الأولى.
 - **OWNERSHIP:** الـERP يملك العمليات والحقائق؛ صاحب الموديول يملك عقود قراءته؛ Analysis يملك عمليات التحليل والنتائج والتوصيات فقط.
 - **NAMING:** أسماء الـUI عربية من واقع العمل؛ أسماء الـAPIs التقنية تصف المورد/الوظيفة، ولا تُفرض تسمية «AI» في كل endpoint.

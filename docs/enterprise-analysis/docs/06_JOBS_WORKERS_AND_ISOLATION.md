@@ -89,3 +89,7 @@ A persistent background job does **not** retain perpetual user privilege. Decide
 - Feature flag/entitlement gate rollout of analysis routes and creation; disable new jobs without editing operational workflows.
 - Rollback worker/app binaries without deleting historical runs. Forward-only remedial migration for schema problems, never destructive rollback on live financial datasets.
 - Runbook covers drain, pause, resume, retry, dead-letter diagnostics, tenant job concurrency and stale evidence remediation.
+# P0 evidence supplement
+
+See [`P0-04_WORKER_RUNTIME_ISOLATION.md`](../evidence/p0/P0-04_WORKER_RUNTIME_ISOLATION.md) for verified current Worker composition and the unresolved host/isolation boundary.
+

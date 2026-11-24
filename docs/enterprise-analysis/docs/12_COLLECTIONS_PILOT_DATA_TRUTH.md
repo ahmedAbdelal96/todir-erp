@@ -121,3 +121,7 @@ Sum eligible completed receipt allocations linked to payment source, explicitly 
 - Useful recommendation rules with explicit source evidence and review states; no false causal claim.
 - No material operational performance regression under mixed workload, plus security/RLS/permission gates.
 - Customer review confirms decision value; failing pilot triggers alternative comparison, not inflated claims.
+# P0 evidence supplement
+
+Collections remains `PROPOSED / NOT APPROVED`. The source-grounded gaps around portfolio reads, payment/bank timing, allocation, and temporal reconstruction are recorded in [`P0-03_SOURCE_OWNERSHIP_AND_DATA_TRUTH.md`](../evidence/p0/P0-03_SOURCE_OWNERSHIP_AND_DATA_TRUTH.md).
+

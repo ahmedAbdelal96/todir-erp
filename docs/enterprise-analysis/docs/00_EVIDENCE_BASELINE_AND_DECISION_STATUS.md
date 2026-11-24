@@ -4,7 +4,7 @@
 
 ## Snapshot and review methodology
 
-Source of evidence: local `dev` at `e26de6f6192fdcf7a28802150c53cf124a5cb771`, audited on 2026-11-24. The worktree was not clean: the pre-existing changes are listed in the audit report and were not modified by this documentation task. The review covered the master blueprints, current module manifests, contracts, selected backend service/repository code, frontend destination registry/routes, Worker/API composition, messaging/scheduling, performance harness, Subledger/Payments schema excerpts, and the supplied historical reviews. **This is a focused architecture/documentation audit, not a codebase-wide correctness certification.** Code evidence ≠ exercised behavior/production readiness.
+Source of evidence: local `dev` at `e9f7626953daf4c7cd426a49199dfd46fde69a8c`, audited on 2026-11-24. The worktree matched `origin/dev` before the P0 evidence files were added. The review covered the master blueprints, current module manifests, contracts, selected backend service/repository code, frontend destination registry/routes, Worker/API composition, messaging/scheduling, performance harness, Subledger/Payments schema excerpts, and the supplied historical reviews. **This is a focused architecture/documentation audit, not a codebase-wide correctness certification.** Code evidence ≠ exercised behavior/production readiness.
 
 | ID | Finding | Evidence | Class | Consequence |
 |---|---|---|---|---|
@@ -57,3 +57,7 @@ Base URL `https://github.com/ahmedAbdelal96/todir-erp/blob/e26de6f6192fdcf7a2880
 5. Independent reviewer suggestions / other AI opinions are evidence to assess, never authority.
 
 If sources conflict: **stop the affected slice, record the exact conflict, propose a measured choice and ADR; do not silently rewrite production behavior.**
+# P0 evidence supplement
+
+The current repository-grounded discovery is recorded in [`evidence/p0/README.md`](../evidence/p0/README.md). Its exit is `P0_PARTIALLY_VERIFIED`: static evidence is complete, while the disposable operational baseline and runtime isolation proof remain unmeasured because Docker API access was denied.
+
