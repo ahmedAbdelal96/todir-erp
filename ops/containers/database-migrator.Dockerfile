@@ -9,9 +9,9 @@ RUN set -eux; \
     mkdir -p /app/runtime-backend/backend/Core /app/runtime-backend/backend/Modules /app/runtime-backend/backend/DbMigrator; \
     cp backend/Core/module.manifest.json /app/runtime-backend/backend/Core/module.manifest.json; \
     for manifest in backend/Modules/*/module.manifest.json; do \
-        module="$$(basename "$$(dirname "$$manifest")")"; \
-        mkdir -p "/app/runtime-backend/backend/Modules/$$module"; \
-        cp "$$manifest" "/app/runtime-backend/backend/Modules/$$module/module.manifest.json"; \
+        module="$(basename "$(dirname "$manifest")")"; \
+        mkdir -p "/app/runtime-backend/backend/Modules/$module"; \
+        cp "$manifest" "/app/runtime-backend/backend/Modules/$module/module.manifest.json"; \
     done; \
     cp -R backend/DbMigrator/Database /app/runtime-backend/backend/DbMigrator/Database
 
