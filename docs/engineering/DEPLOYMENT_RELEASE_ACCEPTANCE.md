@@ -10,6 +10,8 @@ The release boundary owns immutable API, Worker, Migrator, and Web artifacts; mi
 
 - Forwarded headers use the reserved staging reverse-proxy IP through `TODIR_TRUSTED_PROXY_ADDRESSES`; the API rejects malformed addresses and mutually exclusive address/CIDR configuration. Terraform assigns the same static IP only to the Web container.
 - MinIO bootstrap no longer masks policy or user failures. It explicitly verifies existing policy/user state, attaches the bucket policy, and authenticates with the application identity before succeeding.
+- API and Worker image restore stages now copy the complete backend project graph before restore, so newly referenced modules cannot be omitted by a stale hand-maintained `COPY` list.
+- The DbMigrator image now packages the complete canonical Database directory and every Core/Modules manifest discovered by the migrator. The Web image runs as the unprivileged `nginx` user with a writable temporary PID path and stdout/stderr logging.
 - Deployment and rollback runbooks now require commit-SHA plus digest-pinned images, dedicated Migrator execution, compatibility checks, application-only rollback, and sanitized evidence.
 
 ## Evidence after the corrections
@@ -19,11 +21,12 @@ The release boundary owns immutable API, Worker, Migrator, and Web artifacts; mi
 - Disposable MinIO bootstrap: private-files access succeeded; out-of-scope bucket access and wrong application credentials were rejected.
 - Existing platform gates before this deployment-only correction remain documented in [Infrastructure Security Acceptance](INFRASTRUCTURE_SECURITY_ACCEPTANCE.md): Architecture `23/23`, Security `7/7`, Seed/Migration `5/5`, RabbitMQ `2/2`.
 - Terraform formatting, MinIO shell parsing, and repository release-gate controls (`73`) pass.
+- Docker BuildKit syntax checks for API, Worker, DbMigrator, and Web pass with no warnings. Full immutable image builds remain unverified because the local Docker disk has only about 0.20 GB free; the task-owned API build attempt was stopped before completion and its build cache was removed. No release image was produced or accepted.
 
 ## Remaining mandatory gates
 
 - OpenTofu provider initialization/validation/plan against a uniquely named disposable staging stack. The Docker Terraform image could not download the provider because the local certificate chain rejected the GitHub release endpoint; certificate verification must remain enabled.
-- Immutable image build, digest capture, vulnerability scanning, and secret scanning with available supported tools. Local `tofu`, `trivy`, `gitleaks`, `syft`, and `grype` are not installed; unavailable scanners cannot be reported as passed.
+- Immutable image build, digest capture, vulnerability scanning, and secret scanning with available supported tools. Local `tofu`, `trivy`, `gitleaks`, `syft`, and `grype` are not installed; unavailable scanners cannot be reported as passed. The image build also requires additional disposable Docker disk before it can be verified.
 - Real Version A → Version B upgrade, controlled bad-release detection, compatible application-only rollback, incompatible migration rollback refusal/forward-fix, Worker/RabbitMQ recovery, RLS/authorization smoke, and evidence retention.
 
 Until these gates run successfully on isolated infrastructure, the exact final declaration is intentionally withheld.

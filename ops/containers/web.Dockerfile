@@ -12,3 +12,6 @@ RUN apk upgrade --no-cache
 COPY ops/containers/web.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/frontend/dist /usr/share/nginx/html
 EXPOSE 8080
+USER nginx
+ENTRYPOINT ["nginx"]
+CMD ["-g", "daemon off; pid /tmp/nginx.pid; error_log /dev/stderr warn;"]
