@@ -29,13 +29,14 @@ public sealed class DailyFileLoggingTests
             builder.Services.AddObservability("Observability.Test", "Test");
             var app = builder.Build();
             app.UseCorrelation();
-            app.MapGet("/probe", () => Results.Ok(new { status = "ok" }));
+            app.MapGet("/probe/{requestId}", (string requestId) => Results.Ok(new { status = "ok", requestId }));
             await app.StartAsync();
 
             using var client = app.GetTestClient();
             var correlationId = Guid.CreateVersion7().ToString("D");
             client.DefaultRequestHeaders.Add("X-Correlation-Id", correlationId);
-            var response = await client.GetAsync("/probe");
+            const string sensitiveRequestId = "customer-email@example.test";
+            var response = await client.GetAsync($"/probe/{sensitiveRequestId}");
             response.EnsureSuccessStatusCode();
             ExpectedError(app.Services.GetRequiredService<ILogger<DailyFileLoggingTests>>(), null);
 
@@ -56,6 +57,8 @@ public sealed class DailyFileLoggingTests
             Assert.Contains("Observability.Test", applicationContent, StringComparison.Ordinal);
             Assert.Contains("\"environment\":\"Test\"", applicationContent, StringComparison.Ordinal);
             Assert.Contains("HTTP request completed", applicationContent, StringComparison.Ordinal);
+            Assert.DoesNotContain(sensitiveRequestId, applicationContent, StringComparison.Ordinal);
+            Assert.Contains("probe/{requestId}", applicationContent, StringComparison.Ordinal);
 
             foreach (var file in files)
                 foreach (var line in await File.ReadAllLinesAsync(file))

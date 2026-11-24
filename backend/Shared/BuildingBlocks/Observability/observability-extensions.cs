@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry.Trace;
 using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using Serilog;
 
 namespace Shared.BuildingBlocks.Observability;
@@ -31,17 +32,28 @@ public static class ObservabilityExtensions
             var options = provider.GetRequiredService<DailyFileLoggingOptions>();
             DailyFileLoggerConfiguration.Configure(logger, options);
         });
+        var otlpEndpoint = Environment.GetEnvironmentVariable("TODIR_OTEL_EXPORTER_OTLP_ENDPOINT");
         services.AddOpenTelemetry()
-            .WithTracing(tracing => tracing
-                .AddSource("Todir.Request")
-                .AddSource("Core.Handler")
-                .AddSource("Core.Database")
-                .AddSource("Subledger")
-                .AddSource("Npgsql")
-                .AddAspNetCoreInstrumentation())
+            .ConfigureResource(resource => resource
+                .AddService(service)
+                .AddAttributes([new KeyValuePair<string, object>("deployment.environment.name", environment)]))
+            .WithTracing(tracing =>
+            {
+                tracing
+                    .AddSource("Todir.Request")
+                    .AddSource("Core.Handler")
+                    .AddSource("Core.Database")
+                    .AddSource("Subledger")
+                    .AddSource("Npgsql")
+                    .AddAspNetCoreInstrumentation();
+                if (!string.IsNullOrWhiteSpace(otlpEndpoint)) tracing.AddOtlpExporter(exporter => exporter.Endpoint = new Uri(otlpEndpoint));
+            })
             .WithMetrics(metrics => metrics
                 .AddMeter(CoreMetrics.Meter.Name)
+                .AddMeter("Todir.Platform.Cache")
+                .AddMeter("Todir.Worker")
                 .AddMeter("Subledger")
+                .AddMeter("Npgsql")
                 .AddAspNetCoreInstrumentation()
                 .AddPrometheusExporter());
         return services;
@@ -95,6 +107,36 @@ public static class CoreMetrics
     }
 }
 
+public static class WorkerMetrics
+{
+    public static readonly Meter Meter = new("Todir.Worker", "1.0.0");
+    public static readonly Counter<long> CycleFailures = Meter.CreateCounter<long>("todir.worker.cycle.failures", "{cycle}");
+    public static readonly Counter<long> MessagesProcessed = Meter.CreateCounter<long>("todir.worker.messages.processed", "{message}");
+    private static long lastCycleStartedUnixSeconds;
+    private static long lastCycleSucceededUnixSeconds;
+
+    public static readonly ObservableGauge<double> CycleAge = Meter.CreateObservableGauge(
+        "todir.worker.cycle.age",
+        () => CycleAgeSeconds,
+        "s");
+    public static readonly ObservableGauge<double> SuccessfulCycleAge = Meter.CreateObservableGauge(
+        "todir.worker.successful_cycle.age",
+        () => SuccessfulCycleAgeSeconds,
+        "s");
+
+    public static double CycleAgeSeconds => AgeSeconds(lastCycleStartedUnixSeconds);
+    public static double SuccessfulCycleAgeSeconds => AgeSeconds(lastCycleSucceededUnixSeconds);
+
+    public static void MarkCycleStarted() => Interlocked.Exchange(ref lastCycleStartedUnixSeconds, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+    public static void MarkCycleSucceeded() => Interlocked.Exchange(ref lastCycleSucceededUnixSeconds, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+    public static void MarkCycleFailed() => CycleFailures.Add(1);
+    public static void MarkMessageProcessed() => MessagesProcessed.Add(1);
+
+    private static double AgeSeconds(long timestamp) => timestamp <= 0
+        ? double.PositiveInfinity
+        : Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - timestamp);
+}
+
 public sealed record ObservabilityOptions(string Service, string Environment, bool SqlCommandMeasurementEnabled = false);
 
 internal sealed class CorrelationMiddleware(RequestDelegate next, Microsoft.Extensions.Logging.ILogger<CorrelationMiddleware> logger, ObservabilityOptions options)
@@ -125,7 +167,8 @@ internal sealed class CorrelationMiddleware(RequestDelegate next, Microsoft.Exte
         using var spanScope = LogContextScope.Push("span_id", Activity.Current?.SpanId.ToString());
         using var correlationScope = LogContextScope.Push("correlation_id", correlationId);
         using var moduleScope = LogContextScope.Push("module", ResolveModule(context.Request.Path));
-        using var operationScope = LogContextScope.Push("operation", $"{context.Request.Method} {context.Request.Path}");
+        var endpoint = context.GetEndpoint()?.DisplayName ?? "unmatched";
+        using var operationScope = LogContextScope.Push("operation", $"{context.Request.Method} {endpoint}");
         var started = Stopwatch.GetTimestamp();
         try
         {
@@ -134,7 +177,6 @@ internal sealed class CorrelationMiddleware(RequestDelegate next, Microsoft.Exte
         finally
         {
             var duration = Stopwatch.GetElapsedTime(started).TotalSeconds;
-            var endpoint = context.GetEndpoint()?.DisplayName ?? "unmatched";
             var statusClass = $"{context.Response.StatusCode / 100}xx";
             var tags = new TagList { { "method", context.Request.Method }, { "endpoint", endpoint }, { "status_class", statusClass } };
             CoreMetrics.HttpRequests.Add(1, tags);
@@ -142,7 +184,7 @@ internal sealed class CorrelationMiddleware(RequestDelegate next, Microsoft.Exte
             RequestCompleted(
                 logger,
                 context.Request.Method,
-                context.Request.Path.Value ?? "/",
+                endpoint,
                 context.Response.StatusCode,
                 Math.Round(duration * 1000, 2),
                 null);

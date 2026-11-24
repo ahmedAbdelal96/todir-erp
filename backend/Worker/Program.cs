@@ -28,10 +28,20 @@ using Modules.Quality;
 using Modules.FixedAssets.Controllers;
 using Quartz;
 using Shared.BuildingBlocks.Observability;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddRepositoryConfiguration(builder.Environment.ContentRootPath, builder.Environment.EnvironmentName);
 builder.Services.AddObservability(builder.Environment.ApplicationName, builder.Environment.EnvironmentName);
+var metricsEnabled = builder.Configuration.GetValue<bool>("TODIR_WORKER_METRICS_ENABLED");
+builder.WebHost.UseUrls(metricsEnabled
+    ? builder.Configuration["TODIR_WORKER_METRICS_URL"] ?? "http://127.0.0.1:5081"
+    : "http://127.0.0.1:0");
 var connectionString = builder.Configuration.GetRuntimeConnectionString();
 if (!string.IsNullOrWhiteSpace(connectionString))
     await DatabaseReadiness.WaitForPlatformSchemaAsync(connectionString, CancellationToken.None);
@@ -113,4 +123,37 @@ builder.Services.AddHostedService<FinanceBaseRateSyncWorker>();
 builder.Services.AddHostedService<PricingScheduledActivationWorker>();
 builder.Services.AddHostedService<InventoryReservationExpiryWorker>();
 builder.Services.AddHostedService<ServiceMaintenanceWorker>();
-await builder.Build().RunAsync();
+WorkerMetrics.MarkCycleStarted();
+var app = builder.Build();
+app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
+app.MapGet("/health/ready", () => WorkerMetrics.CycleAgeSeconds <= 30 && WorkerMetrics.SuccessfulCycleAgeSeconds <= 30
+    ? Results.Ok(new { status = "ready" })
+    : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
+if (metricsEnabled)
+{
+    app.Use(async (context, next) =>
+    {
+        if (!context.Request.Path.Equals("/internal/metrics", StringComparison.OrdinalIgnoreCase))
+        {
+            await next(context);
+            return;
+        }
+
+        var configuredToken = builder.Configuration["TODIR_METRICS_TOKEN"];
+        var suppliedToken = context.Request.Headers.Authorization.ToString();
+        var authorized = !string.IsNullOrWhiteSpace(configuredToken)
+            ? CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes($"Bearer {configuredToken}"),
+                Encoding.UTF8.GetBytes(suppliedToken))
+            : context.Connection.RemoteIpAddress is not null && IPAddress.IsLoopback(context.Connection.RemoteIpAddress);
+        if (!authorized)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        await next(context);
+    });
+    app.MapPrometheusScrapingEndpoint("/internal/metrics");
+}
+await app.RunAsync();

@@ -1,73 +1,112 @@
 groups:
-  - name: kernel-platform
+  - name: platform-availability
     rules:
-      - alert: OutboxBacklogAgeHigh
-        expr: todir_outbox_oldest_pending_age_seconds > 300
-        for: 5m
-        labels:
-          severity: critical
-        annotations:
-          summary: Transactional outbox backlog is older than five minutes.
-      - alert: WorkerUnavailable
-        expr: up{service="worker"} == 0
+      - alert: ApiUnavailable
+        expr: absent(up{job="api"}) or up{job="api"} == 0
         for: 2m
         labels:
           severity: critical
         annotations:
-          summary: Background worker is unavailable.
+          summary: API metrics target is unavailable.
+          runbook: docs/runbooks/observability.md
+
+      - alert: WorkerUnavailable
+        expr: absent(up{job="worker"}) or up{job="worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Worker metrics target is unavailable.
+          runbook: docs/runbooks/worker-outage.md
+
+      - alert: WorkerStalled
+        expr: todir_worker_successful_cycle_age_seconds{job="worker"} > 60
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Worker process is reachable but has not completed a cycle recently.
+          runbook: docs/runbooks/worker-outage.md
+
       - alert: ApiErrorRateHigh
-        expr: sum(rate(todir_http_requests_total{status_class="5xx"}[5m])) / sum(rate(todir_http_requests_total[5m])) > 0.05
+        expr: sum(rate(todir_http_requests_total{job="api",status_class="5xx"}[5m])) > 0 and (sum(rate(todir_http_requests_total{job="api",status_class="5xx"}[5m])) / clamp_min(sum(rate(todir_http_requests_total{job="api"}[5m])), 0.001)) > 0.05
         for: 5m
         labels:
           severity: warning
         annotations:
           summary: API server error rate exceeded five percent.
-      - alert: BackupLastSuccessTooOld
-        expr: todir_backup_age_seconds > 86400
-        for: 15m
-        labels:
-          severity: critical
-        annotations:
-          summary: The latest verified backup is older than the configured one-day local policy window.
-      - alert: BackupVerificationMissing
-        expr: time() - todir_backup_last_verified_timestamp_seconds > 86400
-        for: 15m
-        labels:
-          severity: critical
-        annotations:
-          summary: A successful backup has not completed independent verification within the policy window.
-      - alert: BackupFailureDetected
-        expr: increase(todir_backup_failures_total[15m]) > 0
+          runbook: docs/runbooks/observability.md
+
+      - alert: OutboxBacklogAgeHigh
+        expr: todir_outbox_oldest_pending_age_seconds{job="worker"} > 300
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: A scheduled backup failed; do not report a false-success backup.
-      - alert: WalArchiveLagHigh
-        expr: todir_wal_archive_lag_seconds > 300
+          summary: Transactional outbox backlog is older than five minutes.
+          runbook: docs/runbooks/outbox-backlog.md
+
+      - alert: RedisFailureRateHigh
+        expr: sum(rate(todir_cache_failures_total{job="api"}[5m])) > 0
         for: 5m
         labels:
-          severity: critical
+          severity: warning
         annotations:
-          summary: WAL archive lag is above the configured five-minute warning threshold.
-      - alert: BackupRepositoryUnavailable
-        expr: todir_backup_repository_available == 0
-        for: 5m
-        labels:
-          severity: critical
-        annotations:
-          summary: The backup repository is unavailable.
-      - alert: BackupRepositoryCapacityLow
-        expr: todir_backup_repository_free_bytes < 10737418240
+          summary: Redis cache failures are forcing PostgreSQL fallback.
+          runbook: docs/runbooks/redis-operations.md
+
+  - name: data-protection-telemetry
+    rules:
+      - alert: DataProtectionTelemetryUnavailable
+        expr: absent(up{job="data-protection"}) or up{job="data-protection"} == 0
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: Backup repository free capacity is below ten GiB.
+          summary: No configured data-protection metrics source is available; backup health is unknown.
+          runbook: docs/runbooks/observability.md
+
+      - alert: BackupLastSuccessTooOld
+        expr: time() - todir_backup_last_verified_timestamp_seconds{job="data-protection"} > 86400
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: The latest independently verified backup is older than one day.
+          runbook: docs/runbooks/database-restore.md
+
+      - alert: BackupVerificationMissing
+        expr: absent(todir_backup_last_verified_timestamp_seconds{job="data-protection"})
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: No independently verified backup timestamp is available.
+          runbook: docs/runbooks/database-restore.md
+
+      - alert: BackupFailureDetected
+        expr: increase(todir_backup_failures_total{job="data-protection"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: A configured backup source reported a failure.
+          runbook: docs/runbooks/database-restore.md
+
+      - alert: WalTelemetryUnavailable
+        expr: absent(todir_wal_archive_lag_seconds{job="data-protection"})
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: WAL archive lag is unknown because no provider-specific metric source is configured.
+          runbook: docs/runbooks/database-restore.md
+
       - alert: RestoreDrillOverdue
-        expr: time() - todir_restore_drill_last_success_timestamp_seconds > 2592000
+        expr: time() - todir_restore_drill_last_success_timestamp_seconds{job="data-protection"} > 2592000
         for: 30m
         labels:
           severity: warning
         annotations:
-          summary: No successful recovery drill has been recorded within the configured 30-day policy window.
+          summary: No successful recovery drill has been recorded within thirty days.
+          runbook: docs/runbooks/database-restore.md

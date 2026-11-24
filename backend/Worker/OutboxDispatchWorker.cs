@@ -18,9 +18,18 @@ public sealed class OutboxDispatchWorker(
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            try { await DrainAsync(stoppingToken); }
+            WorkerMetrics.MarkCycleStarted();
+            try
+            {
+                await DrainAsync(stoppingToken);
+                WorkerMetrics.MarkCycleSucceeded();
+            }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
-            catch (Exception exception) { DispatchFailure(logger, exception); }
+            catch (Exception exception)
+            {
+                WorkerMetrics.MarkCycleFailed();
+                DispatchFailure(logger, exception);
+            }
             await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
         }
     }
@@ -64,6 +73,7 @@ public sealed class OutboxDispatchWorker(
                 mark.Parameters.AddWithValue(message.MessageId);
                 await mark.ExecuteNonQueryAsync(cancellationToken);
                 CoreMetrics.OutboxPublished.Add(1, new KeyValuePair<string, object?>("source_module", message.SourceModule));
+                WorkerMetrics.MarkMessageProcessed();
             }
             catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {

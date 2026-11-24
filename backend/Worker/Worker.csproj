@@ -4,6 +4,7 @@
     <RootNamespace>Worker</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="MassTransit.RabbitMQ" />
     <PackageReference Include="Npgsql" />
     <ProjectReference Include="../Core/Core.csproj" />

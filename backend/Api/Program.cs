@@ -171,6 +171,24 @@ app.MapGet("/health/ready", async (IServiceProvider services, CancellationToken 
         return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
     }
 });
+if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("TODIR_OBSERVABILITY_TEST_FAILURE_ENABLED"))
+{
+    app.MapGet("/internal/observability/test-failure", (HttpContext context) =>
+    {
+        if (context.Connection.RemoteIpAddress is null || !IPAddress.IsLoopback(context.Connection.RemoteIpAddress))
+            return Results.NotFound();
+
+        var expectedToken = builder.Configuration["TODIR_OBSERVABILITY_TEST_TOKEN"];
+        var suppliedToken = context.Request.Headers.Authorization.ToString();
+        if (string.IsNullOrWhiteSpace(expectedToken)
+            || !CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes($"Bearer {expectedToken}"),
+                Encoding.UTF8.GetBytes(suppliedToken)))
+            return Results.NotFound();
+
+        return Results.Problem(statusCode: StatusCodes.Status500InternalServerError, title: "Controlled observability test failure");
+    });
+}
 if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("TODIR_ENABLE_ACCEPTANCE_DIAGNOSTICS"))
 {
     var expectedToken = builder.Configuration["TODIR_ACCEPTANCE_DIAGNOSTIC_TOKEN"];
@@ -219,7 +237,33 @@ if (app.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("TOD
         });
     }
 }
-if (builder.Configuration.GetValue<bool>("TODIR_METRICS_ENABLED")) app.MapPrometheusScrapingEndpoint("/internal/metrics");
+if (builder.Configuration.GetValue<bool>("TODIR_METRICS_ENABLED"))
+{
+    app.Use(async (context, next) =>
+    {
+        if (!context.Request.Path.Equals("/internal/metrics", StringComparison.OrdinalIgnoreCase))
+        {
+            await next(context);
+            return;
+        }
+
+        var configuredToken = builder.Configuration["TODIR_METRICS_TOKEN"];
+        var suppliedToken = context.Request.Headers.Authorization.ToString();
+        var authorized = !string.IsNullOrWhiteSpace(configuredToken)
+            ? CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes($"Bearer {configuredToken}"),
+                Encoding.UTF8.GetBytes(suppliedToken))
+            : context.Connection.RemoteIpAddress is not null && IPAddress.IsLoopback(context.Connection.RemoteIpAddress);
+        if (!authorized)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        await next(context);
+    });
+    app.MapPrometheusScrapingEndpoint("/internal/metrics");
+}
 app.MapCore();
 app.MapSampleModule();
 app.MapDirectoryModule();

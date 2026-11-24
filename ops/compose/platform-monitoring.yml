@@ -1,0 +1,41 @@
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports: ["127.0.0.1:19090:9090"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - monitoring-prometheus-data:/prometheus
+    secrets: [metrics_token]
+    depends_on: [alertmanager]
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager"]
+    ports: ["127.0.0.1:19093:9093"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ../monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - monitoring-alertmanager-data:/alertmanager
+
+  tracing:
+    image: jaegertracing/all-in-one:1.57
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:16686:16686"
+      - "127.0.0.1:14317:4317"
+      - "127.0.0.1:14318:4318"
+
+volumes:
+  monitoring-prometheus-data:
+  monitoring-alertmanager-data:
+
+secrets:
+  metrics_token:
+    file: ../../artifacts/monitoring/metrics-token

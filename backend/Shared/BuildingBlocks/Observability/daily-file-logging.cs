@@ -117,7 +117,11 @@ internal static class DailyFileLoggerConfiguration
     {
         configuration
             .MinimumLevel.Is(options.MinimumLevel)
+            // Framework request diagnostics include raw URLs. The correlation middleware emits a normalized route template instead.
+            .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft.AspNetCore.Routing", LogEventLevel.Warning)
             .Enrich.FromLogContext()
+            .Enrich.With<PrivacyRedactionEnricher>()
             .Enrich.WithProperty("service", options.Service)
             .Enrich.WithProperty("environment", options.Environment)
             .Enrich.With<DailyLogDateEnricher>()
@@ -161,6 +165,16 @@ internal static class DailyFileLoggerConfiguration
                     shared: true);
             },
             sinkMapCountLimit: 3);
+    }
+}
+
+internal sealed class PrivacyRedactionEnricher : Serilog.Core.ILogEventEnricher
+{
+    private static readonly string[] RequestProperties = ["Path", "PathBase", "RequestPath", "QueryString"];
+
+    public void Enrich(LogEvent logEvent, Serilog.Core.ILogEventPropertyFactory propertyFactory)
+    {
+        foreach (var property in RequestProperties) logEvent.RemovePropertyIfPresent(property);
     }
 }
 
