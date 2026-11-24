@@ -5,6 +5,7 @@ import { QualityStatusBadge } from "../components/quality-status-badge.tsx";
 import { QualityNoScopePrompt } from "../components/quality-no-scope-prompt.tsx";
 import { QualityPaginationBar } from "../components/quality-pagination-bar.tsx";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
+import { useQualityAccess } from "../hooks/use-quality-access.ts";
 import { useQualityCertificates } from "../hooks/use-quality-queries.ts";
 import { useKeysetPagination } from "../hooks/use-keyset-pagination.ts";
 import { Button } from "../../../components/primitives/button.tsx";
@@ -17,6 +18,7 @@ import {
 export function QualityCertificatesPage(): React.JSX.Element {
   const { t } = useTranslation("quality");
   const { legalEntityId, isReady } = useQualityScope();
+  const { isReadOnly, canManageCertificates } = useQualityAccess();
 
   const [isIssueOpen, setIsIssueOpen] = useState(false);
   const [selectedCertificateId, setSelectedCertificateId] = useState<string | null>(null);
@@ -49,7 +51,11 @@ export function QualityCertificatesPage(): React.JSX.Element {
         title={t("navigation.certificates", "شهادات التحليل والمطابقة (COA)")}
         subtitle={t("tabs.certificates", "شهادات التحليل والمطابقة (COA)")}
         primaryAction={
-          <Button variant="primary" onPress={() => setIsIssueOpen(true)}>
+          <Button
+            variant="primary"
+            isDisabled={!canManageCertificates || isReadOnly}
+            onPress={() => setIsIssueOpen(true)}
+          >
             + {t("actions.issueCertificate", "إصدار شهادة جودة (COA/COC)")}
           </Button>
         }

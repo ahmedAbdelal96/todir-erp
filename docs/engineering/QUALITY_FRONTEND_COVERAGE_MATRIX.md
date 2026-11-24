@@ -26,26 +26,30 @@
 | **QF-14** | Non-Conformance Reports (NCR) & Containment | Quality Supervisor | `/quality/ncrs` (Tab: NCRs) | `GET/POST /api/v1/quality/ncrs`, `/containment` | `quality.ncr.manage` | Yes | Unit + E2E | `14-ncrs-containment-actions.png` | **PASS** |
 | **QF-15** | Corrective & Preventive Action (CAPA) with 6M | Quality Manager | `/quality/capas` | `GET/POST /api/v1/quality/capas`, `/actions`, `/root-cause` | `quality.capa.manage` | Yes | Unit + E2E | `15-capa-root-cause-investigation.png` | **PASS** |
 | **QF-16** | Supplier Quality, SCAR Queue, and COA/COC | Supplier Quality Lead | `/quality/suppliers`, `/quality/certificates` | `PUT /supplier-profiles`, `POST /scars`, `POST /certificates` | `quality.supplier.manage`, `quality.certificate.manage` | Yes | Unit + E2E | `16-supplier-quality-scar-certificates.png` | **PASS** |
+| **QF-17** | Multi-Viewport & Arabic/English Responsive | All Quality Users | `/quality` | RTL Arabic & LTR English layout, tablet (768px), mobile (375px) | Platform Core | Yes | E2E | `17-multi-viewport-rtl-ltr.png` | **PASS** |
+| **QF-18** | Granular Authorization & Read-Only Protection | Auditor / Restricted | `/quality/*` | `useQualityAccess` granular capability checks & lifecycle locks | `quality.read` + Granular | Yes | E2E | `18-permission-lifecycle-protection.png` | **PASS** |
 
 ---
 
 ## 2. Real-Stack Evidence Index
 
-All 16 visual artifacts have been generated through real-stack Playwright execution against the live PostgreSQL-backed TODIR ERP backend:
+All 18 visual artifacts have been generated through real-stack Playwright execution against the live PostgreSQL-backed TODIR ERP backend:
 
-1. `01-quality-overview.png`: High-contrast Oxford Navy shell, 3-headline KPI ribbon (`#0284c7`, `#d97706`, `#dc2626`), and quick priority queues.
+1. `01-quality-overview.png`: High-contrast Oxford Navy shell, 3-headline KPI ribbon (`#0284c7`, `#d97706`, `#dc2626`), scoped labels ("في طابور العمل المباشر"), and quick priority queues.
 2. `02-quality-plans-register.png`: Quality Plans register, active version status badges, and plan creation modal trigger.
 3. `03-quality-characteristics-catalog.png`: Characteristic specifications catalog with quantitative target limits and qualitative standards.
 4. `04-quality-sampling-plans.png`: Sampling plans register displaying AQL sampling tables, normal/tightened inspection levels.
 5. `05-quality-inspections-queue.png`: Operational inspection work queue filtered by status (`Pending`, `InProgress`, `Passed`, `Failed`) and event type.
-6. `06-inspection-workbench-active.png`: Deep inspection workbench (`/quality/inspections/:id`) with characteristic-by-characteristic entry.
+6. `06-inspection-workbench-active.png`: Deep inspection workbench (`/quality/inspections/:id`) with characteristic-by-characteristic entry and frozen plan snapshot.
 7. `07-inspection-evaluation-completed.png`: Conformance evaluation with pass/fail decision recording and inspector assignment.
 8. `08-inspection-domain-invariant-warning.png`: Prominent system warning banner: *"Passed != Released"* (نجاح الفحص لا يعني الإفراج التلقائي عن المخزون).
 9. `09-reinspection-workflow.png`: Reinspection trigger and linked parent-inspection cycle history.
 10. `10-material-holds-restrictions.png`: Active hold restrictions register with initial, released, and remaining quantity accounting.
 11. `11-partial-quantity-release-dialog.png`: Partial release modal enforcing remaining balance validation and operational release logging.
-12. `12-quality-dispositions-mrb.png`: Material Review Board (MRB) dispositions queue with technical decision tracking (`UseAsIs`, `Rework`, `Scrap`, `SupplierReturn`).
+12. `12-quality-dispositions-mrb.png`: Material Review Board (MRB) dispositions queue with source hold banner and technical decision tracking (`UseAsIs`, `Rework`, `Scrap`, `SupplierReturn`).
 13. `13-quality-issues-log.png`: Quality issues log categorized by source, severity, and defect classification.
 14. `14-ncrs-containment-actions.png`: Non-Conformance Report (NCR) lifecycle with immediate containment action tracking.
-15. `15-capa-root-cause-investigation.png`: CAPA workflow with Ishikawa 6M (Man, Machine, Material, Method, Measurement, Environment) root cause logging and action tracking.
+15. `15-capa-root-cause-investigation.png`: CAPA workflow with Ishikawa 6M root cause logging and action tracking.
 16. `16-supplier-quality-scar-certificates.png`: Supplier quality profiles, SCAR dispute workflows, and Certificate of Analysis (COA/COC) issuance register.
+17. `17-multi-viewport-rtl-ltr.png`: Responsive verification on Desktop (1440px), Tablet (768px), Mobile (375px), and English LTR alignment.
+18. `18-permission-lifecycle-protection.png`: Granular RBAC permission enforcement and lifecycle ReadOnly locks preventing unauthorized mutation.

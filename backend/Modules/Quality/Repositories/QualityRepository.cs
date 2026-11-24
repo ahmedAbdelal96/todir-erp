@@ -400,7 +400,7 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
     public async Task<QualityRestrictionView> CreateRestrictionAsync(TenantId tenant, Guid actor, CreateRestrictionRequest request, Guid legalEntityId, CancellationToken ct)
     {
         if (request.RestrictionType is not ("QualityHold" or "Quarantine" or "Blocked" or "ReturnsInspection")) throw new QualityException("quality.restriction_type_invalid");
-        var hasOwnerScope = request.ProductVariantId is not null || request.WarehouseId is not null || request.Quantity is not null;
+        var hasOwnerScope = request.ProductVariantId is not null || request.WarehouseId is not null;
         if (hasOwnerScope && (request.ProductVariantId is null || request.WarehouseId is null || request.Quantity is not > 0m || request.UnitOfMeasureId is null))
             throw new QualityException("quality.owner_scope_incomplete");
         if (hasOwnerScope && inventoryCapability is null) throw new QualityException("quality.inventory_capability_unavailable");
@@ -449,7 +449,7 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
         var claim = await coordinator.ExecuteAsync(tenant, async (context, token) =>
         {
             var row = await ReadSingleAsync(context, "select legal_entity_id,restriction_type,status,reason_code,product_variant_id,warehouse_id,location_id,lot_id,serial_id,inspection_id,quantity,created_at,released_at,owner_execution_status,inventory_operation_id,released_quantity from business_quality.quality_restriction where tenant_id=$1 and id=$2 for update", token, tenant.Value, id) ?? throw new QualityException("quality.restriction_not_found");
-            var hasOwnerScope = row[4] is not DBNull || row[5] is not DBNull || row[10] is not DBNull;
+            var hasOwnerScope = row[4] is not DBNull || row[5] is not DBNull;
             object[]? existing = null;
             if (hasOwnerScope)
             {
@@ -465,7 +465,12 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
             if ((string)row[2] != "Active") throw new QualityException("quality.restriction_not_active");
             if (!hasOwnerScope)
             {
-                await ExecuteAsync(context, "update business_quality.quality_restriction set status='Released',released_by=$3,released_at=now(),release_reason=$4 where tenant_id=$1 and id=$2 and status='Active'", token, tenant.Value, id, actor, request.Reason.Trim());
+                var currentReleased = row[15] is DBNull ? 0m : (decimal)row[15];
+                var totalQty = row[10] is DBNull ? (decimal?)null : (decimal)row[10];
+                var relQty = request.Quantity ?? (totalQty.HasValue ? totalQty.Value - currentReleased : 0m);
+                var newReleased = currentReleased + relQty;
+                var newStatus = (totalQty.HasValue && newReleased < totalQty.Value) ? "Active" : "Released";
+                await ExecuteAsync(context, "update business_quality.quality_restriction set status=$3,released_quantity=$4,released_by=$5,released_at=case when $3='Released' then now() else released_at end,release_reason=$6 where tenant_id=$1 and id=$2 and status='Active'", token, tenant.Value, id, newStatus, newReleased, actor, request.Reason.Trim());
                 context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionReleasedV1", JsonSerializer.Serialize(new { restrictionId = id, reason = request.Reason }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
                 return ReleaseClaim.NonOwner(row);
             }
@@ -731,9 +736,93 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
         if (!valid) throw new QualityException("quality.plan_version_not_applicable");
         return versionId;
     }
+    public Task<object?> GetInspectionPlanSnapshotAsync(TenantId tenant, Guid inspectionId, CancellationToken ct) => coordinator.ExecuteAsync<object?>(tenant, async (context, token) =>
+    {
+        var row = await ReadSingleAsync(context, "select snapshot from business_quality.inspection_plan_snapshot where tenant_id=$1 and inspection_id=$2", token, tenant.Value, inspectionId);
+        if (row is null or [DBNull]) return null;
+        return (object?)JsonSerializer.Deserialize<JsonElement>(row[0].ToString()!);
+    }, ct);
+
     private static async Task<int> CalculateSampleSizeInContextAsync(ITransactionContext context, Guid tenant, Guid samplingId, decimal lot, CancellationToken token) { var row = await ReadSingleAsync(context, "select p.method,p.fixed_quantity,p.percentage from business_quality.sampling_plan_version v join business_quality.sampling_plan p on p.tenant_id=v.tenant_id and p.id=v.sampling_plan_id where v.tenant_id=$1 and v.id=$2", token, tenant, samplingId) ?? throw new QualityException("quality.sampling_plan_not_found"); return QualityRules.CalculateSampleSize((string)row[0] == "Aql" ? "Full" : (string)row[0], lot, row[1] is DBNull ? null : (decimal?)row[1], row[2] is DBNull ? null : (decimal?)row[2]); }
-    private static async Task<string> ReadPlanSnapshotAsync(ITransactionContext context, Guid tenant, Guid planVersionId, CancellationToken token) { var rows = new List<object>(); await using var command = Command(context, "select c.code,c.name,c.data_type,c.base_uom_code,pc.minimum,pc.maximum,pc.target,pc.allowed_values,pc.required,pc.evidence_required from business_quality.quality_plan_characteristic pc join business_quality.quality_characteristic c on c.tenant_id=pc.tenant_id and c.id=pc.characteristic_id where pc.tenant_id=$1 and pc.plan_version_id=$2 order by pc.sequence_no", tenant, planVersionId); await using var reader = await command.ExecuteReaderAsync(token); while (await reader.ReadAsync(token)) rows.Add(new { code = reader.GetString(0), name = reader.GetString(1), dataType = reader.GetString(2), uom = reader.IsDBNull(3) ? null : reader.GetString(3), minimum = reader.IsDBNull(4) ? (decimal?)null : reader.GetDecimal(4), maximum = reader.IsDBNull(5) ? (decimal?)null : reader.GetDecimal(5), target = reader.IsDBNull(6) ? null : reader.GetString(6), allowedValues = reader.IsDBNull(7) ? (JsonElement?)null : reader.GetFieldValue<JsonElement>(7), required = reader.GetBoolean(8), evidenceRequired = reader.GetBoolean(9) }); return JsonSerializer.Serialize(new { planVersionId, characteristics = rows }); }
-    private static async Task<InspectionView?> ReadInspectionAsync(ITransactionContext context, Guid tenant, Guid id, CancellationToken token) { var row = await ReadSingleAsync(context, "select id,legal_entity_id,number,event_type,state,decision_state,product_variant_id,source_document_id,production_order_id,production_operation_id,supplier_party_id,lot_quantity,sample_size,lot_reference,row_version from business_quality.inspection where tenant_id=$1 and id=$2", token, tenant, id); if (row is null) return null; var results = new List<InspectionResultView>(); await using var command = Command(context, "select id,characteristic_id,numeric_value,text_value,boolean_value,passed,uom_code,evidence_reference from business_quality.inspection_result where tenant_id=$1 and inspection_id=$2 order by recorded_at,id", tenant, id); await using var reader = await command.ExecuteReaderAsync(token); while (await reader.ReadAsync(token)) results.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetDecimal(2), reader.IsDBNull(3) ? null : reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetBoolean(4), reader.IsDBNull(5) ? null : reader.GetBoolean(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7))); return new InspectionView((Guid)row[0], (Guid)row[1], (string)row[2], (string)row[3], (string)row[4], (string)row[5], row[6] is DBNull ? null : (Guid)row[6], row[7] is DBNull ? null : (Guid)row[7], row[8] is DBNull ? null : (Guid)row[8], row[9] is DBNull ? null : (Guid)row[9], row[10] is DBNull ? null : (Guid)row[10], (decimal)row[11], (int)row[12], row[13] is DBNull ? null : (string)row[13], results, (long)row[14]); }
+    private static async Task<string> ReadPlanSnapshotAsync(ITransactionContext context, Guid tenant, Guid planVersionId, CancellationToken token)
+    {
+        var rows = new List<object>();
+        await using var command = Command(context, "select c.id,c.code,c.name,c.data_type,c.base_uom_code,pc.minimum,pc.maximum,pc.target,pc.allowed_values,pc.required,pc.evidence_required from business_quality.quality_plan_characteristic pc join business_quality.quality_characteristic c on c.tenant_id=pc.tenant_id and c.id=pc.characteristic_id where pc.tenant_id=$1 and pc.plan_version_id=$2 order by pc.sequence_no", tenant, planVersionId);
+        await using var reader = await command.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token)) rows.Add(new {
+            characteristicId = reader.GetGuid(0),
+            code = reader.GetString(1),
+            name = reader.GetString(2),
+            dataType = reader.GetString(3),
+            baseUomCode = reader.IsDBNull(4) ? null : reader.GetString(4),
+            minimum = reader.IsDBNull(5) ? (decimal?)null : reader.GetDecimal(5),
+            maximum = reader.IsDBNull(6) ? (decimal?)null : reader.GetDecimal(6),
+            target = reader.IsDBNull(7) ? null : reader.GetString(7),
+            allowedValues = reader.IsDBNull(8) ? (JsonElement?)null : reader.GetFieldValue<JsonElement>(8),
+            required = reader.GetBoolean(9),
+            evidenceRequired = reader.GetBoolean(10)
+        });
+        return JsonSerializer.Serialize(new { planVersionId, characteristics = rows });
+    }
+    private static async Task<InspectionView?> ReadInspectionAsync(ITransactionContext context, Guid tenant, Guid id, CancellationToken token)
+    {
+        var row = await ReadSingleAsync(context, "select id,legal_entity_id,number,event_type,state,decision_state,product_variant_id,source_document_id,production_order_id,production_operation_id,supplier_party_id,lot_quantity,sample_size,lot_reference,row_version,plan_version_id from business_quality.inspection where tenant_id=$1 and id=$2", token, tenant, id);
+        if (row is null) return null;
+        var results = new List<InspectionResultView>();
+        await using (var command = Command(context, "select id,characteristic_id,numeric_value,text_value,boolean_value,passed,uom_code,evidence_reference from business_quality.inspection_result where tenant_id=$1 and inspection_id=$2 order by recorded_at,id", tenant, id))
+        {
+            await using var reader = await command.ExecuteReaderAsync(token);
+            while (await reader.ReadAsync(token))
+                results.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetDecimal(2), reader.IsDBNull(3) ? null : reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetBoolean(4), reader.IsDBNull(5) ? null : reader.GetBoolean(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7)));
+        }
+
+        var planCharacteristics = new List<InspectionCharacteristicSnapshotView>();
+        var snapshotRow = await ReadSingleAsync(context, "select snapshot from business_quality.inspection_plan_snapshot where tenant_id=$1 and inspection_id=$2", token, tenant, id);
+        if (snapshotRow is not null && snapshotRow[0] is not DBNull)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(snapshotRow[0].ToString()!);
+                if (doc.RootElement.TryGetProperty("characteristics", out var charsElem) && charsElem.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var elem in charsElem.EnumerateArray())
+                    {
+                        var charId = elem.TryGetProperty("characteristicId", out var idProp) && idProp.TryGetGuid(out var g) ? g : Guid.Empty;
+                        var code = elem.TryGetProperty("code", out var cProp) ? cProp.GetString() ?? "" : "";
+                        var name = elem.TryGetProperty("name", out var nProp) ? nProp.GetString() ?? "" : "";
+                        var dataType = elem.TryGetProperty("dataType", out var dProp) ? dProp.GetString() ?? "Numeric" : "Numeric";
+                        var uom = elem.TryGetProperty("baseUomCode", out var uProp) ? uProp.GetString() : (elem.TryGetProperty("uom", out var u2Prop) ? u2Prop.GetString() : null);
+                        var min = elem.TryGetProperty("minimum", out var minProp) && minProp.ValueKind == JsonValueKind.Number ? (decimal?)minProp.GetDecimal() : null;
+                        var max = elem.TryGetProperty("maximum", out var maxProp) && maxProp.ValueKind == JsonValueKind.Number ? (decimal?)maxProp.GetDecimal() : null;
+                        var target = elem.TryGetProperty("target", out var tProp) ? tProp.GetString() : null;
+                        var allowed = elem.TryGetProperty("allowedValues", out var aProp) ? aProp.GetRawText() : null;
+                        var req = elem.TryGetProperty("required", out var rProp) && rProp.GetBoolean();
+                        var evReq = elem.TryGetProperty("evidenceRequired", out var erProp) && erProp.GetBoolean();
+                        planCharacteristics.Add(new(charId, code, name, dataType, uom, min, max, target, allowed, req, evReq));
+                    }
+                }
+            }
+            catch { }
+        }
+
+        if ((planCharacteristics.Count == 0 || planCharacteristics.Any(p => p.CharacteristicId == Guid.Empty)) && row[15] is not DBNull)
+        {
+            var pvid = (Guid)row[15];
+            var directChars = new List<InspectionCharacteristicSnapshotView>();
+            await using (var command = Command(context, "select c.id,c.code,c.name,c.data_type,c.base_uom_code,pc.minimum,pc.maximum,pc.target,pc.allowed_values::text,pc.required,pc.evidence_required from business_quality.quality_plan_characteristic pc join business_quality.quality_characteristic c on c.tenant_id=pc.tenant_id and c.id=pc.characteristic_id where pc.tenant_id=$1 and pc.plan_version_id=$2 order by pc.sequence_no", tenant, pvid))
+            {
+                await using var reader = await command.ExecuteReaderAsync(token);
+                while (await reader.ReadAsync(token))
+                    directChars.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetDecimal(6), reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.GetBoolean(9), reader.GetBoolean(10)));
+            }
+            if (directChars.Count > 0)
+            {
+                planCharacteristics = directChars;
+            }
+        }
+
+        return new InspectionView((Guid)row[0], (Guid)row[1], (string)row[2], (string)row[3], (string)row[4], (string)row[5], row[6] is DBNull ? null : (Guid)row[6], row[7] is DBNull ? null : (Guid)row[7], row[8] is DBNull ? null : (Guid)row[8], row[9] is DBNull ? null : (Guid)row[9], row[10] is DBNull ? null : (Guid)row[10], (decimal)row[11], (int)row[12], row[13] is DBNull ? null : (string)row[13], results, (long)row[14], planCharacteristics);
+    }
     private static HashSet<string> ParseAllowed(object? json) { if (json is null or DBNull) return new HashSet<string>(StringComparer.OrdinalIgnoreCase); try { var text = json is JsonElement element ? element.GetRawText() : json.ToString(); return JsonSerializer.Deserialize<HashSet<string>>(text!) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase); } catch { return new HashSet<string>(StringComparer.OrdinalIgnoreCase); } }
     private static async Task<object[]?> ReadSingleAsync(ITransactionContext context, string sql, CancellationToken token, params object?[] values) { await using var command = Command(context, sql, values); await using var reader = await command.ExecuteReaderAsync(token); return await reader.ReadAsync(token) ? Enumerable.Range(0, reader.FieldCount).Select(reader.GetValue).ToArray() : null; }
     private static async Task<T?> ScalarAsync<T>(ITransactionContext context, string sql, CancellationToken token, params object?[] values) { var value = await ScalarAsync(context, sql, token, values); return value is null or DBNull ? default : (T)value; }

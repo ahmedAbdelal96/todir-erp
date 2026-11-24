@@ -37,10 +37,13 @@ export const qualityEn = {
 
   kpi: {
     pendingInspections: "Pending Inspections",
+    pendingInspectionsScope: "In Active Queue",
     failedInspections: "Failed / Non-Conforming",
     activeHolds: "Active Material Holds",
+    activeHoldsScope: "Held Stock in Active Queue",
     pendingDispositions: "Pending Dispositions",
     openNcrs: "Open NCRs",
+    openNcrsScope: "Open Reports in Follow-up Queue",
     openCapas: "Active CAPAs",
     overdueScars: "Overdue SCARs"
   },
@@ -219,7 +222,14 @@ export const qualityEn = {
     required: "Required Characteristic",
     method: "Sampling Method",
     percentage: "Sampling Percentage (%)",
-    fixedQty: "Fixed Sample Quantity"
+    fixedQty: "Fixed Sample Quantity",
+    sourceHold: "Source Hold",
+    heldRemaining: "Eligible Held Balance",
+    target: "Target",
+    tolerance: "Tolerance Limits",
+    toleranceRange: "{{min}} to {{max}}",
+    evidenceRequired: "Evidence Required",
+    noInspectionLinked: "— No inspection linked (Optional) —"
   },
 
   severity: {
@@ -368,7 +378,14 @@ export const qualityEn = {
     scrapWarning: "Financial & Scrap Warning: Scrapping inventory generates a write-off ledger entry and permanently drops warehouse balances; this action cannot be undone.",
     keysetNav: "Server Navigation (Keyset)",
     registeredCharacteristicsCount: "{{count}} registered characteristic(s)",
-    awaitingMeasurement: "Awaiting measurement"
+    awaitingMeasurement: "Awaiting measurement",
+    frozenSnapshotActive: "Authoritative Frozen Plan Snapshot",
+    scopedQueueNotice: "Active Operational Queue"
+  },
+
+  validation: {
+    positiveQuantity: "Quantity must be greater than zero",
+    quantityExceedsHold: "Quantity exceeds available held balance ({{max}})"
   }
 };
 

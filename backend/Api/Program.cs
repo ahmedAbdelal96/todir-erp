@@ -77,13 +77,23 @@ builder.Services.AddCors(options => options.AddPolicy("web", policy =>
     if (configuredOrigins.Length == 0) policy.SetIsOriginAllowed(_ => false);
     else policy.WithOrigins(configuredOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
 }));
+var trustedProxyAddresses = (builder.Configuration["TODIR_TRUSTED_PROXY_ADDRESSES"] ?? string.Empty)
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 var trustedProxyNetworks = (builder.Configuration["TODIR_TRUSTED_PROXY_NETWORKS"] ?? string.Empty)
     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-if (trustedProxyNetworks.Length > 0)
+if (trustedProxyAddresses.Length > 0 && trustedProxyNetworks.Length > 0)
+    throw new InvalidOperationException("Configure either TODIR_TRUSTED_PROXY_ADDRESSES or TODIR_TRUSTED_PROXY_NETWORKS, not both.");
+if (trustedProxyAddresses.Length > 0 || trustedProxyNetworks.Length > 0)
 {
     builder.Services.Configure<ForwardedHeadersOptions>(options =>
     {
         options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        foreach (var address in trustedProxyAddresses)
+        {
+            if (!System.Net.IPAddress.TryParse(address, out var parsedAddress))
+                throw new InvalidOperationException("TODIR_TRUSTED_PROXY_ADDRESSES must contain valid IP addresses.");
+            options.KnownProxies.Add(parsedAddress);
+        }
         foreach (var network in trustedProxyNetworks)
         {
             if (!System.Net.IPNetwork.TryParse(network, out var parsedNetwork))
@@ -138,7 +148,7 @@ builder.Services.AddRateLimiter(options =>
 var app = builder.Build();
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 if (!app.Environment.IsDevelopment()) app.UseHsts();
-if (trustedProxyNetworks.Length > 0) app.UseForwardedHeaders();
+if (trustedProxyAddresses.Length > 0 || trustedProxyNetworks.Length > 0) app.UseForwardedHeaders();
 
 // Keep the approved order explicit: correlation, exception handling, security headers, endpoint.
 app.UseCorrelation();

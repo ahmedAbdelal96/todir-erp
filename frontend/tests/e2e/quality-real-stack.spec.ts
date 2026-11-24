@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { assertDisposableDatabase, assertApiDatabaseContext } from './quality-acceptance-guard.ts';
 
-const LOCAL_ARTIFACTS_DIR = path.resolve('artifacts/quality-acceptance/real-stack');
+const LOCAL_ARTIFACTS_DIR = path.resolve(__dirname, '../../../artifacts/quality-acceptance/real-stack');
 const AGENT_BRAIN_DIR = 'C:/Users/IT/.gemini/antigravity/brain/11ce24c9-e66d-46b8-95e8-fa43b74dced8/quality-acceptance/real-stack';
 
 const ATLAS_ENTITY_ID = 'aad8a34b-344c-9e5b-8d58-57f182fc6528';
@@ -90,6 +90,11 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     }, entityId);
   }
 
+  // Shared state across tests
+  let createdPlanId: string = '';
+  let createdInspectionId: string = '';
+  let createdHoldId: string = '';
+
   test('01 — Quality Overview & KPI Priority Ribbon', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginUser(page);
@@ -99,6 +104,9 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
 
     await expect(page.locator('[data-testid="quality-overview-page"]')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('[data-testid="quality-kpi-ribbon"]')).toBeVisible();
+
+    // Verify truthful queue scope label in KPI ribbon
+    await expect(page.locator('[data-testid="kpi-pending-inspections"]')).toContainText('في طابور العمل المباشر');
 
     await saveArtifact(page, '01-quality-overview.png');
   });
@@ -114,18 +122,29 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const createBtn = page.getByRole('button', { name: /إنشاء خطة جودة جديدة/i });
     await expect(createBtn).toBeVisible();
 
-    // Trigger Plan Creation Modal
+    const planCode = `QP-REAL-${Date.now().toString().slice(-4)}`;
     await createBtn.click();
+    await page.waitForTimeout(300);
+
     const planCodeInput = page.getByLabel(/الكود/i).or(page.locator('input[type="text"]').first());
-    await planCodeInput.fill(`QP-AUTOTEST-${Date.now().toString().slice(-4)}`);
+    await planCodeInput.fill(planCode);
     const planNameInput = page.getByLabel(/الاسم/i).or(page.locator('input[type="text"]').nth(1));
-    await planNameInput.fill('خطة فحص الجودة الآلية للتشغيل');
+    await planNameInput.fill('خطة فحص الجودة الآلية المعتمدة للتشغيل');
 
     const submitPlanBtn = page.getByRole('button', { name: /حفظ|إنشاء/i }).last();
-    if (await submitPlanBtn.isVisible()) {
-      await submitPlanBtn.click().catch(() => {});
-      await page.waitForTimeout(600);
-    }
+    await submitPlanBtn.click();
+
+    // Assert dialog closes
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    // Assert backend persistence via API
+    const plansRes = await page.request.get(`/api/v1/quality/plans?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(plansRes.ok()).toBeTruthy();
+    const plansData = await plansRes.json();
+    const persistedPlan = plansData.items.find((p: { code: string }) => p.code === planCode);
+    expect(persistedPlan).toBeDefined();
+    expect(persistedPlan.name).toBe('خطة فحص الجودة الآلية المعتمدة للتشغيل');
+    createdPlanId = persistedPlan.id;
 
     await saveArtifact(page, '02-quality-plans-register.png');
   });
@@ -139,20 +158,31 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
 
     // Switch to Characteristics tab
     await page.getByRole('button', { name: /خصائص الفحص/i }).click();
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(400);
 
     const createCharBtn = page.getByRole('button', { name: /إضافة خاصية فحص/i });
-    if (await createCharBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await createCharBtn.click();
-      const codeInput = page.locator('input[type="text"]').first();
-      await codeInput.fill(`QC-TEST-${Date.now().toString().slice(-4)}`);
-      const nameInput = page.locator('input[type="text"]').nth(1);
-      await nameInput.fill('فحص دقة الأبعاد والمقاومة');
+    await expect(createCharBtn).toBeVisible();
+    await createCharBtn.click();
+    await page.waitForTimeout(300);
 
-      const saveCharBtn = page.getByRole('button', { name: /حفظ|إضافة/i }).last();
-      await saveCharBtn.click().catch(() => {});
-      await page.waitForTimeout(600);
-    }
+    const charCode = `QC-DIM-${Date.now().toString().slice(-4)}`;
+    const codeInput = page.locator('input[type="text"]').first();
+    await codeInput.fill(charCode);
+    const nameInput = page.locator('input[type="text"]').nth(1);
+    await nameInput.fill('فحص دقة الأبعاد والمقاومة الميكانيكية');
+
+    const saveCharBtn = page.getByRole('button', { name: /حفظ|إضافة/i }).last();
+    await saveCharBtn.click();
+
+    // Assert dialog closes
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    // Assert backend persistence
+    const charsRes = await page.request.get(`/api/v1/quality/characteristics?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(charsRes.ok()).toBeTruthy();
+    const charsData = await charsRes.json();
+    const persistedChar = charsData.items.find((c: { code: string }) => c.code === charCode);
+    expect(persistedChar).toBeDefined();
 
     await saveArtifact(page, '03-quality-characteristics-catalog.png');
   });
@@ -166,7 +196,31 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
 
     // Switch to Sampling Plans tab
     await page.getByRole('button', { name: /خطط.*العينات|سحب العينات/i }).click();
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(400);
+
+    const createSamplingBtn = page.getByRole('button', { name: /إنشاء خطة عينات/i });
+    await expect(createSamplingBtn).toBeVisible();
+
+    await createSamplingBtn.click();
+    await page.waitForTimeout(300);
+
+    const samplingCode = `SP-AQL-${Date.now().toString().slice(-4)}`;
+    const codeInput = page.locator('input[type="text"]').first();
+    await codeInput.fill(samplingCode);
+    const nameInput = page.locator('input[type="text"]').nth(1);
+    await nameInput.fill('خطة سحب عينات الفحص الشامل المعتمدة');
+
+    const saveSamplingBtn = page.getByRole('button', { name: /حفظ|إنشاء/i }).last();
+    await saveSamplingBtn.click();
+
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    // Assert backend persistence
+    const samplingRes = await page.request.get(`/api/v1/quality/sampling-plans?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(samplingRes.ok()).toBeTruthy();
+    const samplingData = await samplingRes.json();
+    const persistedSampling = samplingData.items.find((s: { code: string }) => s.code === samplingCode);
+    expect(persistedSampling).toBeDefined();
 
     await saveArtifact(page, '04-quality-sampling-plans.png');
   });
@@ -182,18 +236,29 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const createInspBtn = page.getByRole('button', { name: /إنشاء أمر فحص جديد/i });
     await expect(createInspBtn).toBeVisible();
 
-    // Trigger Creation of a New Inspection
     await createInspBtn.click();
     await page.waitForTimeout(400);
 
+    const lotRef = `LOT-TX-${Date.now().toString().slice(-5)}`;
     const lotQtyInput = page.getByLabel(/حجم التشغيلة|كمية الدفعة/i).or(page.locator('input[type="number"]')).first();
     await lotQtyInput.fill('150');
     const lotRefInput = page.getByLabel(/رقم التشغيلة|اللوت/i).or(page.locator('input[type="text"]').last());
-    await lotRefInput.fill(`LOT-TX-${Date.now().toString().slice(-5)}`);
+    await lotRefInput.fill(lotRef);
 
     const saveInspBtn = page.getByRole('button', { name: /إنشاء أمر الفحص|حفظ/i }).last();
-    await saveInspBtn.click().catch(() => {});
-    await page.waitForTimeout(800);
+    await saveInspBtn.click();
+
+    // Assert dialog closes
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    // Assert backend persistence
+    const inspRes = await page.request.get(`/api/v1/quality/inspections?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(inspRes.ok()).toBeTruthy();
+    const inspData = await inspRes.json();
+    const persisted = inspData.items.find((i: { lotReference?: string; lotQuantity: number }) => i.lotQuantity === 150);
+    expect(persisted).toBeDefined();
+    expect(persisted.state).toBe('InProgress');
+    createdInspectionId = persisted.id;
 
     await saveArtifact(page, '05-quality-inspections-queue.png');
   });
@@ -202,41 +267,47 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginUser(page);
 
-    await page.goto('/quality/inspections');
-    await page.waitForLoadState('networkidle');
-
-    // Open first inspection workbench
-    const openLink = page.locator('a[data-testid^="inspection-workspace-link-"]').first();
-    await openLink.waitFor({ state: 'visible', timeout: 15000 });
-    await openLink.click();
+    expect(createdInspectionId).toBeTruthy();
+    await page.goto(`/quality/inspections/${createdInspectionId}`);
     await page.waitForLoadState('networkidle');
 
     await expect(page.locator('[data-testid="inspection-workspace-page"]')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('[data-testid="inspection-domain-invariant-notice"]')).toBeVisible();
 
-    // Verify characteristics table is present
     const charsTable = page.locator('[data-testid="inspection-characteristics-table"]');
-    if (await charsTable.isVisible().catch(() => false)) {
-      // Click measure button on first characteristic
-      const recordBtn = charsTable.getByRole('button', { name: /تسجيل القياس/i }).first();
-      if (await recordBtn.isVisible().catch(() => false) && !(await recordBtn.isDisabled().catch(() => true))) {
-        await recordBtn.click();
-        await page.waitForTimeout(400);
+    await expect(charsTable).toBeVisible({ timeout: 8000 });
 
-        const valInput = page.locator('input[type="number"]').first();
-        if (await valInput.isVisible().catch(() => false)) {
-          await valInput.fill('24.5');
-        }
+    // Record measurement on characteristic
+    const recordBtn = page.getByRole('button', { name: /تسجيل نتائج القياس|تسجيل القياس/i }).first();
+    await expect(recordBtn).toBeVisible();
+    await recordBtn.click();
+    await page.waitForTimeout(300);
 
-        const instrumentInput = page.locator('input[type="text"]').last();
-        if (await instrumentInput.isVisible().catch(() => false)) {
-          await instrumentInput.fill('CAL-GAUGE-01');
-        }
+    const valInput = page.locator('input[type="number"]').first();
+    await expect(valInput).toBeVisible();
+    await valInput.fill('24.5');
 
-        const saveResBtn = page.getByRole('button', { name: /تسجيل النتيجة|حفظ/i }).last();
-        await saveResBtn.click().catch(() => {});
-        await page.waitForTimeout(600);
-      }
+    const evidenceInput = page.locator('input[type="text"]').first();
+    if (await evidenceInput.isVisible()) {
+      await evidenceInput.fill('DOC-LAB-CERT-2026');
     }
+
+    const instrumentInput = page.locator('input[type="text"]').last();
+    if (await instrumentInput.isVisible()) {
+      await instrumentInput.fill('CAL-GAUGE-01');
+    }
+
+    const saveResBtn = page.getByRole('button', { name: /تسجيل النتيجة|حفظ/i }).last();
+    await saveResBtn.click();
+
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    // Assert backend persistence of inspection measurement
+    const detailRes = await page.request.get(`/api/v1/quality/inspections/${createdInspectionId}`);
+    expect(detailRes.ok()).toBeTruthy();
+    const detailData = await detailRes.json();
+    expect(detailData.results.length).toBeGreaterThan(0);
+    expect(detailData.results[0].numericValue).toBe(24.5);
 
     await saveArtifact(page, '06-inspection-workbench-active.png');
   });
@@ -245,32 +316,31 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginUser(page);
 
-    await page.goto('/quality/inspections');
-    await page.waitForLoadState('networkidle');
-
-    const openLink = page.locator('a[data-testid^="inspection-workspace-link-"]').first();
-    await openLink.waitFor({ state: 'visible', timeout: 15000 });
-    await openLink.click();
+    await page.goto(`/quality/inspections/${createdInspectionId}`);
     await page.waitForLoadState('networkidle');
 
     await expect(page.locator('[data-testid="inspection-workspace-page"]')).toBeVisible({ timeout: 15000 });
 
     const completeBtn = page.getByRole('button', { name: /إتمام واعتماد الفحص/i });
-    if (await completeBtn.isVisible().catch(() => false)) {
-      if (!(await completeBtn.isDisabled())) {
-        await completeBtn.click();
-        await page.waitForTimeout(400);
+    await expect(completeBtn).toBeVisible();
+    await completeBtn.click();
+    await page.waitForTimeout(300);
 
-        const notesInput = page.locator('input[type="text"]').last();
-        if (await notesInput.isVisible().catch(() => false)) {
-          await notesInput.fill('اعتماد الفحص المخبري والمطابقة القياسية');
-        }
-
-        const confirmBtn = page.getByRole('button', { name: /تأكيد واعتماد الإتمام|تأكيد/i }).last();
-        await confirmBtn.click().catch(() => {});
-        await page.waitForTimeout(600);
-      }
+    const notesInput = page.locator('input[type="text"]').last();
+    if (await notesInput.isVisible()) {
+      await notesInput.fill('اعتماد الفحص المخبري والمطابقة القياسية');
     }
+
+    const confirmBtn = page.getByRole('button', { name: /تأكيد واعتماد الإتمام|تأكيد/i }).last();
+    await confirmBtn.click();
+
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    // Assert backend completion
+    const detailRes = await page.request.get(`/api/v1/quality/inspections/${createdInspectionId}`);
+    expect(detailRes.ok()).toBeTruthy();
+    const detailData = await detailRes.json();
+    expect(detailData.state).toBe('Completed');
 
     await saveArtifact(page, '07-inspection-evaluation-completed.png');
   });
@@ -292,32 +362,30 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginUser(page);
 
-    await page.goto('/quality/inspections');
-    await page.waitForLoadState('networkidle');
-
-    const openLink = page.locator('a[data-testid^="inspection-workspace-link-"]').first();
-    await openLink.waitFor({ state: 'visible', timeout: 15000 });
-    await openLink.click();
+    await page.goto(`/quality/inspections/${createdInspectionId}`);
     await page.waitForLoadState('networkidle');
 
     await expect(page.locator('[data-testid="inspection-workspace-page"]')).toBeVisible({ timeout: 15000 });
 
     const reinspectBtn = page.getByRole('button', { name: /إعادة فحص/i });
-    if (await reinspectBtn.isVisible().catch(() => false)) {
-      if (!(await reinspectBtn.isDisabled())) {
-        await reinspectBtn.click();
-        await page.waitForTimeout(400);
+    await expect(reinspectBtn).toBeVisible();
+    await reinspectBtn.click();
+    await page.waitForTimeout(300);
 
-        const reasonInput = page.locator('input[type="text"]').last();
-        if (await reasonInput.isVisible().catch(() => false)) {
-          await reasonInput.fill('إعادة فحص دورة التحقق الفني');
-        }
+    const reasonInput = page.locator('input[type="text"]').last();
+    await expect(reasonInput).toBeVisible();
+    await reasonInput.fill('إعادة فحص دورة التحقق الفني بعد المعايرة');
 
-        const submitBtn = page.getByRole('button', { name: /تأكيد|حفظ/i }).last();
-        await submitBtn.click().catch(() => {});
-        await page.waitForTimeout(600);
-      }
-    }
+    const submitBtn = page.getByRole('button', { name: /تأكيد إعادة الفحص|تأكيد|حفظ/i }).last();
+    await submitBtn.click();
+
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    // Assert backend state: original inspection superseded
+    const detailRes = await page.request.get(`/api/v1/quality/inspections/${createdInspectionId}`);
+    expect(detailRes.ok()).toBeTruthy();
+    const detailData = await detailRes.json();
+    expect(detailData.state).toBe('Superseded');
 
     await saveArtifact(page, '09-reinspection-workflow.png');
   });
@@ -333,19 +401,30 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const createHoldBtn = page.getByRole('button', { name: /حظر واحتجاز الدفعة/i });
     await expect(createHoldBtn).toBeVisible();
 
-    // Create a new restriction
     await createHoldBtn.click();
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(300);
 
+    const reasonCode = `HOLD-QA-${Date.now().toString().slice(-4)}`;
     const reasonCodeInput = page.getByLabel(/كود وسبب الحظر/i).or(page.locator('input[type="text"]').last());
-    await reasonCodeInput.fill('HOLD-MANUAL-INSPECTION');
+    await reasonCodeInput.fill(reasonCode);
 
     const qtyInput = page.getByLabel(/الكمية المحتجزة/i).or(page.locator('input[type="number"]')).first();
-    await qtyInput.fill('75');
+    await qtyInput.fill('100');
 
     const submitHoldBtn = page.getByRole('button', { name: /تطبيق الحظر|حفظ/i }).last();
-    await submitHoldBtn.click().catch(() => {});
-    await page.waitForTimeout(600);
+    await submitHoldBtn.click();
+
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    // Assert backend persistence
+    const holdsRes = await page.request.get(`/api/v1/quality/restrictions?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(holdsRes.ok()).toBeTruthy();
+    const holdsData = await holdsRes.json();
+    const persistedHold = holdsData.items.find((h: { reasonCode: string }) => h.reasonCode === reasonCode);
+    expect(persistedHold).toBeDefined();
+    expect(persistedHold.quantity).toBe(100);
+    expect(persistedHold.status).toBe('Active');
+    createdHoldId = persistedHold.id;
 
     await saveArtifact(page, '10-material-holds-restrictions.png');
   });
@@ -359,59 +438,70 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
 
     // Click release button on active hold
     const releaseBtn = page.getByRole('button', { name: /إفراج مخزني/i }).first();
-    if (await releaseBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      if (!(await releaseBtn.isDisabled())) {
-        await releaseBtn.click();
-        await page.waitForTimeout(500);
+    await expect(releaseBtn).toBeVisible();
+    await releaseBtn.click();
+    await page.waitForTimeout(300);
 
-        const qtyInput = page.getByLabel(/كمية الإفراج/i).or(page.locator('input[type="number"]')).first();
-        if (await qtyInput.isVisible()) {
-          await qtyInput.fill('25');
-        }
+    const qtyInput = page.getByLabel(/كمية الإفراج/i).or(page.locator('input[type="number"]')).first();
+    await expect(qtyInput).toBeVisible();
+    await qtyInput.fill('25');
 
-        const reasonInput = page.getByLabel(/مبرر وأسباب الإفراج/i).or(page.locator('input[type="text"]').first());
-        if (await reasonInput.isVisible()) {
-          await reasonInput.fill('إفراج جزئي بعد استكمال الفحص المرحلي');
-        }
+    const reasonInput = page.getByLabel(/مبرر وأسباب الإفراج/i).or(page.locator('input[type="text"]').first());
+    await reasonInput.fill('إفراج جزئي بعد استكمال الفحص المرحلي');
 
-        const confirmReleaseBtn = page.getByRole('button', { name: /تأكيد الإفراج/i });
-        if (await confirmReleaseBtn.isVisible()) {
-          await confirmReleaseBtn.click().catch(() => {});
-          await page.waitForTimeout(600);
-        }
-      }
+    const confirmReleaseBtn = page.getByRole('button', { name: /تأكيد الإفراج|تأكيد/i }).last();
+    await confirmReleaseBtn.click();
+
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    // Assert backend release persistence
+    const holdsRes = await page.request.get(`/api/v1/quality/restrictions?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(holdsRes.ok()).toBeTruthy();
+    const holdsData = await holdsRes.json();
+    const releasedHold = holdsData.items.find((h: { id: string }) => h.id === createdHoldId);
+    if (releasedHold) {
+      expect(releasedHold.releasedQuantity).toBe(25);
     }
 
     await saveArtifact(page, '11-partial-quantity-release-dialog.png');
   });
 
-  test('12 — Dispositions Queue & MRB Technical Decisions', async ({ page }) => {
+  test('12 — Dispositions Queue & MRB Technical Decisions (Hold Source Preserved)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginUser(page);
 
-    await page.goto('/quality/dispositions');
+    await page.goto('/quality/restrictions');
     await page.waitForLoadState('networkidle');
 
-    await expect(page.locator('[data-testid="quality-dispositions-page"]')).toBeVisible({ timeout: 15000 });
-    const createDispBtn = page.getByRole('button', { name: /إصدار قرار فني/i });
-    await expect(createDispBtn).toBeVisible();
+    // Launch disposition directly from hold row
+    const dispRowBtn = page.getByRole('button', { name: /قرار فني/i }).first();
+    await expect(dispRowBtn).toBeVisible();
+    await dispRowBtn.click();
+    await page.waitForTimeout(300);
 
-    await createDispBtn.click();
-    await page.waitForTimeout(400);
+    // Verify source hold banner is rendered in dialog
+    await expect(page.locator('[data-testid="disposition-hold-source-banner"]')).toBeVisible();
 
     const reasonInput = page.getByLabel(/المبرر والأسباب الفنية/i).or(page.locator('input[type="text"]').last());
     await reasonInput.fill('قرار فني معتمد للاستخدام بالحالة الراهنة');
 
-    const qtyInput = page.getByLabel(/الكمية الخاضعة/i).or(page.locator('input[type="number"]')).first();
-    if (await qtyInput.isVisible()) {
-      await qtyInput.fill('25');
-    }
-
     const saveDispBtn = page.getByRole('button', { name: /^حفظ$|حفظ القرار كمسودة/i });
-    if (await saveDispBtn.isVisible().catch(() => false)) {
-      await saveDispBtn.click().catch(() => {});
-      await page.waitForTimeout(600);
-    }
+    await saveDispBtn.click();
+
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    // Assert backend disposition creation
+    const dispRes = await page.request.get(`/api/v1/quality/dispositions?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(dispRes.ok()).toBeTruthy();
+    const dispData = await dispRes.json();
+    const persistedDisp = dispData.items.find((d: { reason: string }) => d.reason.includes('قرار فني معتمد'));
+    expect(persistedDisp).toBeDefined();
+    expect(persistedDisp.state).toBe('Draft');
+
+    // Go to dispositions page to capture full queue
+    await page.goto('/quality/dispositions');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="quality-dispositions-page"]')).toBeVisible({ timeout: 15000 });
 
     await saveArtifact(page, '12-quality-dispositions-mrb.png');
   });
@@ -425,25 +515,31 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
 
     // Switch to Issues tab
     await page.getByRole('button', { name: /مشاكل الجودة|سجل المشاكل/i }).click();
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(400);
 
     const createIssueBtn = page.getByRole('button', { name: /تسجيل مشكلة جودة/i });
-    if (await createIssueBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await createIssueBtn.click();
-      await page.waitForTimeout(400);
+    await expect(createIssueBtn).toBeVisible();
+    await createIssueBtn.click();
+    await page.waitForTimeout(300);
 
-      const titleInput = page.locator('input[type="text"]').first();
-      await titleInput.fill('رصد تشققات مجهرية في دفعات السحب');
+    const issueTitle = `رصد تشققات مجهرية في دفعات السحب ${Date.now().toString().slice(-4)}`;
+    const titleInput = page.getByLabel(/عنوان المشكلة/i).or(page.locator('input[type="text"]').first());
+    await titleInput.fill(issueTitle);
 
-      const descInput = page.locator('input[type="text"]').nth(1);
-      if (await descInput.isVisible()) {
-        await descInput.fill('تجاوز نسبة التشقق السطحي الحد المسموح');
-      }
+    const descInput = page.locator('textarea').first();
+    await descInput.fill('تجاوز نسبة التشقق السطحي الحد المسموح هندسياً');
 
-      const saveIssueBtn = page.getByRole('button', { name: /حفظ|تسجيل/i }).last();
-      await saveIssueBtn.click().catch(() => {});
-      await page.waitForTimeout(600);
-    }
+    const saveIssueBtn = page.getByRole('button', { name: /حفظ|تسجيل/i }).last();
+    await saveIssueBtn.click();
+
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    // Assert backend persistence
+    const issueRes = await page.request.get(`/api/v1/quality/issues?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(issueRes.ok()).toBeTruthy();
+    const issueData = await issueRes.json();
+    const persisted = issueData.items.find((i: { title: string }) => i.title === issueTitle);
+    expect(persisted).toBeDefined();
 
     await saveArtifact(page, '13-quality-issues-log.png');
   });
@@ -460,19 +556,26 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await expect(createNcrBtn).toBeVisible();
 
     await createNcrBtn.click();
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(300);
 
-    const titleInput = page.locator('input[type="text"]').first();
-    await titleInput.fill('تقرير عدم مطابقة لشحنة قضبان الألومنيوم');
+    const ncrTitle = `تقرير عدم مطابقة لشحنة الألومنيوم ${Date.now().toString().slice(-4)}`;
+    const titleInput = page.getByLabel(/عنوان تقرير عدم المطابقة|عنوان/i).or(page.locator('input[type="text"]').first());
+    await titleInput.fill(ncrTitle);
 
-    const descInput = page.locator('input[type="text"]').nth(1);
-    if (await descInput.isVisible()) {
-      await descInput.fill('انحراف الأبعاد الهندسية عن المخطط الهندسي');
-    }
+    const descInput = page.locator('textarea').first();
+    await descInput.fill('انحراف الأبعاد الهندسية عن المخطط القياسي');
 
     const saveNcrBtn = page.getByRole('button', { name: /حفظ|فتح/i }).last();
-    await saveNcrBtn.click().catch(() => {});
-    await page.waitForTimeout(600);
+    await saveNcrBtn.click();
+
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    // Assert backend persistence
+    const ncrRes = await page.request.get(`/api/v1/quality/ncrs?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(ncrRes.ok()).toBeTruthy();
+    const ncrData = await ncrRes.json();
+    const persistedNcr = ncrData.items.find((n: { title: string }) => n.title === ncrTitle);
+    expect(persistedNcr).toBeDefined();
 
     await saveArtifact(page, '14-ncrs-containment-actions.png');
   });
@@ -489,19 +592,26 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await expect(createCapaBtn).toBeVisible();
 
     await createCapaBtn.click();
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(300);
 
-    const titleInput = page.locator('input[type="text"]').first();
-    await titleInput.fill('خطة تصحيحية لمنع انحراف المعايرة الحرارية');
+    const capaTitle = `خطة تصحيحية لمنع انحراف المعايرة الحرارية ${Date.now().toString().slice(-4)}`;
+    const titleInput = page.getByLabel(/عنوان طلب|عنوان/i).or(page.locator('input[type="text"]').first());
+    await titleInput.fill(capaTitle);
 
-    const problemInput = page.locator('input[type="text"]').nth(1);
-    if (await problemInput.isVisible()) {
-      await problemInput.fill('تذبذب درجات حرارة أفران المعالجة الحرارية');
-    }
+    const problemInput = page.locator('textarea').first();
+    await problemInput.fill('تذبذب درجات حرارة أفران المعالجة الحرارية خلال الوردية المسائية');
 
     const saveCapaBtn = page.getByRole('button', { name: /حفظ|فتح/i }).last();
-    await saveCapaBtn.click().catch(() => {});
-    await page.waitForTimeout(600);
+    await saveCapaBtn.click();
+
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    // Assert backend persistence
+    const capaRes = await page.request.get(`/api/v1/quality/capas?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(capaRes.ok()).toBeTruthy();
+    const capaData = await capaRes.json();
+    const persistedCapa = capaData.items.find((c: { title: string }) => c.title === capaTitle);
+    expect(persistedCapa).toBeDefined();
 
     await saveArtifact(page, '15-capa-root-cause-investigation.png');
   });
@@ -522,22 +632,75 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await expect(page.locator('[data-testid="quality-certificates-page"]')).toBeVisible({ timeout: 15000 });
 
     const issueCertBtn = page.getByRole('button', { name: /إصدار شهادة جودة/i });
-    if (await issueCertBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await issueCertBtn.click();
-      await page.waitForTimeout(400);
+    await expect(issueCertBtn).toBeVisible();
 
-      const custRef = page.getByLabel(/مرجع العميل/i).or(page.locator('input[type="text"]').last());
-      if (await custRef.isVisible()) {
-        await custRef.fill('PO-CUST-2026-990');
-      }
+    await issueCertBtn.click();
+    await page.waitForTimeout(300);
 
-      const saveCertBtn = page.getByRole('button', { name: /إصدار شهادة جودة|إصدار الشهادة|حفظ/i }).last();
-      if (await saveCertBtn.isVisible().catch(() => false)) {
-        await saveCertBtn.click().catch(() => {});
-        await page.waitForTimeout(600);
-      }
+    const custRef = page.getByLabel(/مرجع العميل/i).or(page.locator('input[type="text"]').last());
+    if (await custRef.isVisible()) {
+      await custRef.fill('PO-CUST-2026-990');
     }
 
+    const saveCertBtn = page.getByRole('button', { name: /إصدار شهادة جودة|إصدار الشهادة|حفظ/i }).last();
+    await saveCertBtn.click();
+
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    // Assert backend persistence
+    const certsRes = await page.request.get(`/api/v1/quality/certificates?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(certsRes.ok()).toBeTruthy();
+    const certsData = await certsRes.json();
+    expect(certsData.items.length).toBeGreaterThan(0);
+
     await saveArtifact(page, '16-supplier-quality-scar-certificates.png');
+  });
+
+  test('17 — Multi-Viewport & Arabic/English Responsive Verification', async ({ page }) => {
+    await loginUser(page);
+
+    // Tablet Viewport (768px)
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await page.goto('/quality');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="quality-overview-page"]')).toBeVisible();
+
+    // Mobile Viewport (375px)
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto('/quality');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="quality-overview-page"]')).toBeVisible();
+
+    // English LTR Verification
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.evaluate(() => {
+      localStorage.setItem('i18nextLng', 'en');
+    });
+    await page.goto('/quality');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="quality-overview-page"]')).toBeVisible();
+
+    // Restore Arabic
+    await page.evaluate(() => {
+      localStorage.setItem('i18nextLng', 'ar');
+    });
+
+    await saveArtifact(page, '17-multi-viewport-rtl-ltr.png');
+  });
+
+  test('18 — Permission & Lifecycle Guard Verification', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await loginUser(page);
+
+    // Verify operational access on plans page
+    await page.goto('/quality/plans');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('[data-testid="quality-plans-page"]')).toBeVisible();
+
+    // Verify primary actions are present and enabled for authorized admin
+    const createBtn = page.getByRole('button', { name: /إنشاء خطة جودة جديدة/i });
+    await expect(createBtn).toBeEnabled();
+
+    await saveArtifact(page, '18-permission-lifecycle-protection.png');
   });
 });

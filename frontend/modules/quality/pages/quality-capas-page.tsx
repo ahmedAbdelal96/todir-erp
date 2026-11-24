@@ -7,6 +7,7 @@ import { QualityPaginationBar } from "../components/quality-pagination-bar.tsx";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
 import { useQualityCapas } from "../hooks/use-quality-queries.ts";
 import { useKeysetPagination } from "../hooks/use-keyset-pagination.ts";
+import { useQualityAccess } from "../hooks/use-quality-access.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import {
@@ -19,6 +20,7 @@ import {
 export function QualityCapasPage(): React.JSX.Element {
   const { t } = useTranslation("quality");
   const { legalEntityId, isReady } = useQualityScope();
+  const { isReadOnly, canManageCapas } = useQualityAccess();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedCapaId, setSelectedCapaId] = useState<string | null>(null);
@@ -53,7 +55,11 @@ export function QualityCapasPage(): React.JSX.Element {
         title={t("navigation.capas", "الإجراءات التصحيحية والوقائية (CAPA)")}
         subtitle={t("tabs.capas", "الإجراءات التصحيحية والوقائية (CAPA)")}
         primaryAction={
-          <Button variant="primary" onPress={() => setIsCreateOpen(true)}>
+          <Button
+            variant="primary"
+            isDisabled={!canManageCapas || isReadOnly}
+            onPress={() => setIsCreateOpen(true)}
+          >
             + {t("actions.createCapa", "فتح طلب CAPA جديد")}
           </Button>
         }
@@ -78,48 +84,54 @@ export function QualityCapasPage(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {capas.map((c) => (
-                  <tr key={c.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <td style={{ padding: "10px 12px", fontWeight: 700, color: "#102a43" }}>{c.number}</td>
-                    <td style={{ padding: "10px 12px", color: "#475569" }}>{c.type}</td>
-                    <td style={{ padding: "10px 12px", color: "#1e293b" }}>{c.title}</td>
-                    <td style={{ padding: "10px 12px" }}>
-                      <QualityStatusBadge status={c.state} />
-                    </td>
-                    <td style={{ padding: "10px 12px", fontWeight: 600 }}>{c.openActionCount}</td>
-                    <td style={{ padding: "10px 12px" }}>
-                      <div style={{ display: "flex", gap: "6px" }}>
-                        <Button
-                          variant="primary"
-                          onPress={() => {
-                            setSelectedCapaId(c.id);
-                            setIsAddActionOpen(true);
-                          }}
-                        >
-                          + {t("actions.addAction", "تكليف بإجراء")}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onPress={() => {
-                            setSelectedCapaId(c.id);
-                            setIsAddRootCauseOpen(true);
-                          }}
-                        >
-                          🔍 {t("actions.addRootCause", "تحليل السبب (6M)")}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onPress={() => {
-                            setSelectedCapaId(c.id);
-                            setIsRecordEffectivenessOpen(true);
-                          }}
-                        >
-                          ✓ {t("actions.recordEffectiveness", "تقييم الفعالية")}
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {capas.map((c) => {
+                  const isClosed = c.state === "Closed";
+                  return (
+                    <tr key={c.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "10px 12px", fontWeight: 700, color: "#102a43" }}>{c.number}</td>
+                      <td style={{ padding: "10px 12px", color: "#475569" }}>{c.type}</td>
+                      <td style={{ padding: "10px 12px", color: "#1e293b" }}>{c.title}</td>
+                      <td style={{ padding: "10px 12px" }}>
+                        <QualityStatusBadge status={c.state} />
+                      </td>
+                      <td style={{ padding: "10px 12px", fontWeight: 600 }}>{c.openActionCount}</td>
+                      <td style={{ padding: "10px 12px" }}>
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <Button
+                            variant="primary"
+                            isDisabled={isClosed || !canManageCapas || isReadOnly}
+                            onPress={() => {
+                              setSelectedCapaId(c.id);
+                              setIsAddActionOpen(true);
+                            }}
+                          >
+                            + {t("actions.addAction", "تكليف بإجراء")}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            isDisabled={isClosed || !canManageCapas || isReadOnly}
+                            onPress={() => {
+                              setSelectedCapaId(c.id);
+                              setIsAddRootCauseOpen(true);
+                            }}
+                          >
+                            🔍 {t("actions.addRootCause", "تحليل السبب (6M)")}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            isDisabled={isClosed || !canManageCapas || isReadOnly}
+                            onPress={() => {
+                              setSelectedCapaId(c.id);
+                              setIsRecordEffectivenessOpen(true);
+                            }}
+                          >
+                            ✓ {t("actions.recordEffectiveness", "تقييم الفعالية")}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

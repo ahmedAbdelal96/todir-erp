@@ -5,6 +5,7 @@ import { QualityStatusBadge } from "../components/quality-status-badge.tsx";
 import { QualityNoScopePrompt } from "../components/quality-no-scope-prompt.tsx";
 import { QualityPaginationBar } from "../components/quality-pagination-bar.tsx";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
+import { useQualityAccess } from "../hooks/use-quality-access.ts";
 import {
   useQualityDispositions,
   useExecuteDisposition,
@@ -21,6 +22,7 @@ import {
 export function QualityDispositionsPage(): React.JSX.Element {
   const { t } = useTranslation("quality");
   const { legalEntityId, isReady } = useQualityScope();
+  const { isReadOnly, canManageDispositions } = useQualityAccess();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedDispositionId, setSelectedDispositionId] = useState<string | null>(null);
@@ -64,7 +66,11 @@ export function QualityDispositionsPage(): React.JSX.Element {
         subtitle={t("tabs.dispositions", "القرارات الفنية (MRB)")}
         showHoldBanner={true}
         primaryAction={
-          <Button variant="primary" onPress={() => setIsCreateOpen(true)}>
+          <Button
+            variant="primary"
+            isDisabled={!canManageDispositions || isReadOnly}
+            onPress={() => setIsCreateOpen(true)}
+          >
             + {t("actions.createDisposition", "إصدار قرار فني جديد")}
           </Button>
         }
@@ -89,9 +95,9 @@ export function QualityDispositionsPage(): React.JSX.Element {
               </thead>
               <tbody>
                 {dispositions.map((d) => {
-                  const canApprove = d.state === "Draft";
-                  const canExecute = d.state === "Approved" && d.ownerExecutionStatus !== "Confirmed";
-                  const canReconcile = d.ownerExecutionStatus === "Unknown";
+                  const canApprove = d.state === "Draft" && canManageDispositions && !isReadOnly;
+                  const canExecute = d.state === "Approved" && d.ownerExecutionStatus !== "Confirmed" && canManageDispositions && !isReadOnly;
+                  const canReconcile = d.ownerExecutionStatus === "Unknown" && canManageDispositions && !isReadOnly;
 
                   return (
                     <tr key={d.id} style={{ borderBottom: "1px solid #f1f5f9" }}>

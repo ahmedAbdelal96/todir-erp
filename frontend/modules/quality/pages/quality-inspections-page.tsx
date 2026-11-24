@@ -6,6 +6,7 @@ import { QualityStatusBadge } from "../components/quality-status-badge.tsx";
 import { QualityNoScopePrompt } from "../components/quality-no-scope-prompt.tsx";
 import { QualityPaginationBar } from "../components/quality-pagination-bar.tsx";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
+import { useQualityAccess } from "../hooks/use-quality-access.ts";
 import { useQualityInspections } from "../hooks/use-quality-queries.ts";
 import { useKeysetPagination } from "../hooks/use-keyset-pagination.ts";
 import { Button } from "../../../components/primitives/button.tsx";
@@ -16,6 +17,7 @@ import { CreateInspectionModal } from "../components/inspection-modals.tsx";
 export function QualityInspectionsPage(): React.JSX.Element {
   const { t } = useTranslation("quality");
   const { legalEntityId, isReady } = useQualityScope();
+  const { isReadOnly, canCreateInspection } = useQualityAccess();
 
   const [stateFilter, setStateFilter] = useState<string>("ALL");
   const [eventFilter, setEventFilter] = useState<string>("ALL");
@@ -47,7 +49,11 @@ export function QualityInspectionsPage(): React.JSX.Element {
         title={t("navigation.inspections", "فحوصات الجودة والتشغيل")}
         subtitle={t("tabs.inspections", "فحوصات الجودة")}
         primaryAction={
-          <Button variant="primary" onPress={() => setIsCreateOpen(true)}>
+          <Button
+            variant="primary"
+            isDisabled={!canCreateInspection || isReadOnly}
+            onPress={() => setIsCreateOpen(true)}
+          >
             + {t("actions.createInspection", "إنشاء أمر فحص جديد")}
           </Button>
         }

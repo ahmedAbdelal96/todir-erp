@@ -7,6 +7,8 @@ import { QualityPaginationBar } from "../components/quality-pagination-bar.tsx";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
 import { useQualityRestrictions } from "../hooks/use-quality-queries.ts";
 import { useKeysetPagination } from "../hooks/use-keyset-pagination.ts";
+import { useQualityAccess } from "../hooks/use-quality-access.ts";
+import type { QualityRestrictionListItem } from "../types.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import {
@@ -18,10 +20,10 @@ import {
 export function QualityRestrictionsPage(): React.JSX.Element {
   const { t } = useTranslation("quality");
   const { legalEntityId, isReady } = useQualityScope();
+  const { isReadOnly, canManageHolds, canManageDispositions } = useQualityAccess();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [selectedHoldId, setSelectedHoldId] = useState<string | null>(null);
-  const [selectedHoldRemaining, setSelectedHoldRemaining] = useState<number>(0);
+  const [selectedHold, setSelectedHold] = useState<QualityRestrictionListItem | null>(null);
   const [isReleaseOpen, setIsReleaseOpen] = useState(false);
   const [isDispositionOpen, setIsDispositionOpen] = useState(false);
 
@@ -53,7 +55,11 @@ export function QualityRestrictionsPage(): React.JSX.Element {
         subtitle={t("tabs.restrictions", "الحظر واحتجاز الجودة (Holds)")}
         showHoldBanner={true}
         primaryAction={
-          <Button variant="primary" onPress={() => setIsCreateOpen(true)}>
+          <Button
+            variant="primary"
+            isDisabled={!canManageHolds || isReadOnly}
+            onPress={() => setIsCreateOpen(true)}
+          >
             + {t("actions.createRestriction", "حظر واحتجاز الدفعة")}
           </Button>
         }
@@ -96,10 +102,9 @@ export function QualityRestrictionsPage(): React.JSX.Element {
                         <div style={{ display: "flex", gap: "6px" }}>
                           <Button
                             variant="primary"
-                            isDisabled={!canRelease}
+                            isDisabled={!canRelease || !canManageHolds || isReadOnly}
                             onPress={() => {
-                              setSelectedHoldId(r.id);
-                              setSelectedHoldRemaining(remaining);
+                              setSelectedHold(r);
                               setIsReleaseOpen(true);
                             }}
                           >
@@ -107,8 +112,9 @@ export function QualityRestrictionsPage(): React.JSX.Element {
                           </Button>
                           <Button
                             variant="outline"
+                            isDisabled={!canManageDispositions || isReadOnly}
                             onPress={() => {
-                              setSelectedHoldId(r.id);
+                              setSelectedHold(r);
                               setIsDispositionOpen(true);
                             }}
                           >
@@ -139,26 +145,29 @@ export function QualityRestrictionsPage(): React.JSX.Element {
         onClose={() => setIsCreateOpen(false)}
       />
 
-      {selectedHoldId && (
+      {selectedHold && (
         <ReleaseRestrictionModal
-          restrictionId={selectedHoldId}
-          remainingQuantity={selectedHoldRemaining}
-          maxQuantity={selectedHoldRemaining}
+          restrictionId={selectedHold.id}
+          remainingQuantity={Math.max(0, (selectedHold.quantity ?? 0) - selectedHold.releasedQuantity)}
+          maxQuantity={Math.max(0, (selectedHold.quantity ?? 0) - selectedHold.releasedQuantity)}
           isOpen={isReleaseOpen}
           onClose={() => {
             setIsReleaseOpen(false);
-            setSelectedHoldId(null);
+            setSelectedHold(null);
           }}
         />
       )}
 
-      {selectedHoldId && (
+      {selectedHold && (
         <CreateDispositionModal
           legalEntityId={legalEntityId}
+          holdId={selectedHold.id}
+          holdRemainingQuantity={Math.max(0, (selectedHold.quantity ?? 0) - selectedHold.releasedQuantity)}
+          productVariantId={selectedHold.productVariantId}
           isOpen={isDispositionOpen}
           onClose={() => {
             setIsDispositionOpen(false);
-            setSelectedHoldId(null);
+            setSelectedHold(null);
           }}
         />
       )}

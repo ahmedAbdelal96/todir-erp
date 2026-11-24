@@ -164,6 +164,10 @@ export const qualityApi = {
     return httpClient<InspectionView>(`${BASE_URL}/inspections/${inspectionId}`);
   },
 
+  getInspectionPlanSnapshot(inspectionId: string) {
+    return httpClient<unknown>(`${BASE_URL}/inspections/${inspectionId}/plan-snapshot`);
+  },
+
   createInspection(request: CreateInspectionRequest) {
     return httpClient<InspectionView>(`${BASE_URL}/inspections`, {
       method: "POST",

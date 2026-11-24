@@ -5,6 +5,7 @@ import { QualityStatusBadge } from "../components/quality-status-badge.tsx";
 import { QualityNoScopePrompt } from "../components/quality-no-scope-prompt.tsx";
 import { QualityPaginationBar } from "../components/quality-pagination-bar.tsx";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
+import { useQualityAccess } from "../hooks/use-quality-access.ts";
 import { useQualityNcrs, useQualityIssues } from "../hooks/use-quality-queries.ts";
 import { useKeysetPagination } from "../hooks/use-keyset-pagination.ts";
 import { Button } from "../../../components/primitives/button.tsx";
@@ -19,6 +20,7 @@ import {
 export function QualityNcrsPage(): React.JSX.Element {
   const { t } = useTranslation("quality");
   const { legalEntityId, isReady } = useQualityScope();
+  const { isReadOnly, canManageNcrs, canManageIssues, canManageCapas } = useQualityAccess();
 
   const [activeTab, setActiveTab] = useState<"ncrs" | "issues">("ncrs");
   const [isCreateNcrOpen, setIsCreateNcrOpen] = useState(false);
@@ -66,11 +68,19 @@ export function QualityNcrsPage(): React.JSX.Element {
         subtitle={t("tabs.ncrs", "حالات عدم المطابقة (NCR)")}
         primaryAction={
           activeTab === "ncrs" ? (
-            <Button variant="primary" onPress={() => setIsCreateNcrOpen(true)}>
+            <Button
+              variant="primary"
+              isDisabled={!canManageNcrs || isReadOnly}
+              onPress={() => setIsCreateNcrOpen(true)}
+            >
               + {t("actions.createNcr", "فتح تقرير عدم مطابقة (NCR)")}
             </Button>
           ) : (
-            <Button variant="primary" onPress={() => setIsCreateIssueOpen(true)}>
+            <Button
+              variant="primary"
+              isDisabled={!canManageIssues || isReadOnly}
+              onPress={() => setIsCreateIssueOpen(true)}
+            >
               + {t("actions.createIssue", "تسجيل مشكلة جودة")}
             </Button>
           )
@@ -127,6 +137,7 @@ export function QualityNcrsPage(): React.JSX.Element {
                         <div style={{ display: "flex", gap: "6px" }}>
                           <Button
                             variant="primary"
+                            isDisabled={!canManageNcrs || isReadOnly}
                             onPress={() => {
                               setSelectedNcrId(n.id);
                               setIsContainmentOpen(true);
@@ -136,6 +147,7 @@ export function QualityNcrsPage(): React.JSX.Element {
                           </Button>
                           <Button
                             variant="outline"
+                            isDisabled={!canManageCapas || isReadOnly}
                             onPress={() => {
                               setSelectedNcrId(n.id);
                               setIsCapaOpen(true);

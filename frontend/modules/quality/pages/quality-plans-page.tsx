@@ -5,6 +5,7 @@ import { QualityStatusBadge } from "../components/quality-status-badge.tsx";
 import { QualityNoScopePrompt } from "../components/quality-no-scope-prompt.tsx";
 import { QualityPaginationBar } from "../components/quality-pagination-bar.tsx";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
+import { useQualityAccess } from "../hooks/use-quality-access.ts";
 import {
   useQualityPlans,
   useQualityCharacteristics,
@@ -24,6 +25,7 @@ import {
 export function QualityPlansPage(): React.JSX.Element {
   const { t } = useTranslation("quality");
   const { legalEntityId, isReady } = useQualityScope();
+  const { isReadOnly, canManagePlans, canManageCharacteristics } = useQualityAccess();
 
   const [activeTab, setActiveTab] = useState<"plans" | "characteristics" | "sampling">("plans");
   const [isCreatePlanOpen, setIsCreatePlanOpen] = useState(false);
@@ -77,15 +79,27 @@ export function QualityPlansPage(): React.JSX.Element {
         subtitle={t("tabs.plans", "خطط ومعايير الجودة")}
         primaryAction={
           activeTab === "plans" ? (
-            <Button variant="primary" onPress={() => setIsCreatePlanOpen(true)}>
+            <Button
+              variant="primary"
+              isDisabled={!canManagePlans || isReadOnly}
+              onPress={() => setIsCreatePlanOpen(true)}
+            >
               + {t("actions.createPlan", "إنشاء خطة جودة جديدة")}
             </Button>
           ) : activeTab === "characteristics" ? (
-            <Button variant="primary" onPress={() => setIsCreateCharacteristicOpen(true)}>
+            <Button
+              variant="primary"
+              isDisabled={!canManageCharacteristics || isReadOnly}
+              onPress={() => setIsCreateCharacteristicOpen(true)}
+            >
               + {t("actions.createCharacteristic", "إضافة خاصية فحص")}
             </Button>
           ) : (
-            <Button variant="primary" onPress={() => setIsCreateSamplingOpen(true)}>
+            <Button
+              variant="primary"
+              isDisabled={!canManagePlans || isReadOnly}
+              onPress={() => setIsCreateSamplingOpen(true)}
+            >
               + {t("actions.createSamplingPlan", "إنشاء خطة عينات")}
             </Button>
           )
@@ -146,6 +160,7 @@ export function QualityPlansPage(): React.JSX.Element {
                         <div style={{ display: "flex", gap: "6px" }}>
                           <Button
                             variant="outline"
+                            isDisabled={!canManagePlans || isReadOnly}
                             onPress={() => {
                               setSelectedPlanId(p.id);
                               setIsCreateVersionOpen(true);

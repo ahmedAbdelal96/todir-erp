@@ -53,7 +53,7 @@ export const QualityKpiRibbon: React.FC<QualityKpiRibbonProps> = ({
           {pendingInspectionsCount}
         </div>
         <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>
-          {t("quality:messages.emptyQueueDescription", "تشمل الاستلام، المرحلي، والتام")}
+          {t("quality:kpi.pendingInspectionsScope", "في طابور العمل المباشر")}
         </div>
       </div>
 
@@ -80,7 +80,7 @@ export const QualityKpiRibbon: React.FC<QualityKpiRibbonProps> = ({
           {activeHoldsCount}
         </div>
         <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>
-          {t("quality:messages.inspectionPassedNotice", "محظورة من الصرف حتى الإفراج")}
+          {t("quality:kpi.activeHoldsScope", "أرصدة محتجزة في قائمة العمل النشطة")}
         </div>
       </div>
 
@@ -107,7 +107,7 @@ export const QualityKpiRibbon: React.FC<QualityKpiRibbonProps> = ({
           {openIssuesNcrsCount}
         </div>
         <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>
-          {t("quality:status.ActionPending", "تتطلب إجراءات احتواء أو تصرف")}
+          {t("quality:kpi.openNcrsScope", "تقارير غير مغلقة في قائمة المتابعة")}
         </div>
       </div>
     </div>

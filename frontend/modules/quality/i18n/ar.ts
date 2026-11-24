@@ -37,10 +37,13 @@ export const qualityAr = {
 
   kpi: {
     pendingInspections: "فحوصات بانتظار التنفيذ",
+    pendingInspectionsScope: "في طابور العمل المباشر",
     failedInspections: "فحوصات غير مطابقة",
     activeHolds: "شحنات محتجزة ومحظورة",
+    activeHoldsScope: "أرصدة محتجزة في قائمة العمل النشطة",
     pendingDispositions: "قرارات بانتظار الاعتماد/التنفيذ",
     openNcrs: "حالات عدم مطابقة مفتوحة",
+    openNcrsScope: "تقارير غير مغلقة في قائمة المتابعة",
     openCapas: "إجراءات تصحيحية قيد المتابعة",
     overdueScars: "مطالبات موردين متأخرة"
   },
@@ -219,7 +222,14 @@ export const qualityAr = {
     required: "خاصية فحص إلزامية",
     method: "طريقة سحب العينة",
     percentage: "النسبة المئوية (٪)",
-    fixedQty: "الكمية الثابتة للعينة"
+    fixedQty: "الكمية الثابتة للعينة",
+    sourceHold: "الحظر المصدر",
+    heldRemaining: "الرصيد المحتجز المتاح للتصرف",
+    target: "المستهدف",
+    tolerance: "الحدود المسموحة",
+    toleranceRange: "{{min}} إلى {{max}}",
+    evidenceRequired: "مستند إلزامي",
+    noInspectionLinked: "— بدون ربط بأمر فحص (اختياري) —"
   },
 
   severity: {
@@ -368,7 +378,14 @@ export const qualityAr = {
     scrapWarning: "تنبيه مالي وإتلاف: تخريد المخزون ينتج عنه قيد مالي إتلافي وإسقاط نهائي من الأرصدة المستودعية ولا يمكن التراجع عنه.",
     keysetNav: "تصفح الخادم (Keyset Navigation)",
     registeredCharacteristicsCount: "{{count}} خاصية مسجلة",
-    awaitingMeasurement: "بانتظار القياس"
+    awaitingMeasurement: "بانتظار القياس",
+    frozenSnapshotActive: "معايير الخطة المجمدة المعتمدة",
+    scopedQueueNotice: "طابور العمل المباشر"
+  },
+
+  validation: {
+    positiveQuantity: "يجب أن تكون الكمية أكبر من صفر",
+    quantityExceedsHold: "الكمية المدخلة تتجاوز الرصيد المحتجز المتاح ({{max}})"
   }
 };
 

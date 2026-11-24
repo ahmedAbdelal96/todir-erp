@@ -11,6 +11,7 @@ import {
   useQualityRestrictions,
   useQualityNcrs
 } from "../hooks/use-quality-queries.ts";
+import { useQualityAccess } from "../hooks/use-quality-access.ts";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
 import { CreateInspectionModal } from "../components/inspection-modals.tsx";
@@ -20,6 +21,7 @@ import { CreateNcrModal } from "../components/ncr-capa-modals.tsx";
 export function QualityOverviewPage(): React.JSX.Element {
   const { t } = useTranslation("quality");
   const { legalEntityId, isReady } = useQualityScope();
+  const { isReadOnly, canCreateInspection, canManageHolds, canManageNcrs } = useQualityAccess();
 
   const [isInspectionOpen, setIsInspectionOpen] = useState(false);
   const [isRestrictionOpen, setIsRestrictionOpen] = useState(false);
@@ -48,16 +50,28 @@ export function QualityOverviewPage(): React.JSX.Element {
         title={t("navigation.overview", "لوحة التحكم والجودة")}
         subtitle={t("tabs.overview", "لوحة التحكم وأولويات العمل")}
         primaryAction={
-          <Button variant="primary" onPress={() => setIsInspectionOpen(true)}>
+          <Button
+            variant="primary"
+            isDisabled={!canCreateInspection || isReadOnly}
+            onPress={() => setIsInspectionOpen(true)}
+          >
             + {t("actions.createInspection", "إنشاء أمر فحص جديد")}
           </Button>
         }
         secondaryActions={
           <div style={{ display: "flex", gap: "8px" }}>
-            <Button variant="outline" onPress={() => setIsRestrictionOpen(true)}>
+            <Button
+              variant="outline"
+              isDisabled={!canManageHolds || isReadOnly}
+              onPress={() => setIsRestrictionOpen(true)}
+            >
               + {t("actions.createRestriction", "حظر واحتجاز الدفعة")}
             </Button>
-            <Button variant="outline" onPress={() => setIsNcrOpen(true)}>
+            <Button
+              variant="outline"
+              isDisabled={!canManageNcrs || isReadOnly}
+              onPress={() => setIsNcrOpen(true)}
+            >
               + {t("actions.createNcr", "فتح تقرير عدم مطابقة (NCR)")}
             </Button>
           </div>

@@ -4,6 +4,7 @@ import { Dialog } from "../../../components/primitives/dialog.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { TextField } from "../../../components/primitives/text-field.tsx";
 import { Select } from "../../../components/primitives/select.tsx";
+import { BdiText } from "../../../components/formatting/bidi-text.tsx";
 import {
   useCreateRestrictionForInspection,
   useReleaseRestriction,
@@ -72,17 +73,21 @@ export function CreateRestrictionModal({
     const qty = Number(quantity);
     if (!finalInspectionId || !qty || qty <= 0 || !reasonCode.trim()) return;
 
-    await createRestrictionMutation.mutateAsync({
-      inspectionId: finalInspectionId,
-      legalEntityId,
-      request: {
-        restrictionType,
-        reasonCode: reasonCode.trim(),
-        quantity: qty,
-        inspectionId: finalInspectionId
-      }
-    });
-    onClose();
+    try {
+      await createRestrictionMutation.mutateAsync({
+        inspectionId: finalInspectionId,
+        legalEntityId,
+        request: {
+          restrictionType,
+          reasonCode: reasonCode.trim(),
+          quantity: qty,
+          inspectionId: finalInspectionId
+        }
+      });
+      onClose();
+    } catch (err) {
+      console.error("Failed to create restriction:", err);
+    }
   };
 
   const inspectionOptions = (inspectionsData?.items ?? []).map((ins) => ({
@@ -192,16 +197,20 @@ export function ReleaseRestrictionModal({
     e.preventDefault();
     if (!numQty || numQty <= 0 || isOverRemaining || !reason.trim()) return;
 
-    await releaseMutation.mutateAsync({
-      restrictionId,
-      request: {
-        quantity: numQty,
-        reason: reason.trim(),
-        operationalDate: operationalDate || null,
-        postingDate: operationalDate || null
-      }
-    });
-    onClose();
+    try {
+      await releaseMutation.mutateAsync({
+        restrictionId,
+        request: {
+          quantity: numQty,
+          reason: reason.trim(),
+          operationalDate: operationalDate || null,
+          postingDate: operationalDate || null
+        }
+      });
+      onClose();
+    } catch (err) {
+      console.error("Failed to release restriction:", err);
+    }
   };
 
   return (
@@ -267,6 +276,9 @@ interface CreateDispositionModalProps {
   inspectionId?: string | null;
   defaultInspectionId?: string | null;
   defaultLotQuantity?: number | null;
+  holdId?: string | null;
+  holdRemainingQuantity?: number | null;
+  productVariantId?: string | null;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -276,6 +288,9 @@ export function CreateDispositionModal({
   inspectionId,
   defaultInspectionId,
   defaultLotQuantity,
+  holdId,
+  holdRemainingQuantity,
+  productVariantId,
   isOpen,
   onClose
 }: CreateDispositionModalProps): React.JSX.Element | null {
@@ -287,21 +302,23 @@ export function CreateDispositionModal({
   const [selectedInspectionId, setSelectedInspectionId] = useState(initialInspection);
   const [decision, setDecision] = useState("Accept");
   const [reason, setReason] = useState("");
-  const [quantity, setQuantity] = useState(defaultLotQuantity ? String(defaultLotQuantity) : "");
+  const [quantity, setQuantity] = useState(
+    holdRemainingQuantity
+      ? String(holdRemainingQuantity)
+      : (defaultLotQuantity ? String(defaultLotQuantity) : "")
+  );
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (initialInspection) {
       setSelectedInspectionId(initialInspection);
-    } else if (inspectionsData?.items && inspectionsData.items.length > 0 && !selectedInspectionId) {
-      const first = inspectionsData.items[0];
-      if (first) {
-        setSelectedInspectionId(first.id);
-        if (!quantity && first.lotQuantity) {
-          setQuantity(String(first.lotQuantity));
-        }
-      }
     }
-  }, [initialInspection, inspectionsData, selectedInspectionId, quantity]);
+    if (holdRemainingQuantity && !quantity) {
+      setQuantity(String(holdRemainingQuantity));
+    } else if (defaultLotQuantity && !quantity) {
+      setQuantity(String(defaultLotQuantity));
+    }
+  }, [initialInspection, defaultLotQuantity, holdRemainingQuantity, quantity]);
 
   const handleInspectionChange = (inspId: string) => {
     setSelectedInspectionId(inspId);
@@ -313,24 +330,42 @@ export function CreateDispositionModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setValidationError(null);
     if (!reason.trim()) return;
+
+    const numQty = quantity ? Number(quantity) : null;
+    if (numQty !== null && numQty <= 0) {
+      setValidationError(t("validation.positiveQuantity", "يجب أن تكون الكمية أكبر من صفر"));
+      return;
+    }
+    if (holdRemainingQuantity !== null && holdRemainingQuantity !== undefined && numQty !== null && numQty > holdRemainingQuantity) {
+      setValidationError(t("validation.quantityExceedsHold", {
+        max: holdRemainingQuantity,
+        defaultValue: `الكمية المدخلة تتجاوز الرصيد المحتجز المتاح (${holdRemainingQuantity})`
+      }));
+      return;
+    }
 
     await createDispositionMutation.mutateAsync({
       legalEntityId,
       request: {
         decision,
         reason: reason.trim(),
-        quantity: quantity ? Number(quantity) : null,
-        inspectionId: selectedInspectionId || null
+        quantity: numQty,
+        inspectionId: selectedInspectionId || null,
+        externalReference: holdId ? `HOLD:${holdId}` : null
       }
     });
     onClose();
   };
 
-  const inspectionOptions = (inspectionsData?.items ?? []).map((ins) => ({
-    id: ins.id,
-    label: `${ins.number} - ${ins.eventType} (${ins.lotQuantity})`
-  }));
+  const inspectionOptions = [
+    { id: "", label: t("fields.noInspectionLinked", "— بدون ربط بأمر فحص (اختياري) —") },
+    ...(inspectionsData?.items ?? []).map((ins) => ({
+      id: ins.id,
+      label: `${ins.number} - ${ins.eventType} (${ins.lotQuantity})`
+    }))
+  ];
 
   return (
     <Dialog
@@ -340,7 +375,28 @@ export function CreateDispositionModal({
       size="medium"
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-        {!initialInspection && inspectionOptions.length > 0 && (
+        {holdId && (
+          <div
+            data-testid="disposition-hold-source-banner"
+            style={{
+              padding: "10px 12px",
+              backgroundColor: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              borderRadius: "6px",
+              fontSize: "12px",
+              color: "#1e40af"
+            }}
+          >
+            <div><strong>{t("fields.sourceHold", "الحظر المصدر")}:</strong> <BdiText>#{holdId.slice(0, 8)}</BdiText></div>
+            {holdRemainingQuantity !== null && holdRemainingQuantity !== undefined && (
+              <div style={{ marginTop: "2px" }}>
+                <strong>{t("fields.heldRemaining", "الرصيد المحتجز المتاح للتصرف")}:</strong> <BdiText>{String(holdRemainingQuantity)}</BdiText>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!initialInspection && !holdId && inspectionOptions.length > 1 && (
           <Select
             label={t("navigation.inspections", "أمر الفحص المرتبط بالقرار الفني")}
             selectedKey={selectedInspectionId}
@@ -386,6 +442,11 @@ export function CreateDispositionModal({
           isRequired
           autoFocus
         />
+        {validationError && (
+          <div role="alert" style={{ color: "#dc2626", fontSize: "0.8125rem", fontWeight: 600 }}>
+            {validationError}
+          </div>
+        )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "12px" }}>
           <Button variant="outline" onPress={onClose} type="button">
             {t("actions.cancel", "إلغاء")}

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { QualityStatusBadge } from "../components/quality-status-badge.tsx";
 import { useQualityInspection, useQualityCharacteristics } from "../hooks/use-quality-queries.ts";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
+import { useQualityAccess } from "../hooks/use-quality-access.ts";
 import { QualityNoScopePrompt } from "../components/quality-no-scope-prompt.tsx";
 import { Button } from "../../../components/primitives/button.tsx";
 import { Surface } from "../../../components/pages/surface.tsx";
@@ -27,6 +28,14 @@ export function InspectionWorkspacePage(): React.JSX.Element {
   const { data: characteristicsData, isLoading: isCharsLoading } = useQualityCharacteristics(
     inspection?.legalEntityId ?? legalEntityId
   );
+  const {
+    isReadOnly,
+    canExecuteInspection,
+    canReviewInspection,
+    canCreateInspection,
+    canManageHolds,
+    canManageDispositions
+  } = useQualityAccess();
 
   const [isRecordResultOpen, setIsRecordResultOpen] = useState(false);
   const [selectedCharId, setSelectedCharId] = useState<string>("");
@@ -63,7 +72,34 @@ export function InspectionWorkspacePage(): React.JSX.Element {
   }
 
   const isCompleted = inspection.state === "Completed";
-  const characteristics = characteristicsData?.items ?? [];
+  const planSnapshotChars = inspection.planCharacteristics && inspection.planCharacteristics.length > 0 ? inspection.planCharacteristics : null;
+  const characteristics = planSnapshotChars
+    ? planSnapshotChars.map((p) => ({
+        id: p.characteristicId,
+        code: p.code,
+        name: p.name,
+        dataType: p.dataType,
+        baseUomCode: p.baseUomCode,
+        minimum: p.minimum,
+        maximum: p.maximum,
+        target: p.target,
+        required: p.required,
+        evidenceRequired: p.evidenceRequired,
+        isFromFrozenSnapshot: true
+      }))
+    : (characteristicsData?.items ?? []).map((c) => ({
+        id: c.id,
+        code: c.code,
+        name: c.name,
+        dataType: c.dataType,
+        baseUomCode: c.baseUomCode,
+        minimum: null as number | null,
+        maximum: null as number | null,
+        target: null as string | null,
+        required: c.required,
+        evidenceRequired: false,
+        isFromFrozenSnapshot: false
+      }));
   const results = inspection.results ?? [];
 
   const openRecordModalForChar = (c: { id: string; name: string; dataType?: string; baseUomCode?: string | null }) => {
@@ -133,7 +169,7 @@ export function InspectionWorkspacePage(): React.JSX.Element {
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             <Button
               variant="primary"
-              isDisabled={isCompleted}
+              isDisabled={isCompleted || !canExecuteInspection || isReadOnly}
               onPress={handleOpenGeneralRecordModal}
             >
               + {t("actions.enterResults", "تسجيل نتائج القياس")}
@@ -141,7 +177,7 @@ export function InspectionWorkspacePage(): React.JSX.Element {
 
             <Button
               variant="outline"
-              isDisabled={isCompleted}
+              isDisabled={isCompleted || !canReviewInspection || isReadOnly}
               onPress={() => setIsCompleteOpen(true)}
             >
               ✓ {t("actions.completeInspection", "إتمام واعتماد الفحص")}
@@ -149,6 +185,7 @@ export function InspectionWorkspacePage(): React.JSX.Element {
 
             <Button
               variant="outline"
+              isDisabled={!canManageHolds || isReadOnly}
               onPress={() => setIsRestrictionOpen(true)}
             >
               {t("actions.createRestriction", "حظر واحتجاز الدفعة")}
@@ -156,6 +193,7 @@ export function InspectionWorkspacePage(): React.JSX.Element {
 
             <Button
               variant="outline"
+              isDisabled={!canManageDispositions || isReadOnly}
               onPress={() => setIsDispositionOpen(true)}
             >
               {t("actions.createDisposition", "إصدار قرار فني")}
@@ -163,7 +201,7 @@ export function InspectionWorkspacePage(): React.JSX.Element {
 
             <Button
               variant="outline"
-              isDisabled={!isCompleted}
+              isDisabled={!isCompleted || !canCreateInspection || isReadOnly}
               onPress={() => setIsReinspectOpen(true)}
             >
               {t("actions.reinspect", "إعادة فحص")}
@@ -227,7 +265,9 @@ export function InspectionWorkspacePage(): React.JSX.Element {
             {t("tabs.characteristics", "خصائص الفحص والمواصفات القياسية")}
           </h2>
           <span style={{ fontSize: "0.8125rem", color: "#64748b" }}>
-            {isCharsLoading ? t("messages.loading", "جاري التحميل...") : t("messages.registeredCharacteristicsCount", { count: characteristics.length, defaultValue: `${characteristics.length} خاصية مسجلة` })}
+            {planSnapshotChars
+              ? t("messages.frozenSnapshotActive", "معايير الخطة المجمدة المعتمدة")
+              : (isCharsLoading ? t("messages.loading", "جاري التحميل...") : t("messages.registeredCharacteristicsCount", { count: characteristics.length, defaultValue: `${characteristics.length} خاصية مسجلة` }))}
           </span>
         </div>
 
@@ -261,25 +301,51 @@ export function InspectionWorkspacePage(): React.JSX.Element {
                         <BdiText>{char.code}</BdiText>
                       </td>
                       <td style={{ padding: "0.75rem 0.5rem", color: "#0f172a" }}>
-                        {char.name}
+                        <div style={{ fontWeight: 600 }}>{char.name}</div>
+                        {char.target && (
+                          <div style={{ fontSize: "0.75rem", color: "#0284c7", marginTop: "2px" }}>
+                            {t("fields.target", "المستهدف")}: <BdiText>{char.target}</BdiText>
+                          </div>
+                        )}
+                        {(char.minimum !== null && char.minimum !== undefined || char.maximum !== null && char.maximum !== undefined) && (
+                          <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "1px" }}>
+                            {t("fields.tolerance", "الحدود")}: <BdiText>{t("fields.toleranceRange", { min: char.minimum ?? "—", max: char.maximum ?? "—", defaultValue: `${char.minimum ?? "—"} - ${char.maximum ?? "—"}` })}</BdiText>
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: "0.75rem 0.5rem", color: "#64748b" }}>
                         {char.dataType}
                         {char.baseUomCode && <span style={{ marginInlineStart: "4px" }}>(<BdiText>{char.baseUomCode}</BdiText>)</span>}
                       </td>
                       <td style={{ padding: "0.75rem 0.5rem" }}>
-                        <span
-                          style={{
-                            padding: "2px 8px",
-                            borderRadius: "4px",
-                            fontSize: "0.75rem",
-                            fontWeight: 600,
-                            backgroundColor: char.required ? "#fef2f2" : "#f1f5f9",
-                            color: char.required ? "#b91c1c" : "#475569"
-                          }}
-                        >
-                          {char.required ? t("fields.requiredYes", "إلزامي") : t("fields.requiredNo", "اختياري")}
-                        </span>
+                        <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                          <span
+                            style={{
+                              padding: "2px 8px",
+                              borderRadius: "4px",
+                              fontSize: "0.75rem",
+                              fontWeight: 600,
+                              backgroundColor: char.required ? "#fef2f2" : "#f1f5f9",
+                              color: char.required ? "#b91c1c" : "#475569"
+                            }}
+                          >
+                            {char.required ? t("fields.requiredYes", "إلزامي") : t("fields.requiredNo", "اختياري")}
+                          </span>
+                          {char.evidenceRequired && (
+                            <span
+                              style={{
+                                padding: "2px 8px",
+                                borderRadius: "4px",
+                                fontSize: "0.75rem",
+                                fontWeight: 600,
+                                backgroundColor: "#eff6ff",
+                                color: "#1d4ed8"
+                              }}
+                            >
+                              {t("fields.evidenceRequired", "مستند إلزامي")}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td style={{ padding: "0.75rem 0.5rem" }}>
                         {result ? (
@@ -316,7 +382,7 @@ export function InspectionWorkspacePage(): React.JSX.Element {
                         <Button
                           variant={result ? "outline" : "primary"}
                           size="small"
-                          isDisabled={isCompleted}
+                          isDisabled={isCompleted || !canExecuteInspection || isReadOnly}
                           onPress={() => openRecordModalForChar(char)}
                         >
                           {result ? t("actions.reMeasure", "تعديل / إعادة قياس") : t("actions.measure", "+ تسجيل القياس")}

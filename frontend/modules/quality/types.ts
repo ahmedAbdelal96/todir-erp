@@ -137,6 +137,20 @@ export interface InspectionResultView {
   evidenceReference: string | null;
 }
 
+export interface InspectionCharacteristicSnapshotView {
+  characteristicId: string;
+  code: string;
+  name: string;
+  dataType: string;
+  baseUomCode: string | null;
+  minimum: number | null;
+  maximum: number | null;
+  target: string | null;
+  allowedValuesJson: string | null;
+  required: boolean;
+  evidenceRequired: boolean;
+}
+
 export interface InspectionView {
   id: string;
   legalEntityId: string;
@@ -154,6 +168,7 @@ export interface InspectionView {
   lotReference: string | null;
   results: InspectionResultView[];
   rowVersion: number;
+  planCharacteristics?: InspectionCharacteristicSnapshotView[];
 }
 
 export interface CreateInspectionRequest {

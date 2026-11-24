@@ -5,6 +5,7 @@ import { QualityStatusBadge } from "../components/quality-status-badge.tsx";
 import { QualityNoScopePrompt } from "../components/quality-no-scope-prompt.tsx";
 import { QualityPaginationBar } from "../components/quality-pagination-bar.tsx";
 import { useQualityScope } from "../hooks/use-quality-scope.ts";
+import { useQualityAccess } from "../hooks/use-quality-access.ts";
 import {
   useQualitySupplierProfiles,
   useQualityScars
@@ -22,6 +23,7 @@ import {
 export function SupplierQualityPage(): React.JSX.Element {
   const { t } = useTranslation("quality");
   const { legalEntityId, isReady } = useQualityScope();
+  const { isReadOnly, canManageSuppliers } = useQualityAccess();
 
   const [activeTab, setActiveTab] = useState<"profiles" | "scars">("profiles");
   const [isCreateProfileOpen, setIsCreateProfileOpen] = useState(false);
@@ -68,11 +70,19 @@ export function SupplierQualityPage(): React.JSX.Element {
         subtitle={t("tabs.supplierQuality", "جودة الموردين و(SCAR)")}
         primaryAction={
           activeTab === "profiles" ? (
-            <Button variant="primary" onPress={() => setIsCreateProfileOpen(true)}>
+            <Button
+              variant="primary"
+              isDisabled={!canManageSuppliers || isReadOnly}
+              onPress={() => setIsCreateProfileOpen(true)}
+            >
               + {t("actions.saveSupplierProfile", "حفظ سياسة جودة المورد")}
             </Button>
           ) : (
-            <Button variant="primary" onPress={() => setIsCreateScarOpen(true)}>
+            <Button
+              variant="primary"
+              isDisabled={!canManageSuppliers || isReadOnly}
+              onPress={() => setIsCreateScarOpen(true)}
+            >
               + {t("actions.createScar", "إصدار طلب SCAR للمورد")}
             </Button>
           )
@@ -166,8 +176,8 @@ export function SupplierQualityPage(): React.JSX.Element {
                 </thead>
                 <tbody>
                   {scars.map((s) => {
-                    const canRespond = s.state === "Issued" || s.state === "ResponsePending";
-                    const canReview = s.state === "UnderReview" || s.state === "ResponsePending";
+                    const canRespond = (s.state === "Issued" || s.state === "ResponsePending") && canManageSuppliers && !isReadOnly;
+                    const canReview = (s.state === "UnderReview" || s.state === "ResponsePending") && canManageSuppliers && !isReadOnly;
 
                     return (
                       <tr key={s.id} style={{ borderBottom: "1px solid #f1f5f9" }}>

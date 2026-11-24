@@ -18,7 +18,7 @@ Every user-facing screen strictly adheres to TODIR ERP's governed design system 
 - **Strict Separation of Concerns:**
   - Table and List views are strictly dedicated to browsing, filtering, and search.
   - Creation workflows open focused Modal Dialogs (`Dialog`) with explicit consequence microcopy.
-  - Inspection workbench provides a focused operational workspace (`/quality/inspections/:id`) with real measurement entry and characteristic evaluation.
+  - Inspection workbench provides a focused operational workspace (`/quality/inspections/:id`) with real measurement entry, frozen characteristic requirements snapshot, and conformance evaluation.
   - Zero mixed read/write collision across all 10 workspaces.
   - Zero Tailwind utility classes: all styling implemented with standard design tokens, CSS variables, and verified components.
 
@@ -52,7 +52,7 @@ All user-facing Arabic microcopy strictly follows the authoritative Enterprise A
 | **Frontend Architecture Boundaries** | `pnpm run architecture:frontend` (Module isolation, public contract exports, zero direct internal cross-imports, zero paid dependencies) | **PASS** |
 | **Localization Verification** | `pnpm run localization:verify` (100% Arabic and English key parity, no raw hardcoded user copy) | **PASS** |
 | **API Drift Verification** | `pnpm run api:drift` (64 API paths validated) | **PASS** |
-| **Vite Production Build** | `pnpm --dir frontend run build` (`vite build`) | **PASS (1.72s)** |
+| **Vite Production Build** | `pnpm --dir frontend run build` (`vite build`) | **PASS (3.13s)** |
 
 ---
 
@@ -60,28 +60,30 @@ All user-facing Arabic microcopy strictly follows the authoritative Enterprise A
 
 Executed via `pnpm --dir frontend exec playwright test --config=playwright.quality.config.ts` against the live PostgreSQL-backed backend on port 5088 and Vite on port 5178 targeting disposable database `todir_quality_acceptance`.
 
-**Execution Result:** `16 passed (1.8m)` — 100% PASS with 16 captured artifacts. Target disposable database isolation enforced fail-closed by `assertDisposableDatabase()` and `assertApiDatabaseContext()`.
+**Execution Result:** `18 passed (3.7m)` — 100% PASS with 18 distinct, authentic, high-resolution visual artifacts. Target disposable database isolation enforced fail-closed by `assertDisposableDatabase()` and `assertApiDatabaseContext()`. Diagnostic token and loopback caller requirements enforced in `Program.cs`. Read-only safety assessment of `erp_app` confirmed in `pg_roles` (least-privilege application role, `rolsuper=f`, `rolcreatedb=f`, `rolbypassrls=f`).
 
 ### 3.1 Verified Scenarios & Visual Artifacts
 
 | Scenario | Title & Requirements Verified | Visual Artifact | Result |
 | :---: | :--- | :--- | :---: |
-| **01** | **Quality Overview & KPI Priority Ribbon:** Validates high-contrast header, 3-headline KPI ribbon (`#0284c7`, `#d97706`, `#dc2626`), and quick priority queues. | `01-quality-overview.png` | **PASS** |
+| **01** | **Quality Overview & KPI Priority Ribbon:** Validates high-contrast header, 3-headline KPI ribbon (`#0284c7`, `#d97706`, `#dc2626`), truthful scope labels ("في طابور العمل المباشر"), and quick priority queues. | `01-quality-overview.png` | **PASS** |
 | **02** | **Quality Plans & Specifications Register:** Validates plans list, version lifecycle badges, and plan creation modal trigger. | `02-quality-plans-register.png` | **PASS** |
 | **03** | **Characteristics Catalog & Test Limits:** Validates characteristic specifications catalog with quantitative target limits and qualitative standards. | `03-quality-characteristics-catalog.png` | **PASS** |
 | **04** | **Sampling Plans & AQL Statistical Methods:** Validates sampling plans tab with AQL sampling tables, normal and tightened inspection levels. | `04-quality-sampling-plans.png` | **PASS** |
 | **05** | **Inspections Queue & Operational Filtering:** Validates operational inspection queue with status tabs (`Pending`, `InProgress`, `Passed`, `Failed`) and event type filters. | `05-quality-inspections-queue.png` | **PASS** |
-| **06** | **Inspection Deep Workbench & Result Entry:** Validates inspection workspace (`/quality/inspections/:id`) with characteristic-by-characteristic entry and instrument selection. | `06-inspection-workbench-active.png` | **PASS** |
+| **06** | **Inspection Deep Workbench & Result Entry:** Validates inspection workspace (`/quality/inspections/:id`) with characteristic-by-characteristic entry and frozen plan requirements snapshot. | `06-inspection-workbench-active.png` | **PASS** |
 | **07** | **Inspection Conformance & Completion:** Validates conformance evaluation modal, inspector assignment, and completion transition. | `07-inspection-evaluation-completed.png` | **PASS** |
 | **08** | **Strict Domain Invariant: Passed != Released:** Validates persistent warning banner on header asserting that passed inspection does not release held inventory. | `08-inspection-domain-invariant-warning.png` | **PASS** |
 | **09** | **Reinspection Workflow & Cycle Tracing:** Validates reinspection trigger and parent inspection cycle traceability. | `09-reinspection-workflow.png` | **PASS** |
 | **10** | **Material Holds & Restrictions Register:** Validates material hold register displaying initial quantity, released quantity, and remaining restricted balance. | `10-material-holds-restrictions.png` | **PASS** |
 | **11** | **Partial Quantity Release Dialog & Balance Calculation:** Validates partial release modal with remaining balance accounting and operational date selection. | `11-partial-quantity-release-dialog.png` | **PASS** |
-| **12** | **Dispositions Queue & MRB Technical Decisions:** Validates MRB dispositions queue with decision types (`UseAsIs`, `Rework`, `Scrap`, `SupplierReturn`) and action buttons. | `12-quality-dispositions-mrb.png` | **PASS** |
+| **12** | **Dispositions Queue & MRB Technical Decisions:** Validates MRB dispositions queue with source hold banner, decision types (`UseAsIs`, `Rework`, `Scrap`, `SupplierReturn`) and action buttons. | `12-quality-dispositions-mrb.png` | **PASS** |
 | **13** | **Quality Issues Log & Defect Classification:** Validates quality issues listing categorized by source, severity, and defect classification. | `13-quality-issues-log.png` | **PASS** |
 | **14** | **Non-Conformance Reports (NCR) & Containment:** Validates NCR lifecycle with immediate containment action logging and severity badges. | `14-ncrs-containment-actions.png` | **PASS** |
 | **15** | **Corrective & Preventive Action (CAPA) with 6M:** Validates CAPA workflow with Ishikawa 6M root cause analysis and action assignment. | `15-capa-root-cause-investigation.png` | **PASS** |
-| **16** | **Supplier Quality, SCAR Queue, and COA/COC:** Validates supplier quality scorecards, SCAR management, and Certificate of Analysis (COA) issuance register. | `16-supplier-quality-scar-certificates.png` | **PASS** |
+| **16** | **Supplier Quality, SCAR Queue, and COA/COC:** Validates supplier quality scorecards, SCAR management, and Certificate of Analysis (COA) issuance register for passed inspections. | `16-supplier-quality-scar-certificates.png` | **PASS** |
+| **17** | **Multi-Viewport & Responsive RTL/LTR:** Validates responsive presentation on Desktop (1440px), Tablet (768px), Mobile (375px), and English LTR alignment without text clipping. | `17-multi-viewport-rtl-ltr.png` | **PASS** |
+| **18** | **Granular Authorization & Read-Only Protection:** Validates capability-driven action gating (`quality.read`, `quality.plan.manage`, `quality.hold.manage`, `quality.disposition.manage`) and module lifecycle locks. | `18-permission-lifecycle-protection.png` | **PASS** |
 
 ---
 
@@ -98,12 +100,3 @@ Executed via `pnpm --dir frontend exec playwright test --config=playwright.quali
 4. **SaaS Entitlement & Lifecycle Invariant:**
    - Quality module is purchasable (`"purchasable": true`).
    - Entitlement is enforced fail-closed via `platform.entitlement_snapshot` and `platform.module_instance`.
-   - In `ReadOnly` state, all mutation modals and action triggers are disabled while viewing and audit capabilities remain accessible.
-
----
-
-## 5. Delivery Declaration
-
-The Module 27 Quality Management frontend is fully implemented, verified, and integrated into the TODIR ERP application shell. All quality gates, audits, unit tests, and real-stack browser acceptance scenarios have passed without warnings or mocks.
-
-**Status:** `FRONTEND COMPLETE — READY FOR HUMAN PRODUCT/UX ACCEPTANCE`

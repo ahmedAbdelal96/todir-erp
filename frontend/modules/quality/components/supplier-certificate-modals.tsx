@@ -429,8 +429,9 @@ export function IssueCertificateModal({ legalEntityId, inspectionId, isOpen, onC
     if (inspectionId) {
       setTargetInspectionId(inspectionId);
     } else if (inspectionsData?.items && inspectionsData.items.length > 0 && !targetInspectionId) {
-      const first = inspectionsData.items[0];
-      if (first) setTargetInspectionId(first.id);
+      const passed = inspectionsData.items.find((i) => i.decisionState === "Passed");
+      const chosen = passed || inspectionsData.items[0];
+      if (chosen) setTargetInspectionId(chosen.id);
     }
   }, [inspectionId, inspectionsData, targetInspectionId]);
 
@@ -439,15 +440,19 @@ export function IssueCertificateModal({ legalEntityId, inspectionId, isOpen, onC
     const finalInspectionId = inspectionId || targetInspectionId.trim();
     if (!finalInspectionId) return;
 
-    await issueMutation.mutateAsync({
-      legalEntityId,
-      request: {
-        inspectionId: finalInspectionId,
-        certificateType,
-        customerReference: customerReference.trim() || null
-      }
-    });
-    onClose();
+    try {
+      await issueMutation.mutateAsync({
+        legalEntityId,
+        request: {
+          inspectionId: finalInspectionId,
+          certificateType,
+          customerReference: customerReference.trim() || null
+        }
+      });
+      onClose();
+    } catch (err) {
+      console.error("Failed to issue certificate:", err);
+    }
   };
 
   const inspectionOptions = (inspectionsData?.items ?? []).map((ins) => ({
