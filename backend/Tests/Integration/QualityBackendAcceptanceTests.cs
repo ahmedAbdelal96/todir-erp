@@ -645,7 +645,7 @@ public sealed class QualityBackendAcceptanceTests
 
         // 1. Pure administrative hold: no product variant, warehouse, or quantity
         var adminHold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
-            new("Blocked", "QA23-ADMIN-BLOCK"), AtlasEntity, CancellationToken.None);
+            new("Blocked", "QA23-ADMIN-BLOCK", HoldScope: "Administrative"), AtlasEntity, CancellationToken.None);
         Assert.Equal("NotRequired", adminHold.OwnerExecutionStatus);
         Assert.Equal("Active", adminHold.Status);
 
@@ -713,6 +713,8 @@ public sealed class QualityBackendAcceptanceTests
         var existingProductUomId = await ScalarAsync(connection, "select id from foundation_catalog.product_uom where tenant_id=$1 and variant_id=$2 and uom_id=$3", AtlasTenant.Value, stock.ProductVariantId, cartonUomId);
         var configuredUomRowId = (Guid?)existingProductUomId;
         var createdUomRow = false;
+        object[]? originalUomRow = null;
+        var seededExtraStock = false;
 
         if (configuredUomRowId is null)
         {
@@ -723,6 +725,8 @@ public sealed class QualityBackendAcceptanceTests
         }
         else
         {
+            originalUomRow = await ReadRowAsync(connection, "select factor_to_base,is_base,effective_from,effective_to,status,version,usage_flags,rounding_precision from foundation_catalog.product_uom where tenant_id=$1 and id=$2", AtlasTenant.Value, configuredUomRowId.Value);
+            Assert.NotNull(originalUomRow);
             await ExecuteAsync(connection, "update foundation_catalog.product_uom set factor_to_base=10.0, is_base=false, status='Active', effective_from=now() - interval '30 days' where tenant_id=$1 and id=$2", AtlasTenant.Value, configuredUomRowId.Value);
         }
 
@@ -734,6 +738,7 @@ public sealed class QualityBackendAcceptanceTests
                     DateOnly.FromDateTime(DateTime.UtcNow.Date), DateOnly.FromDateTime(DateTime.UtcNow.Date),
                     $"qa25-seed:{Guid.NewGuid():N}", "quality-acceptance", Guid.CreateVersion7(), StockStatus.Available),
                 Guid.CreateVersion7(), null, CancellationToken.None);
+            seededExtraStock = true;
         }
 
         var balanceAvailBefore = await StockQuantityAsync(connection, stock.ProductVariantId, stock.WarehouseId, stock.LocationId, "Available");
@@ -828,7 +833,31 @@ public sealed class QualityBackendAcceptanceTests
             }
             else
             {
-                await ExecuteAsync(connection, "update foundation_catalog.product_uom set status='Active' where tenant_id=$1 and id=$2", AtlasTenant.Value, configuredUomRowId.Value);
+                Assert.NotNull(originalUomRow);
+                await ExecuteAsync(connection, "update foundation_catalog.product_uom set factor_to_base=$3,is_base=$4,effective_from=$5,effective_to=$6,status=$7,version=$8,usage_flags=$9,rounding_precision=$10 where tenant_id=$1 and id=$2", AtlasTenant.Value, configuredUomRowId.Value,
+                    originalUomRow![0], originalUomRow[1], originalUomRow[2], originalUomRow[3], originalUomRow[4], originalUomRow[5], originalUomRow[6], originalUomRow[7]);
+                var restoredUomRow = await ReadRowAsync(connection, "select factor_to_base,is_base,effective_from,effective_to,status,version,usage_flags,rounding_precision from foundation_catalog.product_uom where tenant_id=$1 and id=$2", AtlasTenant.Value, configuredUomRowId.Value);
+                Assert.NotNull(restoredUomRow);
+                for (var i = 0; i < originalUomRow.Length; i++)
+                {
+                    if (i == 6)
+                    {
+                        Assert.Equal(string.Join(',', (string[])originalUomRow[i]), string.Join(',', (string[])restoredUomRow![i]));
+                    }
+                    else
+                    {
+                        Assert.Equal(originalUomRow[i], restoredUomRow![i]);
+                    }
+                }
+            }
+
+            if (seededExtraStock)
+            {
+                await inventory.IssueAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity,
+                    new ConfirmStockMovementRequest(stock.ProductVariantId, stock.WarehouseId, stock.LocationId, stock.UnitId, 50m,
+                        DateOnly.FromDateTime(DateTime.UtcNow.Date), DateOnly.FromDateTime(DateTime.UtcNow.Date),
+                        $"qa25-cleanup:{Guid.CreateVersion7():N}", "quality-acceptance", Guid.CreateVersion7(), StockStatus.Available),
+                    Guid.CreateVersion7(), null, CancellationToken.None);
             }
         }
     }
@@ -840,7 +869,10 @@ public sealed class QualityBackendAcceptanceTests
         using var factory = CreateFactory(connection);
         var quality = factory.Services.GetRequiredService<QualityRepository>();
         var inventory = factory.Services.GetRequiredService<InventoryService>();
-        var stock = await ReadStockAsync(connection, inventory);
+        // Prefer a genuine lot-tracked stock position so the nullable lot branch can
+        // pass authoritative lot validation and reach the dynamic stock SQL.
+        var lotFixture = await EnsureLotTrackedStockAsync(connection, inventory);
+        var stock = lotFixture.Stock;
         var inspection = await CreatePassedInspectionAsync(quality, connection, stock, "QA-26");
 
         // 1. Create a dummy secondary location in the same warehouse with 0 stock
@@ -873,23 +905,10 @@ public sealed class QualityBackendAcceptanceTests
             Assert.Equal("quality.lot_not_found", nonExistentLotEx.Code);
 
             // 4. Mismatched lot ID (lot belonging to a different product variant) must fail closed with lot_not_found
-            var otherVariantIdObj = await ScalarAsync(connection, "select id from foundation_catalog.product_variant where tenant_id=$1 and id != $2 limit 1", AtlasTenant.Value, stock.ProductVariantId);
-            if (otherVariantIdObj is not null and not DBNull)
+            var mismatchedLotRow = await ReadRowAsync(connection, "select product_variant_id,id from business_inventory.lot where tenant_id=$1 and legal_entity_id=$2 and product_variant_id<>$3 order by id limit 1", AtlasTenant.Value, AtlasEntity, stock.ProductVariantId);
+            if (mismatchedLotRow is not null)
             {
-                var otherVariantId = (Guid)otherVariantIdObj;
-                var otherLotIdObj = await ScalarAsync(connection, "select id from business_inventory.lot where tenant_id=$1 and product_variant_id=$2 limit 1", AtlasTenant.Value, otherVariantId);
-                Guid mismatchedLotId;
-                if (otherLotIdObj is not null and not DBNull)
-                {
-                    mismatchedLotId = (Guid)otherLotIdObj;
-                }
-                else
-                {
-                    var createdLot = await inventory.CreateLotAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity,
-                        new CreateLotRequest(otherVariantId, $"QA-MISMATCH-{Guid.NewGuid():N}", DateOnly.FromDateTime(DateTime.UtcNow.Date), null, "quality-acceptance"),
-                        Guid.CreateVersion7(), CancellationToken.None);
-                    mismatchedLotId = createdLot.Id;
-                }
+                var mismatchedLotId = (Guid)mismatchedLotRow[1];
 
                 var mismatchLotEx = await Assert.ThrowsAsync<QualityException>(() =>
                     quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
@@ -906,18 +925,75 @@ public sealed class QualityBackendAcceptanceTests
                     AtlasEntity, CancellationToken.None));
             Assert.Equal("quality.insufficient_available_stock", fakeSerialEx.Code);
 
-            // 6. Dynamic SQL positional parameter validation: null location + lot
-            // Verifies that positional indexing does not throw NpgsqlException: Parameter $6 does not exist
-            var dynamicSqlEx = await Assert.ThrowsAsync<QualityException>(() =>
-                quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
-                    new("QualityHold", "QA26-DYNSQL", stock.ProductVariantId, stock.WarehouseId, LocationId: null, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id, LotId: nonExistentLotId),
-                    AtlasEntity, CancellationToken.None));
-            Assert.Equal("quality.lot_not_found", dynamicSqlEx.Code);
+            // 6. Dynamic SQL positional parameter validation: valid lot with nullable location.
+            // The lot is authoritative, so lot validation succeeds and the request reaches the
+            // parameterized stock query instead of failing early with lot_not_found.
+            var validLotObj = await ScalarAsync(connection, "select id from business_inventory.lot where tenant_id=$1 and legal_entity_id=$2 and product_variant_id=$3 order by id limit 1", AtlasTenant.Value, AtlasEntity, stock.ProductVariantId);
+            var validLotId = stock.LotId ?? (validLotObj is Guid existingLotId
+                ? existingLotId
+                : (await inventory.CreateLotAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity,
+                    new CreateLotRequest(stock.ProductVariantId, $"QA-DYNSQL-{Guid.CreateVersion7():N}", DateOnly.FromDateTime(DateTime.UtcNow.Date), null, "quality-acceptance"), Guid.CreateVersion7(), CancellationToken.None)).Id);
+
+            QualityRestrictionView? dynamicHold = null;
+            try
+            {
+                try
+                {
+                    dynamicHold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+                        new("QualityHold", "QA26-DYNSQL-LOT", stock.ProductVariantId, stock.WarehouseId, LocationId: null, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id, LotId: validLotId),
+                        AtlasEntity, CancellationToken.None);
+                    Assert.Equal("Confirmed", dynamicHold.OwnerExecutionStatus);
+                }
+                catch (QualityException stockEx)
+                {
+                    Assert.True(stockEx.Code is "quality.insufficient_available_stock" or "quality.multiple_locations_require_selection", $"Unexpected stock validation result: {stockEx.Code}");
+                }
+                catch (InventoryException stockEx)
+                {
+                    Assert.Equal("inventory.lot_required", stockEx.Code);
+                }
+
+                // No location and no lot exercises the zero-optional-parameter branch as well.
+                QualityRestrictionView? nullableHold = null;
+                try
+                {
+                    nullableHold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+                        new("QualityHold", "QA26-DYNSQL-NONE", stock.ProductVariantId, stock.WarehouseId, LocationId: null, Quantity: 1m, UnitOfMeasureId: stock.UnitId, InspectionId: inspection.Id),
+                        AtlasEntity, CancellationToken.None);
+                    Assert.Equal("Confirmed", nullableHold.OwnerExecutionStatus);
+                }
+                catch (QualityException stockEx)
+                {
+                    Assert.True(stockEx.Code is "quality.insufficient_available_stock" or "quality.multiple_locations_require_selection", $"Unexpected stock validation result: {stockEx.Code}");
+                }
+                catch (InventoryException stockEx)
+                {
+                    Assert.Equal("inventory.lot_required", stockEx.Code);
+                }
+                finally
+                {
+                    if (nullableHold is not null)
+                        await quality.ReleaseRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), nullableHold.Id, new("QA26 dynamic SQL cleanup", 1m, stock.UnitId), CancellationToken.None);
+                }
+            }
+            finally
+            {
+                if (dynamicHold is not null)
+                    await quality.ReleaseRestrictionAsync(AtlasTenant, Guid.CreateVersion7(), dynamicHold.Id, new("QA26 dynamic SQL cleanup", 1m, stock.UnitId), CancellationToken.None);
+            }
         }
         finally
         {
             // Clean up dummy location
             await ExecuteAsync(connection, "delete from business_inventory.location where tenant_id=$1 and id=$2", AtlasTenant.Value, secondLocId);
+            if (lotFixture.SeededLotId is { } seededLotId)
+            {
+                await inventory.IssueAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity,
+                    new ConfirmStockMovementRequest(stock.ProductVariantId, stock.WarehouseId, stock.LocationId, stock.UnitId, 10m,
+                        DateOnly.FromDateTime(DateTime.UtcNow.Date), DateOnly.FromDateTime(DateTime.UtcNow.Date),
+                        $"qa26-lot-cleanup:{Guid.CreateVersion7():N}", "quality-acceptance", Guid.CreateVersion7(), StockStatus.Available, seededLotId),
+                    Guid.CreateVersion7(), null, CancellationToken.None);
+            }
         }
     }
 
@@ -935,14 +1011,16 @@ public sealed class QualityBackendAcceptanceTests
         var movCountBefore = await CountAsync(connection, "select count(*) from business_inventory.stock_movement_entry where tenant_id=$1", AtlasTenant.Value);
 
         // 1. Create purely administrative hold
+        var inspection = await CreatePassedInspectionAsync(quality, connection, stock, "QA-27");
         var adminHold = await quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
-            new("QualityHold", "QA27-DOC-HOLD"), AtlasEntity, CancellationToken.None);
+            new("QualityHold", "QA27-DOC-HOLD", InspectionId: inspection.Id, HoldScope: "Administrative"), AtlasEntity, CancellationToken.None);
 
         Assert.Equal("NotRequired", adminHold.OwnerExecutionStatus);
         Assert.Equal("Active", adminHold.Status);
         Assert.Null(adminHold.ProductVariantId);
         Assert.Null(adminHold.WarehouseId);
         Assert.Null(adminHold.Quantity);
+        Assert.Equal(inspection.Id, adminHold.InspectionId);
 
         // Verify zero inventory operations or stock movements were created
         var opCountAfter = await CountAsync(connection, "select count(*) from business_inventory.inventory_operation where tenant_id=$1", AtlasTenant.Value);
@@ -966,6 +1044,12 @@ public sealed class QualityBackendAcceptanceTests
         // Verify zero inventory release operations created
         var relOpCount = await CountAsync(connection, "select count(*) from business_quality.quality_restriction_release_operation where tenant_id=$1 and restriction_id=$2", AtlasTenant.Value, adminHold.Id);
         Assert.Equal(0L, relOpCount);
+
+        // A physical request with the same inspection cannot be silently downgraded.
+        var physicalEx = await Assert.ThrowsAsync<QualityException>(() =>
+            quality.CreateRestrictionAsync(AtlasTenant, Guid.CreateVersion7(),
+                new("QualityHold", "QA27-PHYSICAL-REQUIRES-QTY", InspectionId: inspection.Id, HoldScope: "Physical"), AtlasEntity, CancellationToken.None));
+        Assert.Equal("quality.quantity_invalid", physicalEx.Code);
     }
 
     private static async Task<Modules.Quality.DTOs.InspectionView> CreatePassedInspectionAsync(QualityRepository quality, string connection, StockRef stock, string key)
@@ -1023,7 +1107,35 @@ public sealed class QualityBackendAcceptanceTests
         return await quality.CompleteInspectionAsync(AtlasTenant, Guid.CreateVersion7(), inspection.Id, new("QA acceptance"), CancellationToken.None);
     }
 
-    private sealed record StockRef(Guid ProductVariantId, Guid WarehouseId, Guid LocationId, Guid UnitId, decimal AvailableQuantity);
+    private sealed record StockRef(Guid ProductVariantId, Guid WarehouseId, Guid LocationId, Guid UnitId, decimal AvailableQuantity, Guid? LotId = null);
+    private sealed record LotStockFixture(StockRef Stock, Guid? SeededLotId);
+    private static async Task<LotStockFixture> EnsureLotTrackedStockAsync(string connection, InventoryService inventory)
+    {
+        await using var db = new NpgsqlConnection(connection);
+        await db.OpenAsync();
+        await SetTenantAsync(db);
+        await using var command = new NpgsqlCommand("select b.product_variant_id,b.warehouse_id,b.location_id,u.uom_id,b.lot_id,b.on_hand_base_quantity-b.reserved_base_quantity from business_inventory.stock_balance b join business_inventory.product_inventory_profile p on p.tenant_id=b.tenant_id and p.legal_entity_id=b.legal_entity_id and p.product_variant_id=b.product_variant_id and p.tracking_mode='Lot' join foundation_catalog.product_uom u on u.tenant_id=b.tenant_id and u.variant_id=b.product_variant_id and u.is_base and u.status='Active' where b.tenant_id=$1 and b.legal_entity_id=$2 and b.stock_status='Available' and b.lot_id is not null and b.on_hand_base_quantity-b.reserved_base_quantity>=1 and exists(select 1 from business_quality.quality_plan q join business_quality.quality_plan_version v on v.tenant_id=q.tenant_id and v.plan_id=q.id and v.status='Active' join business_quality.quality_plan_applicability a on a.tenant_id=q.tenant_id and a.plan_id=q.id where q.tenant_id=b.tenant_id and q.legal_entity_id=b.legal_entity_id and q.event_type='Receiving' and (a.product_variant_id is null or a.product_variant_id=b.product_variant_id)) order by b.product_variant_id limit 1", db);
+        command.Parameters.AddWithValue(AtlasTenant.Value);
+        command.Parameters.AddWithValue(AtlasEntity);
+        await using var reader = await command.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+            return new(new StockRef(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3), reader.GetDecimal(5), reader.GetGuid(4)), null);
+        await reader.DisposeAsync();
+
+        var candidate = await ReadRowAsync(connection, "select p.product_variant_id,w.id,w.default_location_id,u.uom_id,l.id from business_inventory.product_inventory_profile p join business_inventory.warehouse w on w.tenant_id=p.tenant_id and w.legal_entity_id=p.legal_entity_id and w.status='Active' and w.default_location_id is not null join foundation_catalog.product_uom u on u.tenant_id=p.tenant_id and u.variant_id=p.product_variant_id and u.is_base and u.status='Active' join business_inventory.lot l on l.tenant_id=p.tenant_id and l.legal_entity_id=p.legal_entity_id and l.product_variant_id=p.product_variant_id and l.status='Active' where p.tenant_id=$1 and p.legal_entity_id=$2 and p.tracking_mode='Lot' and exists(select 1 from business_quality.quality_plan q join business_quality.quality_plan_version v on v.tenant_id=q.tenant_id and v.plan_id=q.id and v.status='Active' join business_quality.quality_plan_applicability a on a.tenant_id=q.tenant_id and a.plan_id=q.id and (a.product_variant_id is null or a.product_variant_id=p.product_variant_id) where q.tenant_id=p.tenant_id and q.legal_entity_id=p.legal_entity_id and q.event_type='Receiving') order by p.product_variant_id limit 1", AtlasTenant.Value, AtlasEntity);
+        Assert.NotNull(candidate);
+        var productVariantId = (Guid)candidate![0];
+        var warehouseId = (Guid)candidate[1];
+        var locationId = (Guid)candidate[2];
+        var unitId = (Guid)candidate[3];
+        var lotId = (Guid)candidate[4];
+        await inventory.ReceiveAsync(AtlasTenant, Guid.CreateVersion7(), AtlasEntity,
+            new ConfirmStockMovementRequest(productVariantId, warehouseId, locationId, unitId, 10m,
+                DateOnly.FromDateTime(DateTime.UtcNow.Date), DateOnly.FromDateTime(DateTime.UtcNow.Date),
+                $"qa26-lot-seed:{Guid.CreateVersion7():N}", "quality-acceptance", Guid.CreateVersion7(), StockStatus.Available, lotId),
+            Guid.CreateVersion7(), null, CancellationToken.None);
+        return new(new StockRef(productVariantId, warehouseId, locationId, unitId, 10m, lotId), lotId);
+    }
     private static async Task<StockRef> ReadStockAsync(string connection, InventoryService inventory)
     {
         await using var db = new NpgsqlConnection(connection); await db.OpenAsync(); await SetTenantAsync(db);
@@ -1057,6 +1169,19 @@ public sealed class QualityBackendAcceptanceTests
     private static async Task<decimal> StockQuantityAsync(string connection, Guid product, Guid warehouse, Guid location, string status) => Convert.ToDecimal(await ScalarAsync(connection, "select coalesce(sum(on_hand_base_quantity),0) from business_inventory.stock_balance where tenant_id=$1 and legal_entity_id=$2 and product_variant_id=$3 and warehouse_id=$4 and location_id=$5 and stock_status=$6", AtlasTenant.Value, AtlasEntity, product, warehouse, location, status), CultureInfo.InvariantCulture);
     private static async Task<string> StockStatusAsync(string connection, StockRef stock, string status) => (string)(await ScalarAsync(connection, "select stock_status from business_inventory.stock_balance where tenant_id=$1 and legal_entity_id=$2 and product_variant_id=$3 and warehouse_id=$4 and location_id=$5 and stock_status=$6 and on_hand_base_quantity>0 limit 1", AtlasTenant.Value, AtlasEntity, stock.ProductVariantId, stock.WarehouseId, stock.LocationId, status))!;
     private static async Task<long> CountAsync(string connection, string sql, params object[] values) => Convert.ToInt64(await ScalarAsync(connection, sql, values), CultureInfo.InvariantCulture);
+    private static async Task<object[]?> ReadRowAsync(string connection, string sql, params object[] values)
+    {
+        await using var db = new NpgsqlConnection(connection);
+        await db.OpenAsync();
+        await SetTenantAsync(db);
+        await using var command = new NpgsqlCommand(sql, db);
+        for (var i = 0; i < values.Length; i++) command.Parameters.AddWithValue(values[i]);
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+        var row = new object[reader.FieldCount];
+        reader.GetValues(row);
+        return row;
+    }
     private static async Task<int> ExecuteAsync(string connection, string sql, params object[] values)
     { await using var db = new NpgsqlConnection(connection); await db.OpenAsync(); await SetTenantAsync(db); await using var command = new NpgsqlCommand(sql, db); for (var i = 0; i < values.Length; i++) command.Parameters.AddWithValue(values[i]); return await command.ExecuteNonQueryAsync(); }
     private static async Task<object?> ScalarAsync(string connection, string sql, params object[] values)

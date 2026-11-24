@@ -189,6 +189,7 @@ export function CreateRestrictionModal({
         request: {
           restrictionType,
           reasonCode: reasonCode.trim(),
+          holdScope: isPhysical ? "Physical" : "Administrative",
           quantity: isPhysical ? qty : null,
           inspectionId: finalInspectionId || null,
           productVariantId: isPhysical ? (currentInspection?.productVariantId || null) : null,

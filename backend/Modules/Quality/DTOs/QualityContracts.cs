@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Modules.Quality.DTOs;
 
 public sealed record CreateQualityPlanRequest(Guid LegalEntityId, string Code, string Name, string EventType = "Receiving", bool Mandatory = true);
@@ -11,7 +13,7 @@ public sealed record CreateInspectionRequest(Guid LegalEntityId, string EventTyp
 public sealed record AddInspectionResultRequest(Guid CharacteristicId, decimal? NumericValue = null, string? TextValue = null, bool? BooleanValue = null, string? UomCode = null, string? EvidenceReference = null, Guid? SampleId = null, string? InstrumentReference = null, string? CalibrationStatus = null, DateOnly? CalibrationDueOn = null);
 public sealed record CompleteInspectionRequest(string? ReviewNotes = null);
 public sealed record ReinspectionRequest(string Reason);
-public sealed record CreateRestrictionRequest(string RestrictionType, string ReasonCode, Guid? ProductVariantId = null, Guid? WarehouseId = null, Guid? LocationId = null, Guid? LotId = null, Guid? SerialId = null, Guid? InspectionId = null, decimal? Quantity = null, Guid? UnitOfMeasureId = null, DateOnly? OperationalDate = null, DateOnly? PostingDate = null);
+public sealed record CreateRestrictionRequest(string RestrictionType, string ReasonCode, Guid? ProductVariantId = null, Guid? WarehouseId = null, Guid? LocationId = null, Guid? LotId = null, Guid? SerialId = null, Guid? InspectionId = null, decimal? Quantity = null, Guid? UnitOfMeasureId = null, DateOnly? OperationalDate = null, DateOnly? PostingDate = null, string HoldScope = "Physical");
 public sealed record ReleaseRestrictionRequest(string Reason, decimal? Quantity = null, Guid? UnitOfMeasureId = null, DateOnly? OperationalDate = null, DateOnly? PostingDate = null, string? IdempotencyKey = null);
 public sealed record CreateDispositionRequest(string Decision, string Reason, Guid? InspectionId = null, decimal? Quantity = null, string? ExternalReference = null, Guid? UnitOfMeasureId = null, DateOnly? OperationalDate = null, DateOnly? PostingDate = null, Guid? RestrictionId = null);
 public sealed record ApproveDispositionRequest(string? Notes = null);
@@ -52,4 +54,4 @@ public sealed record QualityNcrView(Guid Id, string Number, Guid LegalEntityId, 
 public sealed record CapaView(Guid Id, string Number, string Type, string Title, string State, Guid? NcrId, DateTimeOffset CreatedAt);
 public sealed record CapaActionView(Guid Id, Guid CapaId, string ActionType, string State);
 public sealed record QualityScarView(Guid Id, string Number, Guid LegalEntityId, Guid SupplierPartyId, string Title, string State, Guid? NcrId, DateOnly? DueDate);
-public sealed record QualityCertificateView(Guid Id, string Number, string CertificateType, string State, Guid InspectionId, string? CustomerReference, DateTimeOffset CreatedAt);
+public sealed record QualityCertificateView(Guid Id, string Number, string CertificateType, string State, Guid InspectionId, string? CustomerReference, DateTimeOffset CreatedAt, JsonElement? Snapshot = null);

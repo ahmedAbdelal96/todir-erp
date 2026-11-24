@@ -313,6 +313,10 @@ foreach (var script in scripts)
         "pos-forward-fix-exchanges-role-permissions.sql" => new[] { "platform.tenant", "platform.role", "platform.role_permission" },
         "expenses-forward-fix-typed-travel-facts.sql" => new[] { "business_expenses.expense", "business_expenses.mileage_expense_detail", "business_expenses.per_diem_expense_detail" },
         "expenses-forward-fix-deletion-attribution.sql" => new[] { "business_expenses.expense", "business_expenses.expense_deletion_history" },
+        // Adding the composite restriction foreign key validates existing rows;
+        // temporarily relax FORCE RLS for both sides so a fresh bootstrap does
+        // not fail closed during PostgreSQL's referential scan.
+        "quality-forward-fix-disposition-restriction.sql" => new[] { "business_quality.quality_disposition", "business_quality.quality_restriction" },
         _ => null
     };
     if (Path.GetFileName(script) is "finbase-forward-fix-provider-history.sql" or "pricing-schema.sql")
@@ -561,6 +565,10 @@ static IReadOnlyList<string> ResolveModuleMigrations(string bootstrapDirectory, 
 
 static int MigrationPriority(string fileName) => fileName switch
 {
+    // OAuth scope data depends on the OpenIddict store tables during a fresh
+    // bootstrap; keep the table foundation ahead of its data correction.
+    _ when fileName.Equals("platform-kernel-forward-fix-openiddict.sql", StringComparison.Ordinal) => 4,
+    _ when fileName.Equals("platform-kernel-forward-fix-oauth-write-scope.sql", StringComparison.Ordinal) => 5,
     _ when fileName.EndsWith("-authentication-challenges.sql", StringComparison.Ordinal) => 0,
     _ when fileName.EndsWith("-tenant-bound-identity.sql", StringComparison.Ordinal) => 1,
     _ when fileName.Equals("catalog-forward-fix-import.sql", StringComparison.Ordinal) => 2,

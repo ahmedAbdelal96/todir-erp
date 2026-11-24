@@ -246,6 +246,7 @@ export interface QualityRestrictionView {
 export interface CreateRestrictionRequest {
   restrictionType: string;
   reasonCode: string;
+  holdScope?: "Physical" | "Administrative";
   productVariantId?: string | null;
   warehouseId?: string | null;
   locationId?: string | null;
@@ -535,6 +536,7 @@ export interface QualityCertificateView {
   inspectionId: string;
   customerReference: string | null;
   createdAt: string;
+  snapshot?: unknown;
 }
 
 export interface IssueCertificateRequest {

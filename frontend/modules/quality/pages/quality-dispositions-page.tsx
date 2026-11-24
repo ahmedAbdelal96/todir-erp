@@ -100,7 +100,7 @@ export function QualityDispositionsPage(): React.JSX.Element {
                   const canReconcile = d.ownerExecutionStatus === "Unknown" && canManageDispositions && !isReadOnly;
 
                   return (
-                    <tr key={d.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <tr key={d.id} data-testid={`quality-disposition-row-${d.id}`} style={{ borderBottom: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "10px 12px", fontWeight: 700, color: "#102a43" }}>
                         {t(`decisions.${d.decision}`, d.decision)}
                       </td>

@@ -329,8 +329,10 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
 
     public Task<QualityCertificateView?> GetCertificateAsync(TenantId tenant, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
     {
-        var row = await ReadSingleAsync(context, "select id,number,certificate_type,state,inspection_id,customer_reference,created_at from business_quality.quality_certificate where tenant_id=$1 and id=$2", token, tenant.Value, id);
-        return row is null ? null : new QualityCertificateView((Guid)row[0], (string)row[1], (string)row[2], (string)row[3], (Guid)row[4], row[5] is DBNull ? null : (string)row[5], Timestamp(row[6]));
+        var row = await ReadSingleAsync(context, "select id,number,certificate_type,state,inspection_id,customer_reference,created_at,(select snapshot::text from business_quality.quality_certificate_version v where v.tenant_id=c.tenant_id and v.certificate_id=c.id order by v.version_no desc limit 1) from business_quality.quality_certificate c where c.tenant_id=$1 and c.id=$2", token, tenant.Value, id);
+        if (row is null) return null;
+        var snapshot = row[7] is DBNull ? (JsonElement?)null : JsonDocument.Parse((string)row[7]).RootElement.Clone();
+        return new QualityCertificateView((Guid)row[0], (string)row[1], (string)row[2], (string)row[3], (Guid)row[4], row[5] is DBNull ? null : (string)row[5], Timestamp(row[6]), snapshot);
     }, ct);
 
     public Task<Guid?> GetLegalEntityForResourceAsync(TenantId tenant, string resourceType, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (context, token) =>
@@ -401,6 +403,10 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
     {
         if (request.RestrictionType is not ("QualityHold" or "Quarantine" or "Blocked" or "ReturnsInspection")) throw new QualityException("quality.restriction_type_invalid");
 
+        var holdScope = request.HoldScope.Trim();
+        if (holdScope is not ("Physical" or "Administrative")) throw new QualityException("quality.restriction_scope_invalid");
+        var isAdministrativeHold = holdScope == "Administrative";
+
         var productVariantId = request.ProductVariantId;
         var warehouseId = request.WarehouseId;
         var locationId = request.LocationId;
@@ -417,7 +423,7 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
             if (inspRow is null) throw new QualityException("quality.inspection_not_found");
             if ((Guid)inspRow[2] != legalEntityId) throw new QualityException("quality.inspection_legal_entity_mismatch");
 
-            if (inspRow[0] is not DBNull)
+            if (!isAdministrativeHold && inspRow[0] is not DBNull)
             {
                 var inspProductVariantId = (Guid)inspRow[0];
                 if (productVariantId is not null && productVariantId.Value != inspProductVariantId)
@@ -432,21 +438,24 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
             }
         }
 
-        // Recompute effective ownership strictly after resolving all authoritative references
-        var hasOwnerScope = (request.Quantity is > 0m) || productVariantId is not null || warehouseId is not null || locationId is not null || lotId is not null || serialId is not null;
-
-        if (!hasOwnerScope)
+        // Administrative holds are documentary Quality records. They may retain an inspection link,
+        // but must never carry an Inventory-owned identity or quantity and must never invoke Inventory.
+        var hasPhysicalIdentity = productVariantId is not null || warehouseId is not null || locationId is not null || lotId is not null || serialId is not null || unitOfMeasureId is not null || request.Quantity is not null;
+        if (isAdministrativeHold)
         {
-            if (productVariantId is not null || warehouseId is not null || locationId is not null || lotId is not null || serialId is not null)
-            {
-                throw new QualityException("quality.administrative_hold_invalid_scope");
-            }
-            if (request.Quantity is not null and <= 0m)
-            {
-                throw new QualityException("quality.quantity_invalid");
-            }
+            if (hasPhysicalIdentity) throw new QualityException("quality.administrative_hold_invalid_scope");
         }
         else
+        {
+            // Physical restrictions are fail-closed. Missing authoritative identity or quantity
+            // cannot be interpreted as a documentary hold by accident.
+            if (productVariantId is null) throw new QualityException("quality.owner_scope_incomplete");
+            if (request.Quantity is not > 0m) throw new QualityException("quality.quantity_invalid");
+        }
+
+        // Only physical holds enter the Inventory ownership and stock-validation path.
+        var hasOwnerScope = !isAdministrativeHold;
+        if (hasOwnerScope)
         {
             // Physical restriction: productVariantId and positive quantity are strictly required
             if (productVariantId is null)
@@ -655,7 +664,7 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
                     await coordinator.ExecuteAsync<bool>(tenant, async (context, token) =>
                     {
                         await ExecuteAsync(context, "update business_quality.quality_restriction set owner_execution_status='Confirmed',inventory_operation_id=$3 where tenant_id=$1 and id=$2", token, tenant.Value, id, ownerResult.OperationId);
-                        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1", JsonSerializer.Serialize(new { restrictionId = id, legalEntityId, productVariantId, warehouseId, locationId, lotId, serialId, request.Quantity, request.RestrictionType, ownerOperationId = ownerResult.OperationId }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
+                        context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1", JsonSerializer.Serialize(new { restrictionId = id, legalEntityId, holdScope, productVariantId, warehouseId, locationId, lotId, serialId, request.Quantity, request.RestrictionType, ownerOperationId = ownerResult.OperationId }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
                         return true;
                     }, ct);
                 }
@@ -695,7 +704,7 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
         {
             await coordinator.ExecuteAsync<bool>(tenant, async (context, token) =>
             {
-                context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1", JsonSerializer.Serialize(new { restrictionId = id, legalEntityId, productVariantId, warehouseId, locationId, lotId, serialId, request.Quantity, request.RestrictionType }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
+                context.AddOutbox(new OutboxMessage(Guid.CreateVersion7(), "QualityRestrictionCreatedV1", JsonSerializer.Serialize(new { restrictionId = id, legalEntityId, holdScope, productVariantId, warehouseId, locationId, lotId, serialId, request.Quantity, request.RestrictionType }), tenant, DateTimeOffset.UtcNow, Guid.CreateVersion7(), id, "quality"));
                 return true;
             }, ct);
         }
@@ -1461,7 +1470,8 @@ public sealed class QualityRepository(ITransactionCoordinator coordinator, Share
         var rows = new List<object>();
         await using var command = Command(context, "select c.id,c.code,c.name,c.data_type,c.base_uom_code,pc.minimum,pc.maximum,pc.target,pc.allowed_values,pc.required,pc.evidence_required from business_quality.quality_plan_characteristic pc join business_quality.quality_characteristic c on c.tenant_id=pc.tenant_id and c.id=pc.characteristic_id where pc.tenant_id=$1 and pc.plan_version_id=$2 order by pc.sequence_no", tenant, planVersionId);
         await using var reader = await command.ExecuteReaderAsync(token);
-        while (await reader.ReadAsync(token)) rows.Add(new {
+        while (await reader.ReadAsync(token)) rows.Add(new
+        {
             characteristicId = reader.GetGuid(0),
             code = reader.GetString(1),
             name = reader.GetString(2),

@@ -454,6 +454,40 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     expect(persistedHold.ownerExecutionStatus).toBe('Confirmed');
     createdHoldId = persistedHold.id;
 
+    // Exercise the documentary administrative path through the authenticated browser
+    // context. It must preserve the inspection link while leaving Inventory untouched.
+    const balancesBeforeAdminRes = await page.request.get(`/api/v1/inventory/legal-entities/${ATLAS_ENTITY_ID}/balances`);
+    expect(balancesBeforeAdminRes.ok()).toBeTruthy();
+    const balancesBeforeAdmin = await balancesBeforeAdminRes.json();
+
+    await createHoldBtn.click();
+    await page.waitForTimeout(300);
+    const holdScopeSelect = page.getByRole('button', { name: /حظر مخزني فعلي/i });
+    await expect(holdScopeSelect).toBeVisible();
+    await holdScopeSelect.click();
+    await page.getByRole('option', { name: /حظر إداري ومستندي/i }).click();
+    const administrativeReason = `ADMIN-HOLD-QA-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    await page.getByLabel(/كود وسبب الحظر/i).first().fill(administrativeReason);
+    await page.getByRole('button', { name: /تطبيق الحظر|حفظ/i }).last().click();
+    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 8000 });
+
+    const adminHoldsRes = await page.request.get(`/api/v1/quality/restrictions?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(adminHoldsRes.ok()).toBeTruthy();
+    const adminHolds = await adminHoldsRes.json();
+    const administrativeHold = adminHolds.items.find((h: { reasonCode: string }) => h.reasonCode === administrativeReason);
+    expect(administrativeHold).toBeDefined();
+    expect(administrativeHold.ownerExecutionStatus).toBe('NotRequired');
+    const administrativeDetailRes = await page.request.get(`/api/v1/quality/restrictions/${administrativeHold.id}`);
+    expect(administrativeDetailRes.ok()).toBeTruthy();
+    const administrativeDetail = await administrativeDetailRes.json();
+    expect(administrativeDetail.inspectionId).toBeTruthy();
+    expect(administrativeDetail.productVariantId).toBeNull();
+    expect(administrativeDetail.quantity).toBeNull();
+
+    const balancesAfterAdminRes = await page.request.get(`/api/v1/inventory/legal-entities/${ATLAS_ENTITY_ID}/balances`);
+    expect(balancesAfterAdminRes.ok()).toBeTruthy();
+    expect(await balancesAfterAdminRes.json()).toEqual(balancesBeforeAdmin);
+
     await saveArtifact(page, '10-material-holds-restrictions.png');
   });
 
@@ -490,8 +524,10 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const availBefore = Number(balancesBefore.find((b: any) => matchStock(b, 'Available'))?.onHandBaseQuantity ?? 0);
     const holdBefore = Number(balancesBefore.find((b: any) => matchStock(b, 'QualityHold'))?.onHandBaseQuantity ?? 0);
 
-    // Click release button on active hold
-    const releaseBtn = page.getByRole('button', { name: /إفراج مخزني/i }).first();
+    // Target the hold created by Scenario 10; the acceptance database may retain
+    // earlier fixture rows and list order is not an identity guarantee.
+    const holdRow = page.getByRole('row').filter({ hasText: holdDetail.reasonCode });
+    const releaseBtn = holdRow.getByRole('button', { name: /إفراج مخزني/i });
     await expect(releaseBtn).toBeVisible();
     await releaseBtn.click();
     await page.waitForTimeout(300);
@@ -537,8 +573,14 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await page.goto('/quality/restrictions');
     await page.waitForLoadState('networkidle');
 
+    expect(createdHoldId).toBeTruthy();
+    const targetHoldDetailRes = await page.request.get(`/api/v1/quality/restrictions/${createdHoldId}`);
+    expect(targetHoldDetailRes.ok()).toBeTruthy();
+    const targetHoldDetail = await targetHoldDetailRes.json();
+    const targetHoldRow = page.getByRole('row').filter({ hasText: targetHoldDetail.reasonCode });
+
     // Launch disposition directly from hold row
-    const dispRowBtn = page.getByRole('button', { name: /قرار فني/i }).first();
+    const dispRowBtn = targetHoldRow.getByRole('button', { name: /قرار فني/i });
     await expect(dispRowBtn).toBeVisible();
     await dispRowBtn.click();
     await page.waitForTimeout(300);
@@ -567,8 +609,10 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     await page.waitForLoadState('networkidle');
     await expect(page.locator('[data-testid="quality-dispositions-page"]')).toBeVisible({ timeout: 15000 });
 
+    const targetDispositionRow = page.locator(`[data-testid="quality-disposition-row-${persistedDisp.id}"]`);
+
     // Approve the disposition
-    const approveBtn = page.getByRole('button', { name: /اعتماد/i }).first();
+    const approveBtn = targetDispositionRow.getByRole('button', { name: /اعتماد/i });
     await expect(approveBtn).toBeVisible();
     await approveBtn.click();
     await page.waitForTimeout(300);
@@ -606,7 +650,7 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     const availBeforeExec = Number(balBeforeExec.find((b: any) => matchStock(b, 'Available'))?.onHandBaseQuantity ?? 0);
 
     // Execute the disposition to trigger owner integration
-    const executeBtn = page.getByRole('button', { name: /تنفيذ.*أثر/i }).first();
+    const executeBtn = targetDispositionRow.getByRole('button', { name: /تنفيذ.*أثر/i });
     await expect(executeBtn).toBeVisible();
     await executeBtn.click();
     await page.waitForTimeout(600);
@@ -767,15 +811,22 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
 
     await expect(page.locator('[data-testid="quality-certificates-page"]')).toBeVisible({ timeout: 15000 });
 
+    const inspectionsRes = await page.request.get(`/api/v1/quality/inspections?legalEntityId=${ATLAS_ENTITY_ID}`);
+    expect(inspectionsRes.ok()).toBeTruthy();
+    const inspectionsData = await inspectionsRes.json();
+    const expectedCertificateInspection = inspectionsData.items.find((item: { decisionState?: string }) => item.decisionState === 'Passed');
+    expect(expectedCertificateInspection).toBeDefined();
+
     const issueCertBtn = page.getByRole('button', { name: /إصدار شهادة جودة/i });
     await expect(issueCertBtn).toBeVisible();
 
     await issueCertBtn.click();
     await page.waitForTimeout(300);
 
+    const certificateCustomerReference = `PO-CUST-QA16-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
     const custRef = page.getByLabel(/مرجع العميل/i).or(page.locator('input[type="text"]').last());
     if (await custRef.isVisible()) {
-      await custRef.fill('PO-CUST-2026-990');
+      await custRef.fill(certificateCustomerReference);
     }
 
     const saveCertBtn = page.getByRole('button', { name: /إصدار شهادة جودة|إصدار الشهادة|حفظ/i }).last();
@@ -788,10 +839,23 @@ test.describe('TODIR Module 27: Quality Management — Real-Stack Transactional 
     expect(certsRes.ok()).toBeTruthy();
     const certsData = await certsRes.json();
     expect(certsData.items.length).toBeGreaterThan(0);
-    const persistedCert = certsData.items.find((c: { customerReference?: string }) => c.customerReference === 'PO-CUST-2026-990');
+    const persistedCert = certsData.items.find((c: { customerReference?: string }) => c.customerReference === certificateCustomerReference);
     expect(persistedCert).toBeDefined();
     expect(persistedCert.state).toBe('Issued');
     expect(persistedCert.certificateType).toBe('COA');
+    expect(persistedCert.inspectionId).toBe(expectedCertificateInspection.id);
+
+    const certificateDetailRes = await page.request.get(`/api/v1/quality/certificates/${persistedCert.id}`);
+    expect(certificateDetailRes.ok()).toBeTruthy();
+    const certificateDetail = await certificateDetailRes.json();
+    expect(certificateDetail.customerReference).toBe(certificateCustomerReference);
+    expect(certificateDetail.inspectionId).toBe(expectedCertificateInspection.id);
+    expect(certificateDetail.state).toBe('Issued');
+    expect(certificateDetail.certificateType).toBe('COA');
+    expect(certificateDetail.snapshot).toBeTruthy();
+    expect(certificateDetail.snapshot.InspectionId).toBe(expectedCertificateInspection.id);
+    expect(certificateDetail.snapshot.inspection.Number).toBe(expectedCertificateInspection.number);
+    expect(certificateDetail.snapshot.inspection.DecisionState).toBe('Passed');
 
     await saveArtifact(page, '16-supplier-quality-scar-certificates.png');
   });

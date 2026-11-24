@@ -45,7 +45,7 @@ All user-facing Arabic microcopy strictly follows the authoritative Enterprise A
 | Test Gate | Scope & Purpose | Execution Result |
 | :--- | :--- | :---: |
 | **Quality Unit & Invariant Suite** | `node --test frontend/modules/quality/tests/quality-slice.test.ts` (6 tests covering Arabic key parity, Passed != Released invariant, Supplier Return invariant, Reconciliation idempotency, 6M root cause enumeration, and destination contract) | **6 / 6 PASS** |
-| **Quality Backend Acceptance Suite** | `dotnet test backend/Tests/Integration/QualityTests.csproj` (27 integration tests QA-01 to QA-27 covering authoritative hold creation, balance validation, reconciliation state machine, deterministic replay, administrative holds, UOM conversion, location scoping, and error conditions) | **27 / 27 PASS** |
+| **Quality Backend Acceptance Suite** | `dotnet test backend/Tests/Integration/IntegrationTests.csproj --filter FullyQualifiedName~QualityBackendAcceptanceTests` (27 integration tests QA-01 to QA-27 covering authoritative hold creation, balance validation, reconciliation state machine, deterministic replay, administrative holds, UOM conversion, location scoping, and error conditions) | **27 / 27 PASS** |
 | **Permissions Manifest Audit** | `node --test frontend/tests/navigation/permissions-manifest-audit.test.ts` (14 tests verifying 100% manifest permissions sync across all modules including Quality) | **14 / 14 PASS** |
 | **Navigation Consistency Contract** | `node --test frontend/tests/navigation/navigation-consistency.test.ts` (7 tests validating all route registrations and legal-entity scopes) | **7 / 7 PASS** |
 | **Full Platform Frontend Suite** | `pnpm run test:frontend` (293 unit & slice tests across all platform modules) | **293 / 293 PASS** |
@@ -76,13 +76,13 @@ Executed via `pnpm --dir frontend exec playwright test --config=playwright.quali
 | **07** | **Inspection Conformance & Completion:** Validates conformance evaluation modal, inspector assignment, and completion transition. | `07-inspection-evaluation-completed.png` | **PASS** |
 | **08** | **Strict Domain Invariant: Passed != Released:** Validates persistent warning banner on header asserting that passed inspection does not release held inventory. | `08-inspection-domain-invariant-warning.png` | **PASS** |
 | **09** | **Reinspection Workflow & Cycle Tracing:** Validates reinspection trigger and parent inspection cycle traceability. | `09-reinspection-workflow.png` | **PASS** |
-| **10** | **Material Holds & Restrictions Register:** Validates material hold register displaying initial quantity, released quantity, and remaining restricted balance with authoritative Inventory status hold. | `10-material-holds-restrictions.png` | **PASS** |
+| **10** | **Material Holds & Restrictions Register:** Validates physical hold balance deltas and the explicit administrative hold path through the authenticated browser/API context. The administrative record preserves its inspection link, remains `NotRequired`, and leaves the live Inventory balances unchanged. | `10-material-holds-restrictions.png` | **PASS** |
 | **11** | **Partial Quantity Release Dialog & Balance Calculation:** Validates partial release modal with remaining balance accounting and operational date selection; verifies live Inventory balance queries asserting exact 25-unit partial release from QualityHold into Available (-25 QualityHold / +25 Available). | `11-partial-quantity-release-dialog.png` | **PASS** |
 | **12** | **Dispositions Queue & MRB Technical Decisions:** Validates MRB dispositions queue with source hold binding (`HOLD:{id}`), decision types (`UseAsIs`, `Rework`, `Scrap`, `SupplierReturn`) and action buttons; verifies live Inventory balance queries. | `12-quality-dispositions-mrb.png` | **PASS** |
 | **13** | **Quality Issues Log & Defect Classification:** Validates quality issues listing categorized by source, severity, and defect classification. | `13-quality-issues-log.png` | **PASS** |
 | **14** | **Non-Conformance Reports (NCR) & Containment:** Validates NCR lifecycle with immediate containment action logging and severity badges. | `14-ncrs-containment-actions.png` | **PASS** |
 | **15** | **Corrective & Preventive Action (CAPA) with 6M:** Validates CAPA workflow with Ishikawa 6M root cause analysis and action assignment. | `15-capa-root-cause-investigation.png` | **PASS** |
-| **16** | **Supplier Quality, SCAR Queue, and COA/COC:** Validates supplier quality scorecards, SCAR management, and Certificate of Analysis (COA) issuance register for passed inspections. | `16-supplier-quality-scar-certificates.png` | **PASS** |
+| **16** | **Supplier Quality, SCAR Queue, and COA/COC:** Validates supplier quality scorecards, SCAR management, and a uniquely identified Certificate of Analysis (COA), including the exact passed inspection reference and immutable historical snapshot from the detail endpoint. | `16-supplier-quality-scar-certificates.png` | **PASS** |
 | **17** | **Multi-Viewport & Responsive RTL/LTR:** Validates responsive presentation on Desktop (1440px), Tablet (768px), Mobile (375px), and English LTR alignment without text clipping. | `17-multi-viewport-rtl-ltr.png` | **PASS** |
 | **18** | **Granular Authorization & Read-Only Protection:** Authentically validates permission denial against live backend using unprivileged user `sales@atlas.com` (asserting hidden/disabled controls and live 403 API response on `/api/v1/quality/plans`). | `18-permission-lifecycle-protection.png` | **PASS** |
 | **19** | **Keyset Pagination & Cursor Navigation:** Validates real PostgreSQL keyset cursor paging (Page 1 -> Next cursor -> Page 2 distinct items -> Previous cursor -> Page 1 restored) across 132+ genuine records. | Playwright Spec 19 | **PASS** |
@@ -138,3 +138,24 @@ Executed via `pnpm --dir frontend exec playwright test --config=playwright.quali
     - Playwright test 10 verifies physical hold creation, asserting exact before/after balance deltas: -25 Available / +25 QualityHold.
     - Playwright test 11 verifies partial release from QualityHold into Available, asserting exact before/after balance deltas: -25 QualityHold / +25 Available at the exact warehouse, location, lot, serial, and stock status.
     - Playwright test 12 verifies final disposition release, asserting -75 QualityHold / +75 Available.
+
+## 5. Module 27 Release Evidence — QM40–QM46 Closure
+
+This matrix records the evidence that supports the canonical release scenarios. A rendered page is not treated as workflow proof; each row names the persisted or live-stack evidence used.
+
+| Canonical scenario | Evidence and exact proof | Result |
+| :--- | :--- | :---: |
+| **QM40 — Receiving inspection and stock release/hold** | Backend `QA-01`, `QA-11`, `QA-23`, `QA-27`; Playwright 05–12. `QA-27` links a documentary hold to a product-bearing inspection and asserts `NotRequired`, preserved `inspectionId`, zero Inventory operations/movement rows, and unchanged balance. | **PASS** |
+| **QM41 — Manufacturing gates and reinspection** | Backend `QA-03` plus Playwright 09 reinspection cycle and the inspection workspace/result evidence. Failed production quality blocks continuation; reinspection is persisted as a new cycle. | **PASS** |
+| **QM42 — NCR, containment, CAPA, effectiveness** | Backend `QA-02`, `QA-05`; Playwright 13–15. Persisted issue/NCR, containment, CAPA root cause/action, and effectiveness/closure states are asserted through the API. | **PASS** |
+| **QM43 — Supplier SCAR and response** | Backend `QA-06`; Playwright 16 supplier-quality/SCAR flow with persisted response and review state. | **PASS** |
+| **QM44 — Disposition and Inventory reconciliation** | Backend `QA-04`, `QA-08`, `QA-12`–`QA-22`, `QA-25`–`QA-27`; Playwright 10–12. Exact stock deltas, idempotency/reconciliation, valid nullable stock identities, and safe administrative/physical separation are verified. | **PASS** |
+| **QM45 — COA/CoC historical snapshot** | Backend `QA-07` verifies the immutable `quality_certificate_version` snapshot. Playwright 16 now creates a unique per-run customer reference, verifies the newly issued certificate identity, expected passed inspection number/reference, state/type, and the persisted snapshot returned by the detail endpoint. | **PASS** |
+| **QM46 — Permission, lifecycle, tenant/entity security, performance and operations** | Playwright 18–20 verifies authenticated permission denial, lifecycle/entitlement behavior, anonymous/cross-tenant/same-tenant legal-entity isolation; backend `QA-09`, `QA-10`, and `QA-23`–`QA-27` verify RLS, worker/outbox, and fail-closed domain safety. Performance/operational safety remains bounded by the existing acceptance suite and documented local stack gates; heavyweight performance certification is not claimed. | **PASS (local acceptance scope)** |
+
+### Release-blocker corrections in this evidence
+
+- `CreateRestrictionRequest.HoldScope` is explicit and fail-closed (`Physical` or `Administrative`). Administrative holds preserve the linked inspection for audit context but reject all Inventory identity/quantity fields, do not resolve the inspection product variant, and never call Inventory. Physical holds remain strict and a missing quantity returns `quality.quantity_invalid`.
+- `QA-26` uses an authoritative lot identity and a lot-tracked disposable stock fixture when required, so nullable location/lot combinations reach the dynamic parameterized stock SQL. It accepts only the resulting stock-domain outcomes, never an unrelated `lot_not_found` initialization failure.
+- `QA-25` snapshots and restores all changed `product_uom` fields, including factor, base flag, effective interval, status, version, usage flags, and rounding precision, with an equality assertion after cleanup.
+- Playwright Scenario 16 no longer matches a reused constant customer reference. It uses a unique reference and validates the exact certificate detail and historical snapshot.
