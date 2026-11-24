@@ -1,7 +1,7 @@
 # P0-02 — Operational Baseline
 
 **Result:** `NOT MEASURED`  
-**Reason:** Docker Desktop API access was denied before the disposable harness could start.
+**Reason:** Docker access was diagnosed and recovered, but canonical disposable migration/seed failed before API startup.
 
 ## Harness review
 
@@ -17,7 +17,7 @@
 
 The harness is suitable as a starting point for a safe P0 baseline. It is not an Analysis benchmark and does not prove future process isolation.
 
-## Attempt and blocker
+## Initial environment failure and recovery
 
 The preflight command was:
 
@@ -31,7 +31,11 @@ It failed with:
 permission denied while trying to connect to the Docker API at npipe:////./pipe/dockerDesktopLinuxEngine
 ```
 
-Because disposable ownership could not be positively verified, the benchmark was not retried and no database, API process, load, query-plan, or latency evidence was produced.
+The initial sandbox could not open the Docker Desktop named pipe. Approved elevated read-only execution proved Docker Desktop was running and allowed creation of a separately labelled ephemeral PostgreSQL container. No shared development container was used for load.
+
+## Current blocker
+
+The canonical DbMigrator then failed on two repository migration defects: OpenIddict scope forward-fix ordering, followed by the Quality `quality_disposition` foreign-key forward-fix under `FORCE ROW LEVEL SECURITY`. See [P0-B01](P0-B01_DOCKER_ENVIRONMENT_ROOT_CAUSE.md) and [P0-B03](P0-B03_OPERATIONAL_PERFORMANCE_BASELINE.md). Production migration changes are outside P0-B scope, so no performance number was fabricated.
 
 ## Measurement ledger
 

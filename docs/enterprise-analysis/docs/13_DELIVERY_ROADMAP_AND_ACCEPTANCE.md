@@ -88,5 +88,5 @@ Add statistical prediction or mathematical optimization only when specific decis
 If a task touches customer financial truth without owner-defined semantics; adds AI to write transaction path; causes cross-tenant evidence leak; uses unknown scope; fails production DB migration replay; has unexplained performance regression; auto-starts analysis on GET; or invents a result during source failure — **STOP RELEASE**, fix cause and rerun affected acceptance. Do not bypass gates to close a task.
 # P0 evidence supplement
 
-P0 evidence is available under [`evidence/p0/`](../evidence/p0/README.md). P2 remains prohibited until P1 closes the boundary, read-contract, temporal, security, and measured-performance gates.
+P0-B evidence is available under [`evidence/p0/`](../evidence/p0/README.md). P0 is currently `P0_BLOCKED`; P2 remains prohibited until the canonical disposable migration/seed path, runtime security checks and measured-performance gates pass.
 

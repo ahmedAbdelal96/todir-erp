@@ -10,7 +10,7 @@
 
 > **نتيجة التدقيق:** تم تدقيق الحزمة مقابل `dev` الحالي وتصحيح الفهرسة والنسخة المكررة وبعض الحدود المعمارية. النتيجة **REQUIRES_CORRECTIONS**: لا يبدأ P2 قبل إغلاق قرارات طبقة الموديول/الـWorker، وإثبات عقود القراءة والبيانات الزمنية، وقياس خط أساس الأداء. راجع [تقرير التدقيق](AUDIT_REPORT_2026-11-24.md).
 
-> **نتيجة P0:** `P0_PARTIALLY_VERIFIED`. اكتملت مراجعة المصدر والعقود والحدود، لكن baseline التشغيلي لم يُقَس لأن Docker API رفض الاتصال في بيئة التنفيذ. راجع [فهرس أدلة P0](evidence/p0/README.md).
+> **نتيجة P0-B:** `P0_BLOCKED`. تم تشخيص صلاحية Docker وتقوية الـharness، لكن مسار migration/seed النظيف يفشل في عيوب ترتيب OpenIddict وRLS الخاصة بـQuality قبل تشغيل الـAPI. راجع [فهرس أدلة P0](evidence/p0/README.md).
 
 ## القرارات التي نقلناها من متطلبات صاحب المنتج [USER-LOCKED]
 
@@ -56,7 +56,7 @@
 ## قواعد استخدام الحزمة
 
 - **ORDER:** ابدأ بمرحلة Discovery + baseline؛ ثم Architecture ADR/product sign-off؛ ثم Core foundation؛ ثم Pilot موثق؛ ثم التوسع. لا تقفز من الفكرة إلى تنفيذ كل الموديولات.
-- **SOURCES:** نتائج P0 مبنية على `e9f7626953daf4c7cd426a49199dfd46fde69a8c` محليًا والمطابق لـ`origin/dev` وقت التحقق. لا تدّعي الوثائق تشغيل benchmark؛ سبب عدم القياس موثق في `evidence/p0/P0-02_OPERATIONAL_BASELINE.md`.
+- **SOURCES:** نتائج P0-B مبنية على `c06a86183b2b651ff23f63a11ec50847df6650ad` المطابق لـ`origin/dev` وقت أحدث تشغيل، مع الحفاظ على تغييرات Quality الموجودة في ذلك الـcommit. لا تدّعي الوثائق baseline ناجحًا؛ سبب الحجب موثق في `evidence/p0/P0-B01_DOCKER_ENVIRONMENT_ROOT_CAUSE.md` و`P0-B03_OPERATIONAL_PERFORMANCE_BASELINE.md`.
 - **STATUS:** `USER-LOCKED` = متطلب صريح؛ `EXISTING-VERIFIED` = ظهر من قراءة ملفات repo؛ `PROPOSED-ADR` = قرار هندسي مرشح يحتاج اعتماد؛ `TO-VERIFY` = لا يجوز افتراضه قبل الاختبار؛ `BLOCKED` = متوقف على prerequisite محدد؛ `DEFERRED` = مؤجل عمدًا؛ `FUTURE` = خارج النسخة الأولى.
 - **OWNERSHIP:** الـERP يملك العمليات والحقائق؛ صاحب الموديول يملك عقود قراءته؛ Analysis يملك عمليات التحليل والنتائج والتوصيات فقط.
 - **NAMING:** أسماء الـUI عربية من واقع العمل؛ أسماء الـAPIs التقنية تصف المورد/الوظيفة، ولا تُفرض تسمية «AI» في كل endpoint.

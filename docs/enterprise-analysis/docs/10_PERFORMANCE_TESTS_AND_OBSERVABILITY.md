@@ -73,5 +73,5 @@ Each release report requires: exact commit SHA, env config (sanitized), DB datas
 Do not provision DWH, cache cluster, Kafka, vector DB, GPU, Kubernetes node group, Python model-serving API or separate RabbitMQ vhost by default. They are allowed **only if one measured gate cannot be satisfied** within current architecture, and ADR records evidence, price, failure and rollback.
 # P0 evidence supplement
 
-The disposable harness was inspected but not executed. See [`P0-02_OPERATIONAL_BASELINE.md`](../evidence/p0/P0-02_OPERATIONAL_BASELINE.md); no latency, throughput, query-plan, queue-lag, or regression number is approved or claimed.
+The hardened harness was executed against an isolated PostgreSQL container, but canonical migration/seed failed before API startup. See [`P0-B02_BENCHMARK_HARNESS_AUDIT.md`](../evidence/p0/P0-B02_BENCHMARK_HARNESS_AUDIT.md) and [`P0-B03_OPERATIONAL_PERFORMANCE_BASELINE.md`](../evidence/p0/P0-B03_OPERATIONAL_PERFORMANCE_BASELINE.md); no latency, throughput, query-plan, queue-lag, or regression number is approved or claimed.
 

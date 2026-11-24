@@ -2,7 +2,7 @@
 
 **Repository:** `D:\Web\full-projects\todir-erp`  
 **Branch:** `dev`  
-**SHA:** `e9f7626953daf4c7cd426a49199dfd46fde69a8c`  
+**SHA at latest run:** `c06a86183b2b651ff23f63a11ec50847df6650ad`  
 **Verification date:** 2026-11-24
 
 ## Completed checks
@@ -16,8 +16,11 @@
 | Data contracts/source ownership | PASS | Subledger, Payments, Banking, CRM, Accounting targeted source inspection |
 | Tenant/RLS/access static review | PASS | authorization, entitlements, controllers, bootstrap SQL, frontend guards |
 | Disposable benchmark harness review | PASS | `backend/Tests/Performance/platform-performance-benchmark.ps1` |
-| Disposable benchmark execution | NOT MEASURED | Docker API permission denied |
-| Runtime security/isolation tests | NOT MEASURED | Requires runnable disposable stack |
+| Docker root-cause diagnosis | PASS | `P0-B01_DOCKER_ENVIRONMENT_ROOT_CAUSE.md` |
+| Harness helper/mode verification | PASS | `platform-performance-harness.tests.ps1`; parser check |
+| Disposable benchmark execution | BLOCKED | Isolated container reached canonical migrator; migration/seed failed |
+| Operational performance baseline | NOT MEASURED | API did not start against a seeded disposable database |
+| Runtime security/isolation tests | NOT EXECUTED | Requires completed migration/seed and API startup |
 | Browser/UX runtime proof | NOT APPLICABLE TO P0 | No Analysis UI was implemented |
 
 ## Integrity rule
@@ -26,5 +29,5 @@ This manifest records evidence after the last source change in the P0 mission. T
 
 ## Exit
 
-`P0_PARTIALLY_VERIFIED` — static discovery is complete; the operational baseline and runtime isolation gates remain open.
+`P0_BLOCKED` — Docker and harness work progressed, but canonical migration/seed defects prevent the operational baseline and runtime isolation gates.
 
