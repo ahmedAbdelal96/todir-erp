@@ -396,7 +396,16 @@ public sealed class InvoicingService(
             return;
         }
 
-        if (!await budgetControl.HasReservationAsync(context, tenant, draft.LegalEntityId, "purchasing", sourceDocumentId, "order", ct)) return;
+        if (!await budgetControl.HasReservationAsync(context, tenant, draft.LegalEntityId, "purchasing", sourceDocumentId, "order", ct))
+        {
+            // A missing reservation is only safe when no applicable control bucket exists for this source period.
+            // Resolve first so a controlled source cannot turn a missing reservation into an invoice bypass.
+            var applicableBucket = await budgetControl.ResolveApplicableBucketAsync(context, tenant,
+                new(draft.LegalEntityId, draft.PostingDate, "OPEX", "{}"), ct);
+            if (applicableBucket is not null)
+                throw new PlanningBudgetControlException("planning.budget_reservation_missing");
+            return;
+        }
         if (!await budgetControl.HasOpenReservationAsync(context, tenant, draft.LegalEntityId, "purchasing", sourceDocumentId, "order", ct))
             throw new PlanningBudgetControlException("planning.budget_reservation_not_open");
         await budgetControl.ConsumeReservationAsync(context, tenant, actorId,

@@ -710,6 +710,184 @@ public sealed class ProjectsCrossModuleAcceptanceTests
         }
     }
 
+    [Fact(DisplayName = "Controlled supplier invoice cannot bypass a missing Planning reservation")]
+    public async Task ControlledSupplierInvoiceCannotBypassMissingPlanningReservation()
+    {
+        var connectionString = RequireConnection();
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for controlled reservation acceptance.");
+        using var factory = CreateFactory(connectionString);
+        var purchasing = factory.Services.GetRequiredService<PurchasingService>();
+        var invoicing = factory.Services.GetRequiredService<InvoicingService>();
+        var actor = Guid.CreateVersion7();
+        var supplier = await FindPartyAsync(connectionString, AtlasTenant, "Supplier");
+        var policyId = Guid.CreateVersion7();
+        var bucketId = Guid.CreateVersion7();
+        await using (var admin = new NpgsqlConnection(adminConnectionString))
+        {
+            await admin.OpenAsync();
+            await SetTenantAsync(admin, AtlasTenant);
+            var planVersion = await ScalarAsync(admin, "select id from business_planning.plan_version where tenant_id=$1 and state='Published' order by id limit 1", AtlasTenant.Value);
+            Assert.NotNull(planVersion);
+            await using var cleanupReconciliation = new NpgsqlCommand("delete from business_planning.budget_control_owner_reconciliation where tenant_id=$1 and bucket_id in (select id from business_planning.budget_control_bucket where tenant_id=$1 and legal_entity_id=$2 and period_start='2026-11-01' and metric_code='OPEX' and dimension_key='{}'::jsonb)", admin);
+            cleanupReconciliation.Parameters.AddWithValue(AtlasTenant.Value); cleanupReconciliation.Parameters.AddWithValue(AtlasEntity); await cleanupReconciliation.ExecuteNonQueryAsync();
+            await using var cleanupFacts = new NpgsqlCommand("delete from business_planning.budget_consumption_fact where tenant_id=$1 and bucket_id in (select id from business_planning.budget_control_bucket where tenant_id=$1 and legal_entity_id=$2 and period_start='2026-11-01' and metric_code='OPEX' and dimension_key='{}'::jsonb)", admin);
+            cleanupFacts.Parameters.AddWithValue(AtlasTenant.Value); cleanupFacts.Parameters.AddWithValue(AtlasEntity); await cleanupFacts.ExecuteNonQueryAsync();
+            await using var cleanupReservations = new NpgsqlCommand("delete from business_planning.budget_reservation where tenant_id=$1 and bucket_id in (select id from business_planning.budget_control_bucket where tenant_id=$1 and legal_entity_id=$2 and period_start='2026-11-01' and metric_code='OPEX' and dimension_key='{}'::jsonb)", admin);
+            cleanupReservations.Parameters.AddWithValue(AtlasTenant.Value); cleanupReservations.Parameters.AddWithValue(AtlasEntity); await cleanupReservations.ExecuteNonQueryAsync();
+            await using var cleanupBucket = new NpgsqlCommand("delete from business_planning.budget_control_bucket where tenant_id=$1 and legal_entity_id=$2 and period_start='2026-11-01' and metric_code='OPEX' and dimension_key='{}'::jsonb", admin);
+            cleanupBucket.Parameters.AddWithValue(AtlasTenant.Value); cleanupBucket.Parameters.AddWithValue(AtlasEntity); await cleanupBucket.ExecuteNonQueryAsync();
+            await using var cleanupPolicy = new NpgsqlCommand("delete from business_planning.budget_control_policy where tenant_id=$1 and legal_entity_id=$2 and name in ('BC01 controlled invoice test','BC01 invoice vector')", admin);
+            cleanupPolicy.Parameters.AddWithValue(AtlasTenant.Value); cleanupPolicy.Parameters.AddWithValue(AtlasEntity); await cleanupPolicy.ExecuteNonQueryAsync();
+            await using var policy = new NpgsqlCommand("insert into business_planning.budget_control_policy(tenant_id,id,legal_entity_id,name,mode,basis,threshold_percent,active,control_horizon,carryforward_mode,negative_budget_allowed,shadow_mode,opening_reconciled,effective_from) values($1,$2,$3,'BC01 controlled invoice test','Block','ActualOpenCommitmentProposed',100,true,'Monthly','None',false,false,true,'2026-11-01')", admin);
+            policy.Parameters.AddWithValue(AtlasTenant.Value); policy.Parameters.AddWithValue(policyId); policy.Parameters.AddWithValue(AtlasEntity);
+            await policy.ExecuteNonQueryAsync();
+            await using var bucket = new NpgsqlCommand("insert into business_planning.budget_control_bucket(tenant_id,id,policy_id,plan_version_id,legal_entity_id,period_start,metric_code,dimension_key,original_budget,revision_total,transfer_in,transfer_out,actual_total,commitment_total,precommitment_total,currency_code,row_version) values($1,$2,$3,$4,$5,'2026-11-01','OPEX','{}',150000,0,0,0,0,0,0,'EGP',1)", admin);
+            bucket.Parameters.AddWithValue(AtlasTenant.Value); bucket.Parameters.AddWithValue(bucketId); bucket.Parameters.AddWithValue(policyId); bucket.Parameters.AddWithValue((Guid)planVersion!); bucket.Parameters.AddWithValue(AtlasEntity);
+            await bucket.ExecuteNonQueryAsync();
+            await using var reconciliation = new NpgsqlCommand("insert into business_planning.budget_control_owner_reconciliation(tenant_id,id,bucket_id,state,source_count,expected_actual,expected_commitment,expected_precommitment,discrepancy_amount,source_watermark,completed_at,requested_by,created_at) values($1,$2,$3,'Succeeded',0,0,0,0,0,'bc01-controlled-fixture',now(),$4,now())", admin);
+            reconciliation.Parameters.AddWithValue(AtlasTenant.Value); reconciliation.Parameters.AddWithValue(Guid.CreateVersion7()); reconciliation.Parameters.AddWithValue(bucketId); reconciliation.Parameters.AddWithValue(actor);
+            await reconciliation.ExecuteNonQueryAsync();
+        }
+        var orderId = await purchasing.CreateAsync(AtlasTenant, actor,
+            new(AtlasEntity, null, supplier, "EGP", new(2026, 11, 15), null, false,
+                [new PurchaseOrderLineRequest(null, null, "EA", "Controlled source without reservation", 1m, 100m, "BC01 controlled reservation test")], null, null, "OPEX"),
+            true, Guid.CreateVersion7(), CancellationToken.None);
+        var draftOrder = await purchasing.GetAsync(AtlasTenant, AtlasEntity, orderId, true, CancellationToken.None);
+        Assert.NotNull(draftOrder);
+        await purchasing.ApproveAsync(AtlasTenant, actor, AtlasEntity, orderId,
+            new(draftOrder!.Version, $"bc01-missing-reservation-approve:{orderId:D}"), Guid.CreateVersion7(), CancellationToken.None);
+        var approvedOrder = await purchasing.GetAsync(AtlasTenant, AtlasEntity, orderId, true, CancellationToken.None);
+        Assert.NotNull(approvedOrder);
+        var invoiceId = await purchasing.CreateSupplierInvoiceAsync(AtlasTenant, actor, actor, AtlasEntity, orderId,
+            new(approvedOrder!.Version, $"bc01-missing-reservation-invoice:{orderId:D}", new(2026, 11, 15), new(2026, 11, 15), new(2026, 11, 15), $"BC01-{orderId:D}",
+                [new(approvedOrder.Lines.Single().Id, 1m)]), Guid.CreateVersion7(), CancellationToken.None);
+        var invoice = await invoicing.GetDraftAsync(AtlasTenant, AtlasEntity, invoiceId, CancellationToken.None);
+
+        await using (var admin = new NpgsqlConnection(adminConnectionString))
+        {
+            await admin.OpenAsync();
+            await SetTenantAsync(admin, AtlasTenant);
+            await using var delete = new NpgsqlCommand("delete from business_planning.budget_reservation where tenant_id=$1 and source_module='purchasing' and source_document_id=$2", admin);
+            delete.Parameters.AddWithValue(AtlasTenant.Value);
+            delete.Parameters.AddWithValue(orderId.ToString("D"));
+            Assert.Equal(1, await delete.ExecuteNonQueryAsync());
+        }
+
+        var exception = await Assert.ThrowsAsync<PlanningBudgetControlException>(() => invoicing.FinalizeAsync(AtlasTenant, actor, actor,
+            invoiceId, AtlasEntity, new(invoice!.Version, $"bc01-missing-reservation-finalize:{invoiceId:D}"), Guid.CreateVersion7(), CancellationToken.None));
+        Assert.Equal("planning.budget_reservation_missing", exception.Code);
+        Assert.Equal("Draft", (await invoicing.GetDraftAsync(AtlasTenant, AtlasEntity, invoiceId, CancellationToken.None)).Lifecycle.ToString());
+    }
+
+    [Fact(DisplayName = "Budget Control partial and final supplier invoices conserve Planning totals")]
+    public async Task BudgetControlPartialAndFinalSupplierInvoicesConservePlanningTotals()
+    {
+        var connectionString = RequireConnection();
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for Planning financial acceptance.");
+        using var factory = CreateFactory(connectionString);
+        var purchasing = factory.Services.GetRequiredService<PurchasingService>();
+        var invoicing = factory.Services.GetRequiredService<InvoicingService>();
+        var actor = Guid.CreateVersion7();
+        var supplier = await FindPartyAsync(connectionString, AtlasTenant, "Supplier");
+        var policyId = Guid.CreateVersion7();
+        var bucketId = Guid.CreateVersion7();
+        await using (var admin = new NpgsqlConnection(adminConnectionString))
+        {
+            await admin.OpenAsync();
+            await SetTenantAsync(admin, AtlasTenant);
+            var planVersion = await ScalarAsync(admin, "select id from business_planning.plan_version where tenant_id=$1 and state='Published' order by id limit 1", AtlasTenant.Value);
+            Assert.NotNull(planVersion);
+            await using var cleanupReconciliation = new NpgsqlCommand("delete from business_planning.budget_control_owner_reconciliation where tenant_id=$1 and bucket_id in (select id from business_planning.budget_control_bucket where tenant_id=$1 and legal_entity_id=$2 and period_start='2026-11-01' and metric_code='OPEX' and dimension_key='{}'::jsonb)", admin);
+            cleanupReconciliation.Parameters.AddWithValue(AtlasTenant.Value); cleanupReconciliation.Parameters.AddWithValue(AtlasEntity); await cleanupReconciliation.ExecuteNonQueryAsync();
+            await using var cleanupFacts = new NpgsqlCommand("delete from business_planning.budget_consumption_fact where tenant_id=$1 and bucket_id in (select id from business_planning.budget_control_bucket where tenant_id=$1 and legal_entity_id=$2 and period_start='2026-11-01' and metric_code='OPEX' and dimension_key='{}'::jsonb)", admin);
+            cleanupFacts.Parameters.AddWithValue(AtlasTenant.Value); cleanupFacts.Parameters.AddWithValue(AtlasEntity); await cleanupFacts.ExecuteNonQueryAsync();
+            await using var cleanupReservations = new NpgsqlCommand("delete from business_planning.budget_reservation where tenant_id=$1 and bucket_id in (select id from business_planning.budget_control_bucket where tenant_id=$1 and legal_entity_id=$2 and period_start='2026-11-01' and metric_code='OPEX' and dimension_key='{}'::jsonb)", admin);
+            cleanupReservations.Parameters.AddWithValue(AtlasTenant.Value); cleanupReservations.Parameters.AddWithValue(AtlasEntity); await cleanupReservations.ExecuteNonQueryAsync();
+            await using var cleanupBucket = new NpgsqlCommand("delete from business_planning.budget_control_bucket where tenant_id=$1 and legal_entity_id=$2 and period_start='2026-11-01' and metric_code='OPEX' and dimension_key='{}'::jsonb", admin);
+            cleanupBucket.Parameters.AddWithValue(AtlasTenant.Value); cleanupBucket.Parameters.AddWithValue(AtlasEntity); await cleanupBucket.ExecuteNonQueryAsync();
+            await using var cleanupPolicy = new NpgsqlCommand("delete from business_planning.budget_control_policy where tenant_id=$1 and legal_entity_id=$2 and name in ('BC01 controlled invoice test','BC01 invoice vector')", admin);
+            cleanupPolicy.Parameters.AddWithValue(AtlasTenant.Value); cleanupPolicy.Parameters.AddWithValue(AtlasEntity); await cleanupPolicy.ExecuteNonQueryAsync();
+            await using var policy = new NpgsqlCommand("insert into business_planning.budget_control_policy(tenant_id,id,legal_entity_id,name,mode,basis,threshold_percent,active,control_horizon,carryforward_mode,negative_budget_allowed,shadow_mode,opening_reconciled,effective_from) values($1,$2,$3,'BC01 invoice vector','Warn','ActualOpenCommitmentProposed',100,true,'Monthly','None',false,false,false,'2026-11-01')", admin);
+            policy.Parameters.AddWithValue(AtlasTenant.Value); policy.Parameters.AddWithValue(policyId); policy.Parameters.AddWithValue(AtlasEntity); await policy.ExecuteNonQueryAsync();
+            await using var bucket = new NpgsqlCommand("insert into business_planning.budget_control_bucket(tenant_id,id,policy_id,plan_version_id,legal_entity_id,period_start,metric_code,dimension_key,original_budget,revision_total,transfer_in,transfer_out,actual_total,commitment_total,precommitment_total,currency_code,row_version) values($1,$2,$3,$4,$5,'2026-11-01','OPEX','{}',150000,0,0,0,0,0,0,'EGP',1)", admin);
+            bucket.Parameters.AddWithValue(AtlasTenant.Value); bucket.Parameters.AddWithValue(bucketId); bucket.Parameters.AddWithValue(policyId); bucket.Parameters.AddWithValue((Guid)planVersion!); bucket.Parameters.AddWithValue(AtlasEntity); await bucket.ExecuteNonQueryAsync();
+        }
+
+        var orderId = await purchasing.CreateAsync(AtlasTenant, actor,
+            new(AtlasEntity, null, supplier, "EGP", new(2026, 11, 15), null, false,
+                [new PurchaseOrderLineRequest(null, null, "EA", "BC01 invoice vector", 100m, 1000m, "BC01 financial vector")]),
+            true, Guid.CreateVersion7(), CancellationToken.None);
+        var order = await purchasing.GetAsync(AtlasTenant, AtlasEntity, orderId, true, CancellationToken.None);
+        await purchasing.ApproveAsync(AtlasTenant, actor, AtlasEntity, orderId, new(order!.Version, $"bc01-vector-approve:{orderId:D}"), Guid.CreateVersion7(), CancellationToken.None);
+        order = await purchasing.GetAsync(AtlasTenant, AtlasEntity, orderId, true, CancellationToken.None);
+        var lineId = order!.Lines.Single().Id;
+
+        var partialId = await purchasing.CreateSupplierInvoiceAsync(AtlasTenant, actor, actor, AtlasEntity, orderId,
+            new(order.Version, $"bc01-vector-partial:{orderId:D}", new(2026, 11, 15), new(2026, 11, 15), new(2026, 11, 15), $"BC01-P-{orderId:D}", [new(lineId, 40m)]), Guid.CreateVersion7(), CancellationToken.None);
+        var partial = await invoicing.GetDraftAsync(AtlasTenant, AtlasEntity, partialId, CancellationToken.None);
+        await invoicing.FinalizeAsync(AtlasTenant, actor, actor, partialId, AtlasEntity, new(partial!.Version, $"bc01-vector-partial-finalize:{partialId:D}"), Guid.CreateVersion7(), CancellationToken.None);
+        await AssertPlanningVectorAsync(adminConnectionString, bucketId, 40000m, 60000m, "Reserved");
+
+        order = await purchasing.GetAsync(AtlasTenant, AtlasEntity, orderId, true, CancellationToken.None);
+        var finalId = await purchasing.CreateSupplierInvoiceAsync(AtlasTenant, actor, actor, AtlasEntity, orderId,
+            new(order!.Version, $"bc01-vector-final:{orderId:D}", new(2026, 11, 15), new(2026, 11, 15), new(2026, 11, 15), $"BC01-F-{orderId:D}", [new(lineId, 60m)]), Guid.CreateVersion7(), CancellationToken.None);
+        var final = await invoicing.GetDraftAsync(AtlasTenant, AtlasEntity, finalId, CancellationToken.None);
+        var finalResult = await invoicing.FinalizeAsync(AtlasTenant, actor, actor, finalId, AtlasEntity, new(final!.Version, $"bc01-vector-final-finalize:{finalId:D}"), Guid.CreateVersion7(), CancellationToken.None);
+        var replay = await invoicing.FinalizeAsync(AtlasTenant, actor, actor, finalId, AtlasEntity, new(final!.Version, $"bc01-vector-final-finalize:{finalId:D}"), Guid.CreateVersion7(), CancellationToken.None);
+        Assert.Equal(finalResult.InvoiceId, replay.InvoiceId);
+        await AssertPlanningVectorAsync(adminConnectionString, bucketId, 100000m, 0m, "Consumed");
+
+        var cancelOrderId = await purchasing.CreateAsync(AtlasTenant, actor,
+            new(AtlasEntity, null, supplier, "EGP", new(2026, 11, 20), null, false,
+                [new PurchaseOrderLineRequest(null, null, "EA", "BC01 cancellation vector", 10m, 1000m, "BC01 cancellation test")]),
+            true, Guid.CreateVersion7(), CancellationToken.None);
+        var cancelOrder = await purchasing.GetAsync(AtlasTenant, AtlasEntity, cancelOrderId, true, CancellationToken.None);
+        await purchasing.ApproveAsync(AtlasTenant, actor, AtlasEntity, cancelOrderId, new(cancelOrder!.Version, $"bc01-cancel-approve:{cancelOrderId:D}"), Guid.CreateVersion7(), CancellationToken.None);
+        cancelOrder = await purchasing.GetAsync(AtlasTenant, AtlasEntity, cancelOrderId, true, CancellationToken.None);
+        var cancelLineId = cancelOrder!.Lines.Single().Id;
+        var cancelInvoiceId = await purchasing.CreateSupplierInvoiceAsync(AtlasTenant, actor, actor, AtlasEntity, cancelOrderId,
+            new(cancelOrder.Version, $"bc01-cancel-partial:{cancelOrderId:D}", new(2026, 11, 20), new(2026, 11, 20), new(2026, 11, 20), $"BC01-C-{cancelOrderId:D}", [new(cancelLineId, 4m)]), Guid.CreateVersion7(), CancellationToken.None);
+        var cancelInvoice = await invoicing.GetDraftAsync(AtlasTenant, AtlasEntity, cancelInvoiceId, CancellationToken.None);
+        await invoicing.FinalizeAsync(AtlasTenant, actor, actor, cancelInvoiceId, AtlasEntity,
+            new(cancelInvoice!.Version, $"bc01-cancel-partial-finalize:{cancelInvoiceId:D}"), Guid.CreateVersion7(), CancellationToken.None);
+        cancelOrder = await purchasing.GetAsync(AtlasTenant, AtlasEntity, cancelOrderId, true, CancellationToken.None);
+        await purchasing.CancelAsync(AtlasTenant, actor, AtlasEntity, cancelOrderId,
+            new(cancelOrder!.Version, $"bc01-cancel:{cancelOrderId:D}", "BC01 cancellation after partial invoice"), Guid.CreateVersion7(), CancellationToken.None);
+        await using (var admin = new NpgsqlConnection(adminConnectionString))
+        {
+            await admin.OpenAsync();
+            await SetTenantAsync(admin, AtlasTenant);
+            await using var reservation = new NpgsqlCommand("select count(*) filter (where state='Reserved'),coalesce(sum(amount) filter (where state='Released'),0) from business_planning.budget_reservation where tenant_id=$1 and source_module='purchasing' and source_document_id=$2", admin);
+            reservation.Parameters.AddWithValue(AtlasTenant.Value); reservation.Parameters.AddWithValue(cancelOrderId.ToString("D"));
+            await using var reader = await reservation.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(0L, reader.GetInt64(0));
+            Assert.Equal(6000m, reader.GetDecimal(1));
+        }
+        await AssertPlanningActualAsync(adminConnectionString, bucketId, 104000m);
+    }
+
+    private static async Task AssertPlanningVectorAsync(string connectionString, Guid bucketId, decimal expectedActual, decimal expectedOpenCommitment, string expectedReservationState)
+    {
+        await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync(); await SetTenantAsync(connection, AtlasTenant);
+        await using var command = new NpgsqlCommand("select b.actual_total,b.original_budget-b.actual_total-coalesce((select amount from business_planning.budget_reservation where tenant_id=$1 and bucket_id=$2 and source_module='purchasing' and state='Reserved' order by created_at desc limit 1),0), (select amount from business_planning.budget_reservation where tenant_id=$1 and bucket_id=$2 and source_module='purchasing' order by created_at desc limit 1), (select state from business_planning.budget_reservation where tenant_id=$1 and bucket_id=$2 and source_module='purchasing' order by created_at desc limit 1) from business_planning.budget_control_bucket b where b.tenant_id=$1 and b.id=$2", connection);
+        command.Parameters.AddWithValue(AtlasTenant.Value); command.Parameters.AddWithValue(bucketId);
+        await using var reader = await command.ExecuteReaderAsync(); Assert.True(await reader.ReadAsync());
+        Assert.Equal(expectedActual, reader.GetDecimal(0)); Assert.Equal(150000m - expectedActual - expectedOpenCommitment, reader.GetDecimal(1));
+        if (expectedReservationState == "Reserved") Assert.Equal(expectedOpenCommitment, reader.GetDecimal(2));
+        Assert.Equal(expectedReservationState, reader.GetString(3));
+    }
+
+    private static async Task AssertPlanningActualAsync(string connectionString, Guid bucketId, decimal expectedActual)
+    {
+        await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync(); await SetTenantAsync(connection, AtlasTenant);
+        await using var command = new NpgsqlCommand("select actual_total from business_planning.budget_control_bucket where tenant_id=$1 and id=$2", connection);
+        command.Parameters.AddWithValue(AtlasTenant.Value); command.Parameters.AddWithValue(bucketId);
+        Assert.Equal(expectedActual, Convert.ToDecimal(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(string connectionString) => new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder
         .UseEnvironment("Development")
         .ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>

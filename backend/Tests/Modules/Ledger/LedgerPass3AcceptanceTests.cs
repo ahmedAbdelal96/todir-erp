@@ -522,12 +522,15 @@ public sealed class LedgerPass3AcceptanceTests
         if (repository is null) throw new InvalidOperationException("The repository root could not be located for the Worker acceptance process.");
         var worker = new Process
         {
-            StartInfo = new ProcessStartInfo("dotnet", "run --project backend/Worker/Worker.csproj --no-build --no-restore")
+            StartInfo = new ProcessStartInfo("dotnet", "run --project backend/Worker/Worker.csproj --no-build --no-restore --no-launch-profile")
             {
                 WorkingDirectory = repository.FullName,
                 UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
+                // The Worker emits a sizeable startup log. Leaving redirected pipes
+                // unread can fill the OS buffer and prevent the child from reaching
+                // the bus/outbox dispatch loop.
+                RedirectStandardOutput = false,
+                RedirectStandardError = false,
                 CreateNoWindow = true
             }
         };

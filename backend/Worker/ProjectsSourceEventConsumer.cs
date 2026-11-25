@@ -220,8 +220,19 @@ public sealed class ProjectsSourceEventConsumer(
     private static Guid? ProjectInvoiceRequestId(string? purpose)
         => purpose is not null && purpose.StartsWith("ProjectBilling:", StringComparison.Ordinal) && Guid.TryParse(purpose["ProjectBilling:".Length..], out var id) ? id : null;
     private static Guid? SupplierInvoiceProjectId(string? purpose)
-        => purpose is not null && (purpose.StartsWith("SupplierInvoice:Project:", StringComparison.Ordinal) || purpose.StartsWith("SupplierInvoiceCorrection:Project:", StringComparison.Ordinal))
-            && Guid.TryParse(purpose[(purpose.StartsWith("SupplierInvoiceCorrection:Project:", StringComparison.Ordinal) ? "SupplierInvoiceCorrection:Project:" : "SupplierInvoice:Project:").Length..], out var id) ? id : null;
+    {
+        if (purpose is null) return null;
+        var prefix = purpose.StartsWith("SupplierInvoiceCorrection:Project:", StringComparison.Ordinal)
+            ? "SupplierInvoiceCorrection:Project:"
+            : purpose.StartsWith("SupplierInvoice:Project:", StringComparison.Ordinal)
+                ? "SupplierInvoice:Project:"
+                : null;
+        if (prefix is null) return null;
+        var projectReference = purpose[prefix.Length..];
+        var separator = projectReference.IndexOf(':');
+        if (separator >= 0) projectReference = projectReference[..separator];
+        return Guid.TryParse(projectReference, out var id) ? id : null;
+    }
     private static decimal? DecimalValue(JsonElement root, string name)
     {
         if (!root.TryGetProperty(name, out var value)) return null;

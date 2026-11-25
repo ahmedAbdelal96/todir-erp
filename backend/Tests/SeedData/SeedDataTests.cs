@@ -5,6 +5,8 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using Xunit;
 
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace SeedDataTests;
 
 public sealed class DevelopmentSeedTests

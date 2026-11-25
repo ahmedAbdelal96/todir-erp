@@ -28,6 +28,11 @@ Backend and database implementation for Module 28 on `dev`, including the full F
 - Executed the real isolated Purchasing PR HTTP vector: `100,000 EGP` was approved and converted into approved `40,000` and `60,000` POs. The reservation ledger showed a released `60,000` PR precommitment and open `40,000` plus `60,000` PO commitments. Duplicate conversion was idempotent and over-remaining conversion was rejected.
 - Corrected three source-integration defects found by that runtime vector: Purchasing approval decisions now require `purchasing.request.approve`; PR conversion reuses the existing source reservation and writes PO commitment against the resolved control bucket; Invoicing skips Planning consumption when no source reservation exists but still rejects a closed reservation. The real supplier-invoice/correction integration test then passed.
 - Corrected the requested whitespace-only `LedgerRepository.cs` formatter finding without changing Ledger behavior.
+- Closed the controlled-source invoice bypass: an active strict Planning policy now rejects finalization when the required source reservation is missing, while genuinely uncontrolled invoice sources remain outside Budget Control.
+- Made supplier-invoice source identities unique per request (with a bounded digest and preserved project prefix) so partial and final invoices from one Purchase Order do not collide in Invoicing; the Worker project-event parser accepts the bounded suffix.
+- Added Banking-owned semantic Ledger registrations and mappings needed by the seeded bank-originated posting contract.
+- Made the real Ledger Worker acceptance fixture deterministic against startup log back-pressure; its focused local broker recovery test passes independently.
+- Added and passed disposable PostgreSQL BC01 vectors for partial/final supplier invoices, cancellation release, missing-reservation fail-closed behavior, and the live RabbitMQ → Worker → PostgreSQL Inbox Project source-event path.
 
 ## Last meaningful corrections
 
@@ -39,11 +44,11 @@ Backend and database implementation for Module 28 on `dev`, including the full F
 
 ## Required next executable work
 
-1. Complete the approved-PO receipt/invoice/return/credit/reversal vector and final-invoice/cancellation scenarios.
+1. Complete the approved-PO receipt/return/credit/reversal vector and authenticated Budget Control activation evidence.
 2. Complete canonical Ledger YTD mapping beyond posted expense facts and runtime outbox/inbox replay acceptance using the isolated runtime role.
 3. Complete source-watermark invalidation, semantic correction workflow and strict activation HTTP evidence; the current owner result is durable but not yet a complete approval/recovery workflow.
 4. Complete the concurrency, failure-injection and runtime-role security matrix, then rerun all applicable owner-module, integration, architecture, Release build, formatter, OpenAPI and diff gates after the last source change.
 
 ## Delivery status
 
-`NOT COMPLETE` for overall Module 28 and `BC01 NOT COMPLETE` for this focused mission: the real PR conversion and partial invoice/correction slices pass, but the mandatory receipt/return/final-invoice financial vector, Ledger owner reconciliation/replay, live Worker path, concurrency/recovery matrix, and complete strict-activation evidence remain open. No production certification is implied.
+`NOT COMPLETE` for overall Module 28 and `BC01 NOT COMPLETE` for this focused mission: the PR conversion, partial/final/cancellation invoice vector, correction/replay and live Worker path pass, but mandatory receipt/return/credit/reversal coverage, competing-approval concurrency, controlled rollback/failure injection, canonical multi-owner reconciliation, and complete strict-activation evidence remain open. No production certification is implied.

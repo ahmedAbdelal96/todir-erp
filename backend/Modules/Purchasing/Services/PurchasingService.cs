@@ -227,7 +227,15 @@ public sealed class PurchasingService(
         { if (!string.Equals(existingLink.PayloadHash, payloadHash, StringComparison.Ordinal)) throw new PurchasingException("purchasing.idempotency_conflict"); return existingLink.InvoiceId; }
         var requestedLines = request.Lines is { Count: > 0 } ? request.Lines.ToDictionary(x => x.PurchaseOrderLineId, x => x.Quantity) : order.Lines.ToDictionary(x => x.Id, x => x.OrderedQuantity - x.InvoicedQuantity - x.CancelledQuantity);
         if (requestedLines.Any(x => x.Value <= 0)) throw new PurchasingException("purchasing.invoice_quantity_invalid");
-        var sourcePurpose = order.ProjectId is { } projectId ? $"SupplierInvoice:Project:{projectId:D}" : "SupplierInvoice";
+        // A purchase order may be invoiced in multiple partial/final documents. Keep
+        // each idempotency identity distinct in Invoicing while retaining the project
+        // prefix used by project commitment reconciliation and correction handling.
+        // The bounded digest keeps the source-purpose contract below Invoicing's
+        // 80-character limit without exposing the caller's idempotency key.
+        var requestIdentity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(request.IdempotencyKey))).ToLowerInvariant()[..8];
+        var sourcePurpose = order.ProjectId is { } projectId
+            ? $"SupplierInvoice:Project:{projectId:D}:{requestIdentity}"
+            : $"SupplierInvoice:{requestIdentity}";
         var source = new InvoiceSourceDocumentContract("purchasing", id, sourcePurpose, request.IdempotencyKey, "Payable", legalEntityId, order.BranchId, order.SupplierPartyId, null, request.DocumentDate, request.PostingDate, request.TaxDate, null, order.CurrencyCode, "Exclusive", null, request.SupplierInvoiceNumber, null, order.Lines.Where(line => requestedLines.ContainsKey(line.Id)).Select(line => new InvoiceSourceLineContract(line.ProductVariantId, line.UnitOfMeasureId, line.UnitCode, line.Description, requestedLines[line.Id].ToString(CultureInfo.InvariantCulture), line.UnitPrice.ToString(CultureInfo.InvariantCulture), null, null, line.Id.ToString("D"))).ToArray());
         var invoiceId = await invoicing.CreateDraftFromSourceAsync(tenant, actor, membership, source, correlation, ct);
         return await repository.LinkInvoiceAsync(tenant, actor, legalEntityId, id, invoiceId, "SupplierInvoice", request.IdempotencyKey, payloadHash, requestedLines, ct);
