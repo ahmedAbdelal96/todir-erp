@@ -36,11 +36,11 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP27 | What-if | scenario state/access | clone/share/adopt | HTTP scenario path | PARTIAL |
 | FP28 | Variance/drivers | variance/comments | query and driver endpoint | API path; decomposition open | PARTIAL |
 | FP29 | Forecast accuracy | accuracy projection | aggregate error/bias | Implementation; fixture open | PARTIAL |
-| FP30 | Budget policy | policy/buckets and effective dates | policy/bucket commands plus transactional capability | Isolated reserve acceptance; source integration still partial | PARTIAL |
+| FP30 | Budget policy | policy/buckets and effective dates | policy/bucket commands plus transactional capability and authoritative scope resolution | Isolated reserve acceptance; source integration still partial | PARTIAL |
 | FP31 | Availability | bucket/reservation ledger | availability and source-kind projections | Reserve/release runtime; full policy-version evidence pending | PARTIAL |
-| FP32 | Atomic check/reserve | row locks/source uniqueness | check/reserve/adjust/release and owner transaction enlistment | Idempotency path; real contention/rollback evidence pending | PARTIAL |
-| FP33 | Purchasing commitments | Planning-owned reservation ledger | Purchasing create/update/approve/cancel enlists precommitment/commitment | Source adapter is implemented; PR/PO lifecycle and receipt reconciliation evidence pending | PARTIAL |
-| FP34 | Expenses/commitments | Planning-owned reservation ledger | Expense create/update/finalize/delete enlists reservation/consumption | Source adapter is implemented; approval/correction evidence pending | PARTIAL |
+| FP32 | Atomic check/reserve | row locks/source uniqueness | check/reserve/adjust/release, effective policy and owner transaction enlistment | Omitted-bucket Block red-team and partial consumption idempotency pass; real contention/rollback evidence pending | PARTIAL |
+| FP33 | Purchasing commitments | Planning-owned reservation ledger | Purchasing create/update/approve/cancel enlists precommitment/commitment and validates context | Source adapter is implemented; PR/PO lifecycle and finalized-invoice reconciliation evidence pending | PARTIAL |
+| FP34 | Expenses/commitments | Planning-owned reservation ledger | Expense create/update/finalize/delete enlists reservation/consumption and resolves applicable bucket server-side | Omitted-bucket Block red-team and owner lifecycle pass; approval/correction evidence pending | PARTIAL |
 | FP35 | Commitment→Actual | consumption table and bucket actual total | Expense finalization consumes an open reservation transactionally | Expense path source proof; Purchasing partial/final actual reconciliation remains open | PARTIAL |
 | FP36 | Overrides/thresholds | override table only | no request/approve API | No SoD proof | OPEN |
 | FP37 | Department planner | submission persistence | no frontend in this mission | Backend slice only | PARTIAL |
@@ -57,7 +57,7 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP48 | Department manager | submission backend slice | no scoped UI/delegated approval | No complete proof | OPEN |
 | FP49 | FP&A | drivers/variance partial | no integrated forecast workflow | No complete proof | OPEN |
 | FP50 | CFO | P&L partial | BS/CF/rollup absent | No complete proof | OPEN |
-| FP51 | Purchasing control | reservation source identity | Purchasing transactional capability integration | Source reservation path exists; full PR/PO/receipt lifecycle proof absent | PARTIAL |
+| FP51 | Purchasing control | reservation source identity | Purchasing transactional capability integration with server-side bucket resolution | Source reservation path exists; full PR/PO/receipt lifecycle proof absent | PARTIAL |
 | FP52 | Cross-module reconciliation | source metadata fields | partial owner integration | No complete owner reconciliation jobs/evidence | PARTIAL |
 | FP53 | E2E/release | migration/RLS verified | backend foundation only | Release/architecture/OpenAPI pass; module gate not | PARTIAL |
 

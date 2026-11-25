@@ -17,6 +17,8 @@ Backend and database implementation for Module 28 on `dev`, including the full F
 - Added the Planning OpenAPI contract and Planning-specific static contract checks.
 - Added a Planning-owned transactional Budget Control capability, forward-only schema fix for reservation kind/source currency and effective-dated policy fields, and optional source reservation integration in Purchasing and Expenses.
 - Added fail-closed legal-entity, effective-policy, control-decision and currency matching checks; source amendments update the existing reservation, draft deletion releases it, and owner transactions roll back on blocked/approval-required decisions.
+- Closed the optional-bucket bypass for Purchasing and Expenses: Planning now resolves an applicable bucket from legal entity, monthly period, metric and dimension context, validates explicit bucket selections, rejects uncontrolled/inactive selections, and fails closed for an active strict policy with no applicable bucket. Purchasing and Expenses use this resolution during create/update/finalize paths.
+- Added PostgreSQL owner-path evidence for omitted-bucket Block behavior, invalid bucket rejection, and conserved/idempotent partial consumption (4/4 focused tests passing on disposable database `planning_closure_20261125`).
 
 ## Last meaningful corrections
 
@@ -28,7 +30,7 @@ Backend and database implementation for Module 28 on `dev`, including the full F
 
 ## Required next executable work
 
-1. Complete the `OPEN` and `PARTIAL` rows in `BUDGETING_BACKEND_COVERAGE_MATRIX.md`, especially owner adapters, integrated statements, rolling forecast, Excel interop, reconciliation and operational recovery.
+1. Complete the `OPEN` and `PARTIAL` rows in `BUDGETING_BACKEND_COVERAGE_MATRIX.md`, especially owner adapters, finalized-invoice Actual reconciliation, integrated statements, rolling forecast, Excel interop, reconciliation and operational recovery.
 2. Add source-owned contracts/adapters and real cross-module event/transaction tests.
 3. Add scoped submission-coordinate locking, delegated approvals, full typed DAG execution, OPEX and multi-entity rollups.
 4. Complete the final disposable source-workflow acceptance and rerun all owner-module, integration, security/RLS, architecture, Release build, formatter, OpenAPI and diff gates after every later source change.

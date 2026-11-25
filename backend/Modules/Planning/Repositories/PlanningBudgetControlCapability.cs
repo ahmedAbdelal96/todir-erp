@@ -1,6 +1,7 @@
 using Core.Transactions;
 using Npgsql;
 using Shared.Primitives.Identifiers;
+using System.Text.Json;
 
 namespace Modules.Planning;
 
@@ -11,6 +12,46 @@ namespace Modules.Planning;
 /// </summary>
 public sealed class PlanningBudgetControlCapability : ITransactionalPlanningBudgetControlCapability
 {
+    public async Task<Guid?> ResolveApplicableBucketAsync(ITransactionContext context, TenantId tenantId,
+        PlanningBudgetControlScope scope, CancellationToken cancellationToken = default)
+    {
+        if (scope.LegalEntityId == Guid.Empty || scope.PeriodStart == default || string.IsNullOrWhiteSpace(scope.MetricCode) || !IsObject(scope.DimensionKeyJson))
+            throw new PlanningBudgetControlException("planning.budget_scope_invalid");
+
+        if (scope.RequestedBucketId is { } requestedBucketId)
+        {
+            await using var command = new NpgsqlCommand("select b.id,b.legal_entity_id,b.period_start,b.metric_code,b.dimension_key::text,p.active,p.mode,(p.effective_from is null or p.effective_from <= $3) and (p.effective_to is null or p.effective_to >= $3) from business_planning.budget_control_bucket b join business_planning.budget_control_policy p on p.tenant_id=b.tenant_id and p.id=b.policy_id where b.tenant_id=$1 and b.id=$2 for update", context.Connection, context.Transaction);
+            command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(requestedBucketId); command.Parameters.AddWithValue(scope.PeriodStart);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) throw new PlanningBudgetControlException("planning.bucket_not_found");
+            var bucketId = reader.GetGuid(0);
+            if (reader.GetGuid(1) != scope.LegalEntityId) throw new PlanningBudgetControlException("planning.budget_scope_invalid");
+            if (reader.GetFieldValue<DateOnly>(2) != scope.PeriodStart || !string.Equals(reader.GetString(3), scope.MetricCode.Trim(), StringComparison.OrdinalIgnoreCase) || !JsonContains(scope.DimensionKeyJson, reader.GetString(4)))
+                throw new PlanningBudgetControlException("planning.budget_bucket_context_invalid");
+            if (!reader.GetBoolean(5) || !reader.GetBoolean(7)) throw new PlanningBudgetControlException("planning.budget_policy_inactive");
+            if (string.Equals(reader.GetString(6), "None", StringComparison.OrdinalIgnoreCase)) throw new PlanningBudgetControlException("planning.budget_bucket_uncontrolled");
+            return bucketId;
+        }
+
+        await using (var command = new NpgsqlCommand("select b.id,p.mode from business_planning.budget_control_bucket b join business_planning.budget_control_policy p on p.tenant_id=b.tenant_id and p.id=b.policy_id where b.tenant_id=$1 and b.legal_entity_id=$2 and b.period_start=$3 and lower(b.metric_code)=lower($4) and $5::jsonb @> b.dimension_key and p.active=true and p.mode <> 'None' and (p.effective_from is null or p.effective_from <= $3) and (p.effective_to is null or p.effective_to >= $3) order by length(b.dimension_key::text) desc,b.id limit 2", context.Connection, context.Transaction))
+        {
+            command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(scope.LegalEntityId); command.Parameters.AddWithValue(scope.PeriodStart); command.Parameters.AddWithValue(scope.MetricCode.Trim()); command.Parameters.AddWithValue(NpgsqlTypes.NpgsqlDbType.Jsonb, scope.DimensionKeyJson);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                var bucketId = reader.GetGuid(0);
+                if (await reader.ReadAsync(cancellationToken)) throw new PlanningBudgetControlException("planning.budget_bucket_ambiguous");
+                return bucketId;
+            }
+        }
+
+        await using var strict = new NpgsqlCommand("select exists(select 1 from business_planning.budget_control_policy where tenant_id=$1 and legal_entity_id=$2 and active=true and mode in ('Block','RequireApproval') and (effective_from is null or effective_from <= $3) and (effective_to is null or effective_to >= $3))", context.Connection, context.Transaction);
+        strict.Parameters.AddWithValue(tenantId.Value); strict.Parameters.AddWithValue(scope.LegalEntityId); strict.Parameters.AddWithValue(scope.PeriodStart);
+        if (Convert.ToBoolean(await strict.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture))
+            throw new PlanningBudgetControlException("planning.budget_bucket_required");
+        return null;
+    }
+
     public async Task<bool> HasOpenReservationAsync(ITransactionContext context, TenantId tenantId, Guid legalEntityId, string sourceModule,
         string sourceDocumentId, string sourceLineId, CancellationToken cancellationToken = default)
     {
@@ -80,14 +121,14 @@ public sealed class PlanningBudgetControlCapability : ITransactionalPlanningBudg
         if (reservation.LegalEntityId != request.LegalEntityId) throw new PlanningBudgetControlException("planning.budget_scope_invalid");
         if (reservation.SourceCurrency is not null && !string.Equals(reservation.SourceCurrency, request.CurrencyCode.Trim(), StringComparison.OrdinalIgnoreCase))
             throw new PlanningBudgetControlException("planning.budget_currency_mismatch");
-        if (reservation.State != "Reserved") throw new PlanningBudgetControlException("planning.budget_reservation_not_open");
         if (request.Amount > reservation.Amount) throw new PlanningBudgetControlException("planning.budget_consumption_exceeds_reservation");
         var existingConsumption = await ReadConsumptionAsync(context, tenantId, request, cancellationToken);
         if (existingConsumption is not null)
         {
             if (existingConsumption.Value != request.Amount) throw new PlanningBudgetControlException("planning.budget_consumption_idempotency_conflict");
-            return new(reservation.Id, request.Amount == reservation.Amount ? "Consumed" : "PartiallyConsumed", Math.Max(0m, reservation.Amount - request.Amount));
+            return new(reservation.Id, reservation.State == "Consumed" ? "Consumed" : "PartiallyConsumed", reservation.State == "Reserved" ? reservation.Amount : 0m);
         }
+        if (reservation.State != "Reserved") throw new PlanningBudgetControlException("planning.budget_reservation_not_open");
         await ExecuteAsync(context, "insert into business_planning.budget_consumption_fact(tenant_id,id,bucket_id,source_module,source_document_id,source_line_id,source_version,amount,state) values($1,$2,$3,$4,$5,$6,$7,$8,'Actual') on conflict(tenant_id,source_module,source_document_id,source_line_id,source_version) do update set amount=excluded.amount,state='Actual'", cancellationToken,
             tenantId.Value, Guid.CreateVersion7(), reservation.BucketId, request.SourceModule.Trim(), request.SourceDocumentId.Trim(), request.SourceLineId.Trim(), request.SourceVersion.Trim(), request.Amount);
         await ExecuteAsync(context, "update business_planning.budget_control_bucket set actual_total=actual_total+$3,row_version=row_version+1 where tenant_id=$1 and id=$2", cancellationToken, tenantId.Value, reservation.BucketId, request.Amount);
@@ -122,6 +163,32 @@ public sealed class PlanningBudgetControlCapability : ITransactionalPlanningBudg
         command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(request.SourceModule.Trim()); command.Parameters.AddWithValue(request.SourceDocumentId.Trim()); command.Parameters.AddWithValue(request.SourceLineId.Trim()); command.Parameters.AddWithValue(request.SourceVersion.Trim());
         var value = await command.ExecuteScalarAsync(ct);
         return value is decimal amount ? amount : null;
+    }
+
+    private static bool IsObject(string json)
+    {
+        try { using var document = JsonDocument.Parse(json); return document.RootElement.ValueKind == JsonValueKind.Object; }
+        catch (JsonException) { return false; }
+    }
+
+    private static bool JsonContains(string scopeJson, string bucketJson)
+    {
+        try
+        {
+            using var scopeDocument = JsonDocument.Parse(scopeJson); using var bucketDocument = JsonDocument.Parse(bucketJson);
+            return Contains(scopeDocument.RootElement, bucketDocument.RootElement);
+        }
+        catch (JsonException) { return false; }
+    }
+
+    private static bool Contains(JsonElement scope, JsonElement bucket)
+    {
+        if (bucket.ValueKind != JsonValueKind.Object || scope.ValueKind != JsonValueKind.Object) return false;
+        foreach (var property in bucket.EnumerateObject())
+        {
+            if (!scope.TryGetProperty(property.Name, out var scopeValue) || scopeValue.GetRawText() != property.Value.GetRawText()) return false;
+        }
+        return true;
     }
 
     private static async Task<T> ScalarAsync<T>(ITransactionContext context, string sql, CancellationToken ct, params object?[] values)

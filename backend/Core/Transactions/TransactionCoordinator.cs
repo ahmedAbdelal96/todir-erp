@@ -40,6 +40,8 @@ public sealed record PlanningBudgetReservationRequest(Guid LegalEntityId, Guid B
 public sealed record PlanningBudgetConsumptionRequest(Guid LegalEntityId, string SourceModule, string SourceDocumentId, string SourceLineId,
     string SourceVersion, decimal Amount, string CurrencyCode);
 
+public sealed record PlanningBudgetControlScope(Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, string DimensionKeyJson, Guid? RequestedBucketId = null);
+
 public sealed record PlanningBudgetReservationResult(Guid ReservationId, string Decision, decimal AvailableAfter);
 
 public sealed class PlanningBudgetControlException(string code) : Exception(code)
@@ -50,6 +52,8 @@ public sealed class PlanningBudgetControlException(string code) : Exception(code
 /// <summary>Planning owns the budget-control ledger; source modules enlist it in their transaction.</summary>
 public interface ITransactionalPlanningBudgetControlCapability
 {
+    Task<Guid?> ResolveApplicableBucketAsync(ITransactionContext context, TenantId tenantId, PlanningBudgetControlScope scope,
+        CancellationToken cancellationToken = default);
     Task<bool> HasOpenReservationAsync(ITransactionContext context, TenantId tenantId, Guid legalEntityId, string sourceModule,
         string sourceDocumentId, string sourceLineId, CancellationToken cancellationToken = default);
     Task<PlanningBudgetReservationResult> UpsertReservationAsync(ITransactionContext context, TenantId tenantId,

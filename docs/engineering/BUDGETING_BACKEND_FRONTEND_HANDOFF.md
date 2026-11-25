@@ -23,7 +23,7 @@ Implemented route groups:
 - exact spreading (`/grids/spread-exact`), weighted allocation, P&L query and forecast-accuracy calculation;
 - workforce baseline import/cost-impact and CapEx lifecycle actions.
 - Planning OpenAPI contract: `docs/api/planning-openapi.json` (63 paths; static validation is separate from business acceptance).
-- Purchasing and Expenses request contracts optionally accept `budgetBucketId`; when supplied, the backend enlists Planning Budget Control in the owning transaction and returns a domain error for blocked/approval-required control decisions.
+- Purchasing and Expenses request contracts may carry `budgetBucketId` as a validated selection hint. The backend remains authoritative: it derives the monthly OPEX control context, resolves the applicable active bucket, rejects cross-entity/context/uncontrolled selections, and fails closed for active strict policies with no applicable bucket. Owner transactions are rolled back for blocked/approval-required decisions.
 
 ## Development seed
 

@@ -46,12 +46,17 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
         var state = approvalRequired ? PurchaseOrderStates.PendingApproval : PurchaseOrderStates.Draft;
         var approval = approvalRequired ? "Pending" : "NotRequired";
         var total = lines.Sum(x => x.Quantity * x.UnitPrice);
-        if (request.BudgetBucketId is { } bucketId && budgetControl is not null)
+        if (budgetControl is not null)
         {
             await using var context = new ExistingTransactionContext(connection, transaction);
-            var control = await budgetControl.UpsertReservationAsync(context, tenant, actor,
-                new(request.LegalEntityId, bucketId, "purchasing", id.ToString("D"), "order", "draft:1", total, request.CurrencyCode, PlanningBudgetReservationKind.Precommitment), ct);
-            if (control.Decision == "RequireApproval") throw new PlanningBudgetControlException("planning.budget_approval_required");
+            var bucketId = await budgetControl.ResolveApplicableBucketAsync(context, tenant,
+                new(request.LegalEntityId, PlanningPeriod(request.OrderDate), "OPEX", PlanningDimension(request.BranchId, request.ProjectId, request.TaskId, request.CostCategory), request.BudgetBucketId), ct);
+            if (bucketId.HasValue)
+            {
+                var control = await budgetControl.UpsertReservationAsync(context, tenant, actor,
+                    new(request.LegalEntityId, bucketId.Value, "purchasing", id.ToString("D"), "order", "draft:1", total, request.CurrencyCode, PlanningBudgetReservationKind.Precommitment), ct);
+                if (control.Decision == "RequireApproval") throw new PlanningBudgetControlException("planning.budget_approval_required");
+            }
         }
         await ExecuteAsync(connection, transaction, """
             insert into business_purchasing.purchase_order(tenant_id,legal_entity_id,id,branch_id,supplier_party_id,currency_code,order_date,state,approval_state,receipt_state,invoicing_state,matching_state,price_list_id,project_id,task_id,cost_category,net_total,gross_total,created_by,created_at,updated_at)
@@ -77,13 +82,19 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
         if (lines.Count == 0) throw new PurchasingException("purchasing.lines_required");
         var total = lines.Sum(x => x.Quantity * x.UnitPrice);
         if (amendment && lines.Any(x => x.Quantity < 0)) throw new PurchasingException("purchasing.quantity_invalid");
-        if (budgetControl is not null && (request.BudgetBucketId.HasValue || await HasOpenBudgetReservationAsync(connection, transaction, tenant, legalEntityId, id, ct)))
+        if (budgetControl is not null)
         {
             await using var context = new ExistingTransactionContext(connection, transaction);
-            var bucketId = request.BudgetBucketId ?? Guid.Empty;
-            var control = await budgetControl.UpsertReservationAsync(context, tenant, actor,
-                new(legalEntityId, bucketId, "purchasing", id.ToString("D"), "order", $"draft:{request.Version + 1}", total, request.CurrencyCode, amendment ? PlanningBudgetReservationKind.Commitment : PlanningBudgetReservationKind.Precommitment), ct);
-            if (control.Decision == "RequireApproval") throw new PlanningBudgetControlException("planning.budget_approval_required");
+            var hasOpen = await budgetControl.HasOpenReservationAsync(context, tenant, legalEntityId, "purchasing", id.ToString("D"), "order", ct);
+            var bucketId = request.BudgetBucketId.HasValue
+                ? await budgetControl.ResolveApplicableBucketAsync(context, tenant, new(legalEntityId, PlanningPeriod(request.OrderDate), "OPEX", PlanningDimension(current.Value.BranchId, request.ProjectId, request.TaskId, request.CostCategory), request.BudgetBucketId), ct)
+                : hasOpen ? null : await budgetControl.ResolveApplicableBucketAsync(context, tenant, new(legalEntityId, PlanningPeriod(request.OrderDate), "OPEX", PlanningDimension(current.Value.BranchId, request.ProjectId, request.TaskId, request.CostCategory)), ct);
+            if (hasOpen || bucketId.HasValue)
+            {
+                var control = await budgetControl.UpsertReservationAsync(context, tenant, actor,
+                    new(legalEntityId, bucketId ?? Guid.Empty, "purchasing", id.ToString("D"), "order", $"draft:{request.Version + 1}", total, request.CurrencyCode, amendment ? PlanningBudgetReservationKind.Commitment : PlanningBudgetReservationKind.Precommitment), ct);
+                if (control.Decision == "RequireApproval") throw new PlanningBudgetControlException("planning.budget_approval_required");
+            }
         }
         if (amendment) await ExecuteAsync(connection, transaction, "select set_config('app.purchasing_amendment','true',true)", ct);
         var nextState = amendment ? PurchaseOrderStates.PendingApproval : current.Value.State;
@@ -366,6 +377,7 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
             var ordered = reader.GetDecimal(0); var received = reader.GetDecimal(1); var invoiced = reader.GetDecimal(2); var cancelled = reader.GetDecimal(3); var shorted = reader.GetDecimal(4); await reader.CloseAsync();
             var available = settings == "Receipt" ? received - invoiced : ordered - cancelled - shorted - invoiced;
             if (item.Value > available) throw new PurchasingException("purchasing.invoice_quantity_exceeded");
+            if (item.Value <= 0m) throw new PurchasingException("purchasing.invoice_quantity_invalid");
             await ExecuteAsync(connection, transaction, "update business_purchasing.purchase_order_line set invoiced_quantity=invoiced_quantity+$5 where tenant_id=$1 and legal_entity_id=$2 and purchase_order_id=$3 and id=$4", ct, tenant.Value, legalEntityId, id, item.Key, item.Value);
         }
         await ExecuteAsync(connection, transaction, "update business_purchasing.purchase_order set invoicing_state=case when not exists(select 1 from business_purchasing.purchase_order_line where tenant_id=$1 and legal_entity_id=$2 and purchase_order_id=$3 and invoiced_quantity < ordered_quantity-cancelled_quantity-closed_short_quantity) then 'Invoiced' else 'PartiallyInvoiced' end,updated_at=$4,row_version=row_version+1 where tenant_id=$1 and legal_entity_id=$2 and id=$3", ct, tenant.Value, legalEntityId, id, clock.GetUtcNow());
@@ -429,12 +441,17 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
         await transaction.CommitAsync(ct); return request.Version + 1;
     }
 
-    private static async Task<bool> HasOpenBudgetReservationAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid legalEntityId, Guid orderId, CancellationToken ct)
+    private static string PlanningDimension(Guid? branchId, Guid? projectId, Guid? taskId, string? costCategory)
     {
-        await using var command = new NpgsqlCommand("select exists(select 1 from business_planning.budget_reservation r join business_planning.budget_control_bucket b on b.tenant_id=r.tenant_id and b.id=r.bucket_id where r.tenant_id=$1 and b.legal_entity_id=$2 and r.source_module='purchasing' and r.source_document_id=$3 and r.source_line_id='order' and r.state='Reserved')", connection, transaction);
-        command.Parameters.AddWithValue(tenant.Value); command.Parameters.AddWithValue(legalEntityId); command.Parameters.AddWithValue(orderId.ToString("D"));
-        return Convert.ToBoolean(await command.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
+        var values = new Dictionary<string, string>();
+        if (branchId.HasValue) values["branchId"] = branchId.Value.ToString("D");
+        if (projectId.HasValue) values["projectId"] = projectId.Value.ToString("D");
+        if (taskId.HasValue) values["taskId"] = taskId.Value.ToString("D");
+        if (!string.IsNullOrWhiteSpace(costCategory)) values["costCategory"] = costCategory.Trim();
+        return JsonSerializer.Serialize(values);
     }
+
+    private static DateOnly PlanningPeriod(DateOnly date) => new(date.Year, date.Month, 1);
 
     private static async Task<Header?> ReadHeaderAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid entity, Guid id, CancellationToken ct) => await ReadHeaderCoreAsync(connection, transaction, "select id,legal_entity_id,branch_id,supplier_party_id,currency_code,order_date,state,approval_state,receipt_state,invoicing_state,row_version,net_total,created_at,updated_at,project_id,task_id,cost_category from business_purchasing.purchase_order where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", tenant, entity, id, ct);
     private static async Task<Header?> ReadHeaderByIdAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid id, CancellationToken ct) => await ReadHeaderCoreAsync(connection, transaction, "select id,legal_entity_id,branch_id,supplier_party_id,currency_code,order_date,state,approval_state,receipt_state,invoicing_state,row_version,net_total,created_at,updated_at,project_id,task_id,cost_category from business_purchasing.purchase_order where tenant_id=$1 and id=$2 for update", tenant, null, id, ct);
