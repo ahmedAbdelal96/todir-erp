@@ -12,6 +12,7 @@ using Shared.Primitives.Identifiers;
 using Shared.Contracts.Payments;
 using Shared.Contracts.Platform;
 using Shared.Contracts.Tax;
+using Shared.Contracts.Ledger;
 using Xunit;
 using System.Text.Json;
 using System.Globalization;
@@ -367,6 +368,127 @@ public sealed class ExpensesPostgresIntegrationTests
         Assert.Equal(1, await ScalarLongAsync(connection, "select count(*) from finance_ledger.journal_entry_reversal r join business_expenses.expense e on e.tenant_id=$1 and e.id=$2 and r.original_entry_id=e.ledger_entry_id", Atlas, created.Id));
         await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.AddEvidenceAsync(new(Atlas), entity, created.Id, new("Receipt", "file://expenses/late-receipt"), default));
         await Assert.ThrowsAsync<ExpenseRepositoryException>(() => repository.DeclareMissingReceiptAsync(new(Atlas), Guid.NewGuid(), entity, created.Id, new("Late declaration"), default));
+    }
+
+    [ExpensesFinancialPostgresFact]
+    public async Task BudgetReversalRecoversAfterLedgerCommitBeforePlanningCorrection()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_FINANCIAL_TEST_CONNECTION")!;
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION") ?? connectionString;
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var financialRead = new NpgsqlLegalEntityFinancialReadStore(dataSource);
+        var ledger = new LedgerRepository(dataSource, coordinator, financialRead, TimeProvider.System);
+        var bucketId = Guid.CreateVersion7();
+        var policyId = Guid.CreateVersion7();
+        var actor = Guid.CreateVersion7();
+        var functionName = $"bc01_expense_fail_{Guid.CreateVersion7():N}";
+        var triggerName = $"bc01_expense_trigger_{Guid.CreateVersion7():N}";
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        await using var admin = new NpgsqlConnection(adminConnectionString); await admin.OpenAsync(); await SetTenantAsync(admin, Atlas);
+        var planVersion = (Guid)(await ScalarAsync(admin, "select id from business_planning.plan_version where tenant_id=$1 and state='Published' order by id limit 1", Atlas))!;
+        var categoryVersion = (Guid)(await ScalarAsync(admin, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var dimensionKey = $"{{\"categoryVersionId\":\"{categoryVersion:D}\",\"costCategory\":\"{bucketId:D}\"}}";
+        await ExecuteAsync(admin, "insert into business_planning.budget_control_policy(tenant_id,id,legal_entity_id,name,mode,basis,threshold_percent,active,control_horizon,carryforward_mode,negative_budget_allowed,shadow_mode,opening_reconciled,effective_from) values($1,$2,$3,'BC01 expense recovery','Warn','ActualOpenCommitmentProposed',100,true,'Monthly','None',false,false,true,'2026-11-01')", Atlas, policyId, entity);
+        await ExecuteAsync(admin, "insert into business_planning.budget_control_bucket(tenant_id,id,policy_id,plan_version_id,legal_entity_id,period_start,metric_code,dimension_key,original_budget,currency_code) values($1,$2,$3,$4,$5,'2026-11-01','OPEX',$6::jsonb,100000,'EGP')", Atlas, bucketId, policyId, planVersion, entity, dimensionKey);
+        await ExecuteAsync(admin, "insert into business_planning.budget_control_owner_reconciliation(tenant_id,id,bucket_id,state,source_count,expected_actual,expected_commitment,expected_precommitment,discrepancy_amount,source_watermark,completed_at,requested_by) values($1,$2,$3,'Succeeded',0,0,0,0,0,'bc01-expense-recovery-fixture',now(),$4)", Atlas, Guid.CreateVersion7(), bucketId, actor);
+        await admin.CloseAsync();
+
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(ledger), approvals: new TestApprovalCapability(), budgetControl: new Modules.Planning.PlanningBudgetControlCapability());
+        var created = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "BC01 reversal recovery", new(2026, 11, 12), 30000m, "EGP", "EmployeePaid", categoryVersion, CostCategory: bucketId.ToString("D"), BudgetBucketId: bucketId), default);
+        await repository.AddEvidenceAsync(new(Atlas), entity, created.Id, new("Receipt", "file://bc01-expense-recovery"), default);
+        var submitted = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(created.Version), "submit", default);
+        await repository.EvaluatePolicyAsync(new(Atlas), entity, created.Id, default);
+        var approved = await ApproveAsync(repository, new(Atlas), entity, created.Id, submitted.Version);
+        var finalized = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(approved), "finalize", default);
+        Assert.Equal("Posted", finalized.AccountingState);
+        Assert.Equal(30000m, await ScalarAsync(adminConnectionString, "select actual_total from business_planning.budget_control_bucket where tenant_id=$1 and id=$2", Atlas, bucketId));
+
+        try
+        {
+            await using (var failureConnection = new NpgsqlConnection(adminConnectionString))
+            {
+                await failureConnection.OpenAsync(); await SetTenantAsync(failureConnection, Atlas);
+                await ExecuteAsync(failureConnection, $"create or replace function public.{functionName}() returns trigger language plpgsql as $$ begin raise exception 'bc01_planning_correction_injected_failure'; end; $$;");
+                await ExecuteAsync(failureConnection, $"create trigger {triggerName} before insert on business_planning.budget_consumption_fact for each row execute function public.{functionName}();");
+            }
+            var reversalFailure = await Record.ExceptionAsync(() => repository.TransitionAsync(new(Atlas), entity, created.Id, new(finalized.Version, "BC01 recovery failure"), "reverse", default));
+            Assert.NotNull(reversalFailure);
+            Assert.True(reversalFailure!.ToString().Contains("bc01_planning_correction_injected_failure", StringComparison.Ordinal), reversalFailure.ToString());
+            var pending = await repository.GetAsync(new(Atlas), entity, created.Id, default);
+            Assert.NotNull(pending); Assert.Equal("ReversalPending", pending!.AccountingState);
+            Assert.Equal("Failed", await ScalarAsync(adminConnectionString, "select state from business_expenses.expense_budget_reversal_intent where tenant_id=$1 and expense_id=$2", Atlas, created.Id));
+            var ledgerEntryId = (Guid)(await ScalarAsync(adminConnectionString, "select ledger_entry_id from business_expenses.expense where tenant_id=$1 and id=$2", Atlas, created.Id))!;
+            Assert.Equal(1L, Convert.ToInt64(await ScalarAsync(adminConnectionString, "select count(*) from finance_ledger.journal_entry_reversal where tenant_id=$1 and original_entry_id=$2", Atlas, ledgerEntryId), CultureInfo.InvariantCulture));
+            Assert.Equal(30000m, await ScalarAsync(adminConnectionString, "select actual_total from business_planning.budget_control_bucket where tenant_id=$1 and id=$2", Atlas, bucketId));
+
+            await using (var dropConnection = new NpgsqlConnection(adminConnectionString))
+            {
+                await dropConnection.OpenAsync(); await SetTenantAsync(dropConnection, Atlas);
+                await ExecuteAsync(dropConnection, $"drop trigger {triggerName} on business_planning.budget_consumption_fact");
+            }
+            var recovered = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(pending.Version, "BC01 recovery retry"), "reverse", default);
+            Assert.Equal("Reversed", recovered.ExpenseState); Assert.Equal("Reversed", recovered.AccountingState);
+            Assert.Equal(1L, Convert.ToInt64(await ScalarAsync(adminConnectionString, "select count(*) from finance_ledger.journal_entry_reversal where tenant_id=$1 and original_entry_id=$2", Atlas, ledgerEntryId), CultureInfo.InvariantCulture));
+            Assert.Equal("Completed", await ScalarAsync(adminConnectionString, "select state from business_expenses.expense_budget_reversal_intent where tenant_id=$1 and expense_id=$2", Atlas, created.Id));
+            Assert.Equal(0m, await ScalarAsync(adminConnectionString, "select actual_total from business_planning.budget_control_bucket where tenant_id=$1 and id=$2", Atlas, bucketId));
+        }
+        finally
+        {
+            await using var cleanup = new NpgsqlConnection(adminConnectionString); await cleanup.OpenAsync(); await SetTenantAsync(cleanup, Atlas);
+            await ExecuteAsync(cleanup, $"drop trigger if exists {triggerName} on business_planning.budget_consumption_fact");
+            await ExecuteAsync(cleanup, $"drop function if exists public.{functionName}()");
+        }
+    }
+
+    [ExpensesFinancialPostgresFact]
+    public async Task BudgetReversalLedgerFailureLeavesRetryableIntent()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_FINANCIAL_TEST_CONNECTION")!;
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION") ?? connectionString;
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var financialRead = new NpgsqlLegalEntityFinancialReadStore(dataSource);
+        var ledger = new LedgerRepository(dataSource, coordinator, financialRead, TimeProvider.System);
+        var bucketId = Guid.CreateVersion7();
+        var policyId = Guid.CreateVersion7();
+        var actor = Guid.CreateVersion7();
+        var entity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
+        await using var admin = new NpgsqlConnection(adminConnectionString); await admin.OpenAsync(); await SetTenantAsync(admin, Atlas);
+        var planVersion = (Guid)(await ScalarAsync(admin, "select id from business_planning.plan_version where tenant_id=$1 and state='Published' order by id limit 1", Atlas))!;
+        var categoryVersion = (Guid)(await ScalarAsync(admin, "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, entity))!;
+        var dimensionKey = $"{{\"categoryVersionId\":\"{categoryVersion:D}\",\"costCategory\":\"{bucketId:D}\"}}";
+        await ExecuteAsync(admin, "insert into business_planning.budget_control_policy(tenant_id,id,legal_entity_id,name,mode,basis,threshold_percent,active,control_horizon,carryforward_mode,negative_budget_allowed,shadow_mode,opening_reconciled,effective_from) values($1,$2,$3,$4,'Warn','ActualOpenCommitmentProposed',100,true,'Monthly','None',false,false,true,'2026-11-01')", Atlas, policyId, entity, $"BC01 expense ledger failure {bucketId:N}");
+        await ExecuteAsync(admin, "insert into business_planning.budget_control_bucket(tenant_id,id,policy_id,plan_version_id,legal_entity_id,period_start,metric_code,dimension_key,original_budget,currency_code) values($1,$2,$3,$4,$5,'2026-11-01','OPEX',$6::jsonb,100000,'EGP')", Atlas, bucketId, policyId, planVersion, entity, dimensionKey);
+        await ExecuteAsync(admin, "insert into business_planning.budget_control_owner_reconciliation(tenant_id,id,bucket_id,state,source_count,expected_actual,expected_commitment,expected_precommitment,discrepancy_amount,source_watermark,completed_at,requested_by) values($1,$2,$3,'Succeeded',0,0,0,0,0,$4,now(),$5)", Atlas, Guid.CreateVersion7(), bucketId, $"bc01-expense-ledger-failure-{bucketId:N}", actor);
+        await admin.CloseAsync();
+
+        var planning = new Modules.Planning.PlanningBudgetControlCapability();
+        var repository = new ExpenseRepository(dataSource, coordinator, new LedgerTransactionCapability(ledger), approvals: new TestApprovalCapability(), budgetControl: planning);
+        var created = await repository.CreateAsync(new(Atlas), new(entity, Guid.NewGuid(), "BC01 ledger failure recovery", new(2026, 11, 12), 30000m, "EGP", "EmployeePaid", categoryVersion, CostCategory: bucketId.ToString("D"), BudgetBucketId: bucketId), default);
+        await repository.AddEvidenceAsync(new(Atlas), entity, created.Id, new("Receipt", "file://bc01-expense-ledger-failure"), default);
+        var submitted = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(created.Version), "submit", default);
+        await repository.EvaluatePolicyAsync(new(Atlas), entity, created.Id, default);
+        var approved = await ApproveAsync(repository, new(Atlas), entity, created.Id, submitted.Version);
+        var finalized = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(approved), "finalize", default);
+
+        var failing = new ExpenseRepository(dataSource, coordinator, new FailingReverseLedgerPostingCapability(), approvals: new TestApprovalCapability(), budgetControl: planning);
+        var failure = await Record.ExceptionAsync(() => failing.TransitionAsync(new(Atlas), entity, created.Id, new(finalized.Version, "BC01 ledger failure"), "reverse", default));
+        Assert.NotNull(failure);
+        Assert.Contains("bc01_ledger_reversal_injected_failure", failure!.ToString(), StringComparison.Ordinal);
+        var pending = await repository.GetAsync(new(Atlas), entity, created.Id, default);
+        Assert.Equal("ReversalPending", pending!.AccountingState);
+        var ledgerEntryId = (Guid)(await ScalarAsync(adminConnectionString, "select ledger_entry_id from business_expenses.expense where tenant_id=$1 and id=$2", Atlas, created.Id))!;
+        Assert.Equal("Failed", await ScalarAsync(adminConnectionString, "select state from business_expenses.expense_budget_reversal_intent where tenant_id=$1 and expense_id=$2", Atlas, created.Id));
+        Assert.Equal(0L, Convert.ToInt64(await ScalarAsync(adminConnectionString, "select count(*) from finance_ledger.journal_entry_reversal where tenant_id=$1 and original_entry_id=$2", Atlas, ledgerEntryId), CultureInfo.InvariantCulture));
+        Assert.Equal(30000m, await ScalarAsync(adminConnectionString, "select actual_total from business_planning.budget_control_bucket where tenant_id=$1 and id=$2", Atlas, bucketId));
+
+        var recovered = await repository.TransitionAsync(new(Atlas), entity, created.Id, new(pending.Version, "BC01 ledger failure retry"), "reverse", default);
+        Assert.Equal("Reversed", recovered.ExpenseState);
+        Assert.Equal("Reversed", recovered.AccountingState);
+        Assert.Equal(1L, Convert.ToInt64(await ScalarAsync(adminConnectionString, "select count(*) from finance_ledger.journal_entry_reversal where tenant_id=$1 and original_entry_id=$2", Atlas, ledgerEntryId), CultureInfo.InvariantCulture));
+        Assert.Equal("Completed", await ScalarAsync(adminConnectionString, "select state from business_expenses.expense_budget_reversal_intent where tenant_id=$1 and expense_id=$2", Atlas, created.Id));
+        Assert.Equal(0m, await ScalarAsync(adminConnectionString, "select actual_total from business_planning.budget_control_bucket where tenant_id=$1 and id=$2", Atlas, bucketId));
     }
 
     [ExpensesPostgresFact]
@@ -1780,6 +1902,12 @@ public sealed class ExpensesPostgresIntegrationTests
 
     private static async Task<object?> ScalarAsync(NpgsqlConnection connection, string sql, params object[] values)
     { await using var command = new NpgsqlCommand(sql, connection); foreach (var value in values) command.Parameters.AddWithValue(value); return await command.ExecuteScalarAsync(); }
+    private static async Task<object?> ScalarAsync(string connectionString, string sql, params object[] values)
+    { await using var connection = new NpgsqlConnection(connectionString); await connection.OpenAsync(); await SetTenantAsync(connection, Atlas); return await ScalarAsync(connection, sql, values); }
+    private static async Task ExecuteAsync(NpgsqlConnection connection, string sql, params object[] values)
+    { await using var command = new NpgsqlCommand(sql, connection); foreach (var value in values) command.Parameters.AddWithValue(value); await command.ExecuteNonQueryAsync(); }
+    private static async Task SetTenantAsync(NpgsqlConnection connection, Guid tenant)
+    { await using var command = new NpgsqlCommand("select set_config('app.tenant_id',$1::text,false)", connection); command.Parameters.AddWithValue(tenant.ToString("D")); await command.ExecuteNonQueryAsync(); }
     private static async Task<long> ScalarLongAsync(NpgsqlConnection connection, string sql, params object[] values)
     { return Convert.ToInt64(await ScalarAsync(connection, sql, values), System.Globalization.CultureInfo.InvariantCulture); }
     private static async Task<(long EntryCount, decimal Debit, decimal Credit)> ReadPostingAsync(NpgsqlConnection connection, Guid expenseId)
@@ -1827,6 +1955,20 @@ public sealed class ExpensesPostgresIntegrationTests
     {
         public Task<ExpenseOcrResult> ExtractAsync(TenantId tenant, Guid fileReference, CancellationToken cancellationToken = default) =>
             throw new ExpenseOcrProviderException("expenses.ocr_provider_unavailable", "test provider unavailable");
+    }
+
+    private sealed class FailingReverseLedgerPostingCapability : ITransactionalLedgerPostingCapability
+    {
+        private static Task<LedgerPostingResult> FailAsync() => Task.FromException<LedgerPostingResult>(new InvalidOperationException("bc01_ledger_reversal_injected_failure"));
+
+        public Task<LedgerPostingResult> PostExplicitAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, ExplicitLedgerPostingPayload payload, CancellationToken cancellationToken = default) => FailAsync();
+        public Task<LedgerPostingResult> PostPayrollAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, PayrollPostedPayload payload, CancellationToken cancellationToken = default) => FailAsync();
+        public Task<LedgerPostingResult> PostExpenseAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, ExpenseRecognizedPayload payload, CancellationToken cancellationToken = default) => FailAsync();
+        public Task<LedgerPostingResult> ReverseAsync(TenantId tenantId, LegalEntityId legalEntityId, Guid originalEntryId, DateOnly reversalDate, DateOnly? autoReversalDate, string reason, Guid actorId, Guid correlationId, CancellationToken cancellationToken = default) => FailAsync();
+        public Task<LedgerPostingResult> PostSettlementFxDifferenceAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, SettlementFxDifferencePayload payload, CancellationToken cancellationToken = default) => FailAsync();
+        public Task<LedgerPostingResult> PostSettlementWriteOffAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, SettlementWriteOffPayload payload, CancellationToken cancellationToken = default) => FailAsync();
+        public Task<LedgerPostingResult> PostPosCashSaleAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, PosCashSalePostingPayload payload, CancellationToken cancellationToken = default) => FailAsync();
+        public Task<LedgerPostingResult> PostBankOriginatedAsync(ITransactionContext context, AccountingFactEnvelope<IAccountingFactPayload> fact, BankOriginatedFinancialEventPayload payload, CancellationToken cancellationToken = default) => FailAsync();
     }
 
     private sealed class SuccessfulOcrProvider : IExpenseOcrProvider

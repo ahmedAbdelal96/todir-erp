@@ -29,6 +29,14 @@ Implemented route groups:
 - The isolated Development runtime acceptance procedure uses `ASPNETCORE_ENVIRONMENT=Development` and `DOTNET_ENVIRONMENT=Development` for the approved development OpenIddict signing material, a disposable migrated/seeded PostgreSQL database, the runtime `erp_app` role, and `TODIR_COOKIE_SECURE_POLICY=None` for local HTTP. Do not commit any of these credentials or signing artifacts. Release API output must be used for acceptance (`dotnet run --configuration Release --no-build`); Debug output can omit newly added routes.
 - `POST /budget-control/reconcile` loads bounded owner facts from Purchasing and Expenses, compares Actual/Commitment/Precommitment by legal entity, period, metric and currency, persists a source watermark and discrepancy, and optionally applies a bounded projection rebuild. Strict `Block` control requires a successful zero-discrepancy owner result as well as the existing opening flag. This is still a backend contract, not frontend product acceptance.
 
+## BC01 verified evidence
+
+- BC-T05 and BC-T06 prove concurrent Purchasing control and owner-transaction rollback with real PostgreSQL locks, reservations and outbox state.
+- BC-T08 proves durable Expense reversal recovery at both the Ledger-failure and post-Ledger/Planning-correction boundaries: the retry is idempotent and ends with one effective reversal and zero Actual. The correction/final-completion update is transactionally atomic rather than separately fault-injected.
+- BC-T09 proves the authenticated override journey through cookie/CSRF HTTP and Platform Approvals with separate requester, approver and unauthorized identities.
+- BC-T10 proves an independent real-source opening vector in a repeat-safe unused future year: Expense `40,000 EGP` Actual, approved PO `60,000 EGP` Commitment, approved PR `20,000 EGP` Precommitment, and `80,000 EGP` availability. Authenticated reconciliation detects the initial projection discrepancy, rebuilds it, and a final zero-discrepancy run permits strict readiness.
+- The Ledger owner provider maps the canonical `ExpenseRecognized` debit semantic role; reconciled availability and reservation evaluation do not count materialized owner totals twice.
+
 ## Development seed
 
 The disposable/development seed provides, per tenant:
@@ -48,4 +56,4 @@ The administrator seed role receives the canonical Module 28 permissions. Other 
 
 ## Not yet safe to build against as final product scope
 
-Coordinate-scoped submission locking, configurable delegated approvals, Ledger YTD source provider, full typed DAG execution, OPEX driver workflows, integrated Balance Sheet/Cash Flow reconciliation, rolling forecast jobs, complete owner opening activation/recovery, full PO/receipt/return/final-invoice event replay, Expense failure-injection recovery, Excel/CSV staging, multi-entity rollups, planning observability and complete accuracy reporting remain backend gaps. The current Purchasing/Expenses reservation and recovery seams are not a complete lifecycle guarantee. The P&L response is a planning projection, not a statutory statement; the cash-flow response is explicitly a proxy. Do not create UI claims for these capabilities until the backend matrix is updated with PASS evidence.
+The broader Module 28 scope still has separate gaps: coordinate-scoped submission locking, configurable delegated approvals, full typed DAG execution, OPEX driver workflows, integrated Balance Sheet/Cash Flow reconciliation, rolling forecast jobs, complete PO receipt/return product lifecycle, Excel/CSV staging, multi-entity rollups, planning observability and complete accuracy reporting. The BC01 backend control and recovery evidence is ready for frontend integration, but the P&L response remains a planning projection (not a statutory statement) and the cash-flow response is explicitly a proxy. Do not create UI claims for broader capabilities until the backend matrix is updated with PASS evidence.

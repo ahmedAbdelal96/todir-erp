@@ -209,6 +209,44 @@ public sealed class PlanningBudgetControlIntegrationTests
         Assert.Equal(1L, (long)(await ScalarAsync(dataSource, "select count(*) from business_planning.budget_control_reconciliation_run where tenant_id=$1 and id=$2 and state='Succeeded'", Atlas, result.Id))!);
     }
 
+    [ExpensesPostgresFact]
+    public async Task StrictActivationRequiresOpeningReconciliationAndHonorsActivationWindow()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION")!;
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var categoryVersion = (Guid)(await ScalarAsync(dataSource,
+            "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, AtlasEntity))!;
+        var bucket = await EnsureOpexBucketAsync(dataSource, categoryVersion);
+        var sourceId = $"bc01-opening-{Guid.CreateVersion7():N}";
+        var capability = new PlanningBudgetControlCapability();
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        try
+        {
+            await ExecuteAsync(dataSource, "update business_planning.budget_control_policy p set mode='Block',active=true,opening_reconciled=false,strict_activation_at=null from business_planning.budget_control_bucket b where p.tenant_id=$1 and p.id=b.policy_id and b.id=$2", Atlas, bucket);
+            await ExecuteAsync(dataSource, "delete from business_planning.budget_control_owner_reconciliation where tenant_id=$1 and bucket_id=$2", Atlas, bucket);
+            var openingRequired = await Assert.ThrowsAsync<PlanningBudgetControlException>(() => coordinator.ExecuteAsync(new(Atlas), (context, token) => capability.UpsertReservationAsync(context, new(Atlas), Guid.NewGuid(), new(AtlasEntity, bucket, "bc01", sourceId, "line", "v1", 25m, "EGP", PlanningBudgetReservationKind.Commitment, new(2027, 1, 1)), token), default));
+            Assert.Equal("planning.budget_opening_reconciliation_required", openingRequired.Code);
+
+            var repository = new PlanningRepository(coordinator, ownerSources: [new CanonicalFactOwnerSource(dataSource)]);
+            var reconciled = await repository.ReconcileBudgetControlAsync(new(Atlas), Guid.NewGuid(), new(bucket, true), default);
+            Assert.Equal("Succeeded", reconciled.State);
+            Assert.True(reconciled.RebuildApplied);
+
+            await ExecuteAsync(dataSource, "update business_planning.budget_control_policy p set opening_reconciled=true,strict_activation_at=now()+interval '1 hour' from business_planning.budget_control_bucket b where p.tenant_id=$1 and p.id=b.policy_id and b.id=$2", Atlas, bucket);
+            var activationRequired = await Assert.ThrowsAsync<PlanningBudgetControlException>(() => coordinator.ExecuteAsync(new(Atlas), (context, token) => capability.UpsertReservationAsync(context, new(Atlas), Guid.NewGuid(), new(AtlasEntity, bucket, "bc01", sourceId, "line", "v1", 25m, "EGP", PlanningBudgetReservationKind.Commitment, new(2027, 1, 1)), token), default));
+            Assert.Equal("planning.budget_opening_reconciliation_required", activationRequired.Code);
+
+            await ExecuteAsync(dataSource, "update business_planning.budget_control_policy p set strict_activation_at=now()-interval '1 minute' from business_planning.budget_control_bucket b where p.tenant_id=$1 and p.id=b.policy_id and b.id=$2", Atlas, bucket);
+            var allowed = await coordinator.ExecuteAsync(new(Atlas), (context, token) => capability.UpsertReservationAsync(context, new(Atlas), Guid.NewGuid(), new(AtlasEntity, bucket, "bc01", sourceId, "line", "v1", 25m, "EGP", PlanningBudgetReservationKind.Commitment, new(2027, 1, 1)), token), default);
+            Assert.Equal("Allow", allowed.Decision);
+        }
+        finally
+        {
+            await ExecuteAsync(dataSource, "delete from business_planning.budget_reservation where tenant_id=$1 and source_module='bc01' and source_document_id=$2", Atlas, sourceId);
+            await ExecuteAsync(dataSource, "update business_planning.budget_control_policy p set mode='Warn',active=true,opening_reconciled=true,strict_activation_at=null from business_planning.budget_control_bucket b where p.tenant_id=$1 and p.id=b.policy_id and b.id=$2", Atlas, bucket);
+        }
+    }
+
     private static async Task<Guid> EnsureOpexBucketAsync(NpgsqlDataSource dataSource, Guid categoryVersion)
     {
         var dimension = JsonSerializer.Serialize(new Dictionary<string, string> { ["categoryVersionId"] = categoryVersion.ToString("D") });
@@ -216,11 +254,12 @@ public sealed class PlanningBudgetControlIntegrationTests
             "select id from business_planning.budget_control_bucket where tenant_id=$1 and legal_entity_id=$2 and period_start='2027-01-01' and metric_code='OPEX' and dimension_key=$3::jsonb limit 1", Atlas, AtlasEntity, dimension);
         if (existing is Guid id)
         {
+            await ExecuteAsync(dataSource, "update business_planning.budget_control_policy set active=true,effective_from='2026-01-01',effective_to=null,opening_reconciled=true,strict_activation_at=null where tenant_id=$1 and id=(select policy_id from business_planning.budget_control_bucket where tenant_id=$1 and id=$2)", Atlas, id);
             await EnsureOwnerReconciliationAsync(dataSource, id);
             return id;
         }
-        var policy = (Guid)(await ScalarAsync(dataSource, "select id from business_planning.budget_control_policy where tenant_id=$1 and legal_entity_id=$2 order by id limit 1", Atlas, AtlasEntity))!;
-        var planVersion = (Guid)(await ScalarAsync(dataSource, "select id from business_planning.plan_version where tenant_id=$1 order by id limit 1", Atlas))!;
+        var policy = (Guid)(await ScalarAsync(dataSource, "select id from business_planning.budget_control_policy where tenant_id=$1 and legal_entity_id=$2 and active=true order by effective_from nulls first,id limit 1", Atlas, AtlasEntity))!;
+        var planVersion = (Guid)(await ScalarAsync(dataSource, "select id from business_planning.plan_version where tenant_id=$1 and state='Published' order by id limit 1", Atlas))!;
         var bucket = Guid.NewGuid();
         await ExecuteAsync(dataSource,
             "insert into business_planning.budget_control_bucket(tenant_id,id,policy_id,plan_version_id,legal_entity_id,period_start,metric_code,dimension_key,original_budget,currency_code) values($1,$2,$3,$4,$5,'2027-01-01','OPEX',$6::jsonb,100000,'EGP')",

@@ -60,6 +60,9 @@ create policy tenant_isolation on business_expenses.expense_deletion_history
     using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
     with check (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
 revoke update, delete on business_expenses.expense_deletion_history from erp_app;
+-- Reversal recovery is a durable owner workflow; the runtime must update its
+-- retry state even though ordinary expense audit/history tables remain append-only.
+grant update on business_expenses.expense_budget_reversal_intent to erp_app;
 grant insert, select on business_expenses.expense_deletion_history to erp_app;
 
 create or replace function business_expenses.delete_draft_expense(

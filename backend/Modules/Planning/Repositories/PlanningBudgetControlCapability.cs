@@ -99,6 +99,16 @@ public sealed class PlanningBudgetControlCapability : ITransactionalPlanningBudg
         var commitmentReserved = await ScalarAsync<decimal>(context,
             "select coalesce(sum(amount),0) from business_planning.budget_reservation where tenant_id=$1 and bucket_id=$3 and state='Reserved' and reservation_kind='Commitment' and id <> coalesce($2::uuid,'00000000-0000-0000-0000-000000000000')",
             cancellationToken, tenantId.Value, existing?.Id, bucketId);
+        // A successful owner reconciliation materializes authoritative source
+        // totals into the bucket projection; do not count those reservations twice.
+        var ownerReconciled = await ScalarAsync<bool>(context,
+            "select exists(select 1 from business_planning.budget_control_owner_reconciliation where tenant_id=$1 and bucket_id=$2 and state='Succeeded' and discrepancy_amount=0)",
+            cancellationToken, tenantId.Value, bucketId);
+        if (ownerReconciled)
+        {
+            precommitmentReserved = 0m;
+            commitmentReserved = 0m;
+        }
         var before = bucket.Basis switch
         {
             "Precommitment" => bucket.CurrentBudget - manualReserved - bucket.Precommitment - precommitmentReserved,
@@ -139,11 +149,15 @@ public sealed class PlanningBudgetControlCapability : ITransactionalPlanningBudg
         {
             await ExecuteAsync(context, "insert into business_planning.budget_reservation(tenant_id,id,bucket_id,source_module,source_document_id,source_line_id,source_version,amount,reservation_kind,source_currency) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", cancellationToken,
                 tenantId.Value, reservationId, bucketId, request.SourceModule.Trim(), request.SourceDocumentId.Trim(), request.SourceLineId.Trim(), request.SourceVersion.Trim(), request.Amount, kind, currency);
+            if (ownerReconciled) await AdjustMaterializedReservationTotalsAsync(context, tenantId, bucketId, kind, request.Amount, cancellationToken);
         }
         else
         {
+            if (existing.State == "Reserved" && await IsOwnerReconciledAsync(context, tenantId, existing.BucketId, cancellationToken))
+                await AdjustMaterializedReservationTotalsAsync(context, tenantId, existing.BucketId, existing.Kind, -existing.Amount, cancellationToken);
             await ExecuteAsync(context, "update business_planning.budget_reservation set bucket_id=$3,source_version=$4,amount=$5,reservation_kind=$6,source_currency=$7,state='Reserved',released_at=null where tenant_id=$1 and id=$2", cancellationToken,
                 tenantId.Value, reservationId, bucketId, request.SourceVersion.Trim(), request.Amount, kind, currency);
+            if (ownerReconciled) await AdjustMaterializedReservationTotalsAsync(context, tenantId, bucketId, kind, request.Amount, cancellationToken);
         }
         await AuditAsync(context, tenantId, actorId, "budget_reservation_upserted", reservationId, cancellationToken);
         return new(reservationId, decision, after);
@@ -152,8 +166,18 @@ public sealed class PlanningBudgetControlCapability : ITransactionalPlanningBudg
     public async Task ReleaseReservationAsync(ITransactionContext context, TenantId tenantId, string sourceModule,
         string sourceDocumentId, string sourceLineId, CancellationToken cancellationToken = default)
     {
+        decimal amount; Guid bucketId; string kind;
+        await using (var command = new NpgsqlCommand("select amount,bucket_id,reservation_kind from business_planning.budget_reservation where tenant_id=$1 and source_module=$2 and source_document_id=$3 and source_line_id=$4 and state='Reserved' order by created_at desc,id desc limit 1 for update", context.Connection, context.Transaction))
+        {
+            command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(sourceModule.Trim()); command.Parameters.AddWithValue(sourceDocumentId.Trim()); command.Parameters.AddWithValue(sourceLineId.Trim());
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) return;
+            amount = reader.GetDecimal(0); bucketId = reader.GetGuid(1); kind = reader.GetString(2);
+        }
         await ExecuteAsync(context, "update business_planning.budget_reservation set state='Released',released_at=now() where tenant_id=$1 and source_module=$2 and source_document_id=$3 and source_line_id=$4 and state='Reserved'", cancellationToken,
             tenantId.Value, sourceModule.Trim(), sourceDocumentId.Trim(), sourceLineId.Trim());
+        if (await IsOwnerReconciledAsync(context, tenantId, bucketId, cancellationToken))
+            await AdjustMaterializedReservationTotalsAsync(context, tenantId, bucketId, kind, -amount, cancellationToken);
     }
 
     public async Task<PlanningBudgetReservationResult> ConsumeReservationAsync(ITransactionContext context, TenantId tenantId,
@@ -180,6 +204,8 @@ public sealed class PlanningBudgetControlCapability : ITransactionalPlanningBudg
             await ExecuteAsync(context, "update business_planning.budget_reservation set state='Consumed',released_at=null where tenant_id=$1 and id=$2 and state='Reserved'", cancellationToken, tenantId.Value, reservation.Id);
         else
             await ExecuteAsync(context, "update business_planning.budget_reservation set amount=amount-$3,source_version=$4,state='Reserved',released_at=null where tenant_id=$1 and id=$2 and state='Reserved'", cancellationToken, tenantId.Value, reservation.Id, request.Amount, request.SourceVersion.Trim());
+        if (await IsOwnerReconciledAsync(context, tenantId, reservation.BucketId, cancellationToken))
+            await AdjustMaterializedReservationTotalsAsync(context, tenantId, reservation.BucketId, reservation.Kind, -request.Amount, cancellationToken);
         await AuditAsync(context, tenantId, actorId, "budget_reservation_consumed", reservation.Id, cancellationToken);
         return new(reservation.Id, request.Amount == reservation.Amount ? "Consumed" : "PartiallyConsumed", Math.Max(0m, reservation.Amount - request.Amount));
     }
@@ -255,10 +281,10 @@ public sealed class PlanningBudgetControlCapability : ITransactionalPlanningBudg
 
     private static async Task<Reservation?> ReadSourceReservationAsync(ITransactionContext context, TenantId tenantId, string module, string document, string line, CancellationToken ct)
     {
-        await using var command = new NpgsqlCommand("select r.id,r.bucket_id,b.legal_entity_id,r.amount,r.state,r.source_currency from business_planning.budget_reservation r join business_planning.budget_control_bucket b on b.tenant_id=r.tenant_id and b.id=r.bucket_id where r.tenant_id=$1 and r.source_module=$2 and r.source_document_id=$3 and r.source_line_id=$4 order by r.created_at desc,r.id desc limit 1 for update", context.Connection, context.Transaction);
+        await using var command = new NpgsqlCommand("select r.id,r.bucket_id,b.legal_entity_id,r.amount,r.state,r.source_currency,r.reservation_kind from business_planning.budget_reservation r join business_planning.budget_control_bucket b on b.tenant_id=r.tenant_id and b.id=r.bucket_id where r.tenant_id=$1 and r.source_module=$2 and r.source_document_id=$3 and r.source_line_id=$4 order by r.created_at desc,r.id desc limit 1 for update", context.Connection, context.Transaction);
         command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(module.Trim()); command.Parameters.AddWithValue(document.Trim()); command.Parameters.AddWithValue(line.Trim());
         await using var reader = await command.ExecuteReaderAsync(ct);
-        return await reader.ReadAsync(ct) ? new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetDecimal(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5).Trim()) : null;
+        return await reader.ReadAsync(ct) ? new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetDecimal(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5).Trim(), reader.GetString(6)) : null;
     }
 
     private static async Task<decimal?> ReadConsumptionAsync(ITransactionContext context, TenantId tenantId, PlanningBudgetConsumptionRequest request, CancellationToken ct)
@@ -295,6 +321,15 @@ public sealed class PlanningBudgetControlCapability : ITransactionalPlanningBudg
         return true;
     }
 
+    private static Task<bool> IsOwnerReconciledAsync(ITransactionContext context, TenantId tenant, Guid bucketId, CancellationToken ct) => ScalarAsync<bool>(context,
+        "select exists(select 1 from business_planning.budget_control_owner_reconciliation where tenant_id=$1 and bucket_id=$2 and state='Succeeded' and discrepancy_amount=0)", ct, tenant.Value, bucketId);
+    private static async Task AdjustMaterializedReservationTotalsAsync(ITransactionContext context, TenantId tenant, Guid bucketId, string kind, decimal delta, CancellationToken ct)
+    {
+        var changed = await ScalarAsync<int?>(context,
+            "update business_planning.budget_control_bucket set commitment_total=commitment_total+case when $3='Commitment' then $4 else 0 end,precommitment_total=precommitment_total+case when $3='Precommitment' then $4 else 0 end,row_version=row_version+1 where tenant_id=$1 and id=$2 and commitment_total+case when $3='Commitment' then $4 else 0 end >= 0 and precommitment_total+case when $3='Precommitment' then $4 else 0 end >= 0 returning 1",
+            ct, tenant.Value, bucketId, kind, delta);
+        if (changed is null) throw new PlanningBudgetControlException("planning.budget_projection_inconsistent");
+    }
     private static async Task<T> ScalarAsync<T>(ITransactionContext context, string sql, CancellationToken ct, params object?[] values)
     {
         await using var command = Command(context, sql, values); var value = await command.ExecuteScalarAsync(ct);
@@ -307,6 +342,6 @@ public sealed class PlanningBudgetControlCapability : ITransactionalPlanningBudg
     private static NpgsqlCommand Command(ITransactionContext context, string sql, params object?[] values) { var command = new NpgsqlCommand(sql, context.Connection, context.Transaction); foreach (var value in values) command.Parameters.AddWithValue(value ?? DBNull.Value); return command; }
     private static Task AuditAsync(ITransactionContext context, TenantId tenant, Guid actor, string action, Guid entity, CancellationToken ct) => ExecuteAsync(context, "insert into business_planning.planning_audit_event(tenant_id,id,actor_user_id,action,entity_id) values($1,$2,$3,$4,$5)", ct, tenant.Value, Guid.CreateVersion7(), actor, action, entity);
     private sealed record Bucket(Guid LegalEntityId, decimal CurrentBudget, decimal Actual, decimal Commitment, decimal Precommitment, string Mode, decimal ThresholdPercent, string CurrencyCode, string Basis, string ControlHorizon, bool NegativeBudgetAllowed, bool ShadowMode);
-    private sealed record Reservation(Guid Id, Guid BucketId, Guid LegalEntityId, decimal Amount, string State, string? SourceCurrency);
+    private sealed record Reservation(Guid Id, Guid BucketId, Guid LegalEntityId, decimal Amount, string State, string? SourceCurrency, string Kind);
     private sealed record ConsumptionSource(Guid Id, Guid BucketId, decimal Amount, string SourceVersion, string? SourceCurrency);
 }

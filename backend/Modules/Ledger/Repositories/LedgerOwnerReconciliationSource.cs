@@ -22,7 +22,9 @@ public sealed class LedgerOwnerReconciliationSource(NpgsqlDataSource dataSource)
             await tenant.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        const string sql = "select e.id,e.fact_id,e.fact_version,e.legal_entity_id,e.posting_date,e.base_currency_code,l.base_debit,coalesce(e.source_reference,e.id::text) from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id where e.tenant_id=$1 and ($2::uuid is null or e.legal_entity_id=$2) and e.status='Posted' and e.fact_type='ExpenseRecognized' and l.semantic_role='PurchaseExpense' and l.base_debit>0 order by e.posting_date,e.id,l.sequence_no";
+        // ExpenseRecognized posting rules use the canonical fact semantic role;
+        // do not infer controlled Actuals from an unrelated debit role.
+        const string sql = "select e.id,e.fact_id,e.fact_version,e.legal_entity_id,e.posting_date,e.base_currency_code,l.base_debit,coalesce(e.source_reference,e.id::text) from finance_ledger.journal_entry e join finance_ledger.journal_entry_line l on l.tenant_id=e.tenant_id and l.legal_entity_id=e.legal_entity_id and l.journal_entry_id=e.id where e.tenant_id=$1 and ($2::uuid is null or e.legal_entity_id=$2) and e.status='Posted' and e.fact_type='ExpenseRecognized' and l.semantic_role='ExpenseRecognized' and l.base_debit>0 order by e.posting_date,e.id,l.sequence_no";
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(tenantId.Value);
         command.Parameters.AddWithValue(legalEntityId.HasValue ? legalEntityId.Value : DBNull.Value);

@@ -305,10 +305,15 @@ public sealed class LedgerPass3AcceptanceTests
             var connectionString = LedgerTestSupport.RequireConnection("TODIR_LEDGER_WORKER_CONNECTION");
             await using var dataSource = NpgsqlDataSource.Create(connectionString);
             var posting = LedgerTestSupport.CreateRepository(dataSource);
-            await using (var cleanup = await dataSource.OpenConnectionAsync())
+            var cleanupConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION");
+            await using (var cleanup = new NpgsqlConnection(string.IsNullOrWhiteSpace(cleanupConnectionString) ? connectionString : cleanupConnectionString))
             {
+                await cleanup.OpenAsync();
                 await LedgerTestSupport.SetTenantAsync(cleanup, LedgerTestSupport.AtlasTenant);
-                await ExecuteAsync(cleanup, "delete from platform.outbox_message where tenant_id=$1", LedgerTestSupport.AtlasTenant.Value);
+                if (string.IsNullOrWhiteSpace(cleanupConnectionString))
+                    await ExecuteAsync(cleanup, "delete from platform.outbox_message where tenant_id=$1", LedgerTestSupport.AtlasTenant.Value);
+                else
+                    await ExecuteAsync(cleanup, "delete from platform.outbox_message");
             }
             var posted = await posting.PostCustomerInvoiceAsync(LedgerTestSupport.Invoice($"WORKER-RECOVERY-{Guid.CreateVersion7():N}"));
             await using var connection = await dataSource.OpenConnectionAsync();
@@ -353,6 +358,8 @@ public sealed class LedgerPass3AcceptanceTests
             await using var dataSource = NpgsqlDataSource.Create(LedgerTestSupport.RequireConnection());
             var posting = LedgerTestSupport.CreateRepository(dataSource);
             var operations = new LedgerOperationsRepository(dataSource, new NpgsqlTransactionCoordinator(dataSource), posting, TimeProvider.System);
+            var baselineRebuild = await operations.RebuildBalancesAsync(LedgerTestSupport.AtlasTenant, LedgerTestSupport.AtlasEntity, null, null, default);
+            Assert.True(baselineRebuild.Reconciled);
             for (var i = 0; i < 2; i++)
                 await posting.PostCustomerInvoiceAsync(LedgerTestSupport.Invoice($"PASS3-PERF-WARMUP-{Guid.CreateVersion7():N}"));
             var samples = new List<double>();
