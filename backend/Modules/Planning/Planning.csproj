@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Modules.Planning</AssemblyName>
+    <RootNamespace>Modules.Planning</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <ProjectReference Include="../../Core/Core.csproj" />
+    <ProjectReference Include="../../Shared/BuildingBlocks/BuildingBlocks.csproj" />
+    <ProjectReference Include="../../Shared/Contracts/Contracts.csproj" />
+    <ProjectReference Include="../../Shared/Primitives/Primitives.csproj" />
+  </ItemGroup>
+</Project>
