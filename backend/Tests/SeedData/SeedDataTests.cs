@@ -128,16 +128,118 @@ public sealed class DevelopmentSeedTests
             var runs = await RunConcurrentMigratorsAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword);
             Assert.True(runs.First.ExitCode == 0, $"First concurrent migrator failed:\n{runs.First.Output}\nSecond output:\n{runs.Second.Output}");
             Assert.True(runs.Second.ExitCode == 0, $"Second concurrent migrator failed:\n{runs.Second.Output}\nFirst output:\n{runs.First.Output}");
-            Assert.Contains("Applied or verified 264 ordered platform scripts from 26 module manifests.", runs.First.Output + runs.Second.Output, StringComparison.Ordinal);
             Assert.Contains("Development Seed Ready", runs.First.Output + runs.Second.Output, StringComparison.Ordinal);
 
             await using var dataSource = NpgsqlDataSource.Create(migratorBuilder.ConnectionString);
-            await using var connection = await dataSource.OpenConnectionAsync();
-            await using var command = new NpgsqlCommand("select count(*)::int, count(distinct module_id || ':' || script_name)::int from platform_migration.applied_script", connection);
-            await using var reader = await command.ExecuteReaderAsync();
-            Assert.True(await reader.ReadAsync());
-            Assert.Equal(265, reader.GetInt32(0));
-            Assert.Equal(265, reader.GetInt32(1));
+            await AssertCanonicalMigrationHistoryAsync(dataSource, repositoryRoot);
+        }
+        finally
+        {
+            if (databaseCreated)
+            {
+                await using var terminate = new NpgsqlCommand("select pg_terminate_backend(pid) from pg_stat_activity where datname = $1 and pid <> pg_backend_pid()", admin);
+                terminate.Parameters.AddWithValue(databaseName);
+                await terminate.ExecuteNonQueryAsync();
+                await using var drop = new NpgsqlCommand($"drop database if exists \"{databaseName}\"", admin);
+                await drop.ExecuteNonQueryAsync();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task MigrationLeaseTimeoutDoesNotMutateAndReleasedLeaseAllowsRetry()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for the migration lease timeout regression test.");
+        var databaseName = $"todir_seed_{Guid.CreateVersion7():N}";
+        var seedPassword = $"Seed-{Convert.ToHexString(RandomNumberGenerator.GetBytes(16))}a1";
+        var repositoryRoot = FindRepositoryRoot();
+        var runtimePassword = GetRuntimePassword(repositoryRoot);
+        var adminBuilder = new NpgsqlConnectionStringBuilder(adminConnectionString);
+        var migratorBuilder = new NpgsqlConnectionStringBuilder(adminConnectionString) { Database = databaseName };
+        var databaseCreated = false;
+
+        await using var adminDataSource = NpgsqlDataSource.Create(adminBuilder.ConnectionString);
+        await using var admin = await adminDataSource.OpenConnectionAsync();
+        try
+        {
+            await using (var create = new NpgsqlCommand($"create database \"{databaseName}\" encoding 'UTF8' lc_collate 'C' lc_ctype 'C' template template0", admin))
+                await create.ExecuteNonQueryAsync();
+            databaseCreated = true;
+
+            await using var holderDataSource = NpgsqlDataSource.Create(migratorBuilder.ConnectionString);
+            await using var holder = await holderDataSource.OpenConnectionAsync();
+            await AcquireMigrationLeaseAsync(holder);
+
+            var timedOut = await RunMigratorAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword, "2");
+            Assert.Equal(5, timedOut.ExitCode);
+            Assert.Contains("Timed out after 2 seconds waiting for the DbMigrator lease", timedOut.Output, StringComparison.Ordinal);
+            Assert.True(await IsMigrationHistoryAbsentAsync(holder));
+
+            await ReleaseMigrationLeaseAsync(holder);
+            var retry = await RunMigratorAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword);
+            Assert.True(retry.ExitCode == 0, retry.Output);
+            Assert.Contains("Development Seed Ready", retry.Output, StringComparison.Ordinal);
+
+            var secondRun = await RunMigratorAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword);
+            Assert.True(secondRun.ExitCode == 0, secondRun.Output);
+            await using var dataSource = NpgsqlDataSource.Create(migratorBuilder.ConnectionString);
+            await AssertCanonicalMigrationHistoryAsync(dataSource, repositoryRoot);
+        }
+        finally
+        {
+            if (databaseCreated)
+            {
+                await using var terminate = new NpgsqlCommand("select pg_terminate_backend(pid) from pg_stat_activity where datname = $1 and pid <> pg_backend_pid()", admin);
+                terminate.Parameters.AddWithValue(databaseName);
+                await terminate.ExecuteNonQueryAsync();
+                await using var drop = new NpgsqlCommand($"drop database if exists \"{databaseName}\"", admin);
+                await drop.ExecuteNonQueryAsync();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task TerminatedWaitingMigratorDoesNotHoldLease()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for the migration lease recovery regression test.");
+        var databaseName = $"todir_seed_{Guid.CreateVersion7():N}";
+        var seedPassword = $"Seed-{Convert.ToHexString(RandomNumberGenerator.GetBytes(16))}a1";
+        var repositoryRoot = FindRepositoryRoot();
+        var runtimePassword = GetRuntimePassword(repositoryRoot);
+        var adminBuilder = new NpgsqlConnectionStringBuilder(adminConnectionString);
+        var applicationName = $"p0d-lock-test-{Guid.CreateVersion7():N}";
+        var migratorBuilder = new NpgsqlConnectionStringBuilder(adminConnectionString)
+        {
+            Database = databaseName,
+            ApplicationName = applicationName
+        };
+        var databaseCreated = false;
+
+        await using var adminDataSource = NpgsqlDataSource.Create(adminBuilder.ConnectionString);
+        await using var admin = await adminDataSource.OpenConnectionAsync();
+        try
+        {
+            await using (var create = new NpgsqlCommand($"create database \"{databaseName}\" encoding 'UTF8' lc_collate 'C' lc_ctype 'C' template template0", admin))
+                await create.ExecuteNonQueryAsync();
+            databaseCreated = true;
+
+            await using var holderDataSource = NpgsqlDataSource.Create(migratorBuilder.ConnectionString);
+            await using var holder = await holderDataSource.OpenConnectionAsync();
+            await AcquireMigrationLeaseAsync(holder);
+
+            using var waitingProcess = Process.Start(CreateMigratorStartInfo(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword, "300"))
+                ?? throw new InvalidOperationException("Unable to start the waiting DbMigrator.");
+            Assert.True(await WaitForAdvisoryLockWaitAsync(admin, databaseName, applicationName), "The migrator did not reach the advisory-lock wait state.");
+            waitingProcess.Kill(entireProcessTree: true);
+            await waitingProcess.WaitForExitAsync();
+
+            await ReleaseMigrationLeaseAsync(holder);
+            var retry = await RunMigratorAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword);
+            Assert.True(retry.ExitCode == 0, retry.Output);
+            await using var dataSource = NpgsqlDataSource.Create(migratorBuilder.ConnectionString);
+            await AssertCanonicalMigrationHistoryAsync(dataSource, repositoryRoot);
         }
         finally
         {
@@ -322,6 +424,20 @@ public sealed class DevelopmentSeedTests
     }
 
     [Fact]
+    public async Task InvalidMigrationLeaseTimeoutIsRejectedBeforeDatabaseAccess()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var start = CreateMigratorStartInfo(repositoryRoot, "Host=127.0.0.1;Port=1;Database=not-used;Username=not-used;Password=not-used", "unused", "unused", "0");
+        using var process = Process.Start(start) ?? throw new InvalidOperationException("Unable to start DbMigrator for timeout configuration validation.");
+        var output = process.StandardOutput.ReadToEndAsync();
+        var error = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var combined = $"{await output}{await error}";
+        Assert.Equal(2, process.ExitCode);
+        Assert.Contains("TODIR_MIGRATOR_LOCK_TIMEOUT_SECONDS must be an integer between 1 and 3600 seconds", combined, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task LocalCanonicalCredentialsAndTenantCountsAreValid()
     {
         var connectionString = Environment.GetEnvironmentVariable("TODIR_MIGRATOR_CONNECTION");
@@ -363,9 +479,9 @@ public sealed class DevelopmentSeedTests
         }
     }
 
-    private static async Task<(int ExitCode, string Output)> RunMigratorAsync(string repositoryRoot, string connectionString, string seedPassword, string runtimePassword)
+    private static async Task<(int ExitCode, string Output)> RunMigratorAsync(string repositoryRoot, string connectionString, string seedPassword, string runtimePassword, string? lockTimeoutSeconds = null)
     {
-        var start = CreateMigratorStartInfo(repositoryRoot, connectionString, seedPassword, runtimePassword);
+        var start = CreateMigratorStartInfo(repositoryRoot, connectionString, seedPassword, runtimePassword, lockTimeoutSeconds);
 
         using var process = Process.Start(start) ?? throw new InvalidOperationException("Unable to start DbMigrator for the fresh-database seed regression test.");
         var standardOutput = process.StandardOutput.ReadToEndAsync();
@@ -388,7 +504,7 @@ public sealed class DevelopmentSeedTests
         return ((first.ExitCode, $"{await firstOutput}{await firstError}"), (second.ExitCode, $"{await secondOutput}{await secondError}"));
     }
 
-    private static ProcessStartInfo CreateMigratorStartInfo(string repositoryRoot, string connectionString, string seedPassword, string runtimePassword)
+    private static ProcessStartInfo CreateMigratorStartInfo(string repositoryRoot, string connectionString, string seedPassword, string runtimePassword, string? lockTimeoutSeconds = null)
     {
         var start = new ProcessStartInfo("dotnet")
         {
@@ -407,7 +523,82 @@ public sealed class DevelopmentSeedTests
         start.Environment["TODIR_RUNTIME_PASSWORD"] = runtimePassword;
         start.Environment["SEED_DEFAULT_PASSWORD"] = seedPassword;
         start.Environment["DOTNET_ENVIRONMENT"] = "Testing";
+        if (lockTimeoutSeconds is not null) start.Environment["TODIR_MIGRATOR_LOCK_TIMEOUT_SECONDS"] = lockTimeoutSeconds;
+        else start.Environment.Remove("TODIR_MIGRATOR_LOCK_TIMEOUT_SECONDS");
         return start;
+    }
+
+    private static async Task AcquireMigrationLeaseAsync(NpgsqlConnection connection)
+    {
+        await using var command = new NpgsqlCommand("select pg_advisory_lock(hashtextextended('todir.dbmigrator:' || current_database(), 0))", connection);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task ReleaseMigrationLeaseAsync(NpgsqlConnection connection)
+    {
+        await using var command = new NpgsqlCommand("select pg_advisory_unlock(hashtextextended('todir.dbmigrator:' || current_database(), 0))", connection);
+        Assert.True((bool)(await command.ExecuteScalarAsync())!);
+    }
+
+    private static async Task<bool> IsMigrationHistoryAbsentAsync(NpgsqlConnection connection)
+    {
+        await using var command = new NpgsqlCommand("select to_regclass('platform_migration.applied_script') is null", connection);
+        return (bool)(await command.ExecuteScalarAsync())!;
+    }
+
+    private static async Task<bool> WaitForAdvisoryLockWaitAsync(NpgsqlConnection admin, string databaseName, string applicationName)
+    {
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            await using var command = new NpgsqlCommand("select exists(select 1 from pg_stat_activity where datname=$1 and application_name=$2 and wait_event='advisory')", admin);
+            command.Parameters.AddWithValue(databaseName);
+            command.Parameters.AddWithValue(applicationName);
+            if ((bool)(await command.ExecuteScalarAsync())!) return true;
+            await Task.Delay(50);
+        }
+        return false;
+    }
+
+    private static async Task AssertCanonicalMigrationHistoryAsync(NpgsqlDataSource dataSource, string repositoryRoot)
+    {
+        var expected = GetExpectedMigrationIdentities(repositoryRoot);
+        var actual = new Dictionary<(string ModuleId, string ScriptName), string>();
+        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand("select module_id, script_name, checksum from platform_migration.applied_script", connection);
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var key = (ModuleId: reader.GetString(0), ScriptName: reader.GetString(1));
+            Assert.True(actual.TryAdd(key, reader.GetString(2)), $"Duplicate migration identity returned: {key.ModuleId}/{key.ScriptName}");
+        }
+
+        Assert.Equal(expected.Count, actual.Count);
+        foreach (var entry in expected)
+        {
+            Assert.True(actual.TryGetValue(entry.Key, out var checksum), $"Missing migration identity: {entry.Key.ModuleId}/{entry.Key.ScriptName}");
+            Assert.Equal(entry.Value, checksum);
+        }
+    }
+
+    private static Dictionary<(string ModuleId, string ScriptName), string> GetExpectedMigrationIdentities(string repositoryRoot)
+    {
+        var bootstrapDirectory = Path.Combine(repositoryRoot, "backend", "DbMigrator", "Database", "bootstrap");
+        var expected = new Dictionary<(string ModuleId, string ScriptName), string>();
+        foreach (var path in Directory.EnumerateFiles(bootstrapDirectory, "*.sql", SearchOption.TopDirectoryOnly).OrderBy(path => path, StringComparer.Ordinal))
+        {
+            var scriptName = Path.GetFileName(path);
+            var moduleId = scriptName switch
+            {
+                "runtime-roles-and-schemas.sql" => "runtime",
+                "platform-rls-finalization.sql" or "platform-kernel-schema.sql" => "platform-kernel",
+                _ when scriptName.EndsWith("-schema.sql", StringComparison.Ordinal) => scriptName[..^"-schema.sql".Length],
+                _ when scriptName.Contains("-forward-fix-", StringComparison.Ordinal) => scriptName[..scriptName.IndexOf("-forward-fix-", StringComparison.Ordinal)],
+                _ => throw new InvalidOperationException($"Unexpected SQL file in canonical migration directory: {scriptName}")
+            };
+            var key = (moduleId, scriptName);
+            Assert.True(expected.TryAdd(key, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant()), $"Duplicate canonical migration identity: {moduleId}/{scriptName}");
+        }
+        return expected;
     }
 
     private static async Task<CanonicalSeedCounts> ReadCanonicalCountsAsync(NpgsqlDataSource dataSource)

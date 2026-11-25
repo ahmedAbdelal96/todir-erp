@@ -4,17 +4,27 @@
   "created_on": "2026-11-22",
   "status": "P0_EVIDENCE_COMPLETE",
   "pinned_branch": "dev",
-  "pinned_sha": "c85f59121dc06e8c4f2d5a25590a534c82e836af",
+  "pinned_sha": "ab49df8b95a16c92804cce7405c42a9f95b0beb7",
   "audited_on": "2026-11-25",
   "documentation_count_scope": "numbered design documents under docs/",
   "documentation_count": 19,
   "p0_evidence": {
     "status": "P0_EVIDENCE_COMPLETE",
     "path": "evidence/p0",
-    "artifact_count": 19,
+    "artifact_count": 20,
     "benchmark": "PASS_WITH_LOCAL_LIMITS",
     "benchmark_blocker": null,
-    "benchmark_limitations": ["Development Seed dataset", "single-host disposable PostgreSQL/API", "not production capacity certification", "Worker/RabbitMQ/Redis mixed-load not executed"]
+    "benchmark_limitations": [
+      "Development Seed dataset",
+      "single-host disposable PostgreSQL/API",
+      "not production capacity certification",
+      "Worker/RabbitMQ/Redis mixed-load not executed"
+    ],
+    "benchmark_archive": {
+      "path": "evidence/p0/benchmark-archive",
+      "manifest": "evidence/p0/benchmark-archive/archive-manifest.json",
+      "file_count": 20
+    }
   },
   "user_locked": [
     "MANUAL_USER_TRIGGER_ONLY",
@@ -123,25 +133,106 @@
     }
   ],
   "p0_evidence_documents": [
-    {"filename": "evidence/p0/README.md", "sha256": "03ac0b8145887387ca63eb6056fe74f498862711335682d27d8b152900333830", "bytes": 3103},
-    {"filename": "evidence/p0/P0-01_CURRENT_STATE_EVIDENCE.md", "sha256": "fba010b023836ff1e49d10023c6216b3add9b381bdc87da21842f7421c4f23d5", "bytes": 2060},
-    {"filename": "evidence/p0/P0-02_OPERATIONAL_BASELINE.md", "sha256": "f303217e005f285f9197966029795f2ae94bc9a9fd6e4d5bd804bc882967283b", "bytes": 3166},
-    {"filename": "evidence/p0/P0-03_SOURCE_OWNERSHIP_AND_DATA_TRUTH.md", "sha256": "645571df2b0ff776d04a3a35781dab4bab5d82b4855df8f47b3f5fec60ef5b26", "bytes": 2813},
-    {"filename": "evidence/p0/P0-04_WORKER_RUNTIME_ISOLATION.md", "sha256": "bb2be7f2af5bd2b1eff73b8553efcacc3ed7c346332a93f37347f22c803c9d25", "bytes": 1594},
-    {"filename": "evidence/p0/P0-05_SECURITY_ACCESS_COMPATIBILITY.md", "sha256": "ef17e2dca046915cbe794dde5406ca00acf2c2bb3d8bea9aa00064927d59c2a8", "bytes": 1540},
-    {"filename": "evidence/p0/P0-06_ARCHITECTURE_RISK_REGISTER.md", "sha256": "a87def22c90960baa76fe31eb84300cff2fcc49c4abd99a0e4a02434d983bf38", "bytes": 1744},
-    {"filename": "evidence/p0/P0-07_PILOT_READINESS_COMPARISON.md", "sha256": "cb72b2909e2c5cdd109b6ea39fad8267ecaa080276dce0feefb7f08664d98d18", "bytes": 1439},
-    {"filename": "evidence/p0/P0-08_P1_DECISION_BRIEF.md", "sha256": "7507494e979e25e55265345d99cd0b80f30a0b1e45fc4eb0033ce4532e0eb3fe", "bytes": 1323},
-    {"filename": "evidence/p0/P0-09_EVIDENCE_VERIFICATION_MANIFEST.md", "sha256": "9068d430633f8fdde9a1441a0cedf81b16d235940bf27d70ddf06566ad66bb3b", "bytes": 2885},
-    {"filename": "evidence/p0/P0-B01_DOCKER_ENVIRONMENT_ROOT_CAUSE.md", "sha256": "16948b698ba5fdc0e595d51402c6b3e5c84b3054a5d17ba2699fbf545ee526c6", "bytes": 2637},
-    {"filename": "evidence/p0/P0-B02_BENCHMARK_HARNESS_AUDIT.md", "sha256": "ce5bb3c4ce334f4792dc9c64fd8bfebb3c8b94e4befb10509a81e1d07fe511df", "bytes": 3969},
-    {"filename": "evidence/p0/P0-B03_OPERATIONAL_PERFORMANCE_BASELINE.md", "sha256": "150c4f8f82f2b3d6a8d266274840a679de8333ebfe2e72ef85b50f373295438b", "bytes": 5921},
-    {"filename": "evidence/p0/P0-B04_POSTGRES_RESOURCE_ASSESSMENT.md", "sha256": "d366832c43260b4e153599a656bac1b0ae018834a30f944dc69e6848ce0b24b0", "bytes": 1877},
-    {"filename": "evidence/p0/P0-B05_RUNTIME_SECURITY_EVIDENCE.md", "sha256": "631bdff385e60502bbfa01efbb47ca2f342606dfcdd7d73357c6592d1c2a668f", "bytes": 1803},
-    {"filename": "evidence/p0/P0-B06_PERFORMANCE_ACCEPTANCE_RECOMMENDATION.md", "sha256": "e9052813dd25d823e7601df30b68237a7ba056e812e391f987869fca1d905571", "bytes": 1206},
-    {"filename": "evidence/p0/P0-B07_INDEPENDENT_FINAL_REVIEW.md", "sha256": "f119f804a51fb17e7064cd5219f87bdd56da7a785356d79274b31ab9b4441dbd", "bytes": 3957},
-    {"filename": "evidence/p0/P0-B08_PER_OPERATION_BENCHMARK_AUDIT.md", "sha256": "04f6bb5d35b048db4e19a203a8cc085cf2a2c87e1e8f4ab41b90e63b104f03b3", "bytes": 8366},
-    {"filename": "evidence/p0/P0-B09_ARTIFACT_VERIFICATION_AND_REPRODUCTION.md", "sha256": "e3c23ba0bf5f273bffe84a94fb4f5fad48cd785900917e72175cc44e4242e512", "bytes": 6037}
+    {
+      "filename": "evidence/p0/P0_FINAL_ACCEPTANCE_AND_HANDOFF.md",
+      "sha256": "98bb710bb14fd415315a061e2bebe47b5e223517c2621fa7b2d43735fc7844f6",
+      "bytes": 7645
+    },
+    {
+      "filename": "evidence/p0/P0-01_CURRENT_STATE_EVIDENCE.md",
+      "sha256": "fba010b023836ff1e49d10023c6216b3add9b381bdc87da21842f7421c4f23d5",
+      "bytes": 2060
+    },
+    {
+      "filename": "evidence/p0/P0-02_OPERATIONAL_BASELINE.md",
+      "sha256": "9b7976a5c58ade0246439a46bd3024362d66dfefc8860db74e61e2757f9c183a",
+      "bytes": 3204
+    },
+    {
+      "filename": "evidence/p0/P0-03_SOURCE_OWNERSHIP_AND_DATA_TRUTH.md",
+      "sha256": "645571df2b0ff776d04a3a35781dab4bab5d82b4855df8f47b3f5fec60ef5b26",
+      "bytes": 2813
+    },
+    {
+      "filename": "evidence/p0/P0-04_WORKER_RUNTIME_ISOLATION.md",
+      "sha256": "bb2be7f2af5bd2b1eff73b8553efcacc3ed7c346332a93f37347f22c803c9d25",
+      "bytes": 1594
+    },
+    {
+      "filename": "evidence/p0/P0-05_SECURITY_ACCESS_COMPATIBILITY.md",
+      "sha256": "ef17e2dca046915cbe794dde5406ca00acf2c2bb3d8bea9aa00064927d59c2a8",
+      "bytes": 1540
+    },
+    {
+      "filename": "evidence/p0/P0-06_ARCHITECTURE_RISK_REGISTER.md",
+      "sha256": "a87def22c90960baa76fe31eb84300cff2fcc49c4abd99a0e4a02434d983bf38",
+      "bytes": 1744
+    },
+    {
+      "filename": "evidence/p0/P0-07_PILOT_READINESS_COMPARISON.md",
+      "sha256": "cb72b2909e2c5cdd109b6ea39fad8267ecaa080276dce0feefb7f08664d98d18",
+      "bytes": 1439
+    },
+    {
+      "filename": "evidence/p0/P0-08_P1_DECISION_BRIEF.md",
+      "sha256": "7507494e979e25e55265345d99cd0b80f30a0b1e45fc4eb0033ce4532e0eb3fe",
+      "bytes": 1323
+    },
+    {
+      "filename": "evidence/p0/P0-09_EVIDENCE_VERIFICATION_MANIFEST.md",
+      "sha256": "300bdadede114f8eac8f9ba227c78a2a6f9bd1e73ac29e83585e2e18a5497f23",
+      "bytes": 3037
+    },
+    {
+      "filename": "evidence/p0/P0-B01_DOCKER_ENVIRONMENT_ROOT_CAUSE.md",
+      "sha256": "16948b698ba5fdc0e595d51402c6b3e5c84b3054a5d17ba2699fbf545ee526c6",
+      "bytes": 2637
+    },
+    {
+      "filename": "evidence/p0/P0-B02_BENCHMARK_HARNESS_AUDIT.md",
+      "sha256": "ce5bb3c4ce334f4792dc9c64fd8bfebb3c8b94e4befb10509a81e1d07fe511df",
+      "bytes": 3969
+    },
+    {
+      "filename": "evidence/p0/P0-B03_OPERATIONAL_PERFORMANCE_BASELINE.md",
+      "sha256": "1c460929c67d856255aa874924b9fba64d42342b9d2b942e7373ddb1a7b357d3",
+      "bytes": 5977
+    },
+    {
+      "filename": "evidence/p0/P0-B04_POSTGRES_RESOURCE_ASSESSMENT.md",
+      "sha256": "d366832c43260b4e153599a656bac1b0ae018834a30f944dc69e6848ce0b24b0",
+      "bytes": 1877
+    },
+    {
+      "filename": "evidence/p0/P0-B05_RUNTIME_SECURITY_EVIDENCE.md",
+      "sha256": "8b84e3881c72f74226bb7ebbf01131236033acad53eebec751cf87aad5aa1b60",
+      "bytes": 1916
+    },
+    {
+      "filename": "evidence/p0/P0-B06_PERFORMANCE_ACCEPTANCE_RECOMMENDATION.md",
+      "sha256": "e9052813dd25d823e7601df30b68237a7ba056e812e391f987869fca1d905571",
+      "bytes": 1206
+    },
+    {
+      "filename": "evidence/p0/P0-B07_INDEPENDENT_FINAL_REVIEW.md",
+      "sha256": "53a6d6271772e30af7323c5ccac3998ee42352f30ae61410efd243b6a16d7713",
+      "bytes": 4262
+    },
+    {
+      "filename": "evidence/p0/P0-B08_PER_OPERATION_BENCHMARK_AUDIT.md",
+      "sha256": "c8b09a2d2810ba390712c52c82448dc98a6f6b63ff92cefcab837685b5068846",
+      "bytes": 5358
+    },
+    {
+      "filename": "evidence/p0/P0-B09_ARTIFACT_VERIFICATION_AND_REPRODUCTION.md",
+      "sha256": "748ce82e37f5061a29e4faba0709705d352ca3945db0a33000a603041896eb10",
+      "bytes": 6187
+    },
+    {
+      "filename": "evidence/p0/README.md",
+      "sha256": "81801db0f7084c78147d96ed69b423d952972b1e5117df9382f69c19d0d6c870",
+      "bytes": 3286
+    }
   ],
   "top_level_documents": [
     "README.md",

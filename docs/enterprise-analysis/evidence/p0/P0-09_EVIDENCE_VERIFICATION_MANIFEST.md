@@ -2,8 +2,8 @@
 
 **Repository:** `D:\Web\full-projects\todir-erp`  
 **Branch:** `dev`  
-**Source baseline under verification:** `c85f59121dc06e8c4f2d5a25590a534c82e836af`  
-**P0-D verification source change:** DbMigrator database-scoped advisory lease plus concurrent regression test; final delivery SHA is recorded in the commit and final review.  
+**Source baseline under verification:** `ab49df8b95a16c92804cce7405c42a9f95b0beb7`  
+**P0-D verification source change:** bounded DbMigrator database-scoped advisory lease plus lifecycle/recovery regression tests; final delivery SHA is recorded in the commit and final review.  
 **Verification date:** 2026-11-25
 
 ## Completed checks
@@ -19,17 +19,17 @@
 | Disposable benchmark harness review | PASS | `backend/Tests/Performance/platform-performance-benchmark.ps1` |
 | Docker root-cause diagnosis | PASS | `P0-B01_DOCKER_ENVIRONMENT_ROOT_CAUSE.md` |
 | Harness helper/mode verification | PASS | `platform-performance-harness.tests.ps1`; parser check |
-| Disposable benchmark execution | PASS | Diagnostic and two controlled load runs completed without compatibility workaround |
+| Disposable benchmark execution | PASS | Diagnostic and final 100-request controlled load completed without compatibility workaround |
 | Operational performance baseline | PASS WITH LIMITS | p50/p95/p99, RPS, errors, DB/resource samples and four query plans recorded |
-| Runtime security/isolation tests | PASS | Harness 401/403 matrix, SecurityTests 7/7 and SeedDataTests 6/6 |
-| Concurrent DbMigrator regression | PASS | Two migrators on a fresh database both exited 0; 265 unique history identities |
+| Runtime security/isolation tests | PASS | Harness 401/403 matrix, SecurityTests 7/7 and final SeedDataTests result |
+| Concurrent DbMigrator regression | PASS | Two migrators on a fresh database both exited 0; dynamic bootstrap identity/checksum inventory |
 | Fresh post-correction startup | PASS | New disposable database: `/health` 200 and `/health/ready` 200 |
-| Raw artifact reconciliation | PASS | Per-operation audit, run profiles, resource observations and SHA-256 manifest in P0-B08/P0-B09 |
+| Raw artifact reconciliation | PASS | Versioned JSON/CSV/resource archive, per-operation samples, archive manifest and SHA-256 checks in P0-B08/P0-B09 |
 | Browser/UX runtime proof | NOT APPLICABLE TO P0 | No Analysis UI was implemented |
 
 ## Integrity rule
 
-This manifest records evidence after the last source change in the P0-D mission. The only production source change was the DbMigrator advisory lease; the only test source change was its concurrent regression coverage. No Quality implementation, unrelated migration, RLS policy, authorization, seed business behavior or frontend runtime code was changed.
+This manifest records evidence after the last source change in the P0-D mission. The only production source change was the bounded DbMigrator advisory lease; test changes cover lease timeout/cancellation/recovery and dynamic migration inventory, and benchmark tooling now retains per-request samples. No Quality implementation, unrelated migration, RLS policy, authorization, seed business behavior or frontend runtime code was changed.
 
 ## Exit
 

@@ -44,6 +44,17 @@ if (string.IsNullOrWhiteSpace(connectionString))
     return 2;
 }
 
+int migrationLockTimeoutSeconds;
+try
+{
+    migrationLockTimeoutSeconds = ReadMigrationLockTimeoutSeconds();
+}
+catch (InvalidOperationException exception)
+{
+    Console.Error.WriteLine(exception.Message);
+    return 2;
+}
+
 var repositoryRoot = Environment.GetEnvironmentVariable("TODIR_REPOSITORY_ROOT") ?? Directory.GetCurrentDirectory();
 var bootstrapDirectory = Path.Combine(repositoryRoot, "backend", "DbMigrator", "Database", "bootstrap");
 var runtimeScript = Path.Combine(bootstrapDirectory, "runtime-roles-and-schemas.sql");
@@ -82,11 +93,35 @@ await using var ownedConnection = connection;
 // DbMigrator is an ordered database-wide operation. Serialize invocations for
 // the target database so two deployment runners cannot race on extensions,
 // roles, schema objects, or the check-then-insert migration history path.
-await using (var migrationLease = new NpgsqlCommand("select pg_advisory_lock(hashtextextended('todir.dbmigrator:' || current_database(), 0))", connection))
+using var migrationCancellation = new CancellationTokenSource();
+ConsoleCancelEventHandler migrationCancelHandler = (_, eventArgs) =>
 {
-    migrationLease.CommandTimeout = 0;
-    await migrationLease.ExecuteNonQueryAsync();
-    Console.WriteLine($"Acquired DbMigrator lease for {connection.Database}.");
+    eventArgs.Cancel = true;
+    migrationCancellation.Cancel();
+};
+Console.CancelKeyPress += migrationCancelHandler;
+try
+{
+    await using var migrationLease = new NpgsqlCommand("select pg_advisory_lock(hashtextextended('todir.dbmigrator:' || current_database(), 0))", connection)
+    {
+        CommandTimeout = migrationLockTimeoutSeconds
+    };
+    await migrationLease.ExecuteNonQueryAsync(migrationCancellation.Token);
+    Console.WriteLine($"Acquired DbMigrator lease for {connection.Database} after waiting no more than {migrationLockTimeoutSeconds} seconds.");
+}
+catch (OperationCanceledException) when (migrationCancellation.IsCancellationRequested)
+{
+    Console.Error.WriteLine($"DbMigrator lease acquisition was cancelled for {connection.Database}; no migration mutation was attempted.");
+    return 5;
+}
+catch (NpgsqlException exception) when (IsMigrationLeaseTimeout(exception))
+{
+    Console.Error.WriteLine($"Timed out after {migrationLockTimeoutSeconds} seconds waiting for the DbMigrator lease on {connection.Database}. No migration mutation was attempted. Adjust TODIR_MIGRATOR_LOCK_TIMEOUT_SECONDS only when the deployment window permits a longer wait.");
+    return 5;
+}
+finally
+{
+    Console.CancelKeyPress -= migrationCancelHandler;
 }
 
 await using (var runtimeCommand = new NpgsqlCommand(await File.ReadAllTextAsync(runtimeScript), connection))
@@ -516,6 +551,22 @@ static string ModuleIdForScript(string scriptName)
     if (marker > 0 && file.EndsWith(".sql", StringComparison.Ordinal)) return file[..marker];
     throw new InvalidOperationException($"No module migration identity is declared for {scriptName}.");
 }
+
+static int ReadMigrationLockTimeoutSeconds()
+{
+    const string variable = "TODIR_MIGRATOR_LOCK_TIMEOUT_SECONDS";
+    const int defaultSeconds = 300;
+    const int maximumSeconds = 3600;
+    var configured = Environment.GetEnvironmentVariable(variable);
+    if (string.IsNullOrWhiteSpace(configured)) return defaultSeconds;
+    if (!int.TryParse(configured, out var seconds) || seconds is < 1 or > maximumSeconds)
+        throw new InvalidOperationException($"{variable} must be an integer between 1 and {maximumSeconds} seconds; received '{configured}'.");
+    return seconds;
+}
+
+static bool IsMigrationLeaseTimeout(NpgsqlException exception) =>
+    exception.InnerException is TimeoutException
+    || exception.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase);
 
 static IReadOnlyDictionary<string, ModuleManifest> DiscoverManifests(string repositoryRoot)
 {

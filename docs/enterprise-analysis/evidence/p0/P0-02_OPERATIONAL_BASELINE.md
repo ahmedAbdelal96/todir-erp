@@ -12,7 +12,7 @@
 - seeds development data and creates isolated auth permissions;
 - starts API instances against the disposable connection string;
 - exercises authenticated reads and write-smoke paths across Projects, Sales, Invoicing, Inventory, POS, HR, Payroll and Payments;
-- samples PostgreSQL/process state and records query plans under `artifacts/performance`;
+- samples PostgreSQL/process state and records query plans under the versioned P0 benchmark archive;
 - drops the generated database in `finally` unless `-KeepDatabase` is explicitly supplied.
 
 The harness is suitable as a starting point for a safe P0 baseline. It is not an Analysis benchmark and does not prove future process isolation.
@@ -41,13 +41,13 @@ The latest repository corrections are present and the canonical path now complet
 
 | Measure | Status | Claimed value |
 |---|---|---:|
-| API p50/p95/p99 | `MEASURED` | Diagnostic p50 only; load p50/p95/p99 recorded in P0-B03 |
+| API p50/p95/p99 | `MEASURED` | Diagnostic p50 only; final 100-request load p50/p95/p99 recorded in P0-B03 |
 | Core ERP request latency | `MEASURED` | Local Development Seed baseline; not production SLO |
 | Analysis request latency | `NOT APPLICABLE YET` | No Analysis runtime exists |
 | Throughput/concurrency | `MEASURED` | Load at concurrency 1, 4 and 8, repeated |
 | PostgreSQL query plans | `MEASURED` | Four bounded seeded-data plans per run |
 | Worker queue lag/retry | `NOT EXECUTED` | Outside this API baseline |
-| Tenant/RLS runtime isolation | `PASS` | Harness 401/403 checks plus SecurityTests 7/7 and SeedDataTests 6/6 |
+| Tenant/RLS runtime isolation | `PASS` | Harness 401/403 checks plus SecurityTests 7/7 and final SeedDataTests result |
 | Core-vs-analysis contention | `NOT MEASURED` | — |
 
 The existing `5% p95` statement in the design pack remains a provisional proposal, not a measured SLO.

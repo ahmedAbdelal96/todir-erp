@@ -10,7 +10,7 @@
 
 > **نتيجة التدقيق:** تم تدقيق الحزمة مقابل `dev` الحالي وتصحيح الفهرسة والنسخة المكررة وبعض الحدود المعمارية. النتيجة **REQUIRES_CORRECTIONS**: لا يبدأ P2 قبل إغلاق قرارات طبقة الموديول/الـWorker، وإثبات عقود القراءة والبيانات الزمنية، وقياس خط أساس الأداء. راجع [تقرير التدقيق](AUDIT_REPORT_2026-11-24.md).
 
-> **نتيجة P0-B/P0-D:** `P0_EVIDENCE_COMPLETE`. تم تشغيل مسار migration/seed النظيف دون `-PreMigrationSql`، وإثبات سلامة التشغيل المتوازي لـDbMigrator، والتحقق من API وfunctional smoke وtenant isolation وقياسات diagnostic/load المتكررة على بيئة disposable. النتائج baseline محلية وليست شهادة سعة إنتاجية. راجع [فهرس أدلة P0](evidence/p0/README.md).
+> **نتيجة P0-B/P0-D:** `P0_EVIDENCE_COMPLETE`. تم تشغيل مسار migration/seed النظيف دون `-PreMigrationSql`، وإثبات سلامة التشغيل المتوازي ودورة حياة bounded lease لـDbMigrator، والتحقق من API وfunctional smoke وtenant isolation وقياسات diagnostic/load القابلة لإعادة الحساب على بيئة disposable. النتائج baseline محلية وليست شهادة سعة إنتاجية. راجع [فهرس أدلة P0](evidence/p0/README.md).
 
 ## القرارات التي نقلناها من متطلبات صاحب المنتج [USER-LOCKED]
 
@@ -56,7 +56,7 @@
 ## قواعد استخدام الحزمة
 
 - **ORDER:** ابدأ بمرحلة Discovery + baseline؛ ثم Architecture ADR/product sign-off؛ ثم Core foundation؛ ثم Pilot موثق؛ ثم التوسع. لا تقفز من الفكرة إلى تنفيذ كل الموديولات.
-- **SOURCES:** نتائج P0-B مبنية على `c85f59121dc06e8c4f2d5a25590a534c82e836af` المطابق لـ`origin/dev` وقت أحدث تشغيل، مع الحفاظ على تغييرات Quality الموجودة في السلسلة. P0-D أضاف تصحيح تنسيق تشغيل DbMigrator واختبار انحدار فقط؛ القياسات الموروثة تخص مسار الطلبات ولا تتأثر بهذا التصحيح. baseline الناجح وتدقيق التشغيل المتوازي موثقان بحدود Development Seed والبيئة المحلية في `evidence/p0/P0-B03_OPERATIONAL_PERFORMANCE_BASELINE.md` و`evidence/p0/P0-B07_INDEPENDENT_FINAL_REVIEW.md` و`evidence/p0/P0-B09_ARTIFACT_VERIFICATION_AND_REPRODUCTION.md`.
+- **SOURCES:** نتائج P0-B مبنية على `ab49df8b95a16c92804cce7405c42a9f95b0beb7` مع تغييرات P0-D الحالية الخاصة بـDbMigrator والاختبارات وأداة حفظ عينات benchmark. القياسات تخص مسار الطلبات وتُحدّد بحدود Development Seed والبيئة المحلية. baseline وتدقيق التشغيل المتوازي والأرشيف الدائم موثقة في `evidence/p0/P0-B03_OPERATIONAL_PERFORMANCE_BASELINE.md` و`evidence/p0/P0-B07_INDEPENDENT_FINAL_REVIEW.md` و`evidence/p0/P0-B09_ARTIFACT_VERIFICATION_AND_REPRODUCTION.md` و`evidence/p0/P0_FINAL_ACCEPTANCE_AND_HANDOFF.md`.
 - **STATUS:** `USER-LOCKED` = متطلب صريح؛ `EXISTING-VERIFIED` = ظهر من قراءة ملفات repo؛ `PROPOSED-ADR` = قرار هندسي مرشح يحتاج اعتماد؛ `TO-VERIFY` = لا يجوز افتراضه قبل الاختبار؛ `BLOCKED` = متوقف على prerequisite محدد؛ `DEFERRED` = مؤجل عمدًا؛ `FUTURE` = خارج النسخة الأولى.
 - **OWNERSHIP:** الـERP يملك العمليات والحقائق؛ صاحب الموديول يملك عقود قراءته؛ Analysis يملك عمليات التحليل والنتائج والتوصيات فقط.
 - **NAMING:** أسماء الـUI عربية من واقع العمل؛ أسماء الـAPIs التقنية تصف المورد/الوظيفة، ولا تُفرض تسمية «AI» في كل endpoint.

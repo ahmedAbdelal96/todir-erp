@@ -4,7 +4,7 @@
 
 ## Harness security smoke
 
-The diagnostic and both controlled load runs authenticated separate Atlas and Delta sessions against the generated database and executed the same three checks:
+The diagnostic, final 100-request controlled load, and historical repeat load authenticated separate Atlas and Delta sessions against generated databases and executed the same three checks:
 
 | Check | Diagnostic | Load | Repeat load |
 |---|---:|---:|---:|
@@ -23,11 +23,11 @@ dotnet test backend/Tests/Security/SecurityTests.csproj --no-restore --configura
 Passed: 7, Failed: 0, Skipped: 0
 ```
 
-The canonical seed regression suite also ran against newly created disposable databases and exercised forced RLS, runtime-role boundaries, tenant isolation, idempotent seed reruns, and concurrent DbMigrator serialization:
+The canonical seed regression suite also ran against newly created disposable databases and exercised forced RLS, runtime-role boundaries, tenant isolation, idempotent seed reruns, concurrent DbMigrator serialization, bounded lease timeout, invalid configuration rejection and terminated-waiter recovery:
 
 ```text
 dotnet test backend/Tests/SeedData/SeedDataTests.csproj --no-restore --configuration Release
-Passed: 6, Failed: 0, Skipped: 0
+Passed: 9, Failed: 0, Skipped: 0
 ```
 
 These results are runtime evidence for the local disposable environment. They do not certify customer configuration, production credentials, Worker isolation, or a production deployment topology.

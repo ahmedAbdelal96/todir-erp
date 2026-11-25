@@ -1,0 +1,27 @@
+{
+  "schema": "p0-benchmark-archive/v1",
+  "generated_on": "2026-11-25",
+  "source_commit": "ab49df8b95a16c92804cce7405c42a9f95b0beb7",
+  "files": [
+    {"path":"README.md","bytes":2894,"sha256":"ddb33c6ccf7536e6de1ede76496ec50e75c79f5bd0268093c787b3b41e37dce6"},
+    {"path":"diagnostic/docker-todir_perf_20261125103326_38136_663ae499.csv","bytes":3175,"sha256":"88716c3256b5408c244f03dd04205e87f89ee51a51e86414e63f2d496d0899c6"},
+    {"path":"diagnostic/platform-performance-todir_perf_20261125103326_38136_663ae499.json","bytes":94658,"sha256":"9b42887a6cd8e8086ad79e84c16c9ea2490ebe0c2aea7dfb155390fd0266aab3"},
+    {"path":"diagnostic/postgres-todir_perf_20261125103326_38136_663ae499.csv","bytes":6974,"sha256":"fd2b08f5320efb1ed506eb462534406dfc0ee3d269999a2024d351a409f98a70"},
+    {"path":"diagnostic/resource-todir_perf_20261125103326_38136_663ae499-api.csv","bytes":30420,"sha256":"5656404e77d9bc679911e2f6d89348e53e874655a65d9deca9abf98c53431c0f"},
+    {"path":"load/docker-todir_perf_20261125103538_20256_c938ab1d.csv","bytes":9125,"sha256":"3af64faaaa200e3c3b22d24433a47d194f36c70b1251ab77ec97b894ea126780"},
+    {"path":"load/platform-performance-todir_perf_20261125103538_20256_c938ab1d.json","bytes":216227,"sha256":"4b400097731c96463cdac9b049f38cdeab79e0548ff444f2c5bd6db43bfc5b5a"},
+    {"path":"load/postgres-todir_perf_20261125103538_20256_c938ab1d.csv","bytes":19530,"sha256":"67d246686b43f7d7589e939c2e009e845ad7774dc6ba6a17b9d2c44849fb0d19"},
+    {"path":"load/resource-todir_perf_20261125103538_20256_c938ab1d-api.csv","bytes":84757,"sha256":"b126084097eb53d787e2cde9ed27b583bcad2198b3e398f7decac40f521e046f"},
+    {"path":"load/resource-todir_perf_20261125103538_20256_c938ab1d-api2.csv","bytes":672,"sha256":"1262923831159d98b5d423e318ade91670c1b2102a5523e0bbb9fc483fc46578"},
+    {"path":"load-100/docker-todir_perf_20261125103950_28700_b2a9b5cf.csv","bytes":14001,"sha256":"a7bd7dce38eaa42caf80dae177111ede7840a6b4ddd3273262acd2362915292a"},
+    {"path":"load-100/platform-performance-todir_perf_20261125103950_28700_b2a9b5cf.json","bytes":338854,"sha256":"dd87b626c553619ea17d61221f92c2c09fed3940a2a9d379ef017111ae8ec4a0"},
+    {"path":"load-100/postgres-todir_perf_20261125103950_28700_b2a9b5cf.csv","bytes":32005,"sha256":"dbb42b65b197eeea794803684b03fb5c9e54b4d4dc37b606c7d17fa5fa052364"},
+    {"path":"load-100/resource-todir_perf_20261125103950_28700_b2a9b5cf-api.csv","bytes":135124,"sha256":"21a623cb46c11587be30fc49982093445ad2efc417139f1faba2020dfd8246e9"},
+    {"path":"load-100/resource-todir_perf_20261125103950_28700_b2a9b5cf-api2.csv","bytes":1074,"sha256":"53b1fc55bd8ecad35b51ad6959fd40ba9b0a1a8bddf5f5e2734317b7d96c6452"},
+    {"path":"repeat/docker-todir_perf_20261125091708_30864_85500d9a.csv","bytes":12738,"sha256":"1b4f592c43ccf6eef9c6db415a4492ae13cefaa37b7672a3c14490211ee9a769"},
+    {"path":"repeat/platform-performance-todir_perf_20261125091708_30864_85500d9a.json","bytes":231575,"sha256":"dcef60195bc7a96220dad412dee19d8a6c6ed337c1d13335ecd2ef30449322fd"},
+    {"path":"repeat/postgres-todir_perf_20261125091708_30864_85500d9a.csv","bytes":33213,"sha256":"cac4cdbbdbc0bd7994b5632fe0420cd934ebf9ccef20ff01bb4f244245826cb5"},
+    {"path":"repeat/resource-todir_perf_20261125091708_30864_85500d9a-api.csv","bytes":132166,"sha256":"8c5cc021ce11d900709ee524feead22732dac91dfb7ff76b441129ff9d6b7a61"},
+    {"path":"repeat/resource-todir_perf_20261125091708_30864_85500d9a-api2.csv","bytes":1007,"sha256":"2917b8b795decd2b1c11ac0888e4a558953385a0db7a00e66bb5acb6b7251790"}
+  ]
+}
