@@ -39,9 +39,9 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP30 | Budget policy | policy/buckets, effective dates, horizon and published-version links | annual/quarterly/monthly period normalization, validated bucket hints, published-version and legal-entity checks | Isolated PostgreSQL owner acceptance; department/cost-center authorization mapping remains open | PARTIAL |
 | FP31 | Availability | bucket/reservation ledger and policy basis | source-kind-aware availability, currency checks, negative-budget and shadow-mode handling | 7/7 focused PostgreSQL tests; full carryforward/FX evidence remains open | PARTIAL |
 | FP32 | Atomic check/reserve | row locks/source uniqueness | owner transaction enlistment, bounded overrides, deterministic correction/reconciliation rebuild | omitted-bucket Block, idempotent partial consumption/correction and rebuild acceptance pass; contention/rollback matrix remains open | PARTIAL |
-| FP33 | Purchasing commitments | Planning-owned reservation ledger | Purchasing create/update/approve/cancel enlists precommitment/commitment and validates context | Source adapter is implemented; PR conversion, receipt/return and full PO amendment evidence remain open | PARTIAL |
-| FP34 | Expenses/commitments | Planning-owned reservation ledger | Expense create/update/finalize/delete/reversal enlists reservation/consumption/correction | owner lifecycle and reversal correction path implemented; authenticated full correction journey remains open | PARTIAL |
-| FP35 | Commitment→Actual | consumption/correction facts and bucket actual total | posted supplier invoice consumes once; credit note and expense reversal create bounded correction facts | focused actual/correction tests pass; complete Ledger event replay and multi-invoice evidence remain open | PARTIAL |
+| FP33 | Purchasing commitments | Planning-owned reservation ledger plus Purchasing-owned requisition/conversion lineage | Requisition draft/submit/approve, partial/full PR→PO conversion, row locks, idempotency and precommitment replacement | `PurchasingRepository` PR commands; disposable migration/seed; focused Purchasing tests | PARTIAL |
+| FP34 | Expenses/commitments | Planning-owned reservation ledger plus durable reversal intent | Expense create/update/finalize/delete/reversal enlists reservation/consumption/correction; failed correction remains retryable | `expense_budget_reversal_intent`; Expenses build; disposable migration | PARTIAL |
+| FP35 | Commitment→Actual | consumption/correction facts and bucket actual total | posted supplier invoice consumes once; credit note and Expense reversal intent create bounded correction facts | focused actual/correction tests pass; complete receipt/return/Ledger replay evidence remains open | PARTIAL |
 | FP36 | Overrides/thresholds | source-bound override with used amount, validity and approval link | request/decision API through Platform Approvals; bounded exact-source usage and SoD permission | direct bounded-usage acceptance passes; real authenticated approval journey and configurable policy evidence remain open | PARTIAL |
 | FP37 | Department planner | submission persistence | no frontend in this mission | Backend slice only | PARTIAL |
 | FP38 | CFO/owner views | variance/statements partial | no complete rollup/action contract | No complete evidence | OPEN |
@@ -49,17 +49,17 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP40 | Multi-entity rollup | entity keys exist | no rollup projection | No proof | OPEN |
 | FP41 | Security/SoD | RLS/permissions/lifecycle | route authorization | security/architecture suites | PARTIAL |
 | FP42 | Audit/history | audit on implemented writes | lifecycle audit | SQL/API inspection | PARTIAL |
-| FP43 | Migration/opening budget | bootstrap/forward-fix and reconciliation runs | disposable migration/seed, strict Block opening-reconciliation guard, reconciliation/rebuild endpoint | 269-script migration/seed PASS; canonical owner opening mapping and activation workflow remain open | PARTIAL |
+| FP43 | Migration/opening budget | bootstrap/forward-fix, owner reconciliation and reconciliation runs | disposable migration/seed, strict Block guard requires successful owner reconciliation, owner-source comparison and bounded rebuild | 273-script migration/seed PASS; strict runtime-role/API evidence and full opening vector remain open | PARTIAL |
 | FP44 | Performance/scale | grid/availability indexes | bounded queries | No formal scale certification | PARTIAL |
 | FP45 | Observability | platform logging/outbox | no planning metrics | No dedicated proof | OPEN |
-| FP46 | Runbooks/recovery | migration/seed and reconciliation runs | bounded projection rebuild with durable success/failure evidence | runbook added for supported rebuild/reconciliation; source discrepancy repair workflow remains open | PARTIAL |
+| FP46 | Runbooks/recovery | migration/seed, owner reconciliation and reversal intent | bounded rebuild, durable owner result, failed reversal intent and retry semantics | runbook updated; Worker/outbox replay and complete recovery matrix remain open | PARTIAL |
 | FP47 | Small company | basic seed budget/forecast | core cycle/grid/control | Foundation runtime | PARTIAL |
 | FP48 | Department manager | submission backend slice | no scoped UI/delegated approval | No complete proof | OPEN |
 | FP49 | FP&A | drivers/variance partial | no integrated forecast workflow | No complete proof | OPEN |
 | FP50 | CFO | P&L partial | BS/CF/rollup absent | No complete proof | OPEN |
-| FP51 | Purchasing control | reservation source identity | Purchasing transactional capability integration with server-side bucket resolution and commitment kind | source reservation and amendment path pass; full PR/PO/receipt lifecycle proof absent | PARTIAL |
-| FP52 | Cross-module reconciliation | source metadata and correction facts | supplier invoice/credit and expense reversal seams plus planning projection rebuild | focused source/correction/rebuild evidence; complete owner reconciliation jobs absent | PARTIAL |
-| FP53 | E2E/release | migration/RLS verified | BC01 APIs and source seams | Release build, architecture, OpenAPI and 7/7 focused PostgreSQL acceptance pass; complete module gate not | PARTIAL |
+| FP51 | Purchasing control | requisition/PO lineage and reservation source identity | Purchasing-owned PR lifecycle, conversion replacement, PO approval history/outbox and server-side bucket resolution | source implementation/build/migration pass; full 100k conversion and receipt/return vector not yet automated | PARTIAL |
+| FP52 | Cross-module reconciliation | owner financial-fact contracts and durable owner result | Purchasing and Ledger expose bounded owner facts; Planning compares source facts to bucket totals and records watermark/discrepancy | source providers compile and migration applies; real replay/runtime-owner acceptance remains open | PARTIAL |
+| FP53 | E2E/release | migration/RLS verified | BC01 APIs and source seams | Release build, architecture, OpenAPI and prior focused PostgreSQL acceptance pass; complete module gate not | PARTIAL |
 
 ## Build Now MUST audit
 
@@ -67,7 +67,7 @@ The mandatory Build Now list in section 789 maps to FP02–FP53 above. The `OPEN
 
 ## Verified commands
 
-- `dotnet build backend/Backend.sln --configuration Release --no-restore` — PASS after the latest source change.
+- `dotnet build backend/Backend.sln --configuration Release --no-restore` — PASS after the latest source change, 0 warnings/0 errors.
 - `dotnet test backend/Tests/Modules/Planning/PlanningTests.csproj --configuration Release --no-restore` — PASS, 4/4 after the final source integration edit.
 - `dotnet test backend/Tests/Architecture/ArchitectureTests.csproj --configuration Release --no-restore` — PASS, 23/23 after the final source integration edit.
 - `node scripts/architecture/validate-openapi.mjs` — PASS; Planning contract validated with 67 paths and the eight existing contracts also passed.
@@ -75,5 +75,5 @@ The mandatory Build Now list in section 789 maps to FP02–FP53 above. The `OPEN
 - `dotnet test backend/Tests/Modules/Expenses/ExpensesTests.csproj --configuration Release --no-build --filter FullyQualifiedName~PlanningBudgetControlIntegrationTests` — PASS, 7/7 on disposable `bc01_closure_20261125`; omitted-bucket strict control, partial consumption/correction idempotency, bounded source-specific override use, expense owner lifecycle, and projection reconciliation/rebuild were asserted.
 - `dotnet test backend/Tests/Integration/IntegrationTests.csproj --configuration Release --no-build --filter ApiCompositionTests.ApiBuildsWithValidatedPostgresTransactionAndInboxServices|ApiCompositionTests.DevelopmentOpenApiIncludesFinBaseRoutesAndFinancialAmountsAsStrings` — PASS, 2/2 with the disposable database's administrative connection. The remaining POS and Banking HTTP cases were not accepted on the app-role connection because the local PostgreSQL role password is out of sync with the documented development connection; this is an environment gate, not BC01 evidence.
 - `dotnet format` targeted changed C# files with `--verify-no-changes` — PASS. Full solution formatter remains affected by pre-existing Ledger and Planning test whitespace findings.
-- Disposable PostgreSQL migration and Development Seed replay — PASS on `bc01_closure_20261125`; 269 ordered scripts, RLS/grants for the reconciliation run table, and Atlas/Delta seed completed. The database is disposable and must be removed after final verification.
+- Disposable PostgreSQL migration and Development Seed replay — PASS on `bc01_pr_20261125`; 273 ordered scripts, PR/reversal-intent/owner-reconciliation tables, RLS/grants, and Atlas/Delta seed completed. The database is disposable and must be removed after final verification.
 - Real cookie/CSRF/PostgreSQL journey — no complete Purchasing/Expenses budget-control HTTP acceptance is claimed yet; the API composition contract subset above passed, while the app-role login cases remain an environment gate.

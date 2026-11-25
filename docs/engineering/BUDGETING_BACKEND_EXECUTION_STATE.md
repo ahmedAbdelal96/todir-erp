@@ -22,6 +22,9 @@ Backend and database implementation for Module 28 on `dev`, including the full F
 - Added fail-closed legal-entity, effective-policy, control-decision and currency matching checks; source amendments update the existing reservation, draft deletion releases it, and owner transactions roll back on blocked/approval-required decisions.
 - Closed the optional-bucket bypass for Purchasing and Expenses: Planning now resolves an applicable bucket from legal entity, monthly period, metric and dimension context, validates explicit bucket selections, rejects uncontrolled/inactive selections, and fails closed for an active strict policy with no applicable bucket. Purchasing and Expenses use this resolution during create/update/finalize paths.
 - Added PostgreSQL owner-path evidence for omitted-bucket Block behavior, invalid bucket rejection, conserved/idempotent partial consumption, bounded source-specific override use, Expense reversal correction, and projection reconciliation/rebuild (7/7 focused tests passing on disposable database `bc01_closure_20261125`).
+- Added the minimum Purchasing-owned requisition aggregate and forward-only schema: draft/submission/approval, immutable line identity, partial/full conversion lineage, row locking, idempotency, precommitment replacement, PO approval history and outbox evidence. Fresh bootstrap ordering now places the requisition foundation before its history foreign key; disposable fresh migration plus Development Seed ran twice and completed with 273 ordered scripts.
+- Added a durable Expense budget-reversal intent. The Expense remains `ReversalPending` when Ledger or Planning correction fails; a retry reuses the stored intent and does not post a second Ledger reversal. The retry path also avoids inserting a second pending intent.
+- Added bounded public owner-fact contracts and Purchasing/Ledger providers. Posted `ExpenseRecognized` Ledger debit facts are exposed through the Ledger-owned provider so Planning does not count the originating Expense row twice. Planning owner reconciliation compares canonical owner facts to each bucket and strict `Block` control requires a successful zero-discrepancy owner result in addition to the existing opening flag.
 
 ## Last meaningful corrections
 
@@ -33,11 +36,11 @@ Backend and database implementation for Module 28 on `dev`, including the full F
 
 ## Required next executable work
 
-1. Complete the `OPEN` and `PARTIAL` rows in `BUDGETING_BACKEND_COVERAGE_MATRIX.md`, especially PR conversion/receipt/return owner adapters, canonical opening source reconciliation and activation, integrated statements, rolling forecast, Excel interop, and complete operational evidence.
-2. Add source-owned contracts/adapters and real cross-module event/transaction tests for full Purchasing and Ledger replay paths.
-3. Add scoped submission-coordinate locking, configurable delegated approvals, full typed DAG execution, OPEX and multi-entity rollups.
+1. Complete the real Purchasing 100,000 PR → 40/60 PO conversion vector and receipt/invoice/return/credit/reversal replay tests.
+2. Complete canonical Ledger YTD mapping beyond posted expense facts and runtime outbox/inbox replay acceptance using the isolated runtime role.
+3. Complete source-watermark invalidation, semantic correction workflow and strict activation HTTP evidence; the current owner result is durable but not yet a complete approval/recovery workflow.
 4. Complete the final disposable source-workflow acceptance and rerun all owner-module, integration, security/RLS, architecture, Release build, formatter, OpenAPI and diff gates after every later source change.
 
 ## Delivery status
 
-`NOT COMPLETE` for overall Module 28 and `BC01 NOT COMPLETE` for this focused mission: the delivered BC01 slice now has source corrections, overrides, policy guards and rebuild evidence, but the canonical PR/PO/receipt/return lifecycle, owner opening reconciliation/strict activation workflow, full event replay, and complete cross-module acceptance matrix still lack required evidence. No production certification is implied.
+`NOT COMPLETE` for overall Module 28 and `BC01 NOT COMPLETE` for this focused mission: the owner dependencies and durable recovery seams are implemented, but the mandatory real PR/PO/receipt/return financial vector, Ledger owner reconciliation/replay, runtime-role HTTP acceptance, and complete BC01 matrix still lack required evidence. No production certification is implied.

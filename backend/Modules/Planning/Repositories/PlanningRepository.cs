@@ -7,11 +7,12 @@ using Core.Transactions;
 using Npgsql;
 using NpgsqlTypes;
 using Shared.Contracts.Platform;
+using Shared.Contracts.Planning;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Planning;
 
-public sealed class PlanningRepository(ITransactionCoordinator coordinator, IPlatformApprovalCapability? approvals = null)
+public sealed class PlanningRepository(ITransactionCoordinator coordinator, IPlatformApprovalCapability? approvals = null, IEnumerable<IPlanningOwnerReconciliationSource>? ownerSources = null)
 {
     public Task<PlanningCycleView> CreateCycleAsync(TenantId tenant, Guid actor, CreatePlanningCycleRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
     {
@@ -197,6 +198,12 @@ public sealed class PlanningRepository(ITransactionCoordinator coordinator, IPla
         var startedAt = DateTimeOffset.UtcNow;
         try
         {
+            if (ownerSources is null || !ownerSources.Any()) throw new PlanningException("planning.owner_reconciliation_unavailable");
+            var ownerFacts = new List<PlanningOwnerFinancialFact>();
+            foreach (var source in ownerSources)
+                ownerFacts.AddRange(await source.ListFinancialFactsAsync(tenant, null, ct));
+            if (ownerFacts.Count == 0 && request.BucketId is null) throw new PlanningException("planning.owner_reconciliation_empty");
+            var sourceWatermark = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('|', ownerFacts.OrderBy(f => f.SourceModule).ThenBy(f => f.SourceDocumentId).ThenBy(f => f.SourceLineId).Select(f => $"{f.SourceModule}:{f.SourceDocumentId}:{f.SourceLineId}:{f.SourceVersion}:{f.Amount}:{f.CurrencyCode}"))))).ToLowerInvariant();
             return await coordinator.ExecuteAsync(tenant, async (c, token) =>
             {
                 await Exec(c, "insert into business_planning.budget_control_reconciliation_run(tenant_id,id,bucket_id,state,rebuild_applied,requested_by) values($1,$2,$3,'Running',$4,$5)", token, tenant.Value, runId, Db(request.BucketId), request.Rebuild, actor);
@@ -208,16 +215,20 @@ public sealed class PlanningRepository(ITransactionCoordinator coordinator, IPla
                 var discrepancy = 0m;
                 foreach (var bucketId in bucketIds)
                 {
-                    var actual = await Scalar<decimal>(c, "select coalesce(sum(amount),0) from business_planning.budget_consumption_fact where tenant_id=$1 and bucket_id=$2 and state='Actual'", token, tenant.Value, bucketId);
-                    const decimal commitment = 0m;
-                    const decimal precommitment = 0m;
+                    var bucketScope = await ReadOwnerBucketScopeAsync(c, tenant.Value, bucketId, token);
+                    var scopedFacts = ownerFacts.Where(f => f.LegalEntityId == bucketScope.LegalEntityId && f.PeriodStart == bucketScope.PeriodStart && string.Equals(f.MetricCode, bucketScope.MetricCode, StringComparison.OrdinalIgnoreCase) && string.Equals(f.CurrencyCode, bucketScope.CurrencyCode, StringComparison.OrdinalIgnoreCase)).ToArray();
+                    var actual = scopedFacts.Where(f => f.SourceKind == "Actual").Sum(f => f.Amount);
+                    var commitment = scopedFacts.Where(f => f.SourceKind == "Commitment").Sum(f => f.Amount);
+                    var precommitment = scopedFacts.Where(f => f.SourceKind == "Precommitment").Sum(f => f.Amount);
                     await using var current = Cmd(c, "select actual_total,commitment_total,precommitment_total from business_planning.budget_control_bucket where tenant_id=$1 and id=$2", tenant.Value, bucketId);
                     await using var currentReader = await current.ExecuteReaderAsync(token);
                     if (!await currentReader.ReadAsync(token)) throw new PlanningException("planning.bucket_not_found");
-                    discrepancy += Math.Abs(currentReader.GetDecimal(0) - actual) + Math.Abs(currentReader.GetDecimal(1) - commitment) + Math.Abs(currentReader.GetDecimal(2) - precommitment);
+                    var bucketDiscrepancy = Math.Abs(currentReader.GetDecimal(0) - actual) + Math.Abs(currentReader.GetDecimal(1) - commitment) + Math.Abs(currentReader.GetDecimal(2) - precommitment);
+                    discrepancy += bucketDiscrepancy;
                     await currentReader.CloseAsync();
                     if (request.Rebuild)
                         await Exec(c, "update business_planning.budget_control_bucket set actual_total=$3,commitment_total=$4,precommitment_total=$5,row_version=row_version+1 where tenant_id=$1 and id=$2", token, tenant.Value, bucketId, actual, commitment, precommitment);
+                    await Exec(c, "insert into business_planning.budget_control_owner_reconciliation(tenant_id,id,bucket_id,state,source_count,expected_actual,expected_commitment,expected_precommitment,discrepancy_amount,source_watermark,completed_at,requested_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),$11) on conflict(tenant_id,bucket_id) do update set state=excluded.state,source_count=excluded.source_count,expected_actual=excluded.expected_actual,expected_commitment=excluded.expected_commitment,expected_precommitment=excluded.expected_precommitment,discrepancy_amount=excluded.discrepancy_amount,source_watermark=excluded.source_watermark,completed_at=excluded.completed_at,requested_by=excluded.requested_by", token, tenant.Value, Guid.CreateVersion7(), bucketId, bucketDiscrepancy == 0m || request.Rebuild ? "Succeeded" : "Failed", scopedFacts.Length, actual, commitment, precommitment, bucketDiscrepancy, sourceWatermark, actor);
                 }
                 await Exec(c, "update business_planning.budget_control_reconciliation_run set state='Succeeded',bucket_count=$3,discrepancy_amount=$4,completed_at=now() where tenant_id=$1 and id=$2", token, tenant.Value, runId, bucketIds.Count, discrepancy);
                 await Audit(c, tenant.Value, actor, request.Rebuild ? "budget_control_projection_rebuilt" : "budget_control_reconciled", runId, token);
@@ -405,6 +416,13 @@ public sealed class PlanningRepository(ITransactionCoordinator coordinator, IPla
     }
 
     private static async Task<SubmissionUnitView?> ReadSubmission(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct) { await using var cmd = Cmd(c, "select id,plan_version_id,legal_entity_id,department_ref,name,state,row_version from business_planning.submission_unit where tenant_id=$1 and id=$2", tenant, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new SubmissionUnitView(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.IsDBNull(3) ? null : r.GetGuid(3), r.GetString(4), r.GetString(5), r.GetInt64(6)) : null; }
+    private static async Task<OwnerBucketScope> ReadOwnerBucketScopeAsync(ITransactionContext c, Guid tenant, Guid bucketId, CancellationToken ct)
+    {
+        await using var command = Cmd(c, "select legal_entity_id,period_start,metric_code,currency_code from business_planning.budget_control_bucket where tenant_id=$1 and id=$2", tenant, bucketId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) throw new PlanningException("planning.bucket_not_found");
+        return new(reader.GetGuid(0), reader.GetFieldValue<DateOnly>(1), reader.GetString(2), reader.GetString(3).Trim());
+    }
 
     private static async Task<BudgetCheckView> CheckBudgetInTransaction(ITransactionContext c, TenantId tenant, Guid actor, BudgetCheckRequest request, CancellationToken token)
     {
@@ -448,6 +466,7 @@ public sealed class PlanningRepository(ITransactionCoordinator coordinator, IPla
         return new BudgetCheckView(decision, request.BucketId, current, actual, commitment, request.ProposedAmount, before, after, $"{(current == 0 ? 0 : (current - before) / current * 100):0.##}%", after < 0 ? ["planning.budget_threshold_exceeded"] : [], reservation);
     }
 
+    private sealed record OwnerBucketScope(Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, string CurrencyCode);
     private sealed record TransferInfo(Guid FromBucketId, Guid ToBucketId, decimal Amount, string State);
     private sealed record OverrideSeed(Guid Id, Guid LegalEntityId, Guid PlanVersionId);
     private static async Task<TransferInfo?> ReadTransfer(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct) { await using var cmd = Cmd(c, "select from_bucket_id,to_bucket_id,amount,state from business_planning.budget_transfer where tenant_id=$1 and id=$2", tenant, id); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct) || r.IsDBNull(0) || r.IsDBNull(1)) return null; return new TransferInfo(r.GetGuid(0), r.GetGuid(1), r.GetDecimal(2), r.GetString(3)); }

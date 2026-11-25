@@ -237,9 +237,10 @@ public sealed class PlanningBudgetControlCapability : ITransactionalPlanningBudg
         await using var reader = await command.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) throw new PlanningBudgetControlException("planning.bucket_not_found");
         var legalEntityId = reader.GetGuid(0); var currentBudget = reader.GetDecimal(1); var actual = reader.GetDecimal(2); var commitment = reader.GetDecimal(3); var precommitment = reader.GetDecimal(4); var mode = reader.GetString(5); var threshold = reader.GetDecimal(6); var currencyCode = reader.GetString(7).Trim(); var basis = reader.GetString(8); var horizon = reader.GetString(9); var negativeBudgetAllowed = reader.GetBoolean(10); var openingReconciled = reader.GetBoolean(11); var strictActivationAt = reader.IsDBNull(12) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(12);
-        if (string.Equals(mode, "Block", StringComparison.OrdinalIgnoreCase) && (!openingReconciled || strictActivationAt is { } activationAt && activationAt > DateTimeOffset.UtcNow))
-            throw new PlanningBudgetControlException("planning.budget_opening_reconciliation_required");
         await reader.CloseAsync();
+        var ownerReconciled = await ScalarAsync<bool>(context, "select exists(select 1 from business_planning.budget_control_owner_reconciliation where tenant_id=$1 and bucket_id=$2 and state='Succeeded' and discrepancy_amount=0)", ct, tenantId.Value, bucketId);
+        if (string.Equals(mode, "Block", StringComparison.OrdinalIgnoreCase) && (!openingReconciled || !ownerReconciled || strictActivationAt is { } activationAt && activationAt > DateTimeOffset.UtcNow))
+            throw new PlanningBudgetControlException("planning.budget_opening_reconciliation_required");
         var shadowMode = await ScalarAsync<bool>(context, "select shadow_mode from business_planning.budget_control_policy p join business_planning.budget_control_bucket b on b.tenant_id=p.tenant_id and b.policy_id=p.id where p.tenant_id=$1 and b.id=$2", ct, tenantId.Value, bucketId);
         return new(legalEntityId, currentBudget, actual, commitment, precommitment, mode, threshold, currencyCode, basis, horizon, negativeBudgetAllowed, shadowMode);
     }

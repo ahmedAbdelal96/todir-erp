@@ -11,6 +11,7 @@ using Modules.Ledger.Repositories;
 using Modules.Ledger.Services;
 using Shared.Contracts.Ledger;
 using Shared.Contracts.Accounting;
+using Shared.Contracts.Planning;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Ledger;
@@ -37,6 +38,7 @@ public static class LedgerModuleExtensions
         services.AddSingleton<ITransactionalFixedAssetLedgerPostingCapability>(sp => sp.GetRequiredService<LedgerTransactionCapability>());
         services.AddSingleton<ILedgerPostingEngine>(provider => provider.GetRequiredService<LedgerService>());
         services.AddSingleton<ILedgerControlBalanceRead>(provider => provider.GetRequiredService<LedgerService>());
+        services.AddSingleton<IPlanningOwnerReconciliationSource, LedgerOwnerReconciliationSource>();
         services.AddSingleton<ILedgerTreasuryBalanceRead>(provider => provider.GetRequiredService<LedgerService>());
         services.AddSingleton<IManufacturingLedgerCloseRead>(provider => provider.GetRequiredService<LedgerService>());
         services.AddSingleton<ILedgerAccountingWorkspaceCapabilities>(provider => provider.GetRequiredService<LedgerService>());

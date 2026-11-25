@@ -3,6 +3,13 @@ using System.ComponentModel.DataAnnotations;
 namespace Modules.Purchasing.DTOs;
 
 public sealed record PurchaseOrderLineRequest(Guid? ProductVariantId, Guid? UnitOfMeasureId, string? UnitCode, string Description, decimal Quantity, decimal? UnitPrice = null, string? PriceOverrideReason = null, Guid? ProductTemplateId = null);
+public sealed record PurchaseRequisitionLineRequest(Guid? ProductVariantId, Guid? UnitOfMeasureId, string? UnitCode, string Description, decimal Quantity, decimal UnitPrice);
+public sealed record CreatePurchaseRequisitionRequest(Guid LegalEntityId, Guid SupplierPartyId, string CurrencyCode, DateOnly RequestedDate, bool? ApprovalRequired, IReadOnlyList<PurchaseRequisitionLineRequest> Lines);
+public sealed record PurchaseRequisitionCommandRequest(long Version, string IdempotencyKey, string? Reason = null);
+public sealed record PurchaseRequisitionConversionLineRequest(Guid RequisitionLineId, decimal Quantity);
+public sealed record ConvertPurchaseRequisitionRequest(long Version, string IdempotencyKey, DateOnly OrderDate, Guid? BranchId, IReadOnlyList<PurchaseRequisitionConversionLineRequest> Lines);
+public sealed record PurchaseRequisitionLineView(Guid Id, int Sequence, Guid? ProductVariantId, Guid? UnitOfMeasureId, string? UnitCode, string Description, decimal RequestedQuantity, decimal ConvertedQuantity, decimal CancelledQuantity, decimal UnitPrice);
+public sealed record PurchaseRequisitionView(Guid Id, Guid LegalEntityId, Guid SupplierPartyId, string CurrencyCode, DateOnly RequestedDate, string State, string ApprovalState, long Version, decimal TotalAmount, IReadOnlyList<PurchaseRequisitionLineView> Lines, Guid? ApprovalRequestId);
 public sealed record CreatePurchaseOrderRequest(Guid LegalEntityId, Guid? BranchId, Guid SupplierPartyId, string CurrencyCode, DateOnly OrderDate, Guid? PriceListId, bool? ApprovalRequired, IReadOnlyList<PurchaseOrderLineRequest> Lines, Guid? ProjectId = null, Guid? TaskId = null, string? CostCategory = null, Guid? BudgetBucketId = null);
 public sealed record UpdatePurchaseOrderRequest(long Version, Guid SupplierPartyId, string CurrencyCode, DateOnly OrderDate, IReadOnlyList<PurchaseOrderLineRequest> Lines, Guid? ProjectId = null, Guid? TaskId = null, string? CostCategory = null, Guid? BudgetBucketId = null);
 public sealed record PurchaseOrderCommandRequest(long Version, string IdempotencyKey, string? Reason = null);

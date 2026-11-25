@@ -650,6 +650,10 @@ static int MigrationPriority(string fileName) => fileName switch
     // Supplier return tables are introduced by the purchasing continuation; the
     // closure migration adds columns and therefore must run after that script.
     _ when fileName.Equals("purchasing-forward-fix-final-continuation.sql", StringComparison.Ordinal) => 10,
+    // Requisition tables must exist before the audit-history migration and before
+    // the remaining Purchasing continuation fixes during a fresh bootstrap.
+    _ when fileName.Equals("purchasing-forward-fix-budget-control-bc01-requisition.sql", StringComparison.Ordinal) => 9,
+    _ when fileName.Equals("purchasing-forward-fix-bc01-requisition-history.sql", StringComparison.Ordinal) => 10,
     _ when fileName.Equals("purchasing-forward-fix-closure.sql", StringComparison.Ordinal) => 11,
     _ when fileName.Equals("purchasing-forward-fix-runtime-permissions.sql", StringComparison.Ordinal) => 12,
     _ when fileName.Equals("purchasing-forward-fix-quality-return-idempotency.sql", StringComparison.Ordinal) => 13,

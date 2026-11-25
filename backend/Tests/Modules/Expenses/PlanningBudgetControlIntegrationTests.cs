@@ -7,6 +7,7 @@ using Modules.Ledger.Repositories;
 using Modules.Ledger.Services;
 using Modules.Planning;
 using Npgsql;
+using Shared.Contracts.Planning;
 using Shared.Primitives.Identifiers;
 using System.Text.Json;
 using Xunit;
@@ -70,7 +71,9 @@ public sealed class PlanningBudgetControlIntegrationTests
             budgetControl: new PlanningBudgetControlCapability());
         var categoryVersion = (Guid)(await ScalarAsync(dataSource,
             "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, AtlasEntity))!;
+        var bucket = await EnsureOpexBucketAsync(dataSource, categoryVersion);
         await ExecuteAsync(dataSource, "update business_planning.budget_control_policy set mode='Block',active=true,opening_reconciled=true where tenant_id=$1 and legal_entity_id=$2", Atlas, AtlasEntity);
+        await EnsureOwnerReconciliationAsync(dataSource, bucket);
         try
         {
             var exception = await Assert.ThrowsAsync<PlanningBudgetControlException>(() => repository.CreateAsync(new(Atlas),
@@ -135,6 +138,7 @@ public sealed class PlanningBudgetControlIntegrationTests
         var categoryVersion = (Guid)(await ScalarAsync(dataSource,
             "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, AtlasEntity))!;
         var bucket = await EnsureOpexBucketAsync(dataSource, categoryVersion);
+        await EnsureOwnerReconciliationAsync(dataSource, bucket);
         var baselineActual = Convert.ToDecimal(await ScalarAsync(dataSource, "select actual_total from business_planning.budget_control_bucket where tenant_id=$1 and id=$2", Atlas, bucket), System.Globalization.CultureInfo.InvariantCulture);
         var sourceId = Guid.NewGuid().ToString("D");
         var correctionId = Guid.NewGuid().ToString("D");
@@ -162,6 +166,7 @@ public sealed class PlanningBudgetControlIntegrationTests
         var bucket = await EnsureOpexBucketAsync(dataSource, (Guid)(await ScalarAsync(dataSource,
             "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, AtlasEntity))!);
         await ExecuteAsync(dataSource, "update business_planning.budget_control_policy set mode='Block',active=true,opening_reconciled=true where tenant_id=$1 and legal_entity_id=$2", Atlas, AtlasEntity);
+        await EnsureOwnerReconciliationAsync(dataSource, bucket);
         var sourceId = Guid.NewGuid().ToString("D");
         var otherSourceId = Guid.NewGuid().ToString("D");
         var overrideId = Guid.NewGuid();
@@ -195,7 +200,7 @@ public sealed class PlanningBudgetControlIntegrationTests
         var bucket = await EnsureOpexBucketAsync(dataSource, (Guid)(await ScalarAsync(dataSource,
             "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, AtlasEntity))!);
         await ExecuteAsync(dataSource, "update business_planning.budget_control_bucket set actual_total=actual_total+7 where tenant_id=$1 and id=$2", Atlas, bucket);
-        var repository = new PlanningRepository(new NpgsqlTransactionCoordinator(dataSource));
+        var repository = new PlanningRepository(new NpgsqlTransactionCoordinator(dataSource), ownerSources: [new CanonicalFactOwnerSource(dataSource)]);
         var result = await repository.ReconcileBudgetControlAsync(new(Atlas), Guid.NewGuid(), new(bucket, true), default);
         Assert.Equal("Succeeded", result.State);
         Assert.True(result.RebuildApplied);
@@ -209,14 +214,49 @@ public sealed class PlanningBudgetControlIntegrationTests
         var dimension = JsonSerializer.Serialize(new Dictionary<string, string> { ["categoryVersionId"] = categoryVersion.ToString("D") });
         var existing = await ScalarAsync(dataSource,
             "select id from business_planning.budget_control_bucket where tenant_id=$1 and legal_entity_id=$2 and period_start='2027-01-01' and metric_code='OPEX' and dimension_key=$3::jsonb limit 1", Atlas, AtlasEntity, dimension);
-        if (existing is Guid id) return id;
+        if (existing is Guid id)
+        {
+            await EnsureOwnerReconciliationAsync(dataSource, id);
+            return id;
+        }
         var policy = (Guid)(await ScalarAsync(dataSource, "select id from business_planning.budget_control_policy where tenant_id=$1 and legal_entity_id=$2 order by id limit 1", Atlas, AtlasEntity))!;
         var planVersion = (Guid)(await ScalarAsync(dataSource, "select id from business_planning.plan_version where tenant_id=$1 order by id limit 1", Atlas))!;
         var bucket = Guid.NewGuid();
         await ExecuteAsync(dataSource,
             "insert into business_planning.budget_control_bucket(tenant_id,id,policy_id,plan_version_id,legal_entity_id,period_start,metric_code,dimension_key,original_budget,currency_code) values($1,$2,$3,$4,$5,'2027-01-01','OPEX',$6::jsonb,100000,'EGP')",
             Atlas, bucket, policy, planVersion, AtlasEntity, dimension);
+        await EnsureOwnerReconciliationAsync(dataSource, bucket);
         return bucket;
+    }
+
+    private static async Task EnsureOwnerReconciliationAsync(NpgsqlDataSource dataSource, Guid bucketId)
+    {
+        await ExecuteAsync(dataSource, "insert into business_planning.budget_control_owner_reconciliation(tenant_id,id,bucket_id,state,source_watermark,discrepancy_amount,requested_by) values($1,$2,$3,'Succeeded','test-fixture',0,$4) on conflict(tenant_id,bucket_id) do update set state='Succeeded',source_watermark='test-fixture',discrepancy_amount=0", Atlas, Guid.NewGuid(), bucketId, Guid.NewGuid());
+    }
+
+    private sealed class CanonicalFactOwnerSource(NpgsqlDataSource dataSource) : IPlanningOwnerReconciliationSource
+    {
+        public string SourceModule => "planning-test";
+
+        public async Task<IReadOnlyList<PlanningOwnerFinancialFact>> ListFinancialFactsAsync(TenantId tenantId, Guid? legalEntityId, CancellationToken cancellationToken = default)
+        {
+            await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+            await using (var tenant = new NpgsqlCommand("select set_config('app.tenant_id',$1::text,false)", connection))
+            {
+                tenant.Parameters.AddWithValue(tenantId.Value);
+                await tenant.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            const string sql = "select f.source_document_id,f.source_line_id,f.source_version,b.legal_entity_id,b.period_start,b.metric_code,f.amount,coalesce(f.source_currency,b.currency_code) from business_planning.budget_consumption_fact f join business_planning.budget_control_bucket b on b.tenant_id=f.tenant_id and b.id=f.bucket_id where f.tenant_id=$1 and f.state='Actual' and ($2::uuid is null or b.legal_entity_id=$2)";
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue(tenantId.Value);
+            command.Parameters.AddWithValue(legalEntityId ?? (object)DBNull.Value);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            var facts = new List<PlanningOwnerFinancialFact>();
+            while (await reader.ReadAsync(cancellationToken))
+                facts.Add(new("planning-test", reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetGuid(3), reader.GetFieldValue<DateOnly>(4), reader.GetString(5), "{}", "Actual", reader.GetDecimal(6), reader.GetString(7).Trim()));
+            return facts;
+        }
     }
 
     private static async Task ExecuteAsync(NpgsqlDataSource dataSource, string sql, params object[] values)

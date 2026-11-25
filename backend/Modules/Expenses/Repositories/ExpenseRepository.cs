@@ -556,33 +556,66 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     private async Task<ExpenseDto> ReverseAsync(TenantId tenant, Guid entity, Guid id, ExpenseActionRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Reason)) throw new ExpenseRepositoryException("expenses.reversal_reason_required");
-        Guid ledgerEntry; long version; Guid? projectId; decimal amount; decimal baseAmount; string currencyCode;
+        Guid ledgerEntry; Guid? reversalEntry; long sourceVersion; long currentVersion; Guid? projectId; decimal amount; decimal baseAmount; string currencyCode; string intentReason;
         await using (var scope = await OpenAsync(tenant, ct))
         {
-            await using var lockCommand = new NpgsqlCommand("select ledger_entry_id,version,expense_state,accounting_state,project_id,amount,coalesce(base_amount,amount),currency_code from business_expenses.expense where tenant_id=$1 and legal_entity_id=$2 and id=$3 for update", scope.Connection, scope.Transaction); Add(lockCommand, tenant.Value, entity, id);
+            await using var lockCommand = new NpgsqlCommand("select e.ledger_entry_id,e.version,e.expense_state,e.accounting_state,e.project_id,e.amount,coalesce(e.base_amount,e.amount),e.currency_code,i.reversal_entry_id,i.source_version,i.reason from business_expenses.expense e left join business_expenses.expense_budget_reversal_intent i on i.tenant_id=e.tenant_id and i.expense_id=e.id where e.tenant_id=$1 and e.legal_entity_id=$2 and e.id=$3 for update", scope.Connection, scope.Transaction); Add(lockCommand, tenant.Value, entity, id);
             await using var reader = await lockCommand.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new ExpenseRepositoryException("expenses.expense_not_found");
-            if (reader.IsDBNull(0) || reader.GetString(2) != "Finalized" || reader.GetString(3) != "Posted" || reader.GetInt64(1) != request.Version) throw new ExpenseRepositoryException("expenses.invalid_transition_or_concurrency");
-            ledgerEntry = reader.GetGuid(0); version = reader.GetInt64(1); projectId = reader.IsDBNull(4) ? null : reader.GetGuid(4); amount = reader.GetDecimal(5); baseAmount = reader.GetDecimal(6); currencyCode = reader.GetString(7); await reader.CloseAsync();
-            await using var pending = new NpgsqlCommand("update business_expenses.expense set accounting_state='ReversalPending',version=version+1,updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$4", scope.Connection, scope.Transaction); Add(pending, tenant.Value, entity, id, version); await pending.ExecuteNonQueryAsync(ct); await scope.Transaction.CommitAsync(ct);
+            var state = reader.GetString(2); var accountingState = reader.GetString(3); currentVersion = reader.GetInt64(1);
+            if (state == "Reversed" && accountingState == "Reversed") { await reader.CloseAsync(); await scope.Transaction.CommitAsync(ct); return (await GetAsync(tenant, entity, id, ct))!; }
+            if (reader.IsDBNull(0) || (state != "Finalized" && !(state == "Reversed" && accountingState == "ReversalPending")) || accountingState is not ("Posted" or "ReversalPending") || (state == "Finalized" && currentVersion != request.Version) || (state == "ReversalPending" && currentVersion != request.Version))
+                throw new ExpenseRepositoryException("expenses.invalid_transition_or_concurrency");
+            ledgerEntry = reader.GetGuid(0); projectId = reader.IsDBNull(4) ? null : reader.GetGuid(4); amount = reader.GetDecimal(5); baseAmount = reader.GetDecimal(6); currencyCode = reader.GetString(7).Trim(); reversalEntry = reader.IsDBNull(8) ? null : reader.GetGuid(8); sourceVersion = reader.IsDBNull(9) ? currentVersion : reader.GetInt64(9); intentReason = reader.IsDBNull(10) ? request.Reason.Trim() : reader.GetString(10); await reader.CloseAsync();
+            if (state == "Finalized" && accountingState == "Posted")
+            {
+                await ExecuteAsync(scope.Connection, scope.Transaction, "update business_expenses.expense set accounting_state='ReversalPending',version=version+1,updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$4", ct, tenant.Value, entity, id, currentVersion);
+                await ExecuteAsync(scope.Connection, scope.Transaction, "insert into business_expenses.expense_budget_reversal_intent(tenant_id,legal_entity_id,expense_id,ledger_entry_id,source_version,amount,base_amount,currency_code,reason,state) values($1,$2,$3,$4,$5,$6,$7,$8,$9,'PendingLedger')", ct, tenant.Value, entity, id, ledgerEntry, sourceVersion, amount, baseAmount, currencyCode, intentReason);
+            }
+            await scope.Transaction.CommitAsync(ct);
         }
-        var reversal = await ledgerPosting.ReverseAsync(tenant, new LegalEntityId(entity), ledgerEntry, DateOnly.FromDateTime(DateTime.UtcNow), null, request.Reason!, Guid.Empty, Guid.CreateVersion7(), ct);
-        await using (var scope = await OpenAsync(tenant, ct))
+        if (reversalEntry is null)
         {
+            try
+            {
+                var reversal = await ledgerPosting.ReverseAsync(tenant, new LegalEntityId(entity), ledgerEntry, DateOnly.FromDateTime(DateTime.UtcNow), null, intentReason, Guid.Empty, id, ct);
+                reversalEntry = reversal.JournalEntryId;
+                await using var mark = await OpenAsync(tenant, ct);
+                await ExecuteAsync(mark.Connection, mark.Transaction, "update business_expenses.expense_budget_reversal_intent set reversal_entry_id=$3,state='PendingCorrection',attempt_count=attempt_count+1,last_error=null,updated_at=now() where tenant_id=$1 and expense_id=$2 and state in ('PendingLedger','Failed')", ct, tenant.Value, id, reversalEntry);
+                await mark.Transaction.CommitAsync(ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                await MarkReversalIntentFailedAsync(tenant, id, ex.Message, ct);
+                throw;
+            }
+        }
+        try
+        {
+            await using var scope = await OpenAsync(tenant, ct);
             if (budgetControl is not null)
             {
                 await using var context = new ExistingTransactionContext(scope.Connection, scope.Transaction);
-                await budgetControl.ReverseConsumptionAsync(context, tenant, Guid.Empty,
-                    new(entity, "expenses", id.ToString("D"), "expense", "expenses", id.ToString("D"), "expense",
-                        $"reversal:{id:D}:{version}", amount, currencyCode), ct);
+                await budgetControl.ReverseConsumptionAsync(context, tenant, Guid.Empty, new(entity, "expenses", id.ToString("D"), "expense", "expenses", id.ToString("D"), "expense", $"reversal:{id:D}:{sourceVersion}", amount, currencyCode), ct);
             }
-            await using var update = new NpgsqlCommand("update business_expenses.expense set expense_state='Reversed',accounting_state='Reversed',reversal_entry_id=$4,version=version+1,updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and accounting_state='ReversalPending'", scope.Connection, scope.Transaction); Add(update, tenant.Value, entity, id, reversal.JournalEntryId); if (await update.ExecuteNonQueryAsync(ct) == 0) throw new ExpenseRepositoryException("expenses.reversal_state_conflict");
-            await using var history = new NpgsqlCommand("insert into business_expenses.expense_history(tenant_id,id,legal_entity_id,expense_id,action,to_state) values($1,$2,$3,$4,'reverse',jsonb_build_object('expenseState','Reversed','accountingState','Reversed','reversalEntryId',$5::text))", scope.Connection, scope.Transaction); Add(history, tenant.Value, Guid.CreateVersion7(), entity, id, reversal.JournalEntryId); await history.ExecuteNonQueryAsync(ct);
-            await using var outbox = new NpgsqlCommand("insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,status) values($1,'ExpenseReversedV1',$2::jsonb,$3,now(),$4,$5,'expenses','Pending')", scope.Connection, scope.Transaction);
-            Add(outbox, Guid.CreateVersion7(), JsonSerializer.Serialize(new { expenseId = id, projectId, amount, baseAmount, currencyCode, correctionOfFactId = (Guid?)null }), tenant.Value, Guid.CreateVersion7(), id);
-            await outbox.ExecuteNonQueryAsync(ct);
+            await ExecuteAsync(scope.Connection, scope.Transaction, "update business_expenses.expense set expense_state='Reversed',accounting_state='Reversed',reversal_entry_id=$4,version=version+1,updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and accounting_state='ReversalPending'", ct, tenant.Value, entity, id, reversalEntry);
+            await ExecuteAsync(scope.Connection, scope.Transaction, "update business_expenses.expense_budget_reversal_intent set state='Completed',last_error=null,updated_at=now() where tenant_id=$1 and expense_id=$2", ct, tenant.Value, id);
+            await ExecuteAsync(scope.Connection, scope.Transaction, "insert into business_expenses.expense_history(tenant_id,id,legal_entity_id,expense_id,action,to_state) values($1,$2,$3,$4,'reverse',jsonb_build_object('expenseState','Reversed','accountingState','Reversed','reversalEntryId',$5::text))", ct, tenant.Value, Guid.CreateVersion7(), entity, id, reversalEntry);
+            await ExecuteAsync(scope.Connection, scope.Transaction, "insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,status) values($1,'ExpenseReversedV1',$2::jsonb,$3,now(),$4,$5,'expenses','Pending')", ct, Guid.CreateVersion7(), JsonSerializer.Serialize(new { expenseId = id, projectId, amount, baseAmount, currencyCode, correctionOfFactId = (Guid?)null }), tenant.Value, Guid.CreateVersion7(), id);
             await scope.Transaction.CommitAsync(ct);
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await MarkReversalIntentFailedAsync(tenant, id, ex.Message, ct);
+            throw;
+        }
         return (await GetAsync(tenant, entity, id, ct))!;
+    }
+
+    private async Task MarkReversalIntentFailedAsync(TenantId tenant, Guid expenseId, string error, CancellationToken ct)
+    {
+        await using var scope = await OpenAsync(tenant, ct);
+        await ExecuteAsync(scope.Connection, scope.Transaction, "update business_expenses.expense_budget_reversal_intent set state='Failed',last_error=$3,attempt_count=attempt_count+1,updated_at=now() where tenant_id=$1 and expense_id=$2", ct, tenant.Value, expenseId, error[..Math.Min(error.Length, 1000)]);
+        await scope.Transaction.CommitAsync(ct);
     }
 
 
@@ -817,6 +850,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         return new(r.GetGuid(0), r.GetGuid(1), GuidValue(r, 2), r.GetString(3), r.GetFieldValue<DateOnly>(4), r.GetDecimal(5), r.GetString(6), r.GetString(7), r.GetGuid(8), r.GetString(9), r.GetString(10), r.GetString(11), r.GetString(12), r.GetString(13), r.GetString(14), Text(r, 15), Text(r, 16), r.GetInt64(17), r.GetFieldValue<DateTimeOffset>(18), r.IsDBNull(19) ? null : r.GetFieldValue<DateTimeOffset>(19), r.IsDBNull(20) ? null : r.GetDecimal(20), Text(r, 21)?.Trim(), r.IsDBNull(22) ? null : r.GetDecimal(22), financialContext, taxSnapshot, approvalRequestId, r.FieldCount > 26 ? GuidValue(r, 26) : null, r.FieldCount > 27 ? GuidValue(r, 27) : null, r.FieldCount > 28 ? Text(r, 28) : null, r.FieldCount > 29 && !r.IsDBNull(29) && r.GetBoolean(29));
     }
     private static Guid? GuidValue(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetGuid(i); private static string? Text(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i); private static object Db(object? v) => v ?? DBNull.Value; private static void Add(NpgsqlCommand c, params object?[] values) { foreach (var value in values) c.Parameters.AddWithValue(value ?? DBNull.Value); }
+    private static async Task<int> ExecuteAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string sql, CancellationToken ct, params object?[] values) { await using var command = new NpgsqlCommand(sql, connection, transaction); Add(command, values); return await command.ExecuteNonQueryAsync(ct); }
     private static string NormalizeMerchantName(string value) => string.Join(' ', value.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     private static MissingReceiptDeclarationDto ReadMissingReceipt(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetGuid(4), r.GetFieldValue<DateTimeOffset>(5), r.IsDBNull(6) ? null : r.GetFieldValue<DateTimeOffset>(6));
     private static ExpensePolicyExceptionDto ReadPolicyException(NpgsqlDataReader r) => new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetString(3), r.GetString(4), r.GetString(5), r.IsDBNull(6) ? null : r.GetGuid(6), r.GetGuid(7), r.IsDBNull(8) ? null : r.GetGuid(8), r.GetInt64(9), r.GetFieldValue<DateTimeOffset>(10), r.IsDBNull(11) ? null : r.GetFieldValue<DateTimeOffset>(11));
