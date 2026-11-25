@@ -24,7 +24,7 @@ public sealed class LedgerRepository(
     {
         return await transactions.ExecuteAsync(tenantId, async (context, token) =>
         {
-        await using var command = new NpgsqlCommand("""
+            await using var command = new NpgsqlCommand("""
             select f.id,f.source_reference,coalesce(f.payload_jsonb->>'costCategory',''),coalesce((f.payload_jsonb->>'amount')::numeric,0),coalesce(f.payload_jsonb->>'currencyCode',''),f.status,f.posted_entry_id,
                    coalesce(sum(l.debit),0),coalesce(sum(l.credit),0)
             from finance_ledger.accounting_fact f
@@ -35,11 +35,11 @@ public sealed class LedgerRepository(
             group by f.id,f.source_reference,f.payload_jsonb,f.status,f.posted_entry_id
             order by f.id
             """, context.Connection, context.Transaction);
-        command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(legalEntityId.Value); command.Parameters.AddWithValue(productionOrderId.ToString("D"));
-        await using var reader = await command.ExecuteReaderAsync(token);
-        var result = new List<ManufacturingLedgerFactSnapshot>();
-        while (await reader.ReadAsync(token)) result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetDecimal(3), reader.GetString(4), reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetGuid(6), reader.GetDecimal(7), reader.GetDecimal(8)));
-        return (IReadOnlyList<ManufacturingLedgerFactSnapshot>)result;
+            command.Parameters.AddWithValue(tenantId.Value); command.Parameters.AddWithValue(legalEntityId.Value); command.Parameters.AddWithValue(productionOrderId.ToString("D"));
+            await using var reader = await command.ExecuteReaderAsync(token);
+            var result = new List<ManufacturingLedgerFactSnapshot>();
+            while (await reader.ReadAsync(token)) result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetDecimal(3), reader.GetString(4), reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetGuid(6), reader.GetDecimal(7), reader.GetDecimal(8)));
+            return (IReadOnlyList<ManufacturingLedgerFactSnapshot>)result;
         }, cancellationToken);
     }
 

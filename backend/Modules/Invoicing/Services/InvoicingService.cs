@@ -396,6 +396,7 @@ public sealed class InvoicingService(
             return;
         }
 
+        if (!await budgetControl.HasReservationAsync(context, tenant, draft.LegalEntityId, "purchasing", sourceDocumentId, "order", ct)) return;
         if (!await budgetControl.HasOpenReservationAsync(context, tenant, draft.LegalEntityId, "purchasing", sourceDocumentId, "order", ct))
             throw new PlanningBudgetControlException("planning.budget_reservation_not_open");
         await budgetControl.ConsumeReservationAsync(context, tenant, actorId,

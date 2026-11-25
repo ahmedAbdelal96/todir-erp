@@ -144,21 +144,26 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
         if (budgetControl is not null)
         {
             await using var context = new ExistingTransactionContext(connection, transaction);
+            var controlBucketId = await budgetControl.ResolveApplicableBucketAsync(context, tenant,
+                new(legalEntityId, PlanningPeriod(requestedDate), "OPEX", "{}"), ct);
             foreach (var line in poLines)
             {
                 var prLine = lines.First(source => source.Id == line.PrLine);
                 var requested = await ExecuteScalarAsync<decimal>(connection, transaction, "select requested_quantity from business_purchasing.purchase_requisition_line where tenant_id=$1 and legal_entity_id=$2 and requisition_id=$3 and id=$4", ct, tenant.Value, legalEntityId, id, line.PrLine);
                 var convertedBefore = await ExecuteScalarAsync<decimal>(connection, transaction, "select converted_quantity from business_purchasing.purchase_requisition_line where tenant_id=$1 and legal_entity_id=$2 and requisition_id=$3 and id=$4", ct, tenant.Value, legalEntityId, id, line.PrLine);
                 var remainingQuantity = requested - convertedBefore - prLine.Quantity;
+                var hasOpenPrecommitment = await budgetControl.HasOpenReservationAsync(context, tenant, legalEntityId, "purchasing", id.ToString("D"), line.PrLine.ToString("D"), ct);
                 if (remainingQuantity > 0m)
                 {
-                    await budgetControl.UpsertReservationAsync(context, tenant, actor,
+                    if (controlBucketId.HasValue || hasOpenPrecommitment)
+                        await budgetControl.UpsertReservationAsync(context, tenant, actor,
                         new(legalEntityId, Guid.Empty, "purchasing", id.ToString("D"), line.PrLine.ToString("D"), $"approved:{request.Version + 1}", remainingQuantity * prLine.UnitPrice, currency, PlanningBudgetReservationKind.Precommitment, new(requestedDate.Year, requestedDate.Month, 1)), ct);
                 }
-                else
+                else if (hasOpenPrecommitment)
                     await budgetControl.ReleaseReservationAsync(context, tenant, "purchasing", id.ToString("D"), line.PrLine.ToString("D"), ct);
-                await budgetControl.UpsertReservationAsync(context, tenant, actor,
-                    new(legalEntityId, Guid.Empty, "purchasing", poId.ToString("D"), line.PoLine.ToString("D"), "approved:1", line.Amount, currency, PlanningBudgetReservationKind.Commitment, new(requestedDate.Year, requestedDate.Month, 1)), ct);
+                if (controlBucketId.HasValue)
+                    await budgetControl.UpsertReservationAsync(context, tenant, actor,
+                        new(legalEntityId, controlBucketId.Value, "purchasing", poId.ToString("D"), line.PoLine.ToString("D"), "approved:1", line.Amount, currency, PlanningBudgetReservationKind.Commitment, new(requestedDate.Year, requestedDate.Month, 1)), ct);
             }
         }
         foreach (var line in lines)

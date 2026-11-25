@@ -60,6 +60,8 @@ public interface ITransactionalPlanningBudgetControlCapability
         CancellationToken cancellationToken = default);
     Task<bool> HasOpenReservationAsync(ITransactionContext context, TenantId tenantId, Guid legalEntityId, string sourceModule,
         string sourceDocumentId, string sourceLineId, CancellationToken cancellationToken = default);
+    Task<bool> HasReservationAsync(ITransactionContext context, TenantId tenantId, Guid legalEntityId, string sourceModule,
+        string sourceDocumentId, string sourceLineId, CancellationToken cancellationToken = default);
     Task<PlanningBudgetReservationResult> UpsertReservationAsync(ITransactionContext context, TenantId tenantId,
         Guid actorId, PlanningBudgetReservationRequest request, CancellationToken cancellationToken = default);
     Task ReleaseReservationAsync(ITransactionContext context, TenantId tenantId, string sourceModule,

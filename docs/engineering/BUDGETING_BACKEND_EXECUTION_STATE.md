@@ -25,6 +25,9 @@ Backend and database implementation for Module 28 on `dev`, including the full F
 - Added the minimum Purchasing-owned requisition aggregate and forward-only schema: draft/submission/approval, immutable line identity, partial/full conversion lineage, row locking, idempotency, precommitment replacement, PO approval history and outbox evidence. Fresh bootstrap ordering now places the requisition foundation before its history foreign key; disposable fresh migration plus Development Seed ran twice and completed with 273 ordered scripts.
 - Added a durable Expense budget-reversal intent. The Expense remains `ReversalPending` when Ledger or Planning correction fails; a retry reuses the stored intent and does not post a second Ledger reversal. The retry path also avoids inserting a second pending intent.
 - Added bounded public owner-fact contracts and Purchasing/Ledger providers. Posted `ExpenseRecognized` Ledger debit facts are exposed through the Ledger-owned provider so Planning does not count the originating Expense row twice. Planning owner reconciliation compares canonical owner facts to each bucket and strict `Block` control requires a successful zero-discrepancy owner result in addition to the existing opening flag.
+- Executed the real isolated Purchasing PR HTTP vector: `100,000 EGP` was approved and converted into approved `40,000` and `60,000` POs. The reservation ledger showed a released `60,000` PR precommitment and open `40,000` plus `60,000` PO commitments. Duplicate conversion was idempotent and over-remaining conversion was rejected.
+- Corrected three source-integration defects found by that runtime vector: Purchasing approval decisions now require `purchasing.request.approve`; PR conversion reuses the existing source reservation and writes PO commitment against the resolved control bucket; Invoicing skips Planning consumption when no source reservation exists but still rejects a closed reservation. The real supplier-invoice/correction integration test then passed.
+- Corrected the requested whitespace-only `LedgerRepository.cs` formatter finding without changing Ledger behavior.
 
 ## Last meaningful corrections
 
@@ -36,11 +39,11 @@ Backend and database implementation for Module 28 on `dev`, including the full F
 
 ## Required next executable work
 
-1. Complete the real Purchasing 100,000 PR → 40/60 PO conversion vector and receipt/invoice/return/credit/reversal replay tests.
+1. Complete the approved-PO receipt/invoice/return/credit/reversal vector and final-invoice/cancellation scenarios.
 2. Complete canonical Ledger YTD mapping beyond posted expense facts and runtime outbox/inbox replay acceptance using the isolated runtime role.
 3. Complete source-watermark invalidation, semantic correction workflow and strict activation HTTP evidence; the current owner result is durable but not yet a complete approval/recovery workflow.
-4. Complete the final disposable source-workflow acceptance and rerun all owner-module, integration, security/RLS, architecture, Release build, formatter, OpenAPI and diff gates after every later source change.
+4. Complete the concurrency, failure-injection and runtime-role security matrix, then rerun all applicable owner-module, integration, architecture, Release build, formatter, OpenAPI and diff gates after the last source change.
 
 ## Delivery status
 
-`NOT COMPLETE` for overall Module 28 and `BC01 NOT COMPLETE` for this focused mission: the owner dependencies and durable recovery seams are implemented, but the mandatory real PR/PO/receipt/return financial vector, Ledger owner reconciliation/replay, runtime-role HTTP acceptance, and complete BC01 matrix still lack required evidence. No production certification is implied.
+`NOT COMPLETE` for overall Module 28 and `BC01 NOT COMPLETE` for this focused mission: the real PR conversion and partial invoice/correction slices pass, but the mandatory receipt/return/final-invoice financial vector, Ledger owner reconciliation/replay, live Worker path, concurrency/recovery matrix, and complete strict-activation evidence remain open. No production certification is implied.

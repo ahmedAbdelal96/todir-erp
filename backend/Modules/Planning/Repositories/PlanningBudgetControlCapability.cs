@@ -68,6 +68,14 @@ public sealed class PlanningBudgetControlCapability : ITransactionalPlanningBudg
         return reservation?.State == "Reserved";
     }
 
+    public async Task<bool> HasReservationAsync(ITransactionContext context, TenantId tenantId, Guid legalEntityId, string sourceModule,
+        string sourceDocumentId, string sourceLineId, CancellationToken cancellationToken = default)
+    {
+        var reservation = await ReadSourceReservationAsync(context, tenantId, sourceModule, sourceDocumentId, sourceLineId, cancellationToken);
+        if (reservation is not null && reservation.LegalEntityId != legalEntityId) throw new PlanningBudgetControlException("planning.budget_scope_invalid");
+        return reservation is not null;
+    }
+
     public async Task<PlanningBudgetReservationResult> UpsertReservationAsync(ITransactionContext context, TenantId tenantId,
         Guid actorId, PlanningBudgetReservationRequest request, CancellationToken cancellationToken = default)
     {
