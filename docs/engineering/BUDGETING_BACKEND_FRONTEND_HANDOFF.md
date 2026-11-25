@@ -1,6 +1,6 @@
 # Module 28 Backend-to-Frontend Handoff
 
-This is a backend handoff for the implemented planning foundation only. Frontend implementation is not included in this mission.
+This is a backend handoff for the implemented planning foundation plus the metadata, submission, spreading, allocation and statement slices. Frontend implementation is not included in this mission.
 
 ## Runtime contract
 
@@ -17,6 +17,11 @@ Implemented route groups:
 - workforce, CapEx, revenue drivers, working capital and FX;
 - actual refresh run status and variance query;
 - calculation/recalculation and commentary.
+- dimension members/mappings and constrained formula definitions;
+- submission-unit state transitions;
+- scenario share/adopt-preview and version comparison;
+- exact spreading (`/grids/spread-exact`), weighted allocation, P&L query and forecast-accuracy calculation;
+- workforce baseline import/cost-impact and CapEx lifecycle actions.
 
 ## Development seed
 
@@ -37,4 +42,4 @@ The administrator seed role receives the canonical Module 28 permissions. Other 
 
 ## Not yet safe to build against as final product scope
 
-Submission slices, department approval, dimension-member administration, source mappings, formula authoring, spreading/allocation, integrated statement projections, cross-module source adapters, Excel interop, and full accuracy/roll-up reporting remain backend gaps. Do not create UI claims for those capabilities until the backend matrix is updated with PASS evidence.
+Coordinate-scoped submission locking, delegated Platform Approvals, owner-module source adapters/events, full typed DAG execution, OPEX driver workflows, integrated Balance Sheet/Cash Flow reconciliation, rolling forecast jobs, commitment reconciliation, override SoD, Excel/CSV staging, multi-entity rollups, planning observability/runbooks and complete accuracy reporting remain backend gaps. The P&L response is a planning projection, not a statutory statement; the cash-flow response is explicitly a proxy. Do not create UI claims for these capabilities until the backend matrix is updated with PASS evidence.

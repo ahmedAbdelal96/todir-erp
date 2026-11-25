@@ -31,4 +31,22 @@ public sealed class PlanningFormulaTests
 
         PlanningFormulaEngine.EnsureAcyclic(graph);
     }
+
+    [Fact]
+    public void ExactAllocationConservesRoundedTotal()
+    {
+        var values = PlanningFormulaEngine.AllocateExact(100m, [1m, 1m, 1m]);
+
+        Assert.Equal(100m, values.Sum());
+        Assert.Equal(33.3333m, values[0]);
+        Assert.Equal(33.3334m, values[2]);
+    }
+
+    [Fact]
+    public void RejectsNegativeAllocationWeight()
+    {
+        var exception = Assert.Throws<PlanningException>(() => PlanningFormulaEngine.AllocateExact(10m, [1m, -1m]));
+
+        Assert.Equal("planning.allocation_invalid", exception.Code);
+    }
 }

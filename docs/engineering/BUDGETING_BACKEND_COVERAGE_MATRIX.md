@@ -2,28 +2,74 @@
 
 Canonical pack: `docs/modules/28_ERP_SAAS_BUDGETING_FINANCIAL_PLANNING_FPA_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`.
 
-This delivery covers the Module 28 backend foundation and the executable workflows listed below. It does not claim complete Module 28 coverage; the remaining mandatory gaps are recorded explicitly instead of being hidden by a green build.
+This matrix is deliberately requirement-led. `PASS` means the backend behavior and a repeatable evidence path exist; `PARTIAL` means a useful slice exists but the canonical exit gate is not yet met; `OPEN` means the mandatory scope is not implemented. A green build is not used as evidence for a business workflow.
 
-| Capability | Database | Backend/API | Seed | Automated/runtime evidence | Status |
+| ID | Capability | Database / owner | API / implementation | Evidence | Status |
 |---|---|---|---|---|---|
-| Planning cycle and lifecycle | `planning_cycle`, RLS, state checks | create/list/open/submit/approve/publish/close/archive | FY2027 Approved cycle | Planning unit tests; authenticated `GET /api/v1/planning/cycles` | PASS |
-| Models, model versions, plan versions | model/version tables and tenant FKs | create model/version, create/list/clone/advance plan version | Corporate model and published version | authenticated version listing and clone path | PASS |
-| Sparse grid | coordinates and input facts with unique signatures | query, write batch, clear, paste-preview, spread route | Revenue input 150,000 EGP | authenticated grid query returned the seeded cell | PASS |
-| Scenarios and assumptions | scenario/assumption/value tables | create/clone scenario; create/value assumption | Shared Base scenario | authenticated scenario clone returned a new Draft | PASS |
-| Baseline, revisions, transfers | baseline/revision/transfer tables | current budget, revision approval, coordinate-resolved transfer approval | Published 150,000 EGP baseline | migration and unit/build gates; transfer needs additional end-to-end evidence | PARTIAL |
-| Budget control | policy/bucket/reservation tables | check, check-and-reserve, availability, release; idempotency key | Warn policy and 150,000 EGP bucket | authenticated reserve and isolated SQL evidence; final rerun required after last fix | PASS |
-| Workforce and CapEx | workforce/capex tables | add/list workforce and add CapEx | 12 FTE and 45,000 EGP CapEx item | authenticated workforce list | PARTIAL |
-| Revenue drivers and calculation trace | driver/calculated-fact/run/trace tables | driver write and deterministic volume×price recalculation | 100 × 1,500 EGP driver | formula DAG unit tests; authenticated recalculation evidence still required | PARTIAL |
-| Actual snapshots and variance | refresh-run/snapshot/source/variance tables | idempotent keyed refresh, run status, variance query | no fake actuals | API path implemented; source-contract integration proof still required | PARTIAL |
-| Tenant/RLS boundary | FORCE RLS on all planning tables; app grants | tenant context through transaction coordinator | Atlas and Delta seed | disposable migration inspection required in final gate | PASS |
-| Outbox/audit | planning audit events and published outbox message | publish emits `BudgetPublishedV1`; audit writes on lifecycle changes | seeded planning data | code/build inspection; worker delivery is not yet a Module 28 acceptance proof | PARTIAL |
+| FP00 | Repository/dependency verification | Planning manifest and solution | `Planning.csproj`, registration | Release build, architecture | PASS |
+| FP01 | Module boundary/schema/RLS | `business_planning`, FORCE RLS | Transaction-coordinator repository | Disposable migration | PASS |
+| FP02 | Fiscal calendar/planning cycle | `planning_cycle` and state checks | cycle CRUD/lifecycle | Seed + authenticated cycle read | PASS |
+| FP03 | Typed models/dimensions | model/version/dimension/member tables | model/version and dimension/member commands | Real HTTP dimension/member journey | PARTIAL |
+| FP04 | Metrics/mappings | metric, mapping, source metadata | mapping command; refresh identity | Mapping HTTP path | PARTIAL |
+| FP05 | Sparse coordinates/input facts | signature uniqueness | grid query/batch/paste | Seed grid read; tests | PASS |
+| FP06 | Version/scenario core | plan/scenario/access tables | clone/share/adopt-preview | Real scenario path; immutability pending | PARTIAL |
+| FP07 | Grid query/batch | paged coordinate indexes | query/write/paste and legacy spread | API composition/runtime grid | PASS |
+| FP08 | Actual snapshot/Ledger | snapshot/source watermark | keyed refresh/run status | Idempotent refresh path | PARTIAL |
+| FP09 | Original budget baseline | baseline state/immutability | create/current/revision approval | Seed/SQL checks | PARTIAL |
+| FP10 | Revisions/transfers | revision/transfer | bucket resolution/approval | Targeted E2E pending | PARTIAL |
+| FP11 | Department submissions | submission units/coordinates | create/submit/return/approve/lock | Real HTTP transition | PARTIAL |
+| FP12 | Assumptions/drivers | assumption/value | create/value/list | Seed/API | PASS |
+| FP13 | Formula DAG | formula/dependency | whitelist and cycle rejection | 4 Planning tests + HTTP | PARTIAL |
+| FP14 | Calculation/trace | run/trace/calculated facts | deterministic revenue calculation | Existing path; full DAG open | PARTIAL |
+| FP15 | Spreading | spread rule/input facts | exact residual allocation on `spread-exact` | unit test + HTTP conservation | PARTIAL |
+| FP16 | Allocations | rule/result with lineage | weighted allocation | HTTP conservation | PARTIAL |
+| FP17 | Revenue | revenue driver | volume × price | Seed/recalculate path | PARTIAL |
+| FP18 | OPEX | grid inputs only | no dedicated driver/category workflow | No complete evidence | OPEN |
+| FP19 | Workforce | workforce lines | add/list/import/cost-impact | Seed + HTTP; owner integration open | PARTIAL |
+| FP20 | CapEx | CapEx lifecycle table | add/list/prioritize/approve | Seed + HTTP; depreciation open | PARTIAL |
+| FP21 | Planning FX | versioned rates | rate input | API path; conversion trace open | PARTIAL |
+| FP22 | Integrated P&L | statement projection table | deterministic P&L query | HTTP P&L; mapping incomplete | PARTIAL |
+| FP23 | Working capital | assumptions | assumption write | Seed/API; derived model open | PARTIAL |
+| FP24 | Projected balance sheet | no complete model | not implemented | No balance proof | OPEN |
+| FP25 | Projected cash flow | proxy only | no reconciled integrated cash model | Proxy not acceptance evidence | OPEN |
+| FP26 | Rolling forecast | cutoff field only | no horizon roll job | No evidence | OPEN |
+| FP27 | What-if | scenario state/access | clone/share/adopt | HTTP scenario path | PARTIAL |
+| FP28 | Variance/drivers | variance/comments | query and driver endpoint | API path; decomposition open | PARTIAL |
+| FP29 | Forecast accuracy | accuracy projection | aggregate error/bias | Implementation; fixture open | PARTIAL |
+| FP30 | Budget policy | policy/buckets | policy/bucket commands | Isolated reserve acceptance | PASS |
+| FP31 | Availability | bucket/reservation ledger | availability | Reserve/release runtime | PASS |
+| FP32 | Atomic check/reserve | row locks/source uniqueness | check/reserve/adjust/release | Idempotency/concurrency evidence | PASS |
+| FP33 | Purchasing commitments | no Planning owner adapter | source fields only | No owner event proof | OPEN |
+| FP34 | Expenses/commitments | no owner adapter | not implemented | No owner proof | OPEN |
+| FP35 | Commitment→Actual | consumption table only | no source lifecycle coordinator | No reconciliation proof | OPEN |
+| FP36 | Overrides/thresholds | override table only | no request/approve API | No SoD proof | OPEN |
+| FP37 | Department planner | submission persistence | no frontend in this mission | Backend slice only | PARTIAL |
+| FP38 | CFO/owner views | variance/statements partial | no complete rollup/action contract | No complete evidence | OPEN |
+| FP39 | Excel/CSV | no staging/validation | no safe file endpoints | Mandatory gate absent | OPEN |
+| FP40 | Multi-entity rollup | entity keys exist | no rollup projection | No proof | OPEN |
+| FP41 | Security/SoD | RLS/permissions/lifecycle | route authorization | security/architecture suites | PARTIAL |
+| FP42 | Audit/history | audit on implemented writes | lifecycle audit | SQL/API inspection | PARTIAL |
+| FP43 | Migration/opening budget | bootstrap/forward-fix | seed replay | Disposable migration/seed PASS | PASS |
+| FP44 | Performance/scale | grid/availability indexes | bounded queries | No formal scale certification | PARTIAL |
+| FP45 | Observability | platform logging/outbox | no planning metrics | No dedicated proof | OPEN |
+| FP46 | Runbooks/recovery | migration/seed safe | no planning recovery runbook | Documentation gap | OPEN |
+| FP47 | Small company | basic seed budget/forecast | core cycle/grid/control | Foundation runtime | PARTIAL |
+| FP48 | Department manager | submission backend slice | no scoped UI/delegated approval | No complete proof | OPEN |
+| FP49 | FP&A | drivers/variance partial | no integrated forecast workflow | No complete proof | OPEN |
+| FP50 | CFO | P&L partial | BS/CF/rollup absent | No complete proof | OPEN |
+| FP51 | Purchasing control | reservation source identity | no Purchasing adapter | No proof | OPEN |
+| FP52 | Cross-module reconciliation | source metadata fields | no owner adapters/jobs | No proof | OPEN |
+| FP53 | E2E/release | migration/RLS verified | backend foundation only | Release/architecture/OpenAPI pass; module gate not | PARTIAL |
 
-## Mandatory gaps remaining
+## Build Now MUST audit
 
-- Submission units, slice submit/return, scoped department approval, and approval delegation are not implemented.
-- Dimension members, metric mappings, explicit formula persistence/DAG execution, spreading, allocations, and allocation audit are not implemented as complete workflows.
-- Full driver-based OPEX, workforce cost impact, CapEx prioritization/approval, integrated income statement/balance sheet/cash-flow projections, FX translation, rolling forecast accuracy, and multi-entity roll-up are not complete.
-- Cross-module source contracts/events for Ledger, Projects, Banking, HR, Payroll, Purchasing, Expenses, Sales, Inventory, Manufacturing, Fixed Assets and Subledger require owner-approved adapters and real event/transaction acceptance evidence.
-- Excel import/export safety, operational job controls, and the full FP00–FP53 acceptance matrix require additional implementation and verification.
+The mandatory Build Now list in section 789 maps to FP02–FP53 above. The `OPEN` rows are release blockers for the full Module 28 backend mission: OPEX, integrated BS/CF, rolling forecast, Purchasing/Expenses owner integrations, commitment reconciliation, overrides, Excel interop, rollup, observability/runbooks, and their acceptance journeys. This delivery therefore remains `NOT COMPLETE`.
 
-Therefore the current delivery status is `NOT COMPLETE` for the full Module 28 backend mission, while the implemented foundation is suitable for continued backend work.
+## Verified commands
+
+- `dotnet build backend/Backend.sln --configuration Release --no-restore` — PASS after the latest source change.
+- `dotnet test backend/Tests/Modules/Planning/PlanningTests.csproj --configuration Release --no-restore` — PASS, 4/4.
+- `dotnet test backend/Tests/Architecture/ArchitectureTests.csproj --configuration Release --no-restore` — PASS, 23/23.
+- `node scripts/architecture/validate-openapi.mjs` — PASS for the existing eight API contracts; Planning has no static OpenAPI document yet.
+- Disposable PostgreSQL migration and Development Seed replay — PASS on `planning_accept_ea22f9f5`; database was dropped after verification.
+- Real cookie/CSRF/PostgreSQL journey — PASS for dimension/member, formula, submission transition, exact spreading, allocation conservation and P&L query on the disposable database.
