@@ -1,27 +1,37 @@
 # P0-B07 — Independent Final Review and Exit Decision
 
-## Critical review
+## Acceptance gate review
 
-| Question | Finding |
-|---|---|
-| Could the benchmark target shared data? | The hardened path rejects unlabelled/shared containers and requires a P0-owned name, image and port. The attempted runs used a separate ephemeral container. |
-| Could it kill a pre-existing process? | API ports are checked before launch and cleanup tracks only PIDs started by the run. The wrapper removes only the exact container it created. |
-| Could it report success when requests fail? | HTTP/transport failures are classified; however the real run never reached API traffic, so end-to-end proof remains open. |
-| Could P99 be misleading? | P99 is `INSUFFICIENT_SAMPLES` below 100 samples; empty metrics are null/statused. |
-| Could warm-up mix with measurement? | Warm-up requests are executed and discarded before measured traffic, with counts recorded. |
-| Could debug logging distort results? | Detailed PostgreSQL logging is opt-in and diagnostic-only; load/stress do not enable it. |
-| Could missing PostgreSQL metrics become zero? | Missing snapshots are null; container/API samplers are separate. |
-| Could the API use another database? | The harness proves the generated database identity and gives API connections an application name, but API startup was not reached in the failed runs. |
-| Could cleanup destroy unrelated resources? | The generated database name and container ownership are validated; cleanup targets only the generated database and launched processes. |
-| Is the result reproducible? | The command, container labels/limits, SHA and failure run IDs are recorded; successful measurement is not reproducible until migration is repaired. |
-| Are runtime security checks executed? | No. They are correctly left open rather than inferred from static RLS. |
-| Are performance claims overstated? | No measured performance claim is made. |
+| Gate | Result | Evidence |
+|---|---|---|
+| Latest DbMigrator corrections present | PASS | OpenIddict priority and Quality maintenance-table RLS handling in `backend/DbMigrator/Program.cs`; Quality forward-fix unchanged |
+| Fresh canonical migration | PASS | Diagnostic and both load runs used no `-PreMigrationSql` and completed on generated `template0` databases |
+| Development Seed | PASS | Dataset proof in each benchmark report; `SeedDataTests`: 5/5 |
+| API startup and database targeting | PASS | Generated database identity matched the migrator target; API health and seeded sessions succeeded |
+| Functional smoke | PASS | 21/21 each run with valid JSON responses |
+| Write smoke | PASS | 8/8 each run; sustained load writes had zero measured errors |
+| Runtime tenant/security smoke | PASS | 401 unauthenticated and 403 cross-tenant responses on diagnostic and both load runs |
+| Existing security/tenant tests | PASS | `SecurityTests`: 7/7; `SeedDataTests`: 5/5 |
+| Diagnostic benchmark | PASS | 5 measured requests per result row; p95/p99 correctly labelled insufficient |
+| Controlled load benchmark | PASS | 100 measured requests per result row at concurrency 1, 4 and 8 |
+| Repeatability | PASS | Second identical load run completed with zero request errors and directionally consistent latency/RPS ranges |
+| Resource/query-plan evidence | PASS with limits | PostgreSQL, Docker, API samples and four query plans captured; no production capacity claim |
+
+## Tooling corrections made during this resumption
+
+Two benchmark-only defects were found and corrected without changing production logic: a nonexistent custom artifact directory raised a strict-mode `.Path` error, and PowerShell parsed `$AtlasEntity?page` as an unset variable in the unauthenticated/cross-tenant security URL. Parser validation and the harness helper tests passed after the corrections; the successful diagnostic and load artifacts were generated afterward.
+
+One standalone manual migrator invocation observed a duplicate `applied_script` insert while the ledger mapping forward-fix was being applied. A retry completed successfully, and the canonical fresh-database `SeedDataTests` migration/seed/idempotency gate passed 5/5. This observation is retained as an operational follow-up, not hidden; it did not reproduce in the canonical benchmark or seed regression run.
+
+## Safety and evidence boundaries
+
+- Only the P0-owned disposable PostgreSQL container and generated databases were used. Shared development/customer databases were not targeted.
+- No migration, Quality implementation, RLS policy or authorization source was changed in this resumption.
+- The measured results are Development Seed/local-host evidence, not production capacity certification.
+- Stress mode, Worker queue behavior, Redis/RabbitMQ contention, browser workload and production-scale data were not required for this P0 evidence close.
 
 ## Exit decision
 
-`P0_BLOCKED`
+`P0_EVIDENCE_COMPLETE`
 
-Docker was diagnosed and safely recovered. Harness hardening and helper verification passed. The critical functional prerequisite remains blocked by canonical fresh-database migration defects: OpenIddict forward-fix ordering and Quality foreign-key installation under forced RLS. Repairing production migration behavior or authorizing a complete, separately validated disposable bootstrap strategy is required before operational performance and runtime-security evidence can be accepted.
-
-P1/P2 work must not start from these incomplete measurements.
-
+The previously blocked P0-B gates are now evidenced on the current `origin/dev` commit: canonical fresh migration/seed, API targeting, functional behavior, runtime tenant isolation, existing security tests, controlled performance samples, resource observations and repeatability. P1 and Analysis/Recommendation implementation remain outside this mission.

@@ -93,5 +93,5 @@
 Product owner decides business value and workflow changes, with design and engineering challenge. Finance owners decide official calculation semantics, security defines access, performance engineering certifies SLO baselines, architecture owner approves ADR/module graph; no agent can silently override these responsibilities. Unresolved **Critical** risks block implementation of affected slice, not discovery or documentation.
 # P0 evidence supplement
 
-The current risk register, P1 decision brief and P0-B blocker review are maintained in [`P0-06_ARCHITECTURE_RISK_REGISTER.md`](../evidence/p0/P0-06_ARCHITECTURE_RISK_REGISTER.md), [`P0-08_P1_DECISION_BRIEF.md`](../evidence/p0/P0-08_P1_DECISION_BRIEF.md) and [`P0-B07_INDEPENDENT_FINAL_REVIEW.md`](../evidence/p0/P0-B07_INDEPENDENT_FINAL_REVIEW.md).
+The current risk register, P1 decision brief and P0-B review are maintained in [`P0-06_ARCHITECTURE_RISK_REGISTER.md`](../evidence/p0/P0-06_ARCHITECTURE_RISK_REGISTER.md), [`P0-08_P1_DECISION_BRIEF.md`](../evidence/p0/P0-08_P1_DECISION_BRIEF.md) and [`P0-B07_INDEPENDENT_FINAL_REVIEW.md`](../evidence/p0/P0-B07_INDEPENDENT_FINAL_REVIEW.md). P0-B now has a repeatable local baseline; its Development Seed and single-host limits remain explicit, and no production capacity conclusion is inferred.
 

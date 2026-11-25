@@ -1,14 +1,33 @@
 # P0-B05 — Runtime Security Evidence
 
-**Result:** `NOT EXECUTED`
+**Result:** `PASS — LOCAL RUNTIME SECURITY GATES`
 
-The hardened harness includes a disposable runtime security smoke stage for:
+## Harness security smoke
 
-- unauthenticated API access;
-- Delta tenant access to an Atlas legal entity;
-- Atlas tenant access to a Delta legal entity.
+The diagnostic and both controlled load runs authenticated separate Atlas and Delta sessions against the generated database and executed the same three checks:
 
-It was not reached because the disposable migrator/seed failed before API startup. No runtime tenant, legal-entity, branch, missing-context, FORCE RLS, runtime-role, or worker-context check is marked PASS.
+| Check | Diagnostic | Load | Repeat load |
+|---|---:|---:|---:|
+| Unauthenticated request denied | `401 PASS` | `401 PASS` | `401 PASS` |
+| Delta session against Atlas legal entity denied | `403 PASS` | `403 PASS` | `403 PASS` |
+| Atlas session against Delta legal entity denied | `403 PASS` | `403 PASS` | `403 PASS` |
 
-Static evidence remains separate: authorization and RLS source review passed previously, but static policy inspection is not runtime isolation proof. The next safe run must execute the existing security/integration tests against the same isolated database after migration succeeds, then record both allowed and denied cases.
+Each run also passed `21/21` authenticated functional JSON checks and `8/8` write-smoke operations on the seeded Atlas/Delta tenants. The API logs contain the expected unauthenticated `missing_token` authorization messages and no unhandled exception, 5xx or database-exception markers.
 
+## Existing database security tests
+
+The existing security suite ran against the isolated migrated database `todir_p0b_security_20261125` in the disposable PostgreSQL container:
+
+```text
+dotnet test backend/Tests/Security/SecurityTests.csproj --no-restore --configuration Release
+Passed: 7, Failed: 0, Skipped: 0
+```
+
+The canonical seed regression suite also ran against a newly created disposable database and exercised forced RLS, runtime-role boundaries, tenant isolation, and idempotent seed reruns:
+
+```text
+dotnet test backend/Tests/SeedData/SeedDataTests.csproj --no-restore --configuration Release
+Passed: 5, Failed: 0, Skipped: 0
+```
+
+These results are runtime evidence for the local disposable environment. They do not certify customer configuration, production credentials, Worker isolation, or a production deployment topology.

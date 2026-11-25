@@ -1,8 +1,8 @@
 # P0-B01 — Docker and Environment Root-Cause Analysis
 
-**Result:** Docker access recovered outside the sandbox; benchmark remains blocked by canonical disposable migration failures.  
+**Result:** Docker access recovered outside the sandbox; disposable benchmark isolation verified.  
 **Starting P0 SHA:** `7fd24009cf0d464ecfad68d9dddb8f5197841ebd`  
-**Latest repository SHA during runs:** `c06a86183b2b651ff23f63a11ec50847df6650ad`
+**Latest repository SHA during runs:** `c85f59121dc06e8c4f2d5a25590a534c82e836af`
 
 ## Original failure
 
@@ -41,9 +41,7 @@ The benchmark was pointed at a newly created container named `todir-p0b-postgres
 
 The harness additionally validates the label, name prefix, running state, PostgreSQL image, and host-port mapping before creating a database. The shared `todir-postgres-1` container was not used for benchmark load.
 
-## Remaining blocker
+## Resolution verified
 
-The canonical fresh DbMigrator path does not complete on the isolated container. First it fails because `platform-kernel-forward-fix-oauth-write-scope.sql` is ordered before `platform-kernel-forward-fix-openiddict.sql`; after that is exposed, the Quality migration fails while adding a foreign key under `FORCE ROW LEVEL SECURITY` on `business_quality.quality_disposition`.
-
-Those are repository migration defects. Production migration/order changes are outside this P0-B authorization, so no workaround was promoted into production code. The exact failure is preserved in the local failure artifact for run `20261124222756_38152_73000bc9` and summarized in P0-B03.
+The current repository contains the separate owner corrections for both previously observed migration defects. The canonical fresh path completed in diagnostic and both load runs without `-PreMigrationSql`; the Quality maintenance migration restored `FORCE ROW LEVEL SECURITY` after its cross-tenant foreign-key validation. No Docker ACL, migration, Quality implementation or security-policy change was made by this P0-B resumption.
 

@@ -66,5 +66,5 @@ Dataset volumes **must be chosen after P0** to reflect target Egyptian customer 
 One affected module can be delivered as an implementation slice **only after** its full backend/database/API/frontend integration and associated Acceptance tests are complete. Horizontal skeletons (schema without API, API without secure frontend, UI without real facts) are **not** product complete. No destructive DB migration or production cutover without explicit governance.
 # P0 evidence supplement
 
-The P0 verification ledger is [`P0-09_EVIDENCE_VERIFICATION_MANIFEST.md`](../evidence/p0/P0-09_EVIDENCE_VERIFICATION_MANIFEST.md). Runtime rows remain explicitly `NOT MEASURED` where the disposable stack was unavailable.
+The P0 verification ledger is [`P0-09_EVIDENCE_VERIFICATION_MANIFEST.md`](../evidence/p0/P0-09_EVIDENCE_VERIFICATION_MANIFEST.md). Historical rows retain their original `NOT MEASURED` wording where the disposable stack was unavailable; the current P0-B runtime and performance evidence is recorded in the dated `P0-B03`, `P0-B04`, `P0-B05` and `P0-B07` artifacts.
 

@@ -2,8 +2,8 @@
 
 **Repository:** `D:\Web\full-projects\todir-erp`  
 **Branch:** `dev`  
-**SHA at latest run:** `c06a86183b2b651ff23f63a11ec50847df6650ad`  
-**Verification date:** 2026-11-24
+**SHA at latest run:** `c85f59121dc06e8c4f2d5a25590a534c82e836af`  
+**Verification date:** 2026-11-25
 
 ## Completed checks
 
@@ -18,16 +18,16 @@
 | Disposable benchmark harness review | PASS | `backend/Tests/Performance/platform-performance-benchmark.ps1` |
 | Docker root-cause diagnosis | PASS | `P0-B01_DOCKER_ENVIRONMENT_ROOT_CAUSE.md` |
 | Harness helper/mode verification | PASS | `platform-performance-harness.tests.ps1`; parser check |
-| Disposable benchmark execution | BLOCKED | Isolated container reached canonical migrator; migration/seed failed |
-| Operational performance baseline | NOT MEASURED | API did not start against a seeded disposable database |
-| Runtime security/isolation tests | NOT EXECUTED | Requires completed migration/seed and API startup |
+| Disposable benchmark execution | PASS | Diagnostic and two controlled load runs completed without compatibility workaround |
+| Operational performance baseline | PASS WITH LIMITS | p50/p95/p99, RPS, errors, DB/resource samples and four query plans recorded |
+| Runtime security/isolation tests | PASS | Harness 401/403 matrix, SecurityTests 7/7 and SeedDataTests 5/5 |
 | Browser/UX runtime proof | NOT APPLICABLE TO P0 | No Analysis UI was implemented |
 
 ## Integrity rule
 
-This manifest records evidence after the last source change in the P0 mission. The evidence documents themselves are documentation-only; no operational source, schema, migration, seed, or frontend runtime code was changed.
+This manifest records evidence after the last source change in the P0 mission. The only source change in this resumption was benchmark tooling correction; no migration, Quality implementation, RLS policy, authorization, seed or frontend runtime code was changed.
 
 ## Exit
 
-`P0_BLOCKED` — Docker and harness work progressed, but canonical migration/seed defects prevent the operational baseline and runtime isolation gates.
+`P0_EVIDENCE_COMPLETE` — canonical migration/seed, API targeting, functional behavior, runtime security and controlled local performance evidence passed. Production capacity certification remains outside this evidence set.
 

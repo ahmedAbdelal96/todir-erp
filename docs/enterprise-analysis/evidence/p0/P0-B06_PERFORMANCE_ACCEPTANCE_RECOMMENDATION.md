@@ -1,6 +1,6 @@
 # P0-B06 — Performance Acceptance Recommendation
 
-**Status:** proposed guardrail set only; not approved and not measured.
+**Status:** proposed guardrail set; P0 local baseline measured, production guardrails not approved.
 
 Future Analysis acceptance should require evidence for:
 
@@ -14,5 +14,5 @@ Future Analysis acceptance should require evidence for:
 - cancellation, abort and cleanup behavior;
 - repeatability across independent warm and cold runs.
 
-The provisional `5% p95` statement is not approved by this P0-B run. No numeric Analysis budget should be locked until the canonical disposable migration/seed gate passes and the operational baseline is measured. A benchmark run before an Analysis Worker exists cannot prove mixed Analysis/ERP isolation.
+The provisional `5% p95` statement is not approved by this P0-B run. The canonical disposable migration/seed gate and local operational baseline now pass, but the Development Seed and single-host measurements are insufficient to lock a production or Analysis budget. A benchmark run before an Analysis Worker exists cannot prove mixed Analysis/ERP isolation.
 

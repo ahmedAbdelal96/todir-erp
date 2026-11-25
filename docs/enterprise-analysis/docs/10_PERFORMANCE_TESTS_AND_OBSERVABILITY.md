@@ -1,6 +1,6 @@
 # 10 — Performance Engineering, Operational Reliability & Test Program
 
-**First principle:** do not accept an architecture because it is asynchronous or has separate code. **Measure** speed, CPU/RAM, DB pressure, broker/backlog and error rates under representative mixed workloads. No benchmarks have been executed for this design pack; every number below is a **target/proposal only**, never actual performance.
+**First principle:** do not accept an architecture because it is asynchronous or has separate code. **Measure** speed, CPU/RAM, DB pressure, broker/backlog and error rates under representative mixed workloads. P0-B now contains a local Development Seed diagnostic baseline and two repeated controlled API load runs; every number outside those artifacts remains a target/proposal only, never production capacity.
 
 ## 1. Baseline before any Analysis code (P0 mandatory)
 
@@ -73,5 +73,5 @@ Each release report requires: exact commit SHA, env config (sanitized), DB datas
 Do not provision DWH, cache cluster, Kafka, vector DB, GPU, Kubernetes node group, Python model-serving API or separate RabbitMQ vhost by default. They are allowed **only if one measured gate cannot be satisfied** within current architecture, and ADR records evidence, price, failure and rollback.
 # P0 evidence supplement
 
-The hardened harness was executed against an isolated PostgreSQL container, but canonical migration/seed failed before API startup. See [`P0-B02_BENCHMARK_HARNESS_AUDIT.md`](../evidence/p0/P0-B02_BENCHMARK_HARNESS_AUDIT.md) and [`P0-B03_OPERATIONAL_PERFORMANCE_BASELINE.md`](../evidence/p0/P0-B03_OPERATIONAL_PERFORMANCE_BASELINE.md); no latency, throughput, query-plan, queue-lag, or regression number is approved or claimed.
+The hardened harness was executed against an isolated PostgreSQL container with canonical migration/seed and no compatibility workaround. See [`P0-B02_BENCHMARK_HARNESS_AUDIT.md`](../evidence/p0/P0-B02_BENCHMARK_HARNESS_AUDIT.md), [`P0-B03_OPERATIONAL_PERFORMANCE_BASELINE.md`](../evidence/p0/P0-B03_OPERATIONAL_PERFORMANCE_BASELINE.md) and [`P0-B04_POSTGRES_RESOURCE_ASSESSMENT.md`](../evidence/p0/P0-B04_POSTGRES_RESOURCE_ASSESSMENT.md). The recorded numbers are local Development Seed evidence; they do not approve a production SLO or capacity claim.
 
