@@ -6,11 +6,12 @@ using Core.Messaging;
 using Core.Transactions;
 using Npgsql;
 using NpgsqlTypes;
+using Shared.Contracts.Platform;
 using Shared.Primitives.Identifiers;
 
 namespace Modules.Planning;
 
-public sealed class PlanningRepository(ITransactionCoordinator coordinator)
+public sealed class PlanningRepository(ITransactionCoordinator coordinator, IPlatformApprovalCapability? approvals = null)
 {
     public Task<PlanningCycleView> CreateCycleAsync(TenantId tenant, Guid actor, CreatePlanningCycleRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
     {
@@ -117,7 +118,125 @@ public sealed class PlanningRepository(ITransactionCoordinator coordinator)
     public async Task ApproveRevisionAsync(TenantId tenant, Guid actor, Guid baselineId, RevisionRequest request, CancellationToken ct) => await coordinator.ExecuteAsync<object?>(tenant, async (c, token) => { await Exec(c, "insert into business_planning.budget_revision(tenant_id,id,baseline_id,delta_amount,reason,state,approved_by,approved_at,created_by) values($1,$2,$3,$4,$5,'Approved',$6,now(),$6)", token, tenant.Value, Guid.CreateVersion7(), baselineId, request.DeltaAmount, request.Reason, actor); var messageId = Guid.CreateVersion7(); await Exec(c, "insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,status) values($1,'BudgetRevisionApprovedV1',$2::jsonb,$3,now(),$1,$1,'planning','Pending')", token, messageId, Json(new { baselineId, request.DeltaAmount }), tenant.Value); return null; }, ct);
 
     public Task<Guid> CreateBucketAsync(TenantId tenant, BudgetBucketRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) => { var id = Guid.CreateVersion7(); await Exec(c, "insert into business_planning.budget_control_bucket(tenant_id,id,policy_id,plan_version_id,legal_entity_id,period_start,metric_code,dimension_key,original_budget,currency_code) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)", token, tenant.Value, id, request.PolicyId, request.PlanVersionId, request.LegalEntityId, request.PeriodStart, request.MetricCode, Json(request.DimensionKey), request.OriginalBudget, request.CurrencyCode.Trim().ToUpperInvariant()); return id; }, ct);
-    public Task<Guid> CreatePolicyAsync(TenantId tenant, Guid actor, Guid legalEntityId, string name, string mode, string basis, decimal threshold, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) => { var id = Guid.CreateVersion7(); await Exec(c, "insert into business_planning.budget_control_policy(tenant_id,id,legal_entity_id,name,mode,basis,threshold_percent) values($1,$2,$3,$4,$5,$6,$7)", token, tenant.Value, id, legalEntityId, name.Trim(), mode, basis, threshold); return id; }, ct);
+    public Task<Guid> CreatePolicyAsync(TenantId tenant, Guid actor, Guid legalEntityId, string name, string mode, string basis, decimal threshold, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
+    {
+        var normalizedMode = mode.Trim(); var normalizedBasis = basis.Trim();
+        if (legalEntityId == Guid.Empty || string.IsNullOrWhiteSpace(name) || normalizedMode is not ("None" or "Warn" or "RequireApproval" or "Block") || normalizedBasis is not ("Precommitment" or "Commitment" or "CommitmentAndActual" or "Actual" or "ActualAndCommitment" or "ActualPrecommitmentCommitment" or "ActualOpenCommitmentProposed") || threshold < 0m || threshold > 100m)
+            throw new PlanningException("planning.budget_policy_invalid");
+        var id = Guid.CreateVersion7(); await Exec(c, "insert into business_planning.budget_control_policy(tenant_id,id,legal_entity_id,name,mode,basis,threshold_percent) values($1,$2,$3,$4,$5,$6,$7)", token, tenant.Value, id, legalEntityId, name.Trim(), normalizedMode, normalizedBasis, threshold); return id;
+    }, ct);
+
+    public async Task<BudgetOverrideView> RequestBudgetOverrideAsync(TenantId tenant, Guid actor, Guid membershipId, BudgetOverrideRequest request, CancellationToken ct)
+    {
+        if (approvals is null) throw new PlanningException("planning.approvals_unavailable");
+        if (request.BucketId == Guid.Empty || request.Amount <= 0m || string.IsNullOrWhiteSpace(request.SourceModule) || string.IsNullOrWhiteSpace(request.SourceDocumentId) || string.IsNullOrWhiteSpace(request.SourceLineId) || string.IsNullOrWhiteSpace(request.SourceVersion) || string.IsNullOrWhiteSpace(request.CurrencyCode) || request.CurrencyCode.Trim().Length != 3 || string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length > 1000)
+            throw new PlanningException("planning.budget_override_invalid");
+
+        var seed = await coordinator.ExecuteAsync(tenant, async (c, token) =>
+        {
+            await using var bucket = Cmd(c, "select b.legal_entity_id,b.plan_version_id,b.currency_code,p.mode,p.active,v.state from business_planning.budget_control_bucket b join business_planning.budget_control_policy p on p.tenant_id=b.tenant_id and p.id=b.policy_id join business_planning.plan_version v on v.tenant_id=b.tenant_id and v.id=b.plan_version_id where b.tenant_id=$1 and b.id=$2 for update", tenant.Value, request.BucketId);
+            await using var reader = await bucket.ExecuteReaderAsync(token);
+            if (!await reader.ReadAsync(token)) throw new PlanningException("planning.bucket_not_found");
+            var legalEntityId = reader.GetGuid(0); var planVersionId = reader.GetGuid(1); var bucketCurrency = reader.GetString(2).Trim(); var mode = reader.GetString(3); var active = reader.GetBoolean(4); var versionState = reader.GetString(5);
+            await reader.CloseAsync();
+            if (!active || !string.Equals(versionState, "Published", StringComparison.OrdinalIgnoreCase) || mode is "None" or "Warn") throw new PlanningException("planning.budget_override_not_applicable");
+            if (!string.Equals(bucketCurrency, request.CurrencyCode.Trim(), StringComparison.OrdinalIgnoreCase)) throw new PlanningException("planning.budget_currency_mismatch");
+            var id = Guid.CreateVersion7();
+            await Exec(c, "insert into business_planning.budget_override(tenant_id,id,bucket_id,source_module,source_document_id,source_line_id,source_version,amount,currency_code,reason,state,requested_by,valid_until) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Requested',$11,$12)", token, tenant.Value, id, request.BucketId, request.SourceModule.Trim(), request.SourceDocumentId.Trim(), request.SourceLineId.Trim(), request.SourceVersion.Trim(), request.Amount, request.CurrencyCode.Trim().ToUpperInvariant(), request.Reason.Trim(), actor, Db(request.ValidUntil));
+            await Audit(c, tenant.Value, actor, "budget_override_requested", id, token);
+            return new OverrideSeed(id, legalEntityId, planVersionId);
+        }, ct);
+
+        PlatformApprovalRequestResult approval;
+        try
+        {
+            approval = await approvals.RequestAsync(tenant, actor, membershipId, seed.LegalEntityId, "planning", "budget_override", seed.Id, 1, seed.PlanVersionId, request.Reason.Trim(), "planning.budget_control.override", ct);
+        }
+        catch
+        {
+            throw new PlanningException("planning.budget_override_approval_request_failed");
+        }
+
+        return await coordinator.ExecuteAsync(tenant, async (c, token) =>
+        {
+            await Exec(c, "update business_planning.budget_override set state='Pending',approval_request_id=$3 where tenant_id=$1 and id=$2 and state='Requested'", token, tenant.Value, seed.Id, approval.Id);
+            return await ReadBudgetOverride(c, tenant.Value, seed.Id, token) ?? throw new PlanningException("planning.budget_override_not_found");
+        }, ct);
+    }
+
+    public async Task<BudgetOverrideView> DecideBudgetOverrideAsync(TenantId tenant, Guid actor, Guid membershipId, Guid id, string decision, string? reason, CancellationToken ct)
+    {
+        if (approvals is null) throw new PlanningException("planning.approvals_unavailable");
+        if (decision is not ("Approved" or "Rejected")) throw new PlanningException("planning.budget_override_decision_invalid");
+        var approvalId = await coordinator.ExecuteAsync(tenant, (c, token) => Scalar<Guid?>(c, "select approval_request_id from business_planning.budget_override where tenant_id=$1 and id=$2", token, tenant.Value, id), ct) ?? throw new PlanningException("planning.budget_override_not_found");
+        PlatformApprovalRequestResult approval;
+        var existingApproval = await approvals.GetAsync(tenant, approvalId, ct);
+        if (existingApproval is { State: "Approved" or "Rejected" })
+        {
+            if (!string.Equals(existingApproval.State, decision, StringComparison.Ordinal)) throw new PlanningException("planning.budget_override_approval_stale");
+            approval = existingApproval;
+        }
+        else
+        {
+            try { approval = await approvals.DecideAsync(tenant, actor, membershipId, approvalId, decision, reason, ct); }
+            catch { throw new PlanningException("planning.budget_override_approval_failed"); }
+        }
+        if (approval.OwnerModule != "planning" || approval.OwnerEntityType != "budget_override" || approval.OwnerEntityId != id || approval.State != decision) throw new PlanningException("planning.budget_override_scope_invalid");
+        return await coordinator.ExecuteAsync(tenant, async (c, token) =>
+        {
+            await Exec(c, "update business_planning.budget_override set state=$3,approved_by=$4,approved_at=now() where tenant_id=$1 and id=$2 and approval_request_id=$5 and state='Pending'", token, tenant.Value, id, decision, actor, approvalId);
+            return await ReadBudgetOverride(c, tenant.Value, id, token) ?? throw new PlanningException("planning.budget_override_not_found");
+        }, ct);
+    }
+
+    public Task<BudgetOverrideView?> GetBudgetOverrideAsync(TenantId tenant, Guid id, CancellationToken ct) => coordinator.ExecuteAsync(tenant, (c, token) => ReadBudgetOverride(c, tenant.Value, id, token), ct);
+
+    public async Task<BudgetControlReconciliationView> ReconcileBudgetControlAsync(TenantId tenant, Guid actor, BudgetControlReconciliationRequest request, CancellationToken ct)
+    {
+        var runId = Guid.CreateVersion7();
+        var startedAt = DateTimeOffset.UtcNow;
+        try
+        {
+            return await coordinator.ExecuteAsync(tenant, async (c, token) =>
+            {
+                await Exec(c, "insert into business_planning.budget_control_reconciliation_run(tenant_id,id,bucket_id,state,rebuild_applied,requested_by) values($1,$2,$3,'Running',$4,$5)", token, tenant.Value, runId, Db(request.BucketId), request.Rebuild, actor);
+                var bucketIds = new List<Guid>();
+                await using (var list = Cmd(c, "select id from business_planning.budget_control_bucket where tenant_id=$1 and ($2::uuid is null or id=$2) order by id for update", tenant.Value, Db(request.BucketId)))
+                await using (var reader = await list.ExecuteReaderAsync(token))
+                    while (await reader.ReadAsync(token)) bucketIds.Add(reader.GetGuid(0));
+                if (request.BucketId.HasValue && bucketIds.Count == 0) throw new PlanningException("planning.bucket_not_found");
+                var discrepancy = 0m;
+                foreach (var bucketId in bucketIds)
+                {
+                    var actual = await Scalar<decimal>(c, "select coalesce(sum(amount),0) from business_planning.budget_consumption_fact where tenant_id=$1 and bucket_id=$2 and state='Actual'", token, tenant.Value, bucketId);
+                    const decimal commitment = 0m;
+                    const decimal precommitment = 0m;
+                    await using var current = Cmd(c, "select actual_total,commitment_total,precommitment_total from business_planning.budget_control_bucket where tenant_id=$1 and id=$2", tenant.Value, bucketId);
+                    await using var currentReader = await current.ExecuteReaderAsync(token);
+                    if (!await currentReader.ReadAsync(token)) throw new PlanningException("planning.bucket_not_found");
+                    discrepancy += Math.Abs(currentReader.GetDecimal(0) - actual) + Math.Abs(currentReader.GetDecimal(1) - commitment) + Math.Abs(currentReader.GetDecimal(2) - precommitment);
+                    await currentReader.CloseAsync();
+                    if (request.Rebuild)
+                        await Exec(c, "update business_planning.budget_control_bucket set actual_total=$3,commitment_total=$4,precommitment_total=$5,row_version=row_version+1 where tenant_id=$1 and id=$2", token, tenant.Value, bucketId, actual, commitment, precommitment);
+                }
+                await Exec(c, "update business_planning.budget_control_reconciliation_run set state='Succeeded',bucket_count=$3,discrepancy_amount=$4,completed_at=now() where tenant_id=$1 and id=$2", token, tenant.Value, runId, bucketIds.Count, discrepancy);
+                await Audit(c, tenant.Value, actor, request.Rebuild ? "budget_control_projection_rebuilt" : "budget_control_reconciled", runId, token);
+                return new BudgetControlReconciliationView(runId, request.BucketId, "Succeeded", request.Rebuild, bucketIds.Count, discrepancy, startedAt, DateTimeOffset.UtcNow, null);
+            }, ct);
+        }
+        catch (Exception exception)
+        {
+            try
+            {
+                return await coordinator.ExecuteAsync(tenant, async (c, token) =>
+                {
+                    await Exec(c, "insert into business_planning.budget_control_reconciliation_run(tenant_id,id,bucket_id,state,rebuild_applied,bucket_count,discrepancy_amount,started_at,completed_at,error_detail,requested_by) values($1,$2,$3,'Failed',$4,0,0,$5,now(),$6,$7)", token, tenant.Value, runId, Db(request.BucketId), request.Rebuild, startedAt, exception.Message[..Math.Min(exception.Message.Length, 1000)], actor);
+                    return new BudgetControlReconciliationView(runId, request.BucketId, "Failed", request.Rebuild, 0, 0m, startedAt, DateTimeOffset.UtcNow, exception.Message);
+                }, ct);
+            }
+            catch { throw; }
+        }
+    }
 
     public Task<IReadOnlyList<WorkforcePlanView>> ListWorkforceAsync(TenantId tenant, Guid planVersionId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) => { var list = new List<WorkforcePlanView>(); await using var cmd = Cmd(c, "select id,plan_version_id,legal_entity_id,department_ref,role_code,period_start,fte,average_cost,currency_code,source from business_planning.workforce_plan_line where tenant_id=$1 and plan_version_id=$2 order by period_start,id limit 5000", tenant.Value, planVersionId); await using var r = await cmd.ExecuteReaderAsync(token); while (await r.ReadAsync(token)) list.Add(new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.IsDBNull(3) ? null : r.GetGuid(3), r.IsDBNull(4) ? null : r.GetString(4), r.GetFieldValue<DateOnly>(5), r.GetDecimal(6), r.GetDecimal(7), r.GetString(8).Trim(), r.GetString(9))); return (IReadOnlyList<WorkforcePlanView>)list; }, ct);
     public Task<WorkforcePlanView> AddWorkforceAsync(TenantId tenant, Guid actor, WorkforcePlanRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) => { var id = Guid.CreateVersion7(); await Exec(c, "insert into business_planning.workforce_plan_line(tenant_id,id,plan_version_id,legal_entity_id,department_ref,role_code,period_start,fte,average_cost,currency_code,source) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", token, tenant.Value, id, request.PlanVersionId, request.LegalEntityId, Db(request.DepartmentRef), Db(request.RoleCode), request.PeriodStart, request.Fte, request.AverageCost, request.CurrencyCode.Trim().ToUpperInvariant(), request.Source ?? "Manual"); return new WorkforcePlanView(id, request.PlanVersionId, request.LegalEntityId, request.DepartmentRef, request.RoleCode, request.PeriodStart, request.Fte, request.AverageCost, request.CurrencyCode.Trim().ToUpperInvariant(), request.Source ?? "Manual"); }, ct);
@@ -276,6 +395,15 @@ public sealed class PlanningRepository(ITransactionCoordinator coordinator)
     private static async Task<CapexPlanView?> ReadCapex(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct) { await using var cmd = Cmd(c, "select id,plan_version_id,legal_entity_id,name,category,planned_amount,currency_code,purchase_period,in_service_period,priority,state from business_planning.capex_plan_item where tenant_id=$1 and id=$2", tenant, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.GetString(3), r.GetString(4), r.GetDecimal(5), r.GetString(6).Trim(), r.GetFieldValue<DateOnly>(7), r.IsDBNull(8) ? null : r.GetFieldValue<DateOnly>(8), r.GetInt32(9), r.GetString(10)) : null; }
     private static async Task<BudgetAvailabilityView> AvailabilityAsyncInTransaction(ITransactionContext c, Guid tenant, Guid bucketId, CancellationToken ct) { await using var command = Cmd(c, "select b.id,b.original_budget+b.revision_total+b.transfer_in-b.transfer_out,b.actual_total,b.commitment_total,b.precommitment_total,p.mode,p.threshold_percent from business_planning.budget_control_bucket b join business_planning.budget_control_policy p on p.tenant_id=b.tenant_id and p.id=b.policy_id where b.tenant_id=$1 and b.id=$2", tenant, bucketId); await using var reader = await command.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new PlanningException("planning.bucket_not_found"); var current = reader.GetDecimal(1); var actual = reader.GetDecimal(2); var bucketCommitment = reader.GetDecimal(3); var bucketPrecommitment = reader.GetDecimal(4); var mode = reader.GetString(5); var threshold = reader.GetDecimal(6); await reader.CloseAsync(); var sourcePrecommitment = await Scalar<decimal>(c, "select coalesce(sum(amount) filter (where reservation_kind='Precommitment'),0) from business_planning.budget_reservation where tenant_id=$1 and bucket_id=$2 and state='Reserved'", ct, tenant, bucketId); var sourceCommitment = await Scalar<decimal>(c, "select coalesce(sum(amount) filter (where reservation_kind='Commitment'),0) from business_planning.budget_reservation where tenant_id=$1 and bucket_id=$2 and state='Reserved'", ct, tenant, bucketId); var manualReserved = await Scalar<decimal>(c, "select coalesce(sum(amount) filter (where reservation_kind='Manual'),0) from business_planning.budget_reservation where tenant_id=$1 and bucket_id=$2 and state='Reserved'", ct, tenant, bucketId); var commitment = bucketCommitment + sourceCommitment; var precommitment = bucketPrecommitment + sourcePrecommitment; return new BudgetAvailabilityView(bucketId, current, actual, commitment, precommitment, manualReserved, current - actual - commitment - precommitment - manualReserved, mode, current == 0 ? "Empty" : $"{(current - actual - commitment - precommitment - manualReserved) / current * 100:0.##}%"); }
 
+    private static async Task<BudgetOverrideView?> ReadBudgetOverride(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct)
+    {
+        await using var command = Cmd(c, "select id,bucket_id,coalesce(source_module,''),coalesce(source_document_id,''),coalesce(source_line_id,''),coalesce(source_version,''),amount,used_amount,coalesce(currency_code,''),state,reason,approval_request_id,requested_by,approved_by,valid_until from business_planning.budget_override where tenant_id=$1 and id=$2", tenant, id);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct)
+            ? new BudgetOverrideView(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetDecimal(6), reader.GetDecimal(7), reader.GetString(8).Trim(), reader.GetString(9), reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetGuid(11), reader.GetGuid(12), reader.IsDBNull(13) ? null : reader.GetGuid(13), reader.IsDBNull(14) ? null : reader.GetFieldValue<DateTimeOffset>(14))
+            : null;
+    }
+
     private static async Task<SubmissionUnitView?> ReadSubmission(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct) { await using var cmd = Cmd(c, "select id,plan_version_id,legal_entity_id,department_ref,name,state,row_version from business_planning.submission_unit where tenant_id=$1 and id=$2", tenant, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new SubmissionUnitView(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.IsDBNull(3) ? null : r.GetGuid(3), r.GetString(4), r.GetString(5), r.GetInt64(6)) : null; }
 
     private static async Task<BudgetCheckView> CheckBudgetInTransaction(ITransactionContext c, TenantId tenant, Guid actor, BudgetCheckRequest request, CancellationToken token)
@@ -321,6 +449,7 @@ public sealed class PlanningRepository(ITransactionCoordinator coordinator)
     }
 
     private sealed record TransferInfo(Guid FromBucketId, Guid ToBucketId, decimal Amount, string State);
+    private sealed record OverrideSeed(Guid Id, Guid LegalEntityId, Guid PlanVersionId);
     private static async Task<TransferInfo?> ReadTransfer(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct) { await using var cmd = Cmd(c, "select from_bucket_id,to_bucket_id,amount,state from business_planning.budget_transfer where tenant_id=$1 and id=$2", tenant, id); await using var r = await cmd.ExecuteReaderAsync(ct); if (!await r.ReadAsync(ct) || r.IsDBNull(0) || r.IsDBNull(1)) return null; return new TransferInfo(r.GetGuid(0), r.GetGuid(1), r.GetDecimal(2), r.GetString(3)); }
     private static async Task EnsureDraftAssumption(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct) { var state = await Scalar<string>(c, "select v.state from business_planning.planning_assumption a join business_planning.plan_version v on v.tenant_id=a.tenant_id and v.id=a.plan_version_id where a.tenant_id=$1 and a.id=$2", ct, tenant, id); if (state is null) throw new PlanningException("planning.assumption_not_found"); if (state != "Draft") throw new PlanningException("planning.version_immutable"); }
     private static async Task<PlanningCycleView?> GetCycle(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct) { await using var cmd = Cmd(c, "select id,legal_entity_id,name,cycle_type,horizon,start_period,end_period,actual_cutoff,state,row_version from business_planning.planning_cycle where tenant_id=$1 and id=$2", tenant, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? ReadCycle(r) : null; }

@@ -70,7 +70,7 @@ public sealed class PlanningBudgetControlIntegrationTests
             budgetControl: new PlanningBudgetControlCapability());
         var categoryVersion = (Guid)(await ScalarAsync(dataSource,
             "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, AtlasEntity))!;
-        await ExecuteAsync(dataSource, "update business_planning.budget_control_policy set mode='Block',active=true where tenant_id=$1 and legal_entity_id=$2", Atlas, AtlasEntity);
+        await ExecuteAsync(dataSource, "update business_planning.budget_control_policy set mode='Block',active=true,opening_reconciled=true where tenant_id=$1 and legal_entity_id=$2", Atlas, AtlasEntity);
         try
         {
             var exception = await Assert.ThrowsAsync<PlanningBudgetControlException>(() => repository.CreateAsync(new(Atlas),
@@ -124,6 +124,84 @@ public sealed class PlanningBudgetControlIntegrationTests
         });
         Assert.Equal(baselineActual + 100m, await ScalarAsync(dataSource, "select actual_total from business_planning.budget_control_bucket where tenant_id=$1 and id=$2", Atlas, bucket));
         Assert.Equal("Consumed", (string)(await ScalarAsync(dataSource, "select state from business_planning.budget_reservation where tenant_id=$1 and source_module='test' and source_document_id=$2 and source_line_id='line' order by created_at desc limit 1", Atlas, sourceId))!);
+    }
+
+    [ExpensesPostgresFact]
+    public async Task CanonicalConsumptionReversalIsBoundedAndIdempotent()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION")!;
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var categoryVersion = (Guid)(await ScalarAsync(dataSource,
+            "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, AtlasEntity))!;
+        var bucket = await EnsureOpexBucketAsync(dataSource, categoryVersion);
+        var baselineActual = Convert.ToDecimal(await ScalarAsync(dataSource, "select actual_total from business_planning.budget_control_bucket where tenant_id=$1 and id=$2", Atlas, bucket), System.Globalization.CultureInfo.InvariantCulture);
+        var sourceId = Guid.NewGuid().ToString("D");
+        var correctionId = Guid.NewGuid().ToString("D");
+        var capability = new PlanningBudgetControlCapability();
+        await coordinator.ExecuteAsync(new(Atlas), async (context, token) =>
+        {
+            await capability.UpsertReservationAsync(context, new(Atlas), Guid.NewGuid(), new(AtlasEntity, bucket, "test", sourceId, "line", "commitment-1", 100m, "EGP", PlanningBudgetReservationKind.Commitment), token);
+            await capability.ConsumeReservationAsync(context, new(Atlas), Guid.NewGuid(), new(AtlasEntity, "test", sourceId, "line", "invoice-1", 100m, "EGP"), token);
+            var corrected = await capability.ReverseConsumptionAsync(context, new(Atlas), Guid.NewGuid(), new(AtlasEntity, "test", sourceId, "line", "invoicing", correctionId, "order", "credit-1", 100m, "EGP"), token);
+            Assert.True(corrected);
+            var replay = await capability.ReverseConsumptionAsync(context, new(Atlas), Guid.NewGuid(), new(AtlasEntity, "test", sourceId, "line", "invoicing", correctionId, "order", "credit-1", 100m, "EGP"), token);
+            Assert.True(replay);
+            return 0;
+        });
+        Assert.Equal(baselineActual, await ScalarAsync(dataSource, "select actual_total from business_planning.budget_control_bucket where tenant_id=$1 and id=$2", Atlas, bucket));
+        Assert.Equal(1L, (long)(await ScalarAsync(dataSource, "select count(*) from business_planning.budget_consumption_fact where tenant_id=$1 and source_module='invoicing' and source_document_id=$2 and source_version like 'credit-1:%'", Atlas, correctionId))!);
+    }
+
+    [ExpensesPostgresFact]
+    public async Task ApprovedOverrideIsBoundToOneSourceAndHasBoundedUsage()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION")!;
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var coordinator = new NpgsqlTransactionCoordinator(dataSource);
+        var bucket = await EnsureOpexBucketAsync(dataSource, (Guid)(await ScalarAsync(dataSource,
+            "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, AtlasEntity))!);
+        await ExecuteAsync(dataSource, "update business_planning.budget_control_policy set mode='Block',active=true,opening_reconciled=true where tenant_id=$1 and legal_entity_id=$2", Atlas, AtlasEntity);
+        var sourceId = Guid.NewGuid().ToString("D");
+        var otherSourceId = Guid.NewGuid().ToString("D");
+        var overrideId = Guid.NewGuid();
+        try
+        {
+            await ExecuteAsync(dataSource, "insert into business_planning.budget_override(tenant_id,id,bucket_id,source_module,source_document_id,source_line_id,source_version,amount,currency_code,reason,state,requested_by,approved_by,approved_at) values($1,$2,$3,'test',$4,'line','v1',100001,'EGP','bounded acceptance','Approved',$5,$5,now())", Atlas, overrideId, bucket, sourceId, Guid.NewGuid());
+            var capability = new PlanningBudgetControlCapability();
+            await coordinator.ExecuteAsync(new(Atlas), async (context, token) =>
+            {
+                var allowed = await capability.UpsertReservationAsync(context, new(Atlas), Guid.NewGuid(), new(AtlasEntity, bucket, "test", sourceId, "line", "v1", 100001m, "EGP", PlanningBudgetReservationKind.Commitment), token);
+                Assert.Equal("Allow", allowed.Decision);
+                var other = await Assert.ThrowsAsync<PlanningBudgetControlException>(() => capability.UpsertReservationAsync(context, new(Atlas), Guid.NewGuid(), new(AtlasEntity, bucket, "test", otherSourceId, "line", "v1", 100001m, "EGP", PlanningBudgetReservationKind.Commitment), token));
+                Assert.Equal("planning.budget_insufficient", other.Code);
+                var replay = await Assert.ThrowsAsync<PlanningBudgetControlException>(() => capability.UpsertReservationAsync(context, new(Atlas), Guid.NewGuid(), new(AtlasEntity, bucket, "test", sourceId, "line", "v2", 100001m, "EGP", PlanningBudgetReservationKind.Commitment), token));
+                Assert.Equal("planning.budget_insufficient", replay.Code);
+                return 0;
+            });
+            Assert.Equal(100001m, await ScalarAsync(dataSource, "select used_amount from business_planning.budget_override where tenant_id=$1 and id=$2", Atlas, overrideId));
+        }
+        finally
+        {
+            await ExecuteAsync(dataSource, "update business_planning.budget_control_policy set mode='Warn',active=true where tenant_id=$1 and legal_entity_id=$2", Atlas, AtlasEntity);
+        }
+    }
+
+    [ExpensesPostgresFact]
+    public async Task ProjectionReconciliationRebuildsActualFromCanonicalFacts()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("TODIR_EXPENSES_TEST_CONNECTION")!;
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        var bucket = await EnsureOpexBucketAsync(dataSource, (Guid)(await ScalarAsync(dataSource,
+            "select v.id from business_expenses.expense_category_version v join business_expenses.expense_category c on c.tenant_id=v.tenant_id and c.id=v.category_id where v.tenant_id=$1 and c.legal_entity_id=$2 and v.status='Published' order by v.effective_from desc limit 1", Atlas, AtlasEntity))!);
+        await ExecuteAsync(dataSource, "update business_planning.budget_control_bucket set actual_total=actual_total+7 where tenant_id=$1 and id=$2", Atlas, bucket);
+        var repository = new PlanningRepository(new NpgsqlTransactionCoordinator(dataSource));
+        var result = await repository.ReconcileBudgetControlAsync(new(Atlas), Guid.NewGuid(), new(bucket, true), default);
+        Assert.Equal("Succeeded", result.State);
+        Assert.True(result.RebuildApplied);
+        var expected = await ScalarAsync(dataSource, "select coalesce(sum(amount),0) from business_planning.budget_consumption_fact where tenant_id=$1 and bucket_id=$2 and state='Actual'", Atlas, bucket);
+        Assert.Equal(expected, await ScalarAsync(dataSource, "select actual_total from business_planning.budget_control_bucket where tenant_id=$1 and id=$2", Atlas, bucket));
+        Assert.Equal(1L, (long)(await ScalarAsync(dataSource, "select count(*) from business_planning.budget_control_reconciliation_run where tenant_id=$1 and id=$2 and state='Succeeded'", Atlas, result.Id))!);
     }
 
     private static async Task<Guid> EnsureOpexBucketAsync(NpgsqlDataSource dataSource, Guid categoryVersion)

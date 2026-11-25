@@ -16,9 +16,12 @@ Backend and database implementation for Module 28 on `dev`, including the full F
 - Replayed migration and development seed on disposable database `planning_accept_ea22f9f5`, then dropped it; real authenticated HTTP verified dimension/member, formula, submission, exact spread, allocation conservation and P&L query.
 - Added the Planning OpenAPI contract and Planning-specific static contract checks.
 - Added a Planning-owned transactional Budget Control capability, forward-only schema fix for reservation kind/source currency and effective-dated policy fields, and optional source reservation integration in Purchasing and Expenses.
+- Added annual/quarterly/monthly control-period normalization, published plan-version enforcement, control-basis-aware availability, negative-budget and shadow-mode decisions, and a strict Block opening-reconciliation guard.
+- Added source-bound Budget Override request/decision APIs backed by Platform Approvals, exact source/version/currency matching, validity windows, bounded `used_amount`, audit evidence, and owner-module permission selection for planning approvals.
+- Added canonical invoice Actual consumption and bounded correction facts for supplier credits, Expense reversal correction, and a durable Planning-owned reconciliation/rebuild run with tenant RLS and explicit runtime grants.
 - Added fail-closed legal-entity, effective-policy, control-decision and currency matching checks; source amendments update the existing reservation, draft deletion releases it, and owner transactions roll back on blocked/approval-required decisions.
 - Closed the optional-bucket bypass for Purchasing and Expenses: Planning now resolves an applicable bucket from legal entity, monthly period, metric and dimension context, validates explicit bucket selections, rejects uncontrolled/inactive selections, and fails closed for an active strict policy with no applicable bucket. Purchasing and Expenses use this resolution during create/update/finalize paths.
-- Added PostgreSQL owner-path evidence for omitted-bucket Block behavior, invalid bucket rejection, and conserved/idempotent partial consumption (4/4 focused tests passing on disposable database `planning_closure_20261125`).
+- Added PostgreSQL owner-path evidence for omitted-bucket Block behavior, invalid bucket rejection, conserved/idempotent partial consumption, bounded source-specific override use, Expense reversal correction, and projection reconciliation/rebuild (7/7 focused tests passing on disposable database `bc01_closure_20261125`).
 
 ## Last meaningful corrections
 
@@ -30,11 +33,11 @@ Backend and database implementation for Module 28 on `dev`, including the full F
 
 ## Required next executable work
 
-1. Complete the `OPEN` and `PARTIAL` rows in `BUDGETING_BACKEND_COVERAGE_MATRIX.md`, especially owner adapters, finalized-invoice Actual reconciliation, integrated statements, rolling forecast, Excel interop, reconciliation and operational recovery.
-2. Add source-owned contracts/adapters and real cross-module event/transaction tests.
-3. Add scoped submission-coordinate locking, delegated approvals, full typed DAG execution, OPEX and multi-entity rollups.
+1. Complete the `OPEN` and `PARTIAL` rows in `BUDGETING_BACKEND_COVERAGE_MATRIX.md`, especially PR conversion/receipt/return owner adapters, canonical opening source reconciliation and activation, integrated statements, rolling forecast, Excel interop, and complete operational evidence.
+2. Add source-owned contracts/adapters and real cross-module event/transaction tests for full Purchasing and Ledger replay paths.
+3. Add scoped submission-coordinate locking, configurable delegated approvals, full typed DAG execution, OPEX and multi-entity rollups.
 4. Complete the final disposable source-workflow acceptance and rerun all owner-module, integration, security/RLS, architecture, Release build, formatter, OpenAPI and diff gates after every later source change.
 
 ## Delivery status
 
-`NOT COMPLETE` until every mandatory FP00–FP53 backend gap is implemented and supported by repeatable evidence. The latest source integration is a partial closure only; no production certification is implied.
+`NOT COMPLETE` for overall Module 28 and `BC01 NOT COMPLETE` for this focused mission: the delivered BC01 slice now has source corrections, overrides, policy guards and rebuild evidence, but the canonical PR/PO/receipt/return lifecycle, owner opening reconciliation/strict activation workflow, full event replay, and complete cross-module acceptance matrix still lack required evidence. No production certification is implied.

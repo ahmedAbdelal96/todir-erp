@@ -1,0 +1,29 @@
+# Budget Control Backend Runbook
+
+This runbook covers the BC01 controls currently implemented in the Planning backend. It is not production certification and does not replace owner-module reconciliation procedures.
+
+## Reconcile or rebuild
+
+Use the authorized endpoint:
+
+`POST /api/v1/planning/budget-control/reconcile`
+
+with `{"bucketId":"<optional-id>","rebuild":false}` for a read-only reconciliation, or `rebuild:true` for a bounded Planning projection rebuild. The caller needs the Planning budget-management permission and an active module lifecycle. The operation creates a durable `budget_control_reconciliation_run` row with `Running`, `Succeeded`, or `Failed` state, bucket count, discrepancy amount, and failure detail.
+
+The rebuild derives `actual_total` from `budget_consumption_fact` rows in `Actual` state. Source reservations remain the source of open commitment/precommitment and are not copied into both the bucket aggregate and reservation ledger. The endpoint is tenant-scoped and protected by FORCE RLS. Never repair budget facts with ad-hoc SQL in a live environment.
+
+## Strict activation
+
+`Block` policy decisions require an active policy, an effective date, a published plan version, and `opening_reconciled=true`. A future `strict_activation_at` also keeps the policy from blocking before its approved activation time. Shadow mode records a non-blocking decision while operational evidence is collected. The current BC01 rebuild does not prove opening PR/PO/Expense mappings; those owner-module checks remain a deployment gate.
+
+## Overrides
+
+Request a source-bound override through `/budget/overrides`, then use the Platform Approval decision route. The override is bound to tenant, bucket, source module/document/line/version, currency, amount and optional expiry. It does not change the Budget or approve the source document. Usage is row-locked, bounded by `used_amount <= amount`, and rolled back with the source transaction. Reuse for another source or amount is rejected.
+
+## Financial corrections
+
+Posted supplier invoices consume the Purchasing reservation once during Invoicing finalization. Supplier credit notes and canonical Expense reversals create immutable `Reversed` correction facts linked to the original fact; retries reuse the correction identity. Unposted invoice drafts do not consume Actual.
+
+## Recovery limits
+
+If reconciliation fails, retain the failed run and correct the owning source workflow through its supported command, then rerun reconciliation. Do not mark a strict policy reconciled manually. Full PR conversion, receipt/return lineage, external Ledger event replay, canonical opening reconciliation, and complete multi-source recovery remain open BC01 evidence gates.

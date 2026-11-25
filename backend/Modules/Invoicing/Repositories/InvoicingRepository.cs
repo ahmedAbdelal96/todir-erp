@@ -54,6 +54,16 @@ public sealed class InvoicingRepository(NpgsqlDataSource dataSource, ITransactio
         return existingId;
     }
 
+    public static async Task<BudgetControlSource?> GetBudgetControlSourceInTransactionAsync(ITransactionContext context, TenantId tenant,
+        Guid legalEntityId, Guid invoiceId, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select coalesce(i.source_module,original.source_module),coalesce(i.source_document_id,original.source_document_id),coalesce(i.source_purpose,original.source_purpose) from business_invoicing.invoice i left join business_invoicing.invoice_relationship relationship on relationship.tenant_id=i.tenant_id and relationship.legal_entity_id=i.legal_entity_id and relationship.invoice_id=i.id and relationship.relationship_type in ('Credits','Debits') left join business_invoicing.invoice original on original.tenant_id=relationship.tenant_id and original.legal_entity_id=relationship.legal_entity_id and original.id=relationship.related_invoice_id where i.tenant_id=$1 and i.legal_entity_id=$2 and i.id=$3", context.Connection, context.Transaction);
+        Add(command, tenant.Value, legalEntityId, invoiceId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct) || reader.IsDBNull(0) || reader.IsDBNull(1)) return null;
+        return new(reader.GetString(0), reader.GetGuid(1), reader.IsDBNull(2) ? null : reader.GetString(2));
+    }
+
     public Task<Guid> AddAttachmentReferenceAsync(TenantId tenant, Guid actorId, Guid membershipId, InvoiceAttachmentReferenceRequest request,
         Guid correlationId, CancellationToken ct) => transactions.ExecuteAsync(tenant, async (context, token) =>
     {
@@ -943,4 +953,5 @@ public sealed class InvoicingRepository(NpgsqlDataSource dataSource, ITransactio
     private static string NormalizeCurrency(string value) => value.Trim().ToUpperInvariant();
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static string? NormalizeSupplierNumber(string? value) => string.IsNullOrWhiteSpace(value) ? null : string.Join(' ', value.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
+    public sealed record BudgetControlSource(string SourceModule, Guid SourceDocumentId, string? Purpose);
 }

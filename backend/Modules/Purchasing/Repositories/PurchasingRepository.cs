@@ -54,7 +54,7 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
             if (bucketId.HasValue)
             {
                 var control = await budgetControl.UpsertReservationAsync(context, tenant, actor,
-                    new(request.LegalEntityId, bucketId.Value, "purchasing", id.ToString("D"), "order", "draft:1", total, request.CurrencyCode, PlanningBudgetReservationKind.Precommitment), ct);
+                    new(request.LegalEntityId, bucketId.Value, "purchasing", id.ToString("D"), "order", "draft:1", total, request.CurrencyCode, PlanningBudgetReservationKind.Precommitment, PlanningPeriod(request.OrderDate)), ct);
                 if (control.Decision == "RequireApproval") throw new PlanningBudgetControlException("planning.budget_approval_required");
             }
         }
@@ -92,7 +92,7 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
             if (hasOpen || bucketId.HasValue)
             {
                 var control = await budgetControl.UpsertReservationAsync(context, tenant, actor,
-                    new(legalEntityId, bucketId ?? Guid.Empty, "purchasing", id.ToString("D"), "order", $"draft:{request.Version + 1}", total, request.CurrencyCode, amendment ? PlanningBudgetReservationKind.Commitment : PlanningBudgetReservationKind.Precommitment), ct);
+                    new(legalEntityId, bucketId ?? Guid.Empty, "purchasing", id.ToString("D"), "order", $"draft:{request.Version + 1}", total, request.CurrencyCode, amendment ? PlanningBudgetReservationKind.Commitment : PlanningBudgetReservationKind.Precommitment, PlanningPeriod(request.OrderDate)), ct);
                 if (control.Decision == "RequireApproval") throw new PlanningBudgetControlException("planning.budget_approval_required");
             }
         }
@@ -428,7 +428,7 @@ public sealed class PurchasingRepository(NpgsqlDataSource dataSource, TimeProvid
             else if (approve && await budgetControl.HasOpenReservationAsync(context, tenant, current.EntityId, "purchasing", id.ToString("D"), "order", ct))
             {
                 var control = await budgetControl.UpsertReservationAsync(context, tenant, actor,
-                    new(current.EntityId, Guid.Empty, "purchasing", id.ToString("D"), "order", $"committed:{request.Version + 1}", current.Total, current.Currency, PlanningBudgetReservationKind.Commitment), ct);
+                    new(current.EntityId, Guid.Empty, "purchasing", id.ToString("D"), "order", $"committed:{request.Version + 1}", current.Total, current.Currency, PlanningBudgetReservationKind.Commitment, PlanningPeriod(current.OrderDate)), ct);
                 if (control.Decision == "RequireApproval") throw new PlanningBudgetControlException("planning.budget_approval_required");
             }
         }

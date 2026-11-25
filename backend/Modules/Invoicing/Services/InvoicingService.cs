@@ -31,7 +31,8 @@ public sealed class InvoicingService(
     ITransactionalInvoiceLedgerPostingCapability ledgerPosting,
     ITransactionalSubledgerOpenItemCapability subledgerPosting,
     IPlatformOrganizationCapabilities organization,
-        TimeProvider clock) : IInvoicingSourceCapabilities, IServiceInvoiceReadCapability, IPosInvoicingCapabilities, IInvoicingCorrectionCapabilities, IInvoiceComplianceSnapshotCapability, IInvoiceFileReferenceCapability
+        TimeProvider clock,
+    ITransactionalPlanningBudgetControlCapability? budgetControl = null) : IInvoicingSourceCapabilities, IServiceInvoiceReadCapability, IPosInvoicingCapabilities, IInvoicingCorrectionCapabilities, IInvoiceComplianceSnapshotCapability, IInvoiceFileReferenceCapability
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -342,6 +343,7 @@ public sealed class InvoicingService(
                 var fact = new AccountingFactEnvelope<IAccountingFactPayload>(Guid.CreateVersion7(), tenant, new(legalEntityId), factType, 1, "invoicing", invoiceId.ToString("D"),
                     request.IdempotencyKey, draft.DocumentDate, draft.PostingDate, ledgerPayload, correlationId, actorId);
                 var posted = await ledgerPosting.PostInvoiceAsync(context, fact, ledgerPayload, token);
+                await ApplyBudgetControlAsync(context, tenant, actorId, draft, invoiceId, request, data, token);
                 var openItems = new List<Guid>();
                 if (data.Schedule.Count > 0)
                 {
@@ -376,6 +378,28 @@ public sealed class InvoicingService(
         {
             throw new InvoiceException("invoicing.supplier_duplicate", "This supplier invoice number was already recorded for this supplier.", exception);
         }
+    }
+
+    private async Task ApplyBudgetControlAsync(ITransactionContext context, TenantId tenant, Guid actorId, InvoiceAggregate draft,
+        Guid invoiceId, InvoiceFinalizationRequest request, InvoiceFinalizationData data, CancellationToken ct)
+    {
+        if (budgetControl is null || draft.Direction != InvoiceDirection.Payable) return;
+        var source = await InvoicingRepository.GetBudgetControlSourceInTransactionAsync(context, tenant, draft.LegalEntityId, invoiceId, ct);
+        if (source is null || !string.Equals(source.SourceModule, "purchasing", StringComparison.OrdinalIgnoreCase)) return;
+        var amount = ParseAmount(data.Totals.NetAmount, "invoicing.amount_invalid");
+        var sourceDocumentId = source.SourceDocumentId.ToString("D");
+        if (draft.DocumentType == InvoiceDocumentType.CreditNote)
+        {
+            await budgetControl.ReverseConsumptionAsync(context, tenant, actorId,
+                new(draft.LegalEntityId, "purchasing", sourceDocumentId, "order", "purchasing", invoiceId.ToString("D"), "order",
+                    $"invoice-correction:{invoiceId:D}:{request.IdempotencyKey}", amount, draft.CurrencyCode), ct);
+            return;
+        }
+
+        if (!await budgetControl.HasOpenReservationAsync(context, tenant, draft.LegalEntityId, "purchasing", sourceDocumentId, "order", ct))
+            throw new PlanningBudgetControlException("planning.budget_reservation_not_open");
+        await budgetControl.ConsumeReservationAsync(context, tenant, actorId,
+            new(draft.LegalEntityId, "purchasing", sourceDocumentId, "order", $"invoice:{invoiceId:D}:{request.IdempotencyKey}", amount, draft.CurrencyCode), ct);
     }
 
     public async Task<InvoicePreview> PreviewDraftAsync(TenantId tenant, Guid legalEntityId, CreateInvoiceDraftRequest request, InvoiceDirection direction, CancellationToken ct)

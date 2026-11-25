@@ -35,10 +35,14 @@ public enum PlanningBudgetReservationKind
 }
 
 public sealed record PlanningBudgetReservationRequest(Guid LegalEntityId, Guid BucketId, string SourceModule, string SourceDocumentId,
-    string SourceLineId, string SourceVersion, decimal Amount, string CurrencyCode, PlanningBudgetReservationKind Kind);
+    string SourceLineId, string SourceVersion, decimal Amount, string CurrencyCode, PlanningBudgetReservationKind Kind, DateOnly? ControlPeriodStart = null);
 
 public sealed record PlanningBudgetConsumptionRequest(Guid LegalEntityId, string SourceModule, string SourceDocumentId, string SourceLineId,
     string SourceVersion, decimal Amount, string CurrencyCode);
+
+public sealed record PlanningBudgetCorrectionRequest(Guid LegalEntityId, string SourceModule, string SourceDocumentId, string SourceLineId,
+    string CorrectionSourceModule, string CorrectionSourceDocumentId, string CorrectionSourceLineId, string CorrectionSourceVersion,
+    decimal Amount, string CurrencyCode);
 
 public sealed record PlanningBudgetControlScope(Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, string DimensionKeyJson, Guid? RequestedBucketId = null);
 
@@ -62,6 +66,8 @@ public interface ITransactionalPlanningBudgetControlCapability
         string sourceDocumentId, string sourceLineId, CancellationToken cancellationToken = default);
     Task<PlanningBudgetReservationResult> ConsumeReservationAsync(ITransactionContext context, TenantId tenantId,
         Guid actorId, PlanningBudgetConsumptionRequest request, CancellationToken cancellationToken = default);
+    Task<bool> ReverseConsumptionAsync(ITransactionContext context, TenantId tenantId, Guid actorId,
+        PlanningBudgetCorrectionRequest request, CancellationToken cancellationToken = default);
 }
 
 public interface ITransactionCoordinator

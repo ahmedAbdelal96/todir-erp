@@ -155,7 +155,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             if (bucketId.HasValue)
             {
                 var control = await budgetControl.UpsertReservationAsync(context, tenant, request.EmployeeId ?? Guid.Empty,
-                    new(request.LegalEntityId, bucketId.Value, "expenses", id.ToString("D"), "expense", "draft:1", request.Amount, request.CurrencyCode, PlanningBudgetReservationKind.Precommitment), ct);
+                    new(request.LegalEntityId, bucketId.Value, "expenses", id.ToString("D"), "expense", "draft:1", request.Amount, request.CurrencyCode, PlanningBudgetReservationKind.Precommitment, PlanningPeriod(request.ExpenseDate)), ct);
                 if (control.Decision == "RequireApproval") throw new PlanningBudgetControlException("planning.budget_approval_required");
             }
         }
@@ -181,7 +181,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
             if (hasOpen || bucketId.HasValue)
             {
                 var control = await budgetControl.UpsertReservationAsync(context, tenant, Guid.Empty,
-                    new(entity, bucketId ?? Guid.Empty, "expenses", id.ToString("D"), "expense", $"draft:{request.Version + 1}", request.Amount, request.CurrencyCode, PlanningBudgetReservationKind.Precommitment), ct);
+                    new(entity, bucketId ?? Guid.Empty, "expenses", id.ToString("D"), "expense", $"draft:{request.Version + 1}", request.Amount, request.CurrencyCode, PlanningBudgetReservationKind.Precommitment, PlanningPeriod(request.ExpenseDate)), ct);
                 if (control.Decision == "RequireApproval") throw new PlanningBudgetControlException("planning.budget_approval_required");
             }
         }
@@ -506,7 +506,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
                 if (hasOpen || bucketId.HasValue)
                 {
                     var control = await budgetControl.UpsertReservationAsync(context, tenant, employee ?? Guid.Empty,
-                        new(entity, bucketId ?? Guid.Empty, "expenses", id.ToString("D"), "expense", $"committed:{version + 1}", amount, currency, PlanningBudgetReservationKind.Commitment), token);
+                        new(entity, bucketId ?? Guid.Empty, "expenses", id.ToString("D"), "expense", $"committed:{version + 1}", amount, currency, PlanningBudgetReservationKind.Commitment, PlanningPeriod(date)), token);
                     if (control.Decision == "RequireApproval") throw new PlanningBudgetControlException("planning.budget_approval_required");
                     await budgetControl.ConsumeReservationAsync(context, tenant, employee ?? Guid.Empty,
                         new(entity, "expenses", id.ToString("D"), "expense", $"actual:{version + 1}", amount, currency), token);
@@ -568,6 +568,13 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         var reversal = await ledgerPosting.ReverseAsync(tenant, new LegalEntityId(entity), ledgerEntry, DateOnly.FromDateTime(DateTime.UtcNow), null, request.Reason!, Guid.Empty, Guid.CreateVersion7(), ct);
         await using (var scope = await OpenAsync(tenant, ct))
         {
+            if (budgetControl is not null)
+            {
+                await using var context = new ExistingTransactionContext(scope.Connection, scope.Transaction);
+                await budgetControl.ReverseConsumptionAsync(context, tenant, Guid.Empty,
+                    new(entity, "expenses", id.ToString("D"), "expense", "expenses", id.ToString("D"), "expense",
+                        $"reversal:{id:D}:{version}", amount, currencyCode), ct);
+            }
             await using var update = new NpgsqlCommand("update business_expenses.expense set expense_state='Reversed',accounting_state='Reversed',reversal_entry_id=$4,version=version+1,updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and accounting_state='ReversalPending'", scope.Connection, scope.Transaction); Add(update, tenant.Value, entity, id, reversal.JournalEntryId); if (await update.ExecuteNonQueryAsync(ct) == 0) throw new ExpenseRepositoryException("expenses.reversal_state_conflict");
             await using var history = new NpgsqlCommand("insert into business_expenses.expense_history(tenant_id,id,legal_entity_id,expense_id,action,to_state) values($1,$2,$3,$4,'reverse',jsonb_build_object('expenseState','Reversed','accountingState','Reversed','reversalEntryId',$5::text))", scope.Connection, scope.Transaction); Add(history, tenant.Value, Guid.CreateVersion7(), entity, id, reversal.JournalEntryId); await history.ExecuteNonQueryAsync(ct);
             await using var outbox = new NpgsqlCommand("insert into platform.outbox_message(id,message_type,payload,tenant_id,occurred_at,correlation_id,causation_id,source_module,status) values($1,'ExpenseReversedV1',$2::jsonb,$3,now(),$4,$5,'expenses','Pending')", scope.Connection, scope.Transaction);
