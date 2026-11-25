@@ -16,18 +16,18 @@ Each run also passed `21/21` authenticated functional JSON checks and `8/8` writ
 
 ## Existing database security tests
 
-The existing security suite ran against the isolated migrated database `todir_p0b_security_20261125` in the disposable PostgreSQL container:
+The existing security suite ran against the isolated migrated database `todir_p0d_final_20261125` in the disposable PostgreSQL 18.6 container after the P0-D canonical migration:
 
 ```text
 dotnet test backend/Tests/Security/SecurityTests.csproj --no-restore --configuration Release
 Passed: 7, Failed: 0, Skipped: 0
 ```
 
-The canonical seed regression suite also ran against a newly created disposable database and exercised forced RLS, runtime-role boundaries, tenant isolation, and idempotent seed reruns:
+The canonical seed regression suite also ran against newly created disposable databases and exercised forced RLS, runtime-role boundaries, tenant isolation, idempotent seed reruns, and concurrent DbMigrator serialization:
 
 ```text
 dotnet test backend/Tests/SeedData/SeedDataTests.csproj --no-restore --configuration Release
-Passed: 5, Failed: 0, Skipped: 0
+Passed: 6, Failed: 0, Skipped: 0
 ```
 
 These results are runtime evidence for the local disposable environment. They do not certify customer configuration, production credentials, Worker isolation, or a production deployment topology.

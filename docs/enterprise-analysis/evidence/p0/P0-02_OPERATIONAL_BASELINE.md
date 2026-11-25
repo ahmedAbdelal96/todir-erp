@@ -35,7 +35,7 @@ The initial sandbox could not open the Docker Desktop named pipe. Approved eleva
 
 ## Current verified state
 
-The latest repository corrections are present and the canonical path now completes without `-PreMigrationSql`. OpenIddict forward-fix ordering is explicit in `backend/DbMigrator/Program.cs`; the Quality disposition-restriction migration is handled through a transaction-scoped maintenance RLS override that restores `FORCE ROW LEVEL SECURITY`. See [P0-B03](P0-B03_OPERATIONAL_PERFORMANCE_BASELINE.md) and [P0-B07](P0-B07_INDEPENDENT_FINAL_REVIEW.md).
+The latest repository corrections are present and the canonical path now completes without `-PreMigrationSql`. OpenIddict forward-fix ordering is explicit in `backend/DbMigrator/Program.cs`; the Quality disposition-restriction migration is handled through a transaction-scoped maintenance RLS override that restores `FORCE ROW LEVEL SECURITY`. P0-D also reproduced and corrected the uncoordinated concurrent-DbMigrator race with a database-scoped advisory lease; the correction is covered by a two-process regression test. See [P0-B03](P0-B03_OPERATIONAL_PERFORMANCE_BASELINE.md), [P0-B07](P0-B07_INDEPENDENT_FINAL_REVIEW.md) and [P0-B09](P0-B09_ARTIFACT_VERIFICATION_AND_REPRODUCTION.md).
 
 ## Measurement ledger
 
@@ -47,7 +47,7 @@ The latest repository corrections are present and the canonical path now complet
 | Throughput/concurrency | `MEASURED` | Load at concurrency 1, 4 and 8, repeated |
 | PostgreSQL query plans | `MEASURED` | Four bounded seeded-data plans per run |
 | Worker queue lag/retry | `NOT EXECUTED` | Outside this API baseline |
-| Tenant/RLS runtime isolation | `PASS` | Harness 401/403 checks plus SecurityTests and SeedDataTests |
+| Tenant/RLS runtime isolation | `PASS` | Harness 401/403 checks plus SecurityTests 7/7 and SeedDataTests 6/6 |
 | Core-vs-analysis contention | `NOT MEASURED` | — |
 
 The existing `5% p95` statement in the design pack remains a provisional proposal, not a measured SLO.

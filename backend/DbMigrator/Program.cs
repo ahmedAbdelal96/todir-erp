@@ -79,6 +79,16 @@ if (connection is null)
 }
 
 await using var ownedConnection = connection;
+// DbMigrator is an ordered database-wide operation. Serialize invocations for
+// the target database so two deployment runners cannot race on extensions,
+// roles, schema objects, or the check-then-insert migration history path.
+await using (var migrationLease = new NpgsqlCommand("select pg_advisory_lock(hashtextextended('todir.dbmigrator:' || current_database(), 0))", connection))
+{
+    migrationLease.CommandTimeout = 0;
+    await migrationLease.ExecuteNonQueryAsync();
+    Console.WriteLine($"Acquired DbMigrator lease for {connection.Database}.");
+}
+
 await using (var runtimeCommand = new NpgsqlCommand(await File.ReadAllTextAsync(runtimeScript), connection))
 {
     Console.WriteLine($"Applying {Path.GetFileName(runtimeScript)}");

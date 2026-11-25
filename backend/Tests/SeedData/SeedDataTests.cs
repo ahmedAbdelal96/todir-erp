@@ -104,6 +104,54 @@ public sealed class DevelopmentSeedTests
         }
     }
 
+    [Fact]
+    public async Task ConcurrentMigratorsSerializeAndPreserveMigrationHistory()
+    {
+        var adminConnectionString = Environment.GetEnvironmentVariable("TODIR_P04_ADMIN_CONNECTION")
+            ?? throw new InvalidOperationException("Set TODIR_P04_ADMIN_CONNECTION for the concurrent migrator regression test.");
+        var databaseName = $"todir_seed_{Guid.CreateVersion7():N}";
+        var seedPassword = $"Seed-{Convert.ToHexString(RandomNumberGenerator.GetBytes(16))}a1";
+        var repositoryRoot = FindRepositoryRoot();
+        var runtimePassword = GetRuntimePassword(repositoryRoot);
+        var adminBuilder = new NpgsqlConnectionStringBuilder(adminConnectionString);
+        var migratorBuilder = new NpgsqlConnectionStringBuilder(adminConnectionString) { Database = databaseName };
+        var databaseCreated = false;
+
+        await using var adminDataSource = NpgsqlDataSource.Create(adminBuilder.ConnectionString);
+        await using var admin = await adminDataSource.OpenConnectionAsync();
+        try
+        {
+            await using (var create = new NpgsqlCommand($"create database \"{databaseName}\" encoding 'UTF8' lc_collate 'C' lc_ctype 'C' template template0", admin))
+                await create.ExecuteNonQueryAsync();
+            databaseCreated = true;
+
+            var runs = await RunConcurrentMigratorsAsync(repositoryRoot, migratorBuilder.ConnectionString, seedPassword, runtimePassword);
+            Assert.True(runs.First.ExitCode == 0, $"First concurrent migrator failed:\n{runs.First.Output}\nSecond output:\n{runs.Second.Output}");
+            Assert.True(runs.Second.ExitCode == 0, $"Second concurrent migrator failed:\n{runs.Second.Output}\nFirst output:\n{runs.First.Output}");
+            Assert.Contains("Applied or verified 264 ordered platform scripts from 26 module manifests.", runs.First.Output + runs.Second.Output, StringComparison.Ordinal);
+            Assert.Contains("Development Seed Ready", runs.First.Output + runs.Second.Output, StringComparison.Ordinal);
+
+            await using var dataSource = NpgsqlDataSource.Create(migratorBuilder.ConnectionString);
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand("select count(*)::int, count(distinct module_id || ':' || script_name)::int from platform_migration.applied_script", connection);
+            await using var reader = await command.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(265, reader.GetInt32(0));
+            Assert.Equal(265, reader.GetInt32(1));
+        }
+        finally
+        {
+            if (databaseCreated)
+            {
+                await using var terminate = new NpgsqlCommand("select pg_terminate_backend(pid) from pg_stat_activity where datname = $1 and pid <> pg_backend_pid()", admin);
+                terminate.Parameters.AddWithValue(databaseName);
+                await terminate.ExecuteNonQueryAsync();
+                await using var drop = new NpgsqlCommand($"drop database if exists \"{databaseName}\"", admin);
+                await drop.ExecuteNonQueryAsync();
+            }
+        }
+    }
+
     private static async Task AssertSingleActiveInventoryAssetMappingAsync(NpgsqlDataSource dataSource)
     {
         await using var connection = await dataSource.OpenConnectionAsync();
@@ -317,6 +365,31 @@ public sealed class DevelopmentSeedTests
 
     private static async Task<(int ExitCode, string Output)> RunMigratorAsync(string repositoryRoot, string connectionString, string seedPassword, string runtimePassword)
     {
+        var start = CreateMigratorStartInfo(repositoryRoot, connectionString, seedPassword, runtimePassword);
+
+        using var process = Process.Start(start) ?? throw new InvalidOperationException("Unable to start DbMigrator for the fresh-database seed regression test.");
+        var standardOutput = process.StandardOutput.ReadToEndAsync();
+        var standardError = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        return (process.ExitCode, $"{await standardOutput}{await standardError}");
+    }
+
+    private static async Task<((int ExitCode, string Output) First, (int ExitCode, string Output) Second)> RunConcurrentMigratorsAsync(string repositoryRoot, string connectionString, string seedPassword, string runtimePassword)
+    {
+        using var first = Process.Start(CreateMigratorStartInfo(repositoryRoot, connectionString, seedPassword, runtimePassword))
+            ?? throw new InvalidOperationException("Unable to start the first concurrent DbMigrator.");
+        using var second = Process.Start(CreateMigratorStartInfo(repositoryRoot, connectionString, seedPassword, runtimePassword))
+            ?? throw new InvalidOperationException("Unable to start the second concurrent DbMigrator.");
+        var firstOutput = first.StandardOutput.ReadToEndAsync();
+        var firstError = first.StandardError.ReadToEndAsync();
+        var secondOutput = second.StandardOutput.ReadToEndAsync();
+        var secondError = second.StandardError.ReadToEndAsync();
+        await Task.WhenAll(first.WaitForExitAsync(), second.WaitForExitAsync());
+        return ((first.ExitCode, $"{await firstOutput}{await firstError}"), (second.ExitCode, $"{await secondOutput}{await secondError}"));
+    }
+
+    private static ProcessStartInfo CreateMigratorStartInfo(string repositoryRoot, string connectionString, string seedPassword, string runtimePassword)
+    {
         var start = new ProcessStartInfo("dotnet")
         {
             WorkingDirectory = repositoryRoot,
@@ -334,12 +407,7 @@ public sealed class DevelopmentSeedTests
         start.Environment["TODIR_RUNTIME_PASSWORD"] = runtimePassword;
         start.Environment["SEED_DEFAULT_PASSWORD"] = seedPassword;
         start.Environment["DOTNET_ENVIRONMENT"] = "Testing";
-
-        using var process = Process.Start(start) ?? throw new InvalidOperationException("Unable to start DbMigrator for the fresh-database seed regression test.");
-        var standardOutput = process.StandardOutput.ReadToEndAsync();
-        var standardError = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        return (process.ExitCode, $"{await standardOutput}{await standardError}");
+        return start;
     }
 
     private static async Task<CanonicalSeedCounts> ReadCanonicalCountsAsync(NpgsqlDataSource dataSource)

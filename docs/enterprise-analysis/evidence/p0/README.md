@@ -1,7 +1,7 @@
 # P0 Evidence Index
 
 **Status:** `P0_EVIDENCE_COMPLETE`  
-**As-of commit:** `c85f59121dc06e8c4f2d5a25590a534c82e836af`  
+**As-of verification:** source baseline `c85f59121dc06e8c4f2d5a25590a534c82e836af`; final P0-D delivery commit is recorded in the final review and Git history  
 **Date:** 2026-11-25  
 **Scope:** read-only current-state discovery for the Business Analysis design pack.
 
@@ -25,6 +25,8 @@ This evidence set records what is verified from repository source and what remai
 | [P0-B05](P0-B05_RUNTIME_SECURITY_EVIDENCE.md) | Was runtime isolation tested? | Harness and existing security suites PASS |
 | [P0-B06](P0-B06_PERFORMANCE_ACCEPTANCE_RECOMMENDATION.md) | What guardrails are proposed? | Proposed only |
 | [P0-B07](P0-B07_INDEPENDENT_FINAL_REVIEW.md) | What is the exit decision? | P0_EVIDENCE_COMPLETE |
+| [P0-B08](P0-B08_PER_OPERATION_BENCHMARK_AUDIT.md) | Do raw benchmark rows reconcile per operation? | First/repeat load audit with actual p50/p95/p99/RPS/SQL values |
+| [P0-B09](P0-B09_ARTIFACT_VERIFICATION_AND_REPRODUCTION.md) | Can the evidence and migration correction be reproduced? | Raw hashes, profiles, commands and concurrent-migration proof |
 
 ## Exit decision
 
