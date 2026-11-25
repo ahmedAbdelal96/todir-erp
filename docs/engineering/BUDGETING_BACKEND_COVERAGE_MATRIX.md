@@ -6,7 +6,7 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 
 | ID | Capability | Database / owner | API / implementation | Evidence | Status |
 |---|---|---|---|---|---|
-| FP00 | Repository/dependency verification | Planning manifest and solution | `Planning.csproj`, registration | Release build, architecture | PASS |
+| FP00 | Repository/dependency verification | Planning manifest and solution | `Planning.csproj`, registration | Release build, architecture | PARTIAL |
 | FP01 | Module boundary/schema/RLS | `business_planning`, FORCE RLS | Transaction-coordinator repository | Disposable migration | PASS |
 | FP02 | Fiscal calendar/planning cycle | `planning_cycle` and state checks | cycle CRUD/lifecycle | Seed + authenticated cycle read | PASS |
 | FP03 | Typed models/dimensions | model/version/dimension/member tables | model/version and dimension/member commands | Real HTTP dimension/member journey | PARTIAL |
@@ -36,12 +36,12 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP27 | What-if | scenario state/access | clone/share/adopt | HTTP scenario path | PARTIAL |
 | FP28 | Variance/drivers | variance/comments | query and driver endpoint | API path; decomposition open | PARTIAL |
 | FP29 | Forecast accuracy | accuracy projection | aggregate error/bias | Implementation; fixture open | PARTIAL |
-| FP30 | Budget policy | policy/buckets | policy/bucket commands | Isolated reserve acceptance | PASS |
-| FP31 | Availability | bucket/reservation ledger | availability | Reserve/release runtime | PASS |
-| FP32 | Atomic check/reserve | row locks/source uniqueness | check/reserve/adjust/release | Idempotency/concurrency evidence | PASS |
-| FP33 | Purchasing commitments | no Planning owner adapter | source fields only | No owner event proof | OPEN |
-| FP34 | Expenses/commitments | no owner adapter | not implemented | No owner proof | OPEN |
-| FP35 | Commitment→Actual | consumption table only | no source lifecycle coordinator | No reconciliation proof | OPEN |
+| FP30 | Budget policy | policy/buckets and effective dates | policy/bucket commands plus transactional capability | Isolated reserve acceptance; source integration still partial | PARTIAL |
+| FP31 | Availability | bucket/reservation ledger | availability and source-kind projections | Reserve/release runtime; full policy-version evidence pending | PARTIAL |
+| FP32 | Atomic check/reserve | row locks/source uniqueness | check/reserve/adjust/release and owner transaction enlistment | Idempotency path; real contention/rollback evidence pending | PARTIAL |
+| FP33 | Purchasing commitments | Planning-owned reservation ledger | Purchasing create/update/approve/cancel enlists precommitment/commitment | Source adapter is implemented; PR/PO lifecycle and receipt reconciliation evidence pending | PARTIAL |
+| FP34 | Expenses/commitments | Planning-owned reservation ledger | Expense create/update/finalize/delete enlists reservation/consumption | Source adapter is implemented; approval/correction evidence pending | PARTIAL |
+| FP35 | Commitment→Actual | consumption table and bucket actual total | Expense finalization consumes an open reservation transactionally | Expense path source proof; Purchasing partial/final actual reconciliation remains open | PARTIAL |
 | FP36 | Overrides/thresholds | override table only | no request/approve API | No SoD proof | OPEN |
 | FP37 | Department planner | submission persistence | no frontend in this mission | Backend slice only | PARTIAL |
 | FP38 | CFO/owner views | variance/statements partial | no complete rollup/action contract | No complete evidence | OPEN |
@@ -49,7 +49,7 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP40 | Multi-entity rollup | entity keys exist | no rollup projection | No proof | OPEN |
 | FP41 | Security/SoD | RLS/permissions/lifecycle | route authorization | security/architecture suites | PARTIAL |
 | FP42 | Audit/history | audit on implemented writes | lifecycle audit | SQL/API inspection | PARTIAL |
-| FP43 | Migration/opening budget | bootstrap/forward-fix | seed replay | Disposable migration/seed PASS | PASS |
+| FP43 | Migration/opening budget | bootstrap/forward-fix | seed replay | Disposable migration/seed PASS; opening reconciliation gate absent | PARTIAL |
 | FP44 | Performance/scale | grid/availability indexes | bounded queries | No formal scale certification | PARTIAL |
 | FP45 | Observability | platform logging/outbox | no planning metrics | No dedicated proof | OPEN |
 | FP46 | Runbooks/recovery | migration/seed safe | no planning recovery runbook | Documentation gap | OPEN |
@@ -57,19 +57,24 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP48 | Department manager | submission backend slice | no scoped UI/delegated approval | No complete proof | OPEN |
 | FP49 | FP&A | drivers/variance partial | no integrated forecast workflow | No complete proof | OPEN |
 | FP50 | CFO | P&L partial | BS/CF/rollup absent | No complete proof | OPEN |
-| FP51 | Purchasing control | reservation source identity | no Purchasing adapter | No proof | OPEN |
-| FP52 | Cross-module reconciliation | source metadata fields | no owner adapters/jobs | No proof | OPEN |
+| FP51 | Purchasing control | reservation source identity | Purchasing transactional capability integration | Source reservation path exists; full PR/PO/receipt lifecycle proof absent | PARTIAL |
+| FP52 | Cross-module reconciliation | source metadata fields | partial owner integration | No complete owner reconciliation jobs/evidence | PARTIAL |
 | FP53 | E2E/release | migration/RLS verified | backend foundation only | Release/architecture/OpenAPI pass; module gate not | PARTIAL |
 
 ## Build Now MUST audit
 
-The mandatory Build Now list in section 789 maps to FP02–FP53 above. The `OPEN` rows are release blockers for the full Module 28 backend mission: OPEX, integrated BS/CF, rolling forecast, Purchasing/Expenses owner integrations, commitment reconciliation, overrides, Excel interop, rollup, observability/runbooks, and their acceptance journeys. This delivery therefore remains `NOT COMPLETE`.
+The mandatory Build Now list in section 789 maps to FP02–FP53 above. The `OPEN` and `PARTIAL` rows are release blockers for the full Module 28 backend mission: OPEX, integrated BS/CF, rolling forecast, complete Purchasing/Expenses owner lifecycles, commitment reconciliation, overrides, Excel interop, rollup, observability/runbooks, and their acceptance journeys. This delivery therefore remains `NOT COMPLETE`.
 
 ## Verified commands
 
 - `dotnet build backend/Backend.sln --configuration Release --no-restore` — PASS after the latest source change.
-- `dotnet test backend/Tests/Modules/Planning/PlanningTests.csproj --configuration Release --no-restore` — PASS, 4/4.
-- `dotnet test backend/Tests/Architecture/ArchitectureTests.csproj --configuration Release --no-restore` — PASS, 23/23.
-- `node scripts/architecture/validate-openapi.mjs` — PASS for the existing eight API contracts; Planning has no static OpenAPI document yet.
-- Disposable PostgreSQL migration and Development Seed replay — PASS on `planning_accept_ea22f9f5`; database was dropped after verification.
-- Real cookie/CSRF/PostgreSQL journey — PASS for dimension/member, formula, submission transition, exact spreading, allocation conservation and P&L query on the disposable database.
+- `dotnet build backend/Backend.sln --configuration Release --no-restore` — PASS after the transactional source integration changes.
+- `dotnet test backend/Tests/Modules/Planning/PlanningTests.csproj --configuration Release --no-restore` — PASS, 4/4 after the final source integration edit.
+- `dotnet test backend/Tests/Architecture/ArchitectureTests.csproj --configuration Release --no-restore` — PASS, 23/23 after the final source integration edit.
+- `node scripts/architecture/validate-openapi.mjs` — PASS; Planning contract validated with 63 paths and the eight existing contracts also passed.
+- `dotnet test backend/Tests/Security/SecurityTests.csproj --configuration Release --no-restore` with disposable admin connection — PASS, 7/7.
+- `dotnet test backend/Tests/Modules/Expenses/ExpensesTests.csproj --configuration Release --no-restore --filter FullyQualifiedName~PlanningBudgetControlIntegrationTests` — PASS, 1/1; real PostgreSQL owner lifecycle proved reservation creation, amendment, and release.
+- `dotnet test backend/Tests/Integration/IntegrationTests.csproj --configuration Release --no-restore --filter FullyQualifiedName~ApiCompositionTests` — PASS, 4/4 on the disposable seeded database.
+- `dotnet format` targeted changed C# files with `--verify-no-changes` — PASS. Full solution formatter remains affected by pre-existing Ledger and Planning test whitespace findings.
+- Disposable PostgreSQL migration and Development Seed replay — PASS on `planning_closure_635323`; the database is disposable and must be removed after final verification.
+- Real cookie/CSRF/PostgreSQL journey — existing API composition PASS, 4/4; no complete Purchasing/Expenses budget-control HTTP acceptance is claimed yet.

@@ -16,7 +16,7 @@ using System.Text.Json;
 
 namespace Modules.Expenses.Repositories;
 
-public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, ITransactionalLedgerPostingCapability ledgerPosting, IExpensePaymentCapability? expensePayments = null, IPlatformFileReferenceCapability? files = null, IEmployeeRepaymentPaymentCapability? repaymentPayments = null, IBusinessAdvancePaymentCapability? advancePayments = null, IPlatformFileUploadCapability? fileUploads = null, IPlatformApprovalCapability? approvals = null, IExpenseOcrProvider? ocrProvider = null, IFinanceBaseCapabilities? financeBase = null, ITaxCapabilities? tax = null, IHumanResourcesPayrollCapability? hr = null)
+public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionCoordinator transactions, ITransactionalLedgerPostingCapability ledgerPosting, IExpensePaymentCapability? expensePayments = null, IPlatformFileReferenceCapability? files = null, IEmployeeRepaymentPaymentCapability? repaymentPayments = null, IBusinessAdvancePaymentCapability? advancePayments = null, IPlatformFileUploadCapability? fileUploads = null, IPlatformApprovalCapability? approvals = null, IExpenseOcrProvider? ocrProvider = null, IFinanceBaseCapabilities? financeBase = null, ITaxCapabilities? tax = null, IHumanResourcesPayrollCapability? hr = null, ITransactionalPlanningBudgetControlCapability? budgetControl = null)
 {
     private async Task<Guid> ResolveSelfEmployeeAsync(TenantId tenant, Guid membershipId, Guid entity, CancellationToken ct) =>
         hr is null
@@ -26,7 +26,7 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     public async Task<ExpenseDto> CreateSelfAsync(TenantId tenant, Guid membershipId, CreateMyExpenseRequest request, CancellationToken ct)
     {
         var employeeId = await ResolveSelfEmployeeAsync(tenant, membershipId, request.LegalEntityId, ct);
-        return await CreateAsync(tenant, new CreateExpenseRequest(request.LegalEntityId, employeeId, request.MerchantName, request.ExpenseDate, request.Amount, request.CurrencyCode, request.PaymentSource, request.CategoryVersionId, request.BusinessPurpose, request.Description, request.ProjectId, request.TaskId, request.CostCategory, request.Billable), ct);
+        return await CreateAsync(tenant, new CreateExpenseRequest(request.LegalEntityId, employeeId, request.MerchantName, request.ExpenseDate, request.Amount, request.CurrencyCode, request.PaymentSource, request.CategoryVersionId, request.BusinessPurpose, request.Description, request.ProjectId, request.TaskId, request.CostCategory, request.Billable, request.BudgetBucketId), ct);
     }
 
     public async Task<ExpenseDto> SubmitSelfAsync(TenantId tenant, Guid membershipId, Guid entity, Guid expenseId, ExpenseActionRequest request, CancellationToken ct)
@@ -147,6 +147,13 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         await using var scope = await OpenAsync(tenant, ct);
         await EnsureUsableCategoryVersionAsync(scope.Connection, scope.Transaction, tenant, request.LegalEntityId, request.CategoryVersionId, ct);
         var id = Guid.CreateVersion7();
+        if (request.BudgetBucketId is { } bucketId && budgetControl is not null)
+        {
+            await using var context = new ExistingTransactionContext(scope.Connection, scope.Transaction);
+            var control = await budgetControl.UpsertReservationAsync(context, tenant, request.EmployeeId ?? Guid.Empty,
+                new(request.LegalEntityId, bucketId, "expenses", id.ToString("D"), "expense", "draft:1", request.Amount, request.CurrencyCode, PlanningBudgetReservationKind.Precommitment), ct);
+            if (control.Decision == "RequireApproval") throw new PlanningBudgetControlException("planning.budget_approval_required");
+        }
         await using var cmd = new NpgsqlCommand("insert into business_expenses.expense(tenant_id,id,legal_entity_id,employee_id,merchant_name,expense_date,amount,currency_code,payment_source,category_version_id,expense_state,approval_state,accounting_state,settlement_state,evidence_state,policy_state,business_purpose,description,project_id,task_id,cost_category,billable,version,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Draft','Pending','NotFinalized','NotSettled','Missing','NotEvaluated',$11,$12,$13,$14,$15,$16,1,now(),now())", scope.Connection, scope.Transaction);
         Add(cmd, tenant.Value, id, request.LegalEntityId, Db(request.EmployeeId), request.MerchantName.Trim(), request.ExpenseDate, request.Amount, request.CurrencyCode.Trim().ToUpperInvariant(), request.PaymentSource.Trim(), request.CategoryVersionId, Db(request.BusinessPurpose), Db(request.Description), Db(request.ProjectId), Db(request.TaskId), Db(request.CostCategory), request.Billable);
         await cmd.ExecuteNonQueryAsync(ct);
@@ -155,7 +162,19 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
     }
 
     public async Task<ExpenseDto> UpdateAsync(TenantId tenant, Guid entity, Guid id, UpdateExpenseRequest request, CancellationToken ct)
-    { if (request.Amount <= 0) throw new ExpenseRepositoryException("expenses.invalid_amount"); await using var scope = await OpenAsync(tenant, ct); await EnsureUsableCategoryVersionAsync(scope.Connection, scope.Transaction, tenant, entity, request.CategoryVersionId, ct); await using var cmd = new NpgsqlCommand("update business_expenses.expense set merchant_name=$4,expense_date=$5,amount=$6,currency_code=$7,category_version_id=$8,business_purpose=$9,description=$10,project_id=$12,task_id=$13,cost_category=$14,billable=$15,version=version+1,updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$11 and expense_state='Draft' returning id", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, id, request.MerchantName.Trim(), request.ExpenseDate, request.Amount, request.CurrencyCode.Trim().ToUpperInvariant(), request.CategoryVersionId, Db(request.BusinessPurpose), Db(request.Description), request.Version, Db(request.ProjectId), Db(request.TaskId), Db(request.CostCategory), request.Billable); if (await cmd.ExecuteScalarAsync(ct) is null) throw new ExpenseRepositoryException("expenses.concurrent_change_or_not_editable"); await scope.Transaction.CommitAsync(ct); return (await GetAsync(tenant, entity, id, ct))!; }
+    {
+        if (request.Amount <= 0) throw new ExpenseRepositoryException("expenses.invalid_amount");
+        await using var scope = await OpenAsync(tenant, ct);
+        await EnsureUsableCategoryVersionAsync(scope.Connection, scope.Transaction, tenant, entity, request.CategoryVersionId, ct);
+        if (budgetControl is not null && (request.BudgetBucketId.HasValue || await HasOpenBudgetReservationAsync(scope.Connection, scope.Transaction, tenant, entity, id, ct)))
+        {
+            await using var context = new ExistingTransactionContext(scope.Connection, scope.Transaction);
+            var control = await budgetControl.UpsertReservationAsync(context, tenant, Guid.Empty,
+                new(entity, request.BudgetBucketId ?? Guid.Empty, "expenses", id.ToString("D"), "expense", $"draft:{request.Version + 1}", request.Amount, request.CurrencyCode, PlanningBudgetReservationKind.Precommitment), ct);
+            if (control.Decision == "RequireApproval") throw new PlanningBudgetControlException("planning.budget_approval_required");
+        }
+        await using var cmd = new NpgsqlCommand("update business_expenses.expense set merchant_name=$4,expense_date=$5,amount=$6,currency_code=$7,category_version_id=$8,business_purpose=$9,description=$10,project_id=$12,task_id=$13,cost_category=$14,billable=$15,version=version+1,updated_at=now() where tenant_id=$1 and legal_entity_id=$2 and id=$3 and version=$11 and expense_state='Draft' returning id", scope.Connection, scope.Transaction); Add(cmd, tenant.Value, entity, id, request.MerchantName.Trim(), request.ExpenseDate, request.Amount, request.CurrencyCode.Trim().ToUpperInvariant(), request.CategoryVersionId, Db(request.BusinessPurpose), Db(request.Description), request.Version, Db(request.ProjectId), Db(request.TaskId), Db(request.CostCategory), request.Billable); if (await cmd.ExecuteScalarAsync(ct) is null) throw new ExpenseRepositoryException("expenses.concurrent_change_or_not_editable"); await scope.Transaction.CommitAsync(ct); return (await GetAsync(tenant, entity, id, ct))!;
+    }
 
     public Task<ExpenseDto> TransitionAsync(TenantId tenant, Guid entity, Guid id, ExpenseActionRequest request, string action, CancellationToken ct)
         => action switch
@@ -466,6 +485,14 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
                 {
                     taxSnapshotJson = JsonSerializer.Serialize(new { state = "NotEvaluated", reason = TaxErrorCode(exception), capturedAt = DateTimeOffset.UtcNow });
                 }
+            }
+            if (budgetControl is not null && await budgetControl.HasOpenReservationAsync(context, tenant, entity, "expenses", id.ToString("D"), "expense", token))
+            {
+                var control = await budgetControl.UpsertReservationAsync(context, tenant, employee ?? Guid.Empty,
+                    new(entity, Guid.Empty, "expenses", id.ToString("D"), "expense", $"committed:{version + 1}", amount, currency, PlanningBudgetReservationKind.Commitment), token);
+                if (control.Decision == "RequireApproval") throw new PlanningBudgetControlException("planning.budget_approval_required");
+                await budgetControl.ConsumeReservationAsync(context, tenant, employee ?? Guid.Empty,
+                    new(entity, "expenses", id.ToString("D"), "expense", $"actual:{version + 1}", amount, currency), token);
             }
             var factId = StableFactId(id);
             var payload = new ExpenseRecognizedPayload(amount, currency, category, source == "EmployeePaid" ? "EmployeeReimbursementPayable" : "Cash", baseAmount, baseCurrency, exchangeRate, financialContext?.ExchangeRate?.ApprovedRateId?.ToString("D"), financialContextJson, taxAmount, taxSnapshotJson);
@@ -876,11 +903,24 @@ public sealed class ExpenseRepository(NpgsqlDataSource dataSource, ITransactionC
         if (state is null) throw new ExpenseRepositoryException("expenses.expense_not_found");
         if (state != "Draft") throw new ExpenseRepositoryException("expenses.cannot_delete_non_draft");
 
+        if (budgetControl is not null && await HasOpenBudgetReservationAsync(scope.Connection, scope.Transaction, tenant, entity, expenseId, ct))
+        {
+            await using var context = new ExistingTransactionContext(scope.Connection, scope.Transaction);
+            await budgetControl.ReleaseReservationAsync(context, tenant, "expenses", expenseId.ToString("D"), "expense", ct);
+        }
+
         await using var delete = new NpgsqlCommand("select business_expenses.delete_draft_expense_with_actor($1,$2,$3,$4,$5)", scope.Connection, scope.Transaction);
         Add(delete, tenant.Value, entity, expenseId, actorId, membershipId);
         if (!Convert.ToBoolean(await delete.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture)) throw new ExpenseRepositoryException("expenses.expense_not_found");
 
         await scope.Transaction.CommitAsync(ct);
+    }
+
+    private static async Task<bool> HasOpenBudgetReservationAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TenantId tenant, Guid legalEntityId, Guid expenseId, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand("select exists(select 1 from business_planning.budget_reservation r join business_planning.budget_control_bucket b on b.tenant_id=r.tenant_id and b.id=r.bucket_id where r.tenant_id=$1 and b.legal_entity_id=$2 and r.source_module='expenses' and r.source_document_id=$3 and r.source_line_id='expense' and r.state='Reserved')", connection, transaction);
+        Add(command, tenant.Value, legalEntityId, expenseId.ToString("D"));
+        return Convert.ToBoolean(await command.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
     }
 
     public Task DeleteDraftExpenseAsync(TenantId tenant, Guid entity, Guid expenseId, CancellationToken ct)

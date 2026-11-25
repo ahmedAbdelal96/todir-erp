@@ -1,5 +1,5 @@
 import fs from "node:fs";
-const files = ["docs/api/platform-openapi.json", "docs/api/ledger-openapi.json", "docs/api/subledger-openapi.json", "docs/api/invoicing-openapi.json", "docs/api/payments-openapi.json", "docs/api/inventory-openapi.json", "docs/api/sales-openapi.json", "docs/api/purchasing-openapi.json"];
+const files = ["docs/api/platform-openapi.json", "docs/api/ledger-openapi.json", "docs/api/subledger-openapi.json", "docs/api/invoicing-openapi.json", "docs/api/payments-openapi.json", "docs/api/inventory-openapi.json", "docs/api/sales-openapi.json", "docs/api/purchasing-openapi.json", "docs/api/planning-openapi.json"];
 for (const file of files) {
   const document = JSON.parse(fs.readFileSync(file, "utf8"));
   if (document.openapi !== "3.1.0" || !document.info?.title || !document.paths || Object.keys(document.paths).length === 0) {
@@ -58,6 +58,20 @@ for (const file of files) {
     const frozen = new Set(Object.entries(document.paths).flatMap(([path, item]) => Object.keys(item).filter(method => /^(get|post|put|delete)$/i.test(method)).map(method => `${method.toLowerCase()} ${path}`)));
     for (const operation of actual) if (!frozen.has(operation)) throw new Error(`${file}: missing Purchasing endpoint ${operation}`);
     for (const operation of frozen) if (!actual.has(operation)) throw new Error(`${file}: endpoint is not implemented: ${operation}`);
+  }
+  if (file === "docs/api/planning-openapi.json") {
+    const source = fs.readFileSync("backend/Modules/Planning/PlanningModule.cs", "utf8");
+    const required = [
+      ["post", "/api/v1/planning/grids/query"], ["post", "/api/v1/planning/grids/write-batch"],
+      ["post", "/api/v1/planning/grids/spread"], ["post", "/api/v1/planning/grids/spread-exact"],
+      ["post", "/api/v1/planning/budget/check-and-reserve"], ["post", "/api/v1/planning/budget/reservations/{id}/adjust"],
+      ["post", "/api/v1/planning/actuals/refresh"], ["post", "/api/v1/planning/statements/query"],
+      ["post", "/api/v1/planning/forecast-accuracy"], ["post", "/api/v1/planning/allocations"]
+    ];
+    for (const [method, path] of required) if (!document.paths[path]?.[method]) throw new Error(`${file}: missing required Planning operation ${method.toUpperCase()} ${path}`);
+    const staticRoutes = [...source.matchAll(/g\.Map(Get|Post|Put|Delete)\("([^"]+)"/g)].map(([, method, route]) => `${method.toLowerCase()} /api/v1/planning${route.replace(/:guid/g, "")}`);
+    if (staticRoutes.length < 40) throw new Error(`${file}: Planning source route inventory is unexpectedly small`);
+    if (Object.keys(document.paths).length < 50) throw new Error(`${file}: Planning contract is missing required route inventory`);
   }
   console.log(`Validated OpenAPI ${document.openapi} contract in ${file} with ${Object.keys(document.paths).length} paths.`);
 }

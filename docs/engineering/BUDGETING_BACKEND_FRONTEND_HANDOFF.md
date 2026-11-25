@@ -22,6 +22,8 @@ Implemented route groups:
 - scenario share/adopt-preview and version comparison;
 - exact spreading (`/grids/spread-exact`), weighted allocation, P&L query and forecast-accuracy calculation;
 - workforce baseline import/cost-impact and CapEx lifecycle actions.
+- Planning OpenAPI contract: `docs/api/planning-openapi.json` (63 paths; static validation is separate from business acceptance).
+- Purchasing and Expenses request contracts optionally accept `budgetBucketId`; when supplied, the backend enlists Planning Budget Control in the owning transaction and returns a domain error for blocked/approval-required control decisions.
 
 ## Development seed
 
@@ -42,4 +44,4 @@ The administrator seed role receives the canonical Module 28 permissions. Other 
 
 ## Not yet safe to build against as final product scope
 
-Coordinate-scoped submission locking, delegated Platform Approvals, owner-module source adapters/events, full typed DAG execution, OPEX driver workflows, integrated Balance Sheet/Cash Flow reconciliation, rolling forecast jobs, commitment reconciliation, override SoD, Excel/CSV staging, multi-entity rollups, planning observability/runbooks and complete accuracy reporting remain backend gaps. The P&L response is a planning projection, not a statutory statement; the cash-flow response is explicitly a proxy. Do not create UI claims for these capabilities until the backend matrix is updated with PASS evidence.
+Coordinate-scoped submission locking, delegated Platform Approvals, complete owner-module source adapters/events, full typed DAG execution, OPEX driver workflows, integrated Balance Sheet/Cash Flow reconciliation, rolling forecast jobs, commitment reconciliation, override SoD, Excel/CSV staging, multi-entity rollups, planning observability/runbooks and complete accuracy reporting remain backend gaps. The current Purchasing/Expenses reservation path is not a complete lifecycle guarantee: partial receipt/invoice/return/correction reconciliation and Expense reversal correction are still unverified. The P&L response is a planning projection, not a statutory statement; the cash-flow response is explicitly a proxy. Do not create UI claims for these capabilities until the backend matrix is updated with PASS evidence.

@@ -14,6 +14,52 @@ public interface ITransactionContext : IAsyncDisposable
     void AddOutbox(OutboxMessage message);
 }
 
+/// <summary>
+/// Adapts a transaction opened by an owning module to a transactional capability.
+/// The adapter deliberately does not own or commit the transaction; the caller remains
+/// responsible for the unit-of-work boundary and its rollback semantics.
+/// </summary>
+public sealed class ExistingTransactionContext(NpgsqlConnection connection, NpgsqlTransaction transaction) : ITransactionContext
+{
+    public NpgsqlConnection Connection { get; } = connection;
+    public NpgsqlTransaction Transaction { get; } = transaction;
+    public void Enlist(NpgsqlCommand command) => command.Transaction = Transaction;
+    public void AddOutbox(OutboxMessage message) => throw new InvalidOperationException("transaction.outbox_owner_required");
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+public enum PlanningBudgetReservationKind
+{
+    Precommitment,
+    Commitment
+}
+
+public sealed record PlanningBudgetReservationRequest(Guid LegalEntityId, Guid BucketId, string SourceModule, string SourceDocumentId,
+    string SourceLineId, string SourceVersion, decimal Amount, string CurrencyCode, PlanningBudgetReservationKind Kind);
+
+public sealed record PlanningBudgetConsumptionRequest(Guid LegalEntityId, string SourceModule, string SourceDocumentId, string SourceLineId,
+    string SourceVersion, decimal Amount, string CurrencyCode);
+
+public sealed record PlanningBudgetReservationResult(Guid ReservationId, string Decision, decimal AvailableAfter);
+
+public sealed class PlanningBudgetControlException(string code) : Exception(code)
+{
+    public string Code { get; } = code;
+}
+
+/// <summary>Planning owns the budget-control ledger; source modules enlist it in their transaction.</summary>
+public interface ITransactionalPlanningBudgetControlCapability
+{
+    Task<bool> HasOpenReservationAsync(ITransactionContext context, TenantId tenantId, Guid legalEntityId, string sourceModule,
+        string sourceDocumentId, string sourceLineId, CancellationToken cancellationToken = default);
+    Task<PlanningBudgetReservationResult> UpsertReservationAsync(ITransactionContext context, TenantId tenantId,
+        Guid actorId, PlanningBudgetReservationRequest request, CancellationToken cancellationToken = default);
+    Task ReleaseReservationAsync(ITransactionContext context, TenantId tenantId, string sourceModule,
+        string sourceDocumentId, string sourceLineId, CancellationToken cancellationToken = default);
+    Task<PlanningBudgetReservationResult> ConsumeReservationAsync(ITransactionContext context, TenantId tenantId,
+        Guid actorId, PlanningBudgetConsumptionRequest request, CancellationToken cancellationToken = default);
+}
+
 public interface ITransactionCoordinator
 {
     Task<T> ExecuteAsync<T>(TenantId tenantId, Func<ITransactionContext, CancellationToken, Task<T>> action, CancellationToken cancellationToken = default);

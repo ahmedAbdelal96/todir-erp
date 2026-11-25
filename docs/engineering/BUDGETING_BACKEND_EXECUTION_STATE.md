@@ -2,7 +2,7 @@
 
 ## Authorized scope
 
-Backend and database implementation for Module 28 on `dev`, including the planning schema, tenant/RLS enforcement, development seed, core planning APIs, the completed metadata/submission/spread/allocation slices, and focused backend verification. Frontend files and unrelated modules are outside this mission.
+Backend and database implementation for Module 28 on `dev`, including the full FP00–FP53 backend scope, owner-module contracts/adapters, transactionally safe Budget Control, planning APIs, migration/seed, security, jobs, operational evidence, and acceptance. Frontend files and unrelated modules are outside this mission.
 
 ## Completed and verified
 
@@ -14,6 +14,9 @@ Backend and database implementation for Module 28 on `dev`, including the planni
 - Verified the API with real cookie authentication, CSRF, PostgreSQL and RabbitMQ startup; seeded cycles, versions, grid and workforce data were readable.
 - Added controlled dimension members/mappings, formula dependencies, submission units, exact spreading, weighted allocations, scenario sharing/adoption, version comparison, workforce import/cost impact, CapEx lifecycle actions, P&L query and forecast-accuracy calculation.
 - Replayed migration and development seed on disposable database `planning_accept_ea22f9f5`, then dropped it; real authenticated HTTP verified dimension/member, formula, submission, exact spread, allocation conservation and P&L query.
+- Added the Planning OpenAPI contract and Planning-specific static contract checks.
+- Added a Planning-owned transactional Budget Control capability, forward-only schema fix for reservation kind/source currency and effective-dated policy fields, and optional source reservation integration in Purchasing and Expenses.
+- Added fail-closed legal-entity, effective-policy, control-decision and currency matching checks; source amendments update the existing reservation, draft deletion releases it, and owner transactions roll back on blocked/approval-required decisions.
 
 ## Last meaningful corrections
 
@@ -25,11 +28,11 @@ Backend and database implementation for Module 28 on `dev`, including the planni
 
 ## Required next executable work
 
-1. Complete the `OPEN` and `PARTIAL` rows in `BUDGETING_BACKEND_COVERAGE_MATRIX.md`, especially owner adapters, integrated statements, rolling forecast, Excel interop and reconciliation.
+1. Complete the `OPEN` and `PARTIAL` rows in `BUDGETING_BACKEND_COVERAGE_MATRIX.md`, especially owner adapters, integrated statements, rolling forecast, Excel interop, reconciliation and operational recovery.
 2. Add source-owned contracts/adapters and real cross-module event/transaction tests.
 3. Add scoped submission-coordinate locking, delegated approvals, full typed DAG execution, OPEX and multi-entity rollups.
-4. Rerun the final disposable migration/seed, API, security/RLS, architecture, Release build, formatter, OpenAPI and diff gates after the last source change.
+4. Complete the final disposable source-workflow acceptance and rerun all owner-module, integration, security/RLS, architecture, Release build, formatter, OpenAPI and diff gates after every later source change.
 
 ## Delivery status
 
-`NOT COMPLETE` until the mandatory gaps are implemented and supported by repeatable evidence. No production certification is implied.
+`NOT COMPLETE` until every mandatory FP00–FP53 backend gap is implemented and supported by repeatable evidence. The latest source integration is a partial closure only; no production certification is implied.

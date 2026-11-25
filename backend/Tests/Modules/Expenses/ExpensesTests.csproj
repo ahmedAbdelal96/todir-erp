@@ -8,5 +8,6 @@
     <ProjectReference Include="../../../Modules/Expenses/Expenses.csproj" />
     <ProjectReference Include="../../../Modules/Ledger/Ledger.csproj" />
     <ProjectReference Include="../../../Modules/FinanceBase/FinanceBase.csproj" />
+    <ProjectReference Include="../../../Modules/Planning/Planning.csproj" />
   </ItemGroup>
 </Project>

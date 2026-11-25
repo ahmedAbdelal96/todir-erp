@@ -16,6 +16,7 @@ public static class PlanningModuleExtensions
         services.AddSingleton<IModuleManifestProvider, PlanningModuleManifestProvider>();
         services.AddSingleton<PlanningRepository>();
         services.AddSingleton<PlanningFormulaEngine>();
+        services.AddSingleton<Core.Transactions.ITransactionalPlanningBudgetControlCapability, PlanningBudgetControlCapability>();
         return services;
     }
 

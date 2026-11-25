@@ -41,7 +41,7 @@ public sealed class PurchasingService(
     {
         Validate(legalEntityId, request.CurrencyCode, request.Lines);
         await EnsureSupplierAsync(tenant, request.SupplierPartyId, legalEntityId, ct);
-        var lines = await ResolveLinesAsync(tenant, new CreatePurchaseOrderRequest(legalEntityId, null, request.SupplierPartyId, request.CurrencyCode, request.OrderDate, null, false, request.Lines), canOverridePrice, ct);
+        var lines = await ResolveLinesAsync(tenant, new CreatePurchaseOrderRequest(legalEntityId, null, request.SupplierPartyId, request.CurrencyCode, request.OrderDate, null, false, request.Lines, request.ProjectId, request.TaskId, request.CostCategory, request.BudgetBucketId), canOverridePrice, ct);
         return await repository.UpdateAsync(tenant, actor, legalEntityId, id, request with { CurrencyCode = request.CurrencyCode.Trim().ToUpperInvariant() }, lines, correlation, ct, amendment, reason);
     }
 

@@ -197,7 +197,7 @@ public static class ExpensesModuleExtensions
         return http.Request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase) ? "expenses.create" : "expenses.edit";
     }
     private static async Task<IResult> Execute<T>(HttpContext h, Guid entity, Func<Task<T>> action, int status = 200)
-    { if (!Guid.TryParse(h.User.FindFirstValue("tenant_id"), out _) || (Guid.TryParse(h.User.FindFirstValue("legal_entity_id"), out var claim) && claim != entity)) return Results.Forbid(); try { var value = await action(); return status == 201 ? Results.Created(h.Request.Path, value) : Results.Ok(value); } catch (ExpenseRepositoryException ex) { return Results.Problem(statusCode: ex.Code.Contains("not_found", StringComparison.Ordinal) ? 404 : ex.Code.Contains("concurrent", StringComparison.Ordinal) ? 409 : 400, title: ex.Code, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); } }
+    { if (!Guid.TryParse(h.User.FindFirstValue("tenant_id"), out _) || (Guid.TryParse(h.User.FindFirstValue("legal_entity_id"), out var claim) && claim != entity)) return Results.Forbid(); try { var value = await action(); return status == 201 ? Results.Created(h.Request.Path, value) : Results.Ok(value); } catch (ExpenseRepositoryException ex) { return Results.Problem(statusCode: ex.Code.Contains("not_found", StringComparison.Ordinal) ? 404 : ex.Code.Contains("concurrent", StringComparison.Ordinal) ? 409 : 400, title: ex.Code, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); } catch (Core.Transactions.PlanningBudgetControlException ex) { var statusCode = ex.Code.Contains("insufficient", StringComparison.Ordinal) ? 409 : 400; return Results.Problem(statusCode: statusCode, title: ex.Code, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); } }
     private static async Task<IResult> ExecuteSelf<T>(HttpContext h, IAuthorizationSubjectStore subjects, IPermissionAuthorizer authorizer, Guid entity, string permission, Func<Task<T>> action, int status = 200)
     {
         if (!Guid.TryParse(h.User.FindFirstValue("tenant_id"), out var tenantId) || !Guid.TryParse(h.User.FindFirstValue("membership_id"), out var membershipId)) return Results.Unauthorized();
@@ -206,6 +206,7 @@ public static class ExpensesModuleExtensions
         if (!authorizer.Authorize(subject, permission, PermissionScope.ForLegalEntity(tenant, new(entity)))) return Results.Forbid();
         try { var value = await action(); return status == 201 ? Results.Created(h.Request.Path, value) : Results.Ok(value); }
         catch (ExpenseRepositoryException ex) { return Results.Problem(statusCode: ex.Code.Contains("not_found", StringComparison.Ordinal) ? 404 : 400, title: ex.Code, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); }
+        catch (Core.Transactions.PlanningBudgetControlException ex) { return Results.Problem(statusCode: ex.Code.Contains("insufficient", StringComparison.Ordinal) ? 409 : 400, title: ex.Code, extensions: new Dictionary<string, object?> { ["code"] = ex.Code }); }
     }
 }
 public sealed class ExpensesModuleManifestProvider : IModuleManifestProvider
