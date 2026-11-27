@@ -13,7 +13,9 @@ public sealed record PlanningOwnerFinancialFact(
     string DimensionKeyJson,
     string SourceKind,
     decimal Amount,
-    string CurrencyCode);
+    string CurrencyCode,
+    string? RecognitionIdentity = null,
+    string? FiscalBasis = null);
 
 public interface IPlanningOwnerReconciliationSource
 {

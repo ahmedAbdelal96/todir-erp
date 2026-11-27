@@ -74,6 +74,24 @@ The disposable/development seed provides, per tenant:
 
 The administrator seed role receives the canonical Module 28 permissions. Other roles do not receive planning access by default. The frontend must treat permission results as visibility guidance only; the API remains authoritative and must handle 401/403/lifecycle errors without technical details.
 
+## BC02 governance handoff status
+
+The backend exposes the first governed top-down/bottom-up slice through
+`POST /api/v1/planning/targets`,
+`POST /api/v1/planning/targets/proposals`, and
+`POST /api/v1/planning/targets/proposals/{id}/adjust`. It persists the
+management target, original department proposal, calculated gap, adjusted
+amount, reason, actor and audit event. These routes are draft-plan scoped and
+do not overwrite the original target or submitted proposal. Authenticated
+approval/publication evidence for BC2-T12 remains open; frontend work must not
+present this slice as final BC02 acceptance until the matrix is green.
+
+Actual snapshots now carry source version, recognition identity and fiscal
+basis in addition to source module/reference, line, mapping version and
+watermark. Published plan inputs and Actual snapshot facts are protected by
+both repository guards and PostgreSQL triggers. Development seed writes use
+the controlled owner role only.
+
 ## Not yet safe to build against as final product scope
 
 The broader Module 28 scope still has separate gaps: coordinate-scoped submission locking, configurable delegated approvals, full typed DAG execution, OPEX driver workflows, integrated Balance Sheet/Cash Flow reconciliation, rolling forecast jobs, complete PO receipt/return product lifecycle, Excel/CSV staging, multi-entity rollups, planning observability and complete accuracy reporting. The BC01 backend control and recovery evidence is ready for frontend integration, but the P&L response remains a planning projection (not a statutory statement) and the cash-flow response is explicitly a proxy. Do not create UI claims for broader capabilities until the backend matrix is updated with PASS evidence.

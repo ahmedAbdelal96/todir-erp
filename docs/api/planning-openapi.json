@@ -69,6 +69,9 @@
     "/api/v1/planning/working-capital": { "post": { "responses": { "200": { "description": "Working capital assumption saved" } } } },
     "/api/v1/planning/fx": { "post": { "responses": { "200": { "description": "Planning FX rate saved" } } } },
     "/api/v1/planning/allocations": { "post": { "responses": { "201": { "description": "Conserving allocation" } } } },
+    "/api/v1/planning/targets": { "post": { "description": "Create a governed top-down target in a Draft plan version", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreatePlanningTargetRequest" } } } }, "responses": { "201": { "description": "Planning target created" }, "409": { "description": "Only Draft plan versions may be changed" } } } },
+    "/api/v1/planning/targets/proposals": { "post": { "description": "Submit a bottom-up department proposal against a governed target", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreatePlanningProposalRequest" } } } }, "responses": { "201": { "description": "Planning proposal created" }, "409": { "description": "Proposal is outside the editable plan lifecycle" } } } },
+    "/api/v1/planning/targets/proposals/{id}/adjust": { "post": { "description": "Adjust a proposal with an explicit reason", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdjustPlanningProposalRequest" } } } }, "responses": { "200": { "description": "Planning proposal adjusted" }, "409": { "description": "Proposal is outside the editable plan lifecycle" } } } },
     "/api/v1/planning/statements/query": { "post": { "responses": { "200": { "description": "Planning statement projection" } } } },
     "/api/v1/planning/forecast-accuracy": { "post": { "responses": { "200": { "description": "Forecast accuracy and bias" } } } },
     "/api/v1/planning/actuals/refresh": { "post": { "description": "Builds a read-only snapshot from registered owner contracts. Caller-supplied facts are rejected; repeated source watermarks are idempotent.", "responses": { "202": { "description": "Actual snapshot refresh requested" }, "409": { "description": "Unmapped, conflicting, or immutable Actual input" } } } },
@@ -81,6 +84,11 @@
     "securitySchemes": {
       "cookieAuth": { "type": "apiKey", "in": "cookie", "name": "todir_session" },
       "bearerAuth": { "type": "http", "scheme": "bearer" }
+    },
+    "schemas": {
+      "CreatePlanningTargetRequest": { "type": "object", "required": ["planVersionId", "legalEntityId", "periodStart", "metricCode", "targetAmount", "currencyCode"], "properties": { "planVersionId": { "type": "string", "format": "uuid" }, "legalEntityId": { "type": "string", "format": "uuid" }, "periodStart": { "type": "string", "format": "date" }, "metricCode": { "type": "string" }, "targetAmount": { "type": "number" }, "currencyCode": { "type": "string", "minLength": 3, "maxLength": 3 }, "reason": { "type": ["string", "null"] } } },
+      "CreatePlanningProposalRequest": { "type": "object", "required": ["planVersionId", "legalEntityId", "periodStart", "metricCode", "proposedAmount", "currencyCode"], "properties": { "planVersionId": { "type": "string", "format": "uuid" }, "legalEntityId": { "type": "string", "format": "uuid" }, "departmentRef": { "type": ["string", "null"], "format": "uuid" }, "periodStart": { "type": "string", "format": "date" }, "metricCode": { "type": "string" }, "proposedAmount": { "type": "number" }, "currencyCode": { "type": "string", "minLength": 3, "maxLength": 3 }, "reason": { "type": ["string", "null"] } } },
+      "AdjustPlanningProposalRequest": { "type": "object", "required": ["adjustedAmount", "reason"], "properties": { "adjustedAmount": { "type": "number" }, "reason": { "type": "string", "minLength": 1 } } }
     }
   }
 }

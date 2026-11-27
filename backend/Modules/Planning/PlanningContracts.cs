@@ -51,6 +51,9 @@ public sealed record AccuracyRequest(Guid ForecastVersionId, Guid ActualVersionI
 public sealed record ScenarioAdoptRequest(string Name, string VersionKind, DateOnly? ActualCutoff);
 public sealed record AdjustReservationRequest(decimal Amount);
 public sealed record CompareVersionRequest(Guid OtherVersionId, Guid LegalEntityId, DateOnly? From, DateOnly? To, string? MetricCode);
+public sealed record CreatePlanningTargetRequest(Guid PlanVersionId, Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal TargetAmount, string CurrencyCode, string? Reason = null);
+public sealed record CreatePlanningProposalRequest(Guid PlanVersionId, Guid LegalEntityId, Guid? DepartmentRef, DateOnly PeriodStart, string MetricCode, decimal ProposedAmount, string CurrencyCode, string? Reason = null);
+public sealed record AdjustPlanningProposalRequest(decimal AdjustedAmount, string Reason);
 
 public sealed record PlanningCycleView(Guid Id, Guid LegalEntityId, string Name, string CycleType, string Horizon, DateOnly StartPeriod, DateOnly EndPeriod, DateOnly? ActualCutoff, string State, long RowVersion);
 public sealed record PlanningModelView(Guid Id, string Name, string ModelType, Guid? LegalEntityId, string CurrencyCode, string Status);
@@ -80,5 +83,6 @@ public sealed record StatementLineView(string StatementType, string LineCode, Da
 public sealed record ForecastAccuracyView(Guid ForecastVersionId, Guid ActualVersionId, string MetricCode, decimal ForecastTotal, decimal ActualTotal, decimal AbsoluteError, decimal PercentageError, decimal Bias);
 public sealed record WorkforceCostImpactView(Guid PlanVersionId, DateOnly PeriodStart, decimal Fte, decimal Cost);
 public sealed record CompareVersionView(Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal LeftAmount, decimal RightAmount, decimal Difference);
+public sealed record PlanningTargetView(Guid Id, Guid PlanVersionId, Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal TargetAmount, decimal? ProposalAmount, decimal? GapAmount, decimal? AdjustedAmount, string CurrencyCode, string State);
 
 public sealed class PlanningException(string code) : Exception(code) { public string Code => Message; }

@@ -76,7 +76,29 @@ fresh-seed replay test 1/1, authenticated BC-T09 1/1, canonical BC-T10 1/1 and
 the new owner-sourced Actual snapshot/replay test 1/1 on disposable PostgreSQL.
 
 The BC02 acceptance matrix is `docs/engineering/BUDGETING_BC02_ACCEPTANCE_MATRIX.md`.
-It intentionally records T02, failed-refresh recovery, mapping lifecycle,
-transfer concurrency and submission HTTP/SoD vectors as OPEN/PARTIAL until
-dedicated repeatable evidence exists. Therefore BC02 is `NOT COMPLETE` and no
-full Module 28 or production certification is claimed.
+BC2-T02 duplicate recognition and BC2-T03 durable failed-refresh/restatement
+now have repeatable disposable PostgreSQL evidence. Mapping lifecycle, fiscal
+calendar, published-version alternate-route, transfer concurrency, department
+submission, delegated approval, scoped confidentiality, BC01-after-final-change
+and disabled-module vectors remain OPEN/PARTIAL. Therefore BC02 is `NOT
+COMPLETE` and no full Module 28 or production certification is claimed.
+
+## BC02 integrity-closure checkpoint
+
+The latest closure adds the forward-only `planning-forward-fix-zz-bc02-integrity.sql`
+migration. It introduces governed top-down targets, department proposals and
+finance adjustments, preserves Actual source version/recognition/fiscal
+provenance, scopes Actual-fact uniqueness to a snapshot so restatements remain
+historical, and installs runtime database guards for published plan inputs and
+immutable Actual snapshots. The Development Seed is explicitly allowed to
+replay through the controlled `erp_owner` seed role; application role
+mutations remain fail-closed.
+
+`PlanningBc02ActualIntegrationTests` now creates a disposable canonical
+ExpenseRecognized Ledger fact, refreshes it through the public Ledger owner
+provider, proves source-only ingestion and replay idempotency, rejects
+caller-supplied facts, recognizes a shared operational/Ledger identity once,
+and preserves/replaces snapshots across a controlled source failure and
+correction. Planning unit tests remain 4/4. The original BC2-T01 to BC2-T17
+identities were restored in the acceptance matrix. T04-T17 still require
+their mandatory business acceptance vectors and are not claimed as passed.

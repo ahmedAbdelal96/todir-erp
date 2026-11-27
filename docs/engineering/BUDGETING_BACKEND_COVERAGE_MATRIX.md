@@ -61,6 +61,17 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP52 | Cross-module reconciliation | owner financial-fact contracts and durable owner result | Purchasing and Ledger expose bounded owner facts; Planning compares source facts to bucket totals and records watermark/discrepancy; actual snapshots use owner providers | BC-T10 and BC2-T01 real disposable PostgreSQL vectors | PASS for covered vectors |
 | FP53 | E2E/release | migration/RLS verified | BC01 APIs and source seams | BC-T01–T12 evidence, Ledger 56/56 twice, authenticated HTTP, migration/seed, architecture/OpenAPI and Release gates; complete Module 28 gate not | PASS for BC01 |
 
+## BC02 integrity-closure note
+
+The original BC2-T01 through BC2-T17 identities are authoritative in
+`BUDGETING_BC02_ACCEPTANCE_MATRIX.md`. The current implementation adds
+owner-sourced Actual provenance, duplicate refresh identity protection,
+published-input and snapshot database guards, and governed target/proposal/
+adjustment persistence. These changes do not convert the remaining
+owner-contract, fiscal-calendar, failure/restate, department/SoD,
+concurrency, confidentiality, disabled-module or full BC01-after-change
+vectors into PASS without their required runtime evidence.
+
 ## Build Now MUST audit
 
 The mandatory Build Now list in section 789 maps to FP02–FP53 above. The `OPEN` and `PARTIAL` rows are release blockers for the full Module 28 backend mission: OPEX, integrated BS/CF, rolling forecast, complete Purchasing/Expenses owner lifecycles, commitment reconciliation, overrides, Excel interop, rollup, observability/runbooks, and their acceptance journeys. This delivery therefore remains `NOT COMPLETE`.
@@ -70,7 +81,7 @@ The mandatory Build Now list in section 789 maps to FP02–FP53 above. The `OPEN
 - `dotnet build backend/Backend.sln --configuration Release --no-restore` — PASS after the latest source change, 0 warnings/0 errors.
 - `dotnet test backend/Tests/Modules/Planning/PlanningTests.csproj --configuration Release --no-restore` — PASS, 4/4 after the final source integration edit.
 - `dotnet test backend/Tests/Architecture/ArchitectureTests.csproj --configuration Release --no-restore` — PASS, 23/23 after the final source integration edit.
-- `node scripts/architecture/validate-openapi.mjs` — PASS; Planning contract validated with 67 paths and the eight existing contracts also passed.
+- `node scripts/architecture/validate-openapi.mjs` — PASS; Planning contract validated with 75 paths and the eight existing contracts also passed.
 - `dotnet test backend/Tests/Security/SecurityTests.csproj --configuration Release --no-restore` with disposable admin connection — PASS, 7/7.
 - `dotnet test backend/Tests/Modules/Expenses/ExpensesTests.csproj --configuration Release --no-build --filter FullyQualifiedName~PlanningBudgetControlIntegrationTests` — PASS, 8/8 on disposable PostgreSQL; omitted-bucket strict control, partial consumption/correction idempotency, bounded source-specific override use, expense owner lifecycle, and projection reconciliation/rebuild were asserted.
 - `dotnet test backend/Tests/Integration/IntegrationTests.csproj --configuration Release --no-build --filter "FullyQualifiedName~ApiCompositionTests"` with Development signing configuration, the isolated runtime-role connection and seed password — PASS, 4/4.
@@ -84,6 +95,7 @@ The mandatory Build Now list in section 789 maps to FP02–FP53 above. The `OPEN
 - `dotnet test backend/Tests/Modules/Expenses/ExpensesTests.csproj --configuration Release --no-build --filter "FullyQualifiedName~BudgetReversalRecoversAfterLedgerCommitBeforePlanningCorrection|FullyQualifiedName~BudgetReversalLedgerFailureLeavesRetryableIntent"` — PASS 2/2 for the durable BC-T08 failure/retry paths; the strict opening/omitted-bucket boundary is included in the separate Planning Budget Control 8/8 run above.
 - `dotnet test backend/Tests/Modules/Ledger/LedgerTests.csproj --configuration Release --no-build` — PASS `56/56`, repeated twice on disposable PostgreSQL after the fixture isolation correction.
 - `dotnet test backend/Tests/Integration/IntegrationTests.csproj --configuration Release --no-build --filter "DisplayName~BC2-T01"` — PASS, 1/1; owner-sourced immutable Actual snapshot, replay idempotency and caller-fact rejection.
+- `dotnet test backend/Tests/Integration/IntegrationTests.csproj --configuration Release --no-build --filter "DisplayName~BC2-T01|DisplayName~BC2-T02|DisplayName~BC2-T03"` — PASS, 3/3 after the final Actual refresh change; canonical source-only refresh, duplicate operational/Ledger identity collapse, durable source failure and corrected restatement.
 - `dotnet test backend/Tests/SeedData/SeedDataTests.csproj --configuration Release --no-build --filter "FullyQualifiedName~DevelopmentSeedRunsTwiceOnFreshDatabaseWithForcedRls"` — PASS, 1/1 on local disposable PostgreSQL.
 - `dotnet test backend/Tests/Integration/IntegrationTests.csproj --configuration Release --no-build --filter "DisplayName~BC-T09"` — PASS, 1/1 authenticated Planning HTTP budget approval.
 - `dotnet test backend/Tests/Integration/IntegrationTests.csproj --configuration Release --no-build --filter "DisplayName~BC-T10"` — PASS, 1/1 canonical owner reconciliation after correcting grouped Ledger debit/credit semantics.
