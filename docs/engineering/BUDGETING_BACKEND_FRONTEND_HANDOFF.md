@@ -26,7 +26,7 @@ Implemented route groups:
 - safe first-sheet XLSX preview/commit (`POST /grid/import/xlsx/preview`, `/grid/import/xlsx`); macro, external-link, formula and oversized archive inputs fail closed;
 - authorized bounded XLSX export/template (`GET /grid/export/xlsx`, `/grid/template/xlsx`) with explicit template metadata and formula-safe text cells;
 - failed calculation retry (`POST /calculation-runs/{id}/retry`) reruns only a durable Failed run against the current input revision; calculation results retain an input revision and stale completion is rejected.
-- owner-source registration now includes the existing Ledger/Purchasing providers plus Payroll finalized accounting facts and Fixed Assets posted depreciation lines; Planning remains read-only at this boundary and does not access owner tables directly;
+- owner-source registration now includes the existing Ledger/Purchasing providers plus Payroll finalized accounting facts, Expenses finalized accounting facts and Fixed Assets posted depreciation lines; the BC2-T15 disposable PostgreSQL workflow proves non-empty Payroll/Expenses/Fixed Assets facts, canonical Ledger identity matching, replay idempotency and depreciation reversal correction. Planning remains read-only at this boundary and does not access owner tables directly;
 - Planning publishes bounded `Todir.Planning` OpenTelemetry metrics for Actual refresh, calculation, budget checks, block decisions, import failures and reconciliation outcomes through the existing platform pipeline;
 - Planning OpenAPI contract: `docs/api/planning-openapi.json` (86 paths; static validation is separate from business acceptance).
 - Purchasing and Expenses request contracts may carry `budgetBucketId` as a validated selection hint. The backend remains authoritative: it normalizes the annual, quarterly, or monthly control horizon, resolves the applicable active bucket, rejects cross-entity/context/uncontrolled selections, and fails closed for active strict policies with no applicable bucket. Owner transactions are rolled back for blocked/approval-required decisions.
@@ -42,6 +42,7 @@ Implemented route groups:
 - BC-T09 proves the authenticated override journey through cookie/CSRF HTTP and Platform Approvals with separate requester, approver and unauthorized identities.
 - BC-T10 proves an independent real-source opening vector in a repeat-safe unused future year: Expense `40,000 EGP` Actual, approved PO `60,000 EGP` Commitment, approved PR `20,000 EGP` Precommitment, and `80,000 EGP` availability. Authenticated reconciliation detects the initial projection discrepancy, rebuilds it, and a final zero-discrepancy run permits strict readiness.
 - The Ledger owner provider maps the canonical `ExpenseRecognized` debit semantic role; reconciled availability and reservation evaluation do not count materialized owner totals twice.
+- BC2-T15 proves a real finalized Payroll run, posted Fixed Assets depreciation and reversal, and finalized Expenses owner facts reconcile to canonical Ledger identities exactly once. The Fixed Assets provider reads only Fixed Assets-owned tables and derives its deterministic run/book identity; immutable posted financial evidence is retained on the disposable database.
 
 ## BC02 backend additions
 

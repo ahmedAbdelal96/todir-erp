@@ -25,6 +25,8 @@ public static class ExpensesModuleExtensions
             sp.GetRequiredService<IHttpClientFactory>().CreateClient("expenses-ocr"),
             sp.GetRequiredService<IConfiguration>()["Expenses:Ocr:Endpoint"] ?? Environment.GetEnvironmentVariable("TODIR_EXPENSES_OCR_PROVIDER_URL")));
         services.AddSingleton<ExpenseRepository>();
+        services.AddSingleton<ExpensesOwnerReconciliationSource>();
+        services.AddSingleton<Shared.Contracts.Planning.IPlanningOwnerReconciliationSource>(provider => provider.GetRequiredService<ExpensesOwnerReconciliationSource>());
         services.AddSingleton<ExpenseService>();
         services.AddSingleton<Shared.Contracts.Expenses.IExpenseFixedAssetCapabilities>(provider => provider.GetRequiredService<ExpenseService>());
         return services;

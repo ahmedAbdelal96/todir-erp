@@ -18,7 +18,7 @@ public sealed class PayrollOwnerReconciliationSource(NpgsqlDataSource dataSource
             await tenant.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        const string sql = "select f.id,r.id,r.accounting_state,r.legal_entity_id,coalesce(p.period_start,r.created_at::date),f.total_amount,f.currency_code from business_payroll.accounting_fact f join business_payroll.payroll_run r on r.tenant_id=f.tenant_id and r.id=f.run_id left join business_payroll.payroll_period p on p.tenant_id=r.tenant_id and p.id=r.period_id where f.tenant_id=$1 and ($2::uuid is null or r.legal_entity_id=$2) and f.fact_type='PayrollPosted' and f.status='Posted' and r.finalization_state='Finalized' order by p.period_start,r.id";
+        const string sql = "select f.id,r.id,f.status,r.legal_entity_id,coalesce(p.period_start,r.created_at::date),coalesce((f.payload->>'gross')::numeric,r.total_gross),f.currency_code from business_payroll.accounting_fact f join business_payroll.payroll_run r on r.tenant_id=f.tenant_id and r.id=f.run_id left join business_payroll.payroll_period p on p.tenant_id=r.tenant_id and p.id=r.period_id where f.tenant_id=$1 and ($2::uuid is null or r.legal_entity_id=$2) and f.fact_type='PayrollPosted' and f.status='Posted' and r.finalization_state='Finalized' order by p.period_start,r.id";
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(tenantId.Value);
         command.Parameters.AddWithValue(legalEntityId.HasValue ? legalEntityId.Value : DBNull.Value);

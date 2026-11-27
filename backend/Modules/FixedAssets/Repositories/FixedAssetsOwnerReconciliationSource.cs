@@ -18,7 +18,7 @@ public sealed class FixedAssetsOwnerReconciliationSource(NpgsqlDataSource dataSo
             await tenant.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        const string sql = "select r.id,l.id,r.legal_entity_id,r.period_start,l.amount,b.currency_code,coalesce(l.ledger_fact_reference,l.id::text) from business_assets.asset_depreciation_run r join business_assets.asset_depreciation_run_line l on l.tenant_id=r.tenant_id and l.run_id=r.id join business_assets.asset_book b on b.tenant_id=l.tenant_id and b.id=l.asset_book_id where r.tenant_id=$1 and ($2::uuid is null or r.legal_entity_id=$2) and r.status='Posted' and l.amount>0 order by r.period_start,r.id,l.id";
+        const string sql = "select r.id,l.id,l.asset_book_id,r.legal_entity_id,r.period_start,l.amount,d.currency_code,'depreciation-run:'||r.id::text||':book:'||l.asset_book_id::text from business_assets.asset_depreciation_run r join business_assets.asset_depreciation_run_line l on l.tenant_id=r.tenant_id and l.run_id=r.id join business_assets.asset_book b on b.tenant_id=l.tenant_id and b.id=l.asset_book_id join business_assets.asset_book_definition d on d.tenant_id=b.tenant_id and d.id=b.book_definition_id where r.tenant_id=$1 and ($2::uuid is null or r.legal_entity_id=$2) and r.status='Posted' and l.amount>0 order by r.period_start,r.id,l.id";
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue(tenantId.Value);
         command.Parameters.AddWithValue(legalEntityId.HasValue ? legalEntityId.Value : DBNull.Value);
@@ -26,8 +26,9 @@ public sealed class FixedAssetsOwnerReconciliationSource(NpgsqlDataSource dataSo
         var result = new List<PlanningOwnerFinancialFact>();
         while (await reader.ReadAsync(cancellationToken))
         {
-            var period = reader.GetFieldValue<DateOnly>(3);
-            result.Add(new(SourceModule, reader.GetString(6), reader.GetGuid(1).ToString("D"), reader.GetGuid(0).ToString("D"), reader.GetGuid(2), new(period.Year, period.Month, 1), "DEPRECIATION", "{}", "Actual", reader.GetDecimal(4), reader.GetString(5).Trim(), $"depreciation:{reader.GetGuid(0):D}:{reader.GetGuid(1):D}", "Accrual"));
+            var period = reader.GetFieldValue<DateOnly>(4);
+            var sourceReference = reader.GetString(7);
+            result.Add(new(SourceModule, sourceReference, reader.GetGuid(1).ToString("D"), reader.GetGuid(0).ToString("D"), reader.GetGuid(3), new(period.Year, period.Month, 1), "DEPRECIATION", "{}", "Actual", reader.GetDecimal(5), reader.GetString(6).Trim(), sourceReference, "Accrual"));
         }
         return result;
     }

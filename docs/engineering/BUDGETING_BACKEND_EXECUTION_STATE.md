@@ -232,3 +232,32 @@ refresh duration/failure, calculation duration/failure, budget-check duration,
 block decisions, CSV import failures and reconciliation workflow outcomes.
 The existing observability pipeline exports the meter; live Prometheus and
 alert evidence remains outstanding, so FP45 is PARTIAL rather than PASS.
+
+## Owner financial integration checkpoint — 2026-11-28
+
+The owner-source continuation now includes an Expenses provider that reads only
+finalized, posted Expenses-owned rows and carries legal entity, period,
+currency, project/task/category dimensions and stable recognition identity.
+Payroll owner facts use the finalized gross amount rather than net pay. Fixed
+Assets owner facts read only Fixed Assets-owned depreciation runs, derive the
+currency from the owning book definition, and use the deterministic
+`depreciation-run:{run}:book:{book}` identity shared with the canonical Ledger
+posting. The Planning Development Seed now publishes OPEX and DEPRECIATION
+metric mappings for Payroll, Expenses, Ledger and Fixed Assets.
+
+`PlanningOwnerFinancialIntegrationTests` (`BC2-T15`) passed against the
+disposable `bc02_closure_final_20261127` PostgreSQL fixture after the final
+source change. It creates and finalizes a real Payroll run, posts and reverses a
+real Fixed Assets depreciation run, observes non-empty Expenses facts, matches
+each Payroll/Fixed Assets/Expenses fact to the canonical Ledger identity and
+amount, proves Planning refresh replay idempotency, and proves the posted
+depreciation plus reversal nets to zero in the corrected snapshot. The fixture
+uses an isolated future fiscal year/period and retains only immutable posted
+financial evidence; transient asset/depreciation rows are cleaned up.
+
+This closes the non-empty Payroll/Expenses/Fixed Assets evidence gap for the
+implemented owner boundary but does not close the broader Module 28 mission.
+Sales/CRM, HR, Banking, Inventory, Manufacturing, Projects, Subledger and
+FinBase owner-source matrices, FP38 CFO views, FP40 multi-entity rollup, FP45
+live Prometheus evidence, and the remaining BC02/FP acceptance vectors remain
+PARTIAL or OPEN in the coverage matrix. Delivery status remains `NOT COMPLETE`.
