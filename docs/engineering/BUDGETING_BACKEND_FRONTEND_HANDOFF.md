@@ -21,8 +21,11 @@ Implemented route groups:
 - submission-unit state transitions;
 - scenario share/adopt-preview and version comparison;
 - exact spreading (`/grids/spread-exact`), weighted allocation, P&L query and forecast-accuracy calculation;
-- workforce baseline import/cost-impact and CapEx lifecycle actions.
-- Planning OpenAPI contract: `docs/api/planning-openapi.json` (72 paths; static validation is separate from business acceptance).
+- workforce baseline import/cost-impact, category/driver-based OPEX (`POST/GET /opex`) and CapEx lifecycle actions.
+- rolling forecast (`POST /forecasts/roll`), bounded CSV preview/commit (`POST /grid/import/preview`, `/grid/import`) and explicit-Planning-FX management rollup (`POST /reports/rollup`).
+- safe first-sheet XLSX preview/commit (`POST /grid/import/xlsx/preview`, `/grid/import/xlsx`); macro, external-link, formula and oversized archive inputs fail closed;
+- failed calculation retry (`POST /calculation-runs/{id}/retry`) reruns only a durable Failed run against the current input revision; calculation results retain an input revision and stale completion is rejected.
+- Planning OpenAPI contract: `docs/api/planning-openapi.json` (86 paths; static validation is separate from business acceptance).
 - Purchasing and Expenses request contracts may carry `budgetBucketId` as a validated selection hint. The backend remains authoritative: it normalizes the annual, quarterly, or monthly control horizon, resolves the applicable active bucket, rejects cross-entity/context/uncontrolled selections, and fails closed for active strict policies with no applicable bucket. Owner transactions are rolled back for blocked/approval-required decisions.
 - Budget Control now normalizes annual, quarterly and monthly horizons, requires a published plan version, preserves source currency, and supports `POST /budget/overrides`, `GET /budget/overrides/{id}`, and `POST /budget/overrides/{id}/decision`. An override is a single source/document/line/version exception, is Platform-Approval governed, expires when configured, and is consumed transactionally; it never changes the approved Budget.
 - Purchasing now exposes `/legal-entities/{entityId}/purchase-requisitions` create/read/submit/approve/reject/convert routes. Conversion is source-versioned and idempotent; the backend preserves PR line identity and replaces remaining precommitment with PO commitment.
@@ -68,6 +71,7 @@ The disposable/development seed provides, per tenant:
 - a published 150,000 EGP baseline and Warn control bucket;
 - aggregate workforce planning of 12 FTE at 18,000 EGP average cost;
 - one 45,000 EGP prioritized CapEx item;
+- two seeded OPEX lines: fixed Facilities and driver-based Utilities with explicit source and category metadata;
 - one 100 × 1,500 EGP revenue driver, working-capital assumptions and USD/EGP planning FX.
 
 ## Permission boundary
@@ -94,4 +98,4 @@ the controlled owner role only.
 
 ## Not yet safe to build against as final product scope
 
-The broader Module 28 scope still has separate gaps: coordinate-scoped submission locking, configurable delegated approvals, full typed DAG execution, OPEX driver workflows, integrated Balance Sheet/Cash Flow reconciliation, rolling forecast jobs, complete PO receipt/return product lifecycle, Excel/CSV staging, multi-entity rollups, planning observability and complete accuracy reporting. The BC01 backend control and recovery evidence is ready for frontend integration, but the P&L response remains a planning projection (not a statutory statement) and the cash-flow response is explicitly a proxy. Do not create UI claims for broader capabilities until the backend matrix is updated with PASS evidence.
+The broader Module 28 scope still has separate gaps: coordinate-scoped submission locking, configurable delegated approvals, full typed DAG execution and recovery evidence, canonical owner-source breadth, closed-period rolling forecast evidence, complete PO receipt/return product lifecycle, XLSX export/template and full staging matrix, multi-entity reconciliation, planning observability and complete accuracy reporting. The statement response is an integrated planning projection, not a statutory statement; it still requires broader canonical opening-balance and source-owner acceptance before product claims. Do not create UI claims for broader capabilities until the backend matrix is updated with PASS evidence.

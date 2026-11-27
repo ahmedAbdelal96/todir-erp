@@ -158,8 +158,8 @@ Fresh evidence after those changes:
 - BC02 plus the new BC03 integration vectors: 9/9 PASS.
 - Release build: PASS with zero warnings/errors.
 - Architecture governance: 23/23 PASS.
-- Planning OpenAPI validation: PASS with 82 paths.
-- Fresh disposable migration and Development Seed replay: PASS; 280 ordered
+- Planning OpenAPI validation at that checkpoint: PASS with 82 paths.
+- Fresh disposable migration and Development Seed replay at that checkpoint: PASS; 280 ordered
   platform scripts applied or verified.
 
 These results prove the implemented slices only. The full Module 28 backend is
@@ -168,3 +168,45 @@ lifecycles, closed-period and rolling-forecast acceptance, transfer and
 submission matrices, Excel/rollup breadth, observability/runbooks, and the
 remaining FP/BC03–BC06 acceptance vectors still require implementation or
 evidence. No frontend, production, or full-module completion is claimed.
+
+## OPEX workflow checkpoint — 2026-11-27
+
+The next targeted correction added the Planning-owned `opex_plan_line` model
+and forward-only migration with tenant RLS, bounded scope indexing and a
+null-safe coordinate uniqueness index. `POST /api/v1/planning/opex` now accepts
+fixed, variable, recurring and driver-based lines with category, account and
+cost-centre references, explicit base/driver/rate inputs, growth and inflation
+percentages, currency and provenance. `GET /api/v1/planning/opex` is bounded
+and legal-entity scoped. Integrated P&L prefers these dedicated OPEX lines over
+generic OPEX grid values for the same period, preventing a second unexplained
+OPEX calculation path.
+
+The Development Seed now includes two repeat-safe OPEX examples per tenant.
+The disposable PostgreSQL BC03 vector proves fixed 1,000 plus 10% growth equals
+1,100, driver 10 × 20 plus 5% inflation equals 210, total OPEX equals 1,310,
+and the resulting NetIncome equals 190. Migration/seed replay and the combined
+BC02/BC03 integration selection passed after the change. OPEX remains `PARTIAL`
+until source-owner baselines, full governance/security matrices and the broader
+BC04/BC05/BC06 acceptance scenarios pass.
+
+The calculation path now records the Planning input revision, takes a durable
+transaction savepoint, rejects stale completion, preserves prior calculated
+facts when execution fails, persists a Failed run and exposes an authorized
+retry route. The spreadsheet boundary now accepts a bounded first-sheet XLSX
+preview/commit path through the existing CSV mutation guard; macros, formulas,
+external links and unsafe archive sizes are rejected. The BC03 integration
+selection passed again after these changes, including a generated XLSX preview.
+XLSX export/template generation, full failure-injection/restart evidence and
+the wider Module 28 acceptance matrix remain open.
+
+## Final targeted evidence — 2026-11-27
+
+After the OPEX, calculation-recovery and XLSX changes, the final targeted gates
+were rerun: Release solution build passed with zero warnings/errors; Planning
+unit tests passed 6/6; Architecture passed 23/23; the combined BC02/BC03
+PostgreSQL selection passed 9/9; Planning OpenAPI validation passed with 86
+paths; migration policy passed for 284 SQL files; and formatter plus
+`git diff --check` passed. The incremental disposable database replayed the
+281 ordered scripts and Development Seed successfully, including two OPEX
+lines per tenant. These fresh results still do not close the remaining
+mandatory FP00–FP53 acceptance gaps listed above.

@@ -20,15 +20,15 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP11 | Department submissions | coordinate attachment, actor fields, approval identity | submit/return/approve/lock through Platform Approval | Implementation; dedicated submission HTTP regression open | PARTIAL |
 | FP12 | Assumptions/drivers | assumption/value | create/value/list | Seed/API | PASS |
 | FP13 | Formula DAG | formula/dependency | constrained decimal parser, allow-listed functions, dependency ordering and cycle rejection | 6 Planning tests; BC03 golden-vector integration | PARTIAL |
-| FP14 | Calculation/trace | run/trace/calculated facts | durable run/trace and deterministic formula/revenue calculation with failed-run state | BC03 implementation and trace path; stale/restart matrix open | PARTIAL |
+| FP14 | Calculation/trace | run/trace/calculated facts | durable run/trace, input revision, stale completion rejection and authorized retry | BC03 implementation; formula unit evidence and PostgreSQL golden vector; failure-injection/restart matrix open | PARTIAL |
 | FP15 | Spreading | spread rule/input facts | exact residual allocation on `spread-exact` | unit test + HTTP conservation | PARTIAL |
 | FP16 | Allocations | rule/result with lineage | weighted allocation | HTTP conservation | PARTIAL |
 | FP17 | Revenue | revenue driver | volume × price with calculated Revenue coordinates | BC03 integrated statement golden vector; Sales owner reconciliation remains open | PARTIAL |
-| FP18 | OPEX | grid inputs only | no dedicated driver/category workflow | No complete evidence | OPEN |
+| FP18 | OPEX | category/driver planning lines with account and cost-centre references | fixed, variable, recurring and driver-based lines with growth/inflation calculation and integrated P&L consumption | BC03 PostgreSQL golden vector: fixed 1,000 + 10% = 1,100; driver 10 × 20 × 1.05 = 210; OPEX 1,310 and NetIncome 190 | PARTIAL |
 | FP19 | Workforce | workforce lines | add/list/import/cost-impact | Seed + HTTP; owner integration open | PARTIAL |
 | FP20 | CapEx | CapEx lifecycle table with explicit useful life | add/list/prioritize/approve and planning-only depreciation schedule | Fresh migration/seed plus BC03 statement vector; Fixed Asset owner contract remains open | PARTIAL |
 | FP21 | Planning FX | versioned rates | scenario/period conversion for management rollup | BC03 route implementation; cross-currency HTTP matrix open | PARTIAL |
-| FP22 | Integrated P&L | statement projection table | revenue, COGS, OPEX, workforce and depreciation lines with explicit basis | BC03 golden-vector PostgreSQL integration 1/1 | PARTIAL |
+| FP22 | Integrated P&L | statement projection table | revenue, COGS, dedicated OPEX, workforce and depreciation lines with explicit basis | BC03 golden-vector PostgreSQL integration 1/1; dedicated OPEX vector included | PARTIAL |
 | FP23 | Working capital | assumptions | DSO/DPO/inventory-days derived AR/AP/inventory | BC03 golden-vector PostgreSQL integration; owner opening-balance matrix open | PARTIAL |
 | FP24 | Projected balance sheet | statement projection contract | opening cash/equity plus projected assets, liabilities and balance check; incomplete models fail visibly | BC03 golden-vector balance check passes | PARTIAL |
 | FP25 | Projected cash flow | statement projection contract | integrated operating, investing and financing cash flows with closing-cash continuity | BC03 golden-vector closing cash reconciles to Balance Sheet cash | PARTIAL |
@@ -45,7 +45,7 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP36 | Overrides/thresholds | source-bound override with used amount, validity and approval link | request/decision API through Platform Approvals; bounded exact-source usage and SoD permission | BC-T09 authenticated requester/approver/unauthorized HTTP journey; bounded source/version usage and retry pass | PASS for BC01 |
 | FP37 | Department planner | submission persistence | no frontend in this mission | Backend slice only | PARTIAL |
 | FP38 | CFO/owner views | variance/statements partial | no complete rollup/action contract | No complete evidence | OPEN |
-| FP39 | Excel/CSV | bounded CSV import contract | preview/validation and atomic Draft-only commit; no published/locked bypass | BC03 CSV preview/commit PostgreSQL integration 1/1; full malformed/permissions matrix open | PARTIAL |
+| FP39 | Excel/CSV | bounded CSV import contract | CSV preview/atomic Draft-only commit plus safe first-sheet XLSX preview/commit; no published/locked bypass; export/template remains absent | BC03 CSV and XLSX preview PostgreSQL integration 1/1; full malformed/permissions/export matrix open | PARTIAL |
 | FP40 | Multi-entity rollup | entity keys and Planning FX | authorized entity rows converted through explicit period FX rates | Route implementation; multi-entity reconciliation matrix open | PARTIAL |
 | FP41 | Security/SoD | RLS/permissions/lifecycle | route authorization and Platform Approval owner scope | Architecture 23/23, BC-T09 HTTP, BC2-T13 | PARTIAL; not exhaustive |
 | FP42 | Audit/history | audit on implemented writes | lifecycle audit | SQL/API inspection | PARTIAL |

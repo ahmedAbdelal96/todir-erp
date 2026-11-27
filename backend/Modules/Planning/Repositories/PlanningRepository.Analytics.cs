@@ -14,7 +14,9 @@ public sealed partial class PlanningRepository
         if (state.State != "Draft") throw new PlanningException("planning.version_immutable");
 
         var run = Guid.CreateVersion7();
-        await Exec(c, "insert into business_planning.planning_calculation_run(tenant_id,id,plan_version_id,state,input_watermark) values($1,$2,'Running',$3)", token, tenant.Value, run, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture));
+        var inputRevision = await ReadInputRevisionAsync(c, tenant.Value, planVersionId, token);
+        await Exec(c, "insert into business_planning.planning_calculation_run(tenant_id,id,plan_version_id,state,input_watermark) values($1,$2,'Running',$3)", token, tenant.Value, run, inputRevision.ToString(CultureInfo.InvariantCulture));
+        await c.Transaction.SaveAsync("planning_calculation", token);
         try
         {
             var values = await ReadPlanningAmountsAsync(c, tenant.Value, planVersionId, token);
@@ -44,17 +46,27 @@ public sealed partial class PlanningRepository
                 }
             }
 
+            var currentRevision = await ReadInputRevisionAsync(c, tenant.Value, planVersionId, token);
+            if (currentRevision != inputRevision) throw new PlanningException("planning.calculation_stale");
             await Exec(c, "update business_planning.planning_calculation_run set state='Succeeded',completed_at=now(),error_detail=null where tenant_id=$1 and id=$2", token, tenant.Value, run);
             await Audit(c, tenant.Value, actor, "planning_calculation_succeeded", run, token);
             return new CalculationRunView(run, planVersionId, "Succeeded", values.Count, DateTimeOffset.UtcNow, null);
         }
         catch (Exception exception)
         {
-            await Exec(c, "update business_planning.planning_calculation_run set state='Failed',completed_at=now(),error_detail=$3 where tenant_id=$1 and id=$2", token, tenant.Value, run, exception.Message[..Math.Min(exception.Message.Length, 1000)]);
-            if (exception is PlanningException planningException) throw planningException;
-            throw new PlanningException("planning.calculation_failed");
+            await c.Transaction.RollbackAsync("planning_calculation", token);
+            var error = exception is PlanningException planning ? planning.Code : "planning.calculation_failed";
+            await Exec(c, "update business_planning.planning_calculation_run set state='Failed',completed_at=now(),error_detail=$3 where tenant_id=$1 and id=$2", token, tenant.Value, run, error);
+            await Audit(c, tenant.Value, actor, "planning_calculation_failed", run, token);
+            return new CalculationRunView(run, planVersionId, "Failed", 0, DateTimeOffset.UtcNow, error);
         }
     }, ct);
+
+    public async Task<CalculationRunView> RetryCalculationAsync(TenantId tenant, Guid actor, Guid calculationRunId, CancellationToken ct)
+    {
+        var planVersionId = await coordinator.ExecuteAsync(tenant, async (c, token) => await Scalar<Guid?>(c, "select plan_version_id from business_planning.planning_calculation_run where tenant_id=$1 and id=$2 and state='Failed'", token, tenant.Value, calculationRunId) ?? throw new PlanningException("planning.calculation_retry_invalid"), ct);
+        return await RecalculateCompleteAsync(tenant, actor, planVersionId, ct);
+    }
 
     public Task<PlanVersionView> AdvanceRollingForecastAsync(TenantId tenant, Guid actor, RollingForecastRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
     {
@@ -114,6 +126,7 @@ public sealed partial class PlanningRepository
     {
         var data = await ReadPlanningAmountsAsync(c, tenant.Value, request.PlanVersionId, token, request.LegalEntityId, request.From, request.To);
         var workforce = await ReadWorkforceCostsAsync(c, tenant.Value, request.PlanVersionId, request.LegalEntityId, request.From, request.To, token);
+        var opex = await ReadOpexCostsAsync(c, tenant.Value, request.PlanVersionId, request.LegalEntityId, request.From, request.To, token);
         var capex = await ReadCapexCostsAsync(c, tenant.Value, request.PlanVersionId, request.LegalEntityId, request.From, request.To, token);
         var workingCapital = await ReadWorkingCapitalAsync(c, tenant.Value, request.PlanVersionId, request.LegalEntityId, request.From, request.To, token);
         var result = new List<StatementLineView>();
@@ -123,16 +136,16 @@ public sealed partial class PlanningRepository
         for (var period = new DateOnly(request.From.Year, request.From.Month, 1); period <= request.To; period = period.AddMonths(1))
         {
             decimal Get(string metric) => data.GetValueOrDefault((request.LegalEntityId, period, metric));
-            var revenue = Get("Revenue"); var cogs = Get("Cogs") + Get("COGS"); var opex = Get("Opex") + Get("OPEX");
+            var revenue = Get("Revenue"); var cogs = Get("Cogs") + Get("COGS"); var opexAmount = opex.TryGetValue(period, out var dedicatedOpex) ? dedicatedOpex : Get("Opex") + Get("OPEX");
             var workforceCost = workforce.GetValueOrDefault(period); var capexAmount = capex.Where(x => x.PurchasePeriod == period).Sum(x => x.Amount);
             var depreciation = capex.Where(x => x.InServicePeriod is { } service && service <= period).Sum(x => decimal.Round(x.Amount / x.UsefulLifeMonths, 4, MidpointRounding.AwayFromZero));
-            var financing = Get("FinancingCost"); var tax = Get("Tax"); var netIncome = revenue - cogs - opex - workforceCost - depreciation - financing - tax;
-            var wc = workingCapital.GetValueOrDefault(period) ?? new WorkingCapitalSeed(0m, 0m, 0m); var ar = decimal.Round(revenue * wc.Dso / 30m, 4); var ap = decimal.Round((cogs + opex + workforceCost) * wc.Dpo / 30m, 4); var inventory = decimal.Round(cogs * wc.InventoryDays / 30m, 4);
+            var financing = Get("FinancingCost"); var tax = Get("Tax"); var netIncome = revenue - cogs - opexAmount - workforceCost - depreciation - financing - tax;
+            var wc = workingCapital.GetValueOrDefault(period) ?? new WorkingCapitalSeed(0m, 0m, 0m); var ar = decimal.Round(revenue * wc.Dso / 30m, 4); var ap = decimal.Round((cogs + opexAmount + workforceCost) * wc.Dpo / 30m, 4); var inventory = decimal.Round(cogs * wc.InventoryDays / 30m, 4);
             var cfo = netIncome - (ar - priorAr) - (inventory - priorInventory) + (ap - priorAp); var cfi = -capexAmount; var cff = Get("FinancingCashFlow"); var closingCash = priorCash + cfo + cfi + cff;
             netPpe += capexAmount - depreciation; retained += netIncome; var assets = closingCash + ar + inventory + netPpe; var liabilities = ap + Get("Debt"); var balanceDifference = decimal.Round(assets - liabilities - retained, 4);
             if (request.StatementType.Equals("P&L", StringComparison.OrdinalIgnoreCase) || request.StatementType.Equals("IncomeStatement", StringComparison.OrdinalIgnoreCase))
             {
-                Add(result, "P&L", "Revenue", period, revenue, "Revenue driver/input/canonical Actual mapping", true); Add(result, "P&L", "Cogs", period, cogs, "COGS input/canonical Actual mapping", true); Add(result, "P&L", "Opex", period, opex, "OPEX input/driver", true); Add(result, "P&L", "Workforce", period, workforceCost, "Aggregate workforce plan", true); Add(result, "P&L", "Depreciation", period, depreciation, "CapEx planned in-service schedule", true); Add(result, "P&L", "NetIncome", period, netIncome, "Integrated P&L", true);
+                Add(result, "P&L", "Revenue", period, revenue, "Revenue driver/input/canonical Actual mapping", true); Add(result, "P&L", "Cogs", period, cogs, "COGS input/canonical Actual mapping", true); Add(result, "P&L", "Opex", period, opexAmount, "Dedicated OPEX category/driver workflow", true); Add(result, "P&L", "Workforce", period, workforceCost, "Aggregate workforce plan", true); Add(result, "P&L", "Depreciation", period, depreciation, "CapEx planned in-service schedule", true); Add(result, "P&L", "NetIncome", period, netIncome, "Integrated P&L", true);
             }
             else if (request.StatementType.Equals("BalanceSheet", StringComparison.OrdinalIgnoreCase))
             {
@@ -156,6 +169,8 @@ public sealed partial class PlanningRepository
         await using var command = Cmd(c, "select c.legal_entity_id,c.period_start,c.metric_code,coalesce(cf.amount,i.amount,0) from business_planning.planning_coordinate c left join business_planning.planning_input_fact i on i.tenant_id=c.tenant_id and i.coordinate_id=c.id left join business_planning.planning_calculated_fact cf on cf.tenant_id=c.tenant_id and cf.coordinate_id=c.id where c.tenant_id=$1 and c.plan_version_id=$2 and ($3::uuid is null or c.legal_entity_id=$3) and ($4::date is null or c.period_start >= $4) and ($5::date is null or c.period_start <= $5)", tenant, version, Db(entity), Db(from), Db(to));
         await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) result[(reader.GetGuid(0), reader.GetFieldValue<DateOnly>(1), reader.GetString(2))] = reader.GetDecimal(3); return result;
     }
+
+    private static Task<long> ReadInputRevisionAsync(ITransactionContext c, Guid tenant, Guid version, CancellationToken ct) => Scalar<long>(c, "select coalesce(max(i.row_version),0) from business_planning.planning_input_fact i join business_planning.planning_coordinate x on x.tenant_id=i.tenant_id and x.id=i.coordinate_id where i.tenant_id=$1 and x.plan_version_id=$2", ct, tenant, version);
 
     private static async Task ReadRevenueAmountsAsync(ITransactionContext c, Guid tenant, Guid version, Dictionary<(Guid Entity, DateOnly Period, string Metric), decimal> values, CancellationToken ct)
     {
@@ -182,6 +197,15 @@ public sealed partial class PlanningRepository
     private static async Task<Dictionary<DateOnly, decimal>> ReadWorkforceCostsAsync(ITransactionContext c, Guid tenant, Guid version, Guid entity, DateOnly from, DateOnly to, CancellationToken ct)
     {
         var result = new Dictionary<DateOnly, decimal>(); await using var command = Cmd(c, "select period_start,sum(fte*average_cost) from business_planning.workforce_plan_line where tenant_id=$1 and plan_version_id=$2 and legal_entity_id=$3 and period_start between $4 and $5 group by period_start", tenant, version, entity, from, to); await using var reader = await command.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) result[reader.GetFieldValue<DateOnly>(0)] = reader.GetDecimal(1); return result;
+    }
+
+    private static async Task<Dictionary<DateOnly, decimal>> ReadOpexCostsAsync(ITransactionContext c, Guid tenant, Guid version, Guid entity, DateOnly from, DateOnly to, CancellationToken ct)
+    {
+        var result = new Dictionary<DateOnly, decimal>();
+        await using var command = Cmd(c, "select period_start,sum(planned_amount) from business_planning.opex_plan_line where tenant_id=$1 and plan_version_id=$2 and legal_entity_id=$3 and period_start between $4 and $5 group by period_start", tenant, version, entity, from, to);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) result[reader.GetFieldValue<DateOnly>(0)] = reader.GetDecimal(1);
+        return result;
     }
 
     private static async Task<List<CapexSeed>> ReadCapexCostsAsync(ITransactionContext c, Guid tenant, Guid version, Guid entity, DateOnly from, DateOnly to, CancellationToken ct)

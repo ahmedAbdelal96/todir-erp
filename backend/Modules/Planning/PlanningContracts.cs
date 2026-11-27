@@ -23,6 +23,7 @@ public sealed record BudgetOverrideRequest(Guid BucketId, string SourceModule, s
 public sealed record BudgetOverrideDecisionRequest(string Decision, string? Reason = null);
 public sealed record BudgetControlReconciliationRequest(Guid? BucketId = null, bool Rebuild = false);
 public sealed record WorkforcePlanRequest(Guid PlanVersionId, Guid LegalEntityId, Guid? DepartmentRef, string? RoleCode, DateOnly PeriodStart, decimal Fte, decimal AverageCost, string CurrencyCode, string? Source);
+public sealed record OpexPlanLineRequest(Guid PlanVersionId, Guid LegalEntityId, Guid? DepartmentRef, string CategoryCode, string? AccountRef, string? CostCenterRef, DateOnly PeriodStart, string Method, decimal BaseAmount, decimal DriverValue, decimal Rate, decimal GrowthPercent, decimal InflationPercent, string CurrencyCode, string? Source);
 public sealed record CapexPlanRequest(Guid PlanVersionId, Guid LegalEntityId, string Name, string Category, Guid? DepartmentRef, decimal PlannedAmount, string CurrencyCode, DateOnly PurchasePeriod, DateOnly? InServicePeriod, int Priority, string? Justification, int UsefulLifeMonths = 60);
 public sealed record RevenueDriverRequest(Guid PlanVersionId, Guid LegalEntityId, DateOnly PeriodStart, string DriverKey, decimal Volume, decimal Price, string CurrencyCode, string? Source);
 public sealed record WorkingCapitalRequest(Guid PlanVersionId, Guid LegalEntityId, DateOnly PeriodStart, decimal Dso, decimal Dpo, decimal InventoryDays);
@@ -50,6 +51,7 @@ public sealed record StatementRequest(Guid PlanVersionId, Guid LegalEntityId, Da
 public sealed record AccuracyRequest(Guid ForecastVersionId, Guid ActualVersionId, DateOnly From, DateOnly To, string MetricCode);
 public sealed record RollingForecastRequest(Guid SourceVersionId, DateOnly ActualCutoff, string? Name = null, int HorizonMonths = 12);
 public sealed record CsvImportRequest(Guid PlanVersionId, string Csv, bool Commit = false);
+public sealed record XlsxImportRequest(Guid PlanVersionId, string SpreadsheetContentBase64, bool Commit = false);
 public sealed record RollupRequest(Guid PlanVersionId, IReadOnlyList<Guid> LegalEntityIds, DateOnly From, DateOnly To, string MetricCode, string ReportingCurrencyCode);
 public sealed record ScenarioAdoptRequest(string Name, string VersionKind, DateOnly? ActualCutoff);
 public sealed record AdjustReservationRequest(decimal Amount);
@@ -67,6 +69,7 @@ public sealed record GridCellView(Guid CoordinateId, Guid LegalEntityId, DateOnl
 public sealed record AssumptionView(Guid Id, Guid PlanVersionId, string Code, string Name, string Unit, string? Description);
 public sealed record BudgetCheckView(string Decision, Guid BucketId, decimal CurrentBudget, decimal Actual, decimal Commitment, decimal Proposed, decimal AvailableBefore, decimal AvailableAfter, string ThresholdStatus, IReadOnlyList<string> Reasons, Guid? ReservationId);
 public sealed record WorkforcePlanView(Guid Id, Guid PlanVersionId, Guid LegalEntityId, Guid? DepartmentRef, string? RoleCode, DateOnly PeriodStart, decimal Fte, decimal AverageCost, string CurrencyCode, string Source);
+public sealed record OpexPlanLineView(Guid Id, Guid PlanVersionId, Guid LegalEntityId, Guid? DepartmentRef, string CategoryCode, string? AccountRef, string? CostCenterRef, DateOnly PeriodStart, string Method, decimal BaseAmount, decimal DriverValue, decimal Rate, decimal GrowthPercent, decimal InflationPercent, decimal PlannedAmount, string CurrencyCode, string Source);
 public sealed record CapexPlanView(Guid Id, Guid PlanVersionId, Guid LegalEntityId, string Name, string Category, decimal PlannedAmount, string CurrencyCode, DateOnly PurchasePeriod, DateOnly? InServicePeriod, int Priority, string State, int UsefulLifeMonths = 60);
 public sealed record VarianceView(Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal BudgetAmount, decimal ForecastAmount, decimal ActualAmount, decimal VarianceAmount, decimal Materiality);
 public sealed record BudgetAvailabilityView(Guid BucketId, decimal CurrentBudget, decimal Actual, decimal Commitment, decimal Precommitment, decimal Reserved, decimal Available, string Mode, string ThresholdStatus);

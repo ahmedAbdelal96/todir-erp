@@ -120,7 +120,7 @@ public sealed record SeedRunSummary(string Version, IReadOnlyList<SeedTenantSumm
             output.WriteLine($"  Service: {tenant.Service.InstalledBaseItems} installed base, {tenant.Service.Requests} requests, {tenant.Service.WorkOrders} work orders, {tenant.Service.Visits} visits, {tenant.Service.Contracts} contracts, {tenant.Service.Plans} maintenance plans");
             output.WriteLine($"  Banking: {tenant.Banking.Statements} statements, {tenant.Banking.Reconciliations} reconciliation, {tenant.Banking.CashCounts} cash count, {tenant.Banking.Forecasts} forecast");
             output.WriteLine($"  Quality: {tenant.Quality.Plans} plans, {tenant.Quality.Inspections} inspections, {tenant.Quality.Restrictions} restrictions, {tenant.Quality.Nonconformances} NCRs, {tenant.Quality.Capas} CAPA");
-            output.WriteLine($"  Planning: {tenant.Planning.Cycles} cycles, {tenant.Planning.Models} models, {tenant.Planning.Versions} versions, {tenant.Planning.Scenarios} scenarios, {tenant.Planning.InputFacts} sparse input facts, {tenant.Planning.WorkforceLines} workforce lines, {tenant.Planning.CapexItems} CapEx items");
+            output.WriteLine($"  Planning: {tenant.Planning.Cycles} cycles, {tenant.Planning.Models} models, {tenant.Planning.Versions} versions, {tenant.Planning.Scenarios} scenarios, {tenant.Planning.InputFacts} sparse input facts, {tenant.Planning.WorkforceLines} workforce lines, {tenant.Planning.CapexItems} CapEx items, {tenant.Planning.OpexLines} OPEX lines");
         }
     }
 }
