@@ -26,7 +26,9 @@ public sealed class PlanningFormulaTests
         {
             ["Revenue"] = ["Volume", "Price"],
             ["Margin"] = ["Revenue", "Opex"],
-            ["Volume"] = [], ["Price"] = [], ["Opex"] = []
+            ["Volume"] = [],
+            ["Price"] = [],
+            ["Opex"] = []
         };
 
         PlanningFormulaEngine.EnsureAcyclic(graph);

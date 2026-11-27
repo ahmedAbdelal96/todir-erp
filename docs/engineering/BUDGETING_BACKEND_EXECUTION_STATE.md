@@ -71,7 +71,7 @@ deterministic transfer locking. It also adds a forward-only migration and an
 idempotent OPEX Ledger mapping in the Development Seed.
 
 Fresh local verification after the latest source changes passed: Release build,
-Planning 4/4, Architecture 23/23, OpenAPI validation (Planning 72 paths), the
+Planning 4/4, Architecture 23/23, OpenAPI validation (Planning 78 paths), the
 fresh-seed replay test 1/1, authenticated BC-T09 1/1, canonical BC-T10 1/1 and
 the new owner-sourced Actual snapshot/replay test 1/1 on disposable PostgreSQL.
 
@@ -102,3 +102,40 @@ and preserves/replaces snapshots across a controlled source failure and
 correction. Planning unit tests remain 4/4. The original BC2-T01 to BC2-T17
 identities were restored in the acceptance matrix. T04-T17 still require
 their mandatory business acceptance vectors and are not claimed as passed.
+
+## BC02 P0 financial-integrity correction
+
+The latest BC02 correction adds effective-dated Current Budget evaluation:
+`Original + effective Approved Revisions + effective Approved Transfers In -
+effective Approved Transfers Out`. Pending, rejected and future-dated rows are
+excluded, and aggregate transfer netting is not duplicated from materialized
+bucket columns. The disposable BC2-T08 regression proves the 100 + 20 - 5
+revision vector, the 20-in/20-out transfer conservation vector, and an as-of
+date before the changes.
+
+Published plan versions now persist their Actual snapshot identity when they
+are published. Grid, variance, driver and the new
+`GET /api/v1/planning/versions/{id}/actual-basis` read path use that pinned
+snapshot for historical analysis; a later owner refresh publishes a current
+restatement without changing the pinned snapshot's mapping version, source
+watermark, as-of date or state. This is covered by the disposable BC2-T03
+historical-basis regression. The matrix remains `NOT COMPLETE` because the
+independent T04-T17 acceptance vectors are still open.
+
+The governance correction also exposes deterministic target/proposal lifecycle
+routes. Proposal identity is returned with the target projection, and the
+disposable BC2-T12 regression proves submit, adjust, approve, target approve
+and target publish without losing the linked proposal history.
+
+The latest guard migration extends published-version protection to planning
+coordinates, targets and proposals while leaving structural Actual-refresh
+coordinate creation available. Effective-dated transfer evaluation is now
+used by both transfer approval availability and Budget Control bucket reads,
+so a future approved transfer cannot consume today's available budget.
+
+The same disposable acceptance class now proves the repository and PostgreSQL
+boundaries for published-grid/Actual-snapshot write protection (BC2-T04) and
+the draft → published → retired → replacement metric-mapping lifecycle
+(BC2-T05). T06-T11 and T13-T17 remain open until their separate calendar,
+workflow, concurrency, confidentiality, owner-matrix, BC01-regression and
+lifecycle compatibility vectors are executed.

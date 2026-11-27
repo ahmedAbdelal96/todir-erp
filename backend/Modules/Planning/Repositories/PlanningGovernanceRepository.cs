@@ -38,11 +38,42 @@ public sealed partial class PlanningRepository
         return await ReadPlanningTarget(c, tenant.Value, target, token) ?? throw new PlanningException("planning.target_not_found");
     }, ct);
 
+    public Task<PlanningTargetView> AdvancePlanningTargetAsync(TenantId tenant, Guid actor, Guid targetId, string action, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
+    {
+        var current = await Scalar<string>(c, "select state from business_planning.planning_target where tenant_id=$1 and id=$2 for update", token, tenant.Value, targetId) ?? throw new PlanningException("planning.target_not_found");
+        var next = action.ToLowerInvariant() switch
+        {
+            "approve" when current == "Draft" => "Approved",
+            "publish" when current == "Approved" => "Published",
+            "close" when current == "Published" => "Closed",
+            _ => throw new PlanningException("planning.target_transition_invalid")
+        };
+        await Exec(c, "update business_planning.planning_target set state=$3 where tenant_id=$1 and id=$2", token, tenant.Value, targetId, next);
+        await Audit(c, tenant.Value, actor, "planning_target_" + action, targetId, token);
+        return await ReadPlanningTarget(c, tenant.Value, targetId, token) ?? throw new PlanningException("planning.target_not_found");
+    }, ct);
+
+    public Task<PlanningTargetView> AdvancePlanningProposalAsync(TenantId tenant, Guid actor, Guid proposalId, string action, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
+    {
+        var current = await Scalar<string>(c, "select state from business_planning.planning_proposal where tenant_id=$1 and id=$2 for update", token, tenant.Value, proposalId) ?? throw new PlanningException("planning.proposal_not_found");
+        var next = action.ToLowerInvariant() switch
+        {
+            "submit" when current == "Draft" => "Submitted",
+            "approve" when current is "Submitted" or "Adjusted" => "Approved",
+            "reject" when current is "Submitted" or "Adjusted" => "Rejected",
+            _ => throw new PlanningException("planning.proposal_transition_invalid")
+        };
+        await Exec(c, "update business_planning.planning_proposal set state=$3 where tenant_id=$1 and id=$2", token, tenant.Value, proposalId, next);
+        await Audit(c, tenant.Value, actor, "planning_proposal_" + action, proposalId, token);
+        var target = await Scalar<Guid?>(c, "select target_id from business_planning.planning_proposal where tenant_id=$1 and id=$2", token, tenant.Value, proposalId) ?? throw new PlanningException("planning.proposal_not_found");
+        return await ReadPlanningTarget(c, tenant.Value, target, token) ?? throw new PlanningException("planning.target_not_found");
+    }, ct);
+
     private static async Task<PlanningTargetView?> ReadPlanningTarget(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct)
     {
-        await using var command = Cmd(c, "select t.id,t.plan_version_id,t.legal_entity_id,t.period_start,t.metric_code,t.target_amount,p.proposed_amount,(p.proposed_amount-t.target_amount),p.adjusted_amount,t.currency_code,t.state from business_planning.planning_target t left join lateral (select p.proposed_amount,p.adjusted_amount from business_planning.planning_proposal p where p.tenant_id=t.tenant_id and p.target_id=t.id order by p.created_at desc,p.id desc limit 1) p on true where t.tenant_id=$1 and t.id=$2", tenant, id);
+        await using var command = Cmd(c, "select t.id,t.plan_version_id,t.legal_entity_id,t.period_start,t.metric_code,t.target_amount,p.proposed_amount,(p.proposed_amount-t.target_amount),p.adjusted_amount,t.currency_code,t.state,p.id from business_planning.planning_target t left join lateral (select p.id,p.proposed_amount,p.adjusted_amount from business_planning.planning_proposal p where p.tenant_id=t.tenant_id and p.target_id=t.id order by p.created_at desc,p.id desc limit 1) p on true where t.tenant_id=$1 and t.id=$2", tenant, id);
         await using var reader = await command.ExecuteReaderAsync(ct);
-        return await reader.ReadAsync(ct) ? new PlanningTargetView(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetFieldValue<DateOnly>(3), reader.GetString(4), reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetDecimal(6), reader.IsDBNull(7) ? null : reader.GetDecimal(7), reader.IsDBNull(8) ? null : reader.GetDecimal(8), reader.GetString(9).Trim(), reader.GetString(10)) : null;
+        return await reader.ReadAsync(ct) ? new PlanningTargetView(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetFieldValue<DateOnly>(3), reader.GetString(4), reader.GetDecimal(5), reader.IsDBNull(6) ? null : reader.GetDecimal(6), reader.IsDBNull(7) ? null : reader.GetDecimal(7), reader.IsDBNull(8) ? null : reader.GetDecimal(8), reader.GetString(9).Trim(), reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetGuid(11)) : null;
     }
 
     private static async Task EnsureDraftPlanVersion(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct)

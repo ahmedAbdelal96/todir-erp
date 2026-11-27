@@ -14,8 +14,8 @@ public sealed record CreateAssumptionRequest(Guid PlanVersionId, string Code, st
 public sealed record AssumptionValueRequest(DateOnly PeriodStart, decimal Value, string? Source);
 public sealed record RecalculateRequest(Guid PlanVersionId);
 public sealed record CreateBaselineRequest(Guid PlanVersionId, string Name, decimal OriginalTotal, string CurrencyCode);
-public sealed record RevisionRequest(decimal DeltaAmount, string Reason);
-public sealed record TransferRequest(Guid FromCoordinateId, Guid ToCoordinateId, decimal Amount, string Reason, Guid? FromBucketId = null, Guid? ToBucketId = null);
+public sealed record RevisionRequest(decimal DeltaAmount, string Reason, DateOnly? EffectiveFrom = null);
+public sealed record TransferRequest(Guid FromCoordinateId, Guid ToCoordinateId, decimal Amount, string Reason, Guid? FromBucketId = null, Guid? ToBucketId = null, DateOnly? EffectiveFrom = null);
 public sealed record BudgetBucketRequest(Guid PlanVersionId, Guid PolicyId, Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, JsonElement DimensionKey, decimal OriginalBudget, string CurrencyCode);
 public sealed record BudgetCheckRequest(Guid BucketId, decimal ProposedAmount, string SourceModule, string SourceDocumentId, string SourceLineId, string SourceVersion, bool Reserve);
 public sealed record BudgetReservationRequest(decimal Amount, string SourceModule, string SourceDocumentId, string SourceLineId, string SourceVersion);
@@ -71,6 +71,7 @@ public sealed record BudgetOverrideView(Guid Id, Guid BucketId, string SourceMod
 public sealed record BudgetControlReconciliationView(Guid Id, Guid? BucketId, string State, bool RebuildApplied, int BucketCount, decimal DiscrepancyAmount, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, string? ErrorDetail);
 public sealed record CalculationRunView(Guid Id, Guid PlanVersionId, string State, int CalculatedCells, DateTimeOffset? CompletedAt, string? ErrorDetail);
 public sealed record ActualRefreshRunView(Guid Id, string State, string MappingVersion, string? SourceWatermark, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, string? ErrorDetail);
+public sealed record ActualBasisView(Guid PlanVersionId, Guid SnapshotId, string MappingVersion, string SourceWatermark, DateOnly ActualThrough, string CurrencyBasis, string State, DateTimeOffset? PublishedAt, bool Pinned);
 public sealed record DimensionView(Guid Id, Guid ModelVersionId, string Code, string Name, string MemberKind, bool Required, bool Active);
 public sealed record MetricView(Guid Id, string Code, string Name, string MetricKind, string DataType, string SourcePolicy, string? FinancialRole, string UnitCode, int PrecisionScale, string FavorableDirection, bool Active);
 public sealed record DimensionMemberView(Guid Id, Guid DimensionId, string Code, string Name, string? ParentCode, bool Active);
@@ -83,6 +84,6 @@ public sealed record StatementLineView(string StatementType, string LineCode, Da
 public sealed record ForecastAccuracyView(Guid ForecastVersionId, Guid ActualVersionId, string MetricCode, decimal ForecastTotal, decimal ActualTotal, decimal AbsoluteError, decimal PercentageError, decimal Bias);
 public sealed record WorkforceCostImpactView(Guid PlanVersionId, DateOnly PeriodStart, decimal Fte, decimal Cost);
 public sealed record CompareVersionView(Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal LeftAmount, decimal RightAmount, decimal Difference);
-public sealed record PlanningTargetView(Guid Id, Guid PlanVersionId, Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal TargetAmount, decimal? ProposalAmount, decimal? GapAmount, decimal? AdjustedAmount, string CurrencyCode, string State);
+public sealed record PlanningTargetView(Guid Id, Guid PlanVersionId, Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal TargetAmount, decimal? ProposalAmount, decimal? GapAmount, decimal? AdjustedAmount, string CurrencyCode, string State, Guid? ProposalId = null);
 
 public sealed class PlanningException(string code) : Exception(code) { public string Code => Message; }

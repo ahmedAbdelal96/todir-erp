@@ -96,6 +96,150 @@ public sealed class PlanningBc02ActualIntegrationTests
         Assert.Equal(100m, await ScalarAsync(admin, "select total_amount from business_planning.planning_actual_snapshot where tenant_id=$1 and id=$2", AtlasTenant.Value, snapshot));
     }
 
+    [Fact(DisplayName = "BC2-T08 current budget uses only effective approved changes and nets transfers")]
+    public async Task CurrentBudgetUsesEffectiveApprovedChangesAndNetsTransfers()
+    {
+        var runtimeConnection = Required("TODIR_DATABASE_CONNECTION");
+        var adminConnection = Required("TODIR_P04_ADMIN_CONNECTION");
+        await using var dataSource = NpgsqlDataSource.Create(runtimeConnection);
+        await using var admin = new NpgsqlConnection(adminConnection);
+        await admin.OpenAsync();
+        var sourceVersionId = (Guid)(await ScalarAsync(admin, "select id from business_planning.plan_version where tenant_id=$1 and state='Published' order by created_at desc,id desc limit 1", AtlasTenant.Value))!;
+        var actorId = (Guid)(await ScalarAsync(admin, "select id from platform.identity where tenant_id=$1 and email='admin@atlas.com'", AtlasTenant.Value))!;
+        var repository = new PlanningRepository(new Core.Transactions.NpgsqlTransactionCoordinator(dataSource));
+        var draft = await repository.ClonePlanVersionAsync(AtlasTenant, actorId, sourceVersionId, $"BC02 current budget {Guid.NewGuid():N}", default);
+        var baselineId = await repository.CreateBaselineAsync(AtlasTenant, actorId, new(draft.Id, "BC02 current budget", 100m, "EGP"), default);
+        var coordinates = new List<Guid>();
+        await using (var coordinateCommand = new NpgsqlCommand("select id from business_planning.planning_coordinate where tenant_id=$1 and plan_version_id=$2 order by id limit 2", admin))
+        {
+            coordinateCommand.Parameters.AddWithValue(AtlasTenant.Value); coordinateCommand.Parameters.AddWithValue(draft.Id);
+            await using var reader = await coordinateCommand.ExecuteReaderAsync();
+            while (await reader.ReadAsync()) coordinates.Add(reader.GetGuid(0));
+        }
+        Assert.Equal(2, coordinates.Count);
+        var past = new DateOnly(2026, 1, 1);
+        var future = new DateOnly(2027, 1, 1);
+        await ExecuteAsync(admin, "insert into business_planning.budget_revision(tenant_id,id,baseline_id,delta_amount,reason,state,effective_from,created_by) values($1,$2,$3,20,'approved increase','Approved',$4,$5),($1,$6,$3,-5,'approved reduction','Approved',$4,$5),($1,$7,$3,999,'pending','Draft',$4,$5),($1,$8,$3,999,'rejected','Rejected',$4,$5),($1,$9,$3,500,'future','Approved',$10,$5)", AtlasTenant.Value, Guid.CreateVersion7(), baselineId, past, actorId, Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7(), future);
+        await ExecuteAsync(admin, "insert into business_planning.budget_transfer(tenant_id,id,baseline_id,from_coordinate_id,to_coordinate_id,amount,state,reason,effective_from,created_by) values($1,$2,$3,$4,$5,20,'Approved','approved transfer',$6,$7),($1,$8,$3,$4,$5,70,'Draft','pending transfer',$6,$7),($1,$9,$3,$4,$5,80,'Approved','future transfer',$10,$7)", AtlasTenant.Value, Guid.CreateVersion7(), baselineId, coordinates[0], coordinates[1], past, actorId, Guid.CreateVersion7(), Guid.CreateVersion7(), future);
+
+        Assert.Equal(115m, await repository.CurrentBudgetAsync(AtlasTenant, baselineId, new DateOnly(2026, 12, 31), default));
+        Assert.Equal(100m, await repository.CurrentBudgetAsync(AtlasTenant, baselineId, new DateOnly(2025, 12, 31), default));
+    }
+
+    [Fact(DisplayName = "BC2-T03 published Actual basis remains pinned across a later restatement")]
+    public async Task PublishedActualBasisRemainsPinnedAcrossRestatement()
+    {
+        var runtimeConnection = Required("TODIR_DATABASE_CONNECTION");
+        var adminConnection = Required("TODIR_P04_ADMIN_CONNECTION");
+        await using var dataSource = NpgsqlDataSource.Create(runtimeConnection);
+        await using var admin = new NpgsqlConnection(adminConnection);
+        await admin.OpenAsync();
+        var sourceVersionId = (Guid)(await ScalarAsync(admin, "select id from business_planning.plan_version where tenant_id=$1 and state='Published' order by created_at desc,id desc limit 1", AtlasTenant.Value))!;
+        var actorId = (Guid)(await ScalarAsync(admin, "select id from platform.identity where tenant_id=$1 and email='admin@atlas.com'", AtlasTenant.Value))!;
+        var source = new SwitchingActualSource(Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528"), Guid.CreateVersion7().ToString("N"));
+        var repository = new PlanningRepository(new Core.Transactions.NpgsqlTransactionCoordinator(dataSource), ownerSources: [source]);
+        var draft = await repository.ClonePlanVersionAsync(AtlasTenant, actorId, sourceVersionId, $"BC02 historical basis {Guid.NewGuid():N}", default);
+        var firstRun = await repository.RefreshActualsAsync(AtlasTenant, actorId, new("seed-v1", $"basis-a-{Guid.NewGuid():N}", null, draft.Id), default);
+        var firstSnapshot = (Guid)(await ScalarAsync(admin, "select snapshot_id from business_planning.actual_refresh_run where tenant_id=$1 and id=$2", AtlasTenant.Value, firstRun))!;
+        await repository.AdvanceVersionAsync(AtlasTenant, actorId, draft.Id, "submit", default);
+        await repository.AdvanceVersionAsync(AtlasTenant, actorId, draft.Id, "approve", default);
+        await repository.AdvanceVersionAsync(AtlasTenant, actorId, draft.Id, "publish", default);
+        var firstBasis = await repository.GetActualBasisAsync(AtlasTenant, draft.Id, default);
+        Assert.Equal(firstSnapshot, firstBasis.SnapshotId);
+        Assert.True(firstBasis.Pinned);
+
+        source.Amount = 140m;
+        var secondRun = await repository.RefreshActualsAsync(AtlasTenant, actorId, new("seed-v1", $"basis-b-{Guid.NewGuid():N}", null, draft.Id), default);
+        var secondSnapshot = (Guid)(await ScalarAsync(admin, "select snapshot_id from business_planning.actual_refresh_run where tenant_id=$1 and id=$2", AtlasTenant.Value, secondRun))!;
+        var historicalBasis = await repository.GetActualBasisAsync(AtlasTenant, draft.Id, default);
+        Assert.Equal(firstSnapshot, historicalBasis.SnapshotId);
+        Assert.NotEqual(firstSnapshot, secondSnapshot);
+        Assert.Equal("Published", await ScalarAsync(admin, "select state from business_planning.planning_actual_snapshot where tenant_id=$1 and id=$2", AtlasTenant.Value, firstSnapshot));
+        Assert.Equal("Published", await ScalarAsync(admin, "select state from business_planning.planning_actual_snapshot where tenant_id=$1 and id=$2", AtlasTenant.Value, secondSnapshot));
+    }
+
+    [Fact(DisplayName = "BC2-T12 governed target and proposal lifecycle publishes without losing proposal identity")]
+    public async Task GovernedTargetAndProposalLifecyclePublishesWithoutLosingIdentity()
+    {
+        var runtimeConnection = Required("TODIR_DATABASE_CONNECTION");
+        var adminConnection = Required("TODIR_P04_ADMIN_CONNECTION");
+        await using var dataSource = NpgsqlDataSource.Create(runtimeConnection);
+        await using var admin = new NpgsqlConnection(adminConnection);
+        await admin.OpenAsync();
+        var sourceVersionId = (Guid)(await ScalarAsync(admin, "select id from business_planning.plan_version where tenant_id=$1 and state='Published' order by created_at desc,id desc limit 1", AtlasTenant.Value))!;
+        var actorId = (Guid)(await ScalarAsync(admin, "select id from platform.identity where tenant_id=$1 and email='admin@atlas.com'", AtlasTenant.Value))!;
+        var legalEntityId = (Guid)(await ScalarAsync(admin, "select id from platform.legal_entity where tenant_id=$1 and status='Active' order by id limit 1", AtlasTenant.Value))!;
+        var repository = new PlanningRepository(new Core.Transactions.NpgsqlTransactionCoordinator(dataSource));
+        var draft = await repository.ClonePlanVersionAsync(AtlasTenant, actorId, sourceVersionId, $"BC02 target {Guid.NewGuid():N}", default);
+        var target = await repository.CreatePlanningTargetAsync(AtlasTenant, actorId, new(draft.Id, legalEntityId, new(2027, 1, 1), "OPEX", 500m, "EGP", "governed target"), default);
+        var proposal = await repository.CreatePlanningProposalAsync(AtlasTenant, actorId, new(draft.Id, legalEntityId, null, new(2027, 1, 1), "OPEX", 450m, "EGP", "department proposal"), default);
+        Assert.NotNull(proposal.ProposalId);
+        await repository.AdvancePlanningProposalAsync(AtlasTenant, actorId, proposal.ProposalId!.Value, "submit", default);
+        await repository.AdjustPlanningProposalAsync(AtlasTenant, actorId, proposal.ProposalId.Value, new(475m, "manager adjustment"), default);
+        await repository.AdvancePlanningProposalAsync(AtlasTenant, actorId, proposal.ProposalId.Value, "approve", default);
+        await repository.AdvancePlanningTargetAsync(AtlasTenant, actorId, target.Id, "approve", default);
+        var published = await repository.AdvancePlanningTargetAsync(AtlasTenant, actorId, target.Id, "publish", default);
+        Assert.Equal("Published", published.State);
+        Assert.Equal(proposal.ProposalId, published.ProposalId);
+        Assert.Equal("Approved", await ScalarAsync(admin, "select state from business_planning.planning_proposal where tenant_id=$1 and id=$2", AtlasTenant.Value, proposal.ProposalId.Value));
+    }
+
+    [Fact(DisplayName = "BC2-T04 published inputs and Actual snapshots are protected at repository and PostgreSQL boundaries")]
+    public async Task PublishedInputsAndActualSnapshotsAreProtectedAtBothBoundaries()
+    {
+        var runtimeConnection = Required("TODIR_DATABASE_CONNECTION");
+        var adminConnection = Required("TODIR_P04_ADMIN_CONNECTION");
+        await using var dataSource = NpgsqlDataSource.Create(runtimeConnection);
+        await using var admin = new NpgsqlConnection(adminConnection);
+        await admin.OpenAsync();
+        var publishedVersionId = (Guid)(await ScalarAsync(admin, "select id from business_planning.plan_version where tenant_id=$1 and state='Published' order by created_at desc,id desc limit 1", AtlasTenant.Value))!;
+        var actorId = (Guid)(await ScalarAsync(admin, "select id from platform.identity where tenant_id=$1 and email='admin@atlas.com'", AtlasTenant.Value))!;
+        var legalEntityId = (Guid)(await ScalarAsync(admin, "select id from platform.legal_entity where tenant_id=$1 and status='Active' order by id limit 1", AtlasTenant.Value))!;
+        var source = new SwitchingActualSource(Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528"), Guid.CreateVersion7().ToString("N"));
+        var repository = new PlanningRepository(new Core.Transactions.NpgsqlTransactionCoordinator(dataSource), ownerSources: [source]);
+        var rejected = await Assert.ThrowsAsync<PlanningException>(() => repository.WriteGridAsync(AtlasTenant, actorId, new(publishedVersionId, [new(Guid.Empty, new(2027, 1, 1), "OPEX", System.Text.Json.JsonDocument.Parse("{}").RootElement, 1m, "EGP", false, "blocked")], null), default));
+        Assert.Equal("planning.version_immutable", rejected.Code);
+
+        var draft = await repository.ClonePlanVersionAsync(AtlasTenant, actorId, publishedVersionId, $"BC02 immutable snapshot {Guid.NewGuid():N}", default);
+        var run = await repository.RefreshActualsAsync(AtlasTenant, actorId, new("seed-v1", $"immutable-{Guid.NewGuid():N}", null, draft.Id), default);
+        var snapshotId = (Guid)(await ScalarAsync(admin, "select snapshot_id from business_planning.actual_refresh_run where tenant_id=$1 and id=$2", AtlasTenant.Value, run))!;
+        await using var runtime = new NpgsqlConnection(runtimeConnection);
+        await runtime.OpenAsync();
+        await using var transaction = await runtime.BeginTransactionAsync();
+        await ExecuteAsync(runtime, "select set_config('app.tenant_id',$1::text,true)", transaction, AtlasTenant.Value);
+        await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(runtime, "update business_planning.planning_actual_snapshot set total_amount=total_amount+1 where tenant_id=$1 and id=$2", transaction, AtlasTenant.Value, snapshotId));
+        await transaction.RollbackAsync();
+
+        await using var targetConnection = new NpgsqlConnection(runtimeConnection);
+        await targetConnection.OpenAsync();
+        await using var targetTransaction = await targetConnection.BeginTransactionAsync();
+        await ExecuteAsync(targetConnection, "select set_config('app.tenant_id',$1::text,true)", targetTransaction, AtlasTenant.Value);
+        await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(targetConnection, "insert into business_planning.planning_target(tenant_id,id,plan_version_id,legal_entity_id,period_start,metric_code,target_amount,currency_code,created_by) values($1,$2,$3,$4,$5,'OPEX',1,'EGP',$6)", targetTransaction, AtlasTenant.Value, Guid.CreateVersion7(), publishedVersionId, legalEntityId, new DateOnly(2027, 1, 1), actorId));
+        await targetTransaction.RollbackAsync();
+    }
+
+    [Fact(DisplayName = "BC2-T05 metric mapping publish retire and replacement preserve history")]
+    public async Task MetricMappingPublishRetireAndReplacementPreserveHistory()
+    {
+        var runtimeConnection = Required("TODIR_DATABASE_CONNECTION");
+        var adminConnection = Required("TODIR_P04_ADMIN_CONNECTION");
+        await using var dataSource = NpgsqlDataSource.Create(runtimeConnection);
+        await using var admin = new NpgsqlConnection(adminConnection);
+        await admin.OpenAsync();
+        var actorId = (Guid)(await ScalarAsync(admin, "select id from platform.identity where tenant_id=$1 and email='admin@atlas.com'", AtlasTenant.Value))!;
+        var source = new SwitchingActualSource(Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528"), Guid.CreateVersion7().ToString("N"));
+        var repository = new PlanningRepository(new Core.Transactions.NpgsqlTransactionCoordinator(dataSource), ownerSources: [source]);
+        var version = Guid.NewGuid().ToString("N");
+        var first = await repository.CreateMetricMappingAsync(AtlasTenant, actorId, new(version, "ledger", "FinancialRole", "OPEX", "OPEX", null, new(2026, 1, 1), new(2026, 12, 31)), default);
+        Assert.Equal("Draft", first.State);
+        Assert.Equal("Published", (await repository.AdvanceMetricMappingAsync(AtlasTenant, actorId, first.Id, "publish", default)).State);
+        Assert.Equal("Retired", (await repository.AdvanceMetricMappingAsync(AtlasTenant, actorId, first.Id, "retire", default)).State);
+        var second = await repository.CreateMetricMappingAsync(AtlasTenant, actorId, new(version + "-replacement", "ledger", "FinancialRole", "OPEX", "OPEX", null, new(2027, 1, 1), null), default);
+        Assert.Equal("Published", (await repository.AdvanceMetricMappingAsync(AtlasTenant, actorId, second.Id, "publish", default)).State);
+        Assert.Equal("Retired", await ScalarAsync(admin, "select state from business_planning.planning_metric_mapping where tenant_id=$1 and id=$2", AtlasTenant.Value, first.Id));
+        Assert.Equal("Published", await ScalarAsync(admin, "select state from business_planning.planning_metric_mapping where tenant_id=$1 and id=$2", AtlasTenant.Value, second.Id));
+    }
+
     private static string Required(string name) => Environment.GetEnvironmentVariable(name) is { Length: > 0 } value
         ? value
         : throw new InvalidOperationException($"{name} is required.");
@@ -131,6 +275,20 @@ public sealed class PlanningBc02ActualIntegrationTests
         await using var command = new NpgsqlCommand(sql, connection);
         foreach (var value in values) command.Parameters.AddWithValue(value);
         return await command.ExecuteScalarAsync();
+    }
+
+    private static async Task ExecuteAsync(NpgsqlConnection connection, string sql, params object[] values)
+    {
+        await using var command = new NpgsqlCommand(sql, connection);
+        foreach (var value in values) command.Parameters.AddWithValue(value);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task ExecuteAsync(NpgsqlConnection connection, string sql, NpgsqlTransaction transaction, params object[] values)
+    {
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        foreach (var value in values) command.Parameters.AddWithValue(value);
+        await command.ExecuteNonQueryAsync();
     }
 
     private sealed class SwitchingActualSource(Guid legalEntityId, string identity) : IPlanningOwnerReconciliationSource
