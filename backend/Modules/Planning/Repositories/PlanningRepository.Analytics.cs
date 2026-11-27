@@ -202,9 +202,33 @@ public sealed partial class PlanningRepository
     private static async Task<Dictionary<DateOnly, decimal>> ReadOpexCostsAsync(ITransactionContext c, Guid tenant, Guid version, Guid entity, DateOnly from, DateOnly to, CancellationToken ct)
     {
         var result = new Dictionary<DateOnly, decimal>();
-        await using var command = Cmd(c, "select period_start,sum(planned_amount) from business_planning.opex_plan_line where tenant_id=$1 and plan_version_id=$2 and legal_entity_id=$3 and period_start between $4 and $5 group by period_start", tenant, version, entity, from, to);
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct)) result[reader.GetFieldValue<DateOnly>(0)] = reader.GetDecimal(1);
+        var dedicated = new List<OpexIdentity>();
+        await using (var command = Cmd(c, "select period_start,department_ref,category_code,account_ref,cost_center_ref,planned_amount from business_planning.opex_plan_line where tenant_id=$1 and plan_version_id=$2 and legal_entity_id=$3 and period_start between $4 and $5", tenant, version, entity, from, to))
+        await using (var reader = await command.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                dedicated.Add(new(reader.GetFieldValue<DateOnly>(0), reader.IsDBNull(1) ? null : reader.GetGuid(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetDecimal(5)));
+            }
+        }
+
+        foreach (var line in dedicated)
+            result[line.Period] = result.GetValueOrDefault(line.Period) + line.Amount;
+
+        // Generic grid OPEX remains valid for identities not replaced by a dedicated line.
+        // Replacement is coordinate-scoped: a Facilities/6100/HQ line must not suppress an
+        // unrelated generic OPEX coordinate in the same period.
+        await using (var command = Cmd(c, "select c.period_start,c.dimension_key::text,coalesce(cf.amount,i.amount,0) from business_planning.planning_coordinate c left join business_planning.planning_input_fact i on i.tenant_id=c.tenant_id and i.coordinate_id=c.id left join business_planning.planning_calculated_fact cf on cf.tenant_id=c.tenant_id and cf.coordinate_id=c.id where c.tenant_id=$1 and c.plan_version_id=$2 and c.legal_entity_id=$3 and c.metric_code in ('Opex','OPEX') and c.period_start between $4 and $5", tenant, version, entity, from, to))
+        await using (var reader = await command.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                var period = reader.GetFieldValue<DateOnly>(0);
+                var dimension = JsonDocument.Parse(reader.GetString(1)).RootElement;
+                if (!dedicated.Any(x => x.Period == period && x.Matches(dimension)))
+                    result[period] = result.GetValueOrDefault(period) + reader.GetDecimal(2);
+            }
+        }
         return result;
     }
 
@@ -236,5 +260,29 @@ public sealed partial class PlanningRepository
     private sealed record CapexSeed(decimal Amount, DateOnly PurchasePeriod, DateOnly? InServicePeriod, int UsefulLifeMonths);
     private sealed record RollupSeed(Guid Entity, DateOnly Period, decimal Amount, string Currency);
     private sealed record CsvRow(Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, JsonElement DimensionKey, decimal Amount, string CurrencyCode, bool ExplicitZero, string? SourceLabel);
+    private sealed record OpexIdentity(DateOnly Period, Guid? DepartmentRef, string CategoryCode, string? AccountRef, string? CostCenterRef, decimal Amount)
+    {
+        public bool Matches(JsonElement dimension)
+        {
+            if (dimension.ValueKind != JsonValueKind.Object) return false;
+            return MatchesGuid(dimension, "departmentRef", DepartmentRef)
+                && MatchesText(dimension, "categoryCode", CategoryCode)
+                && MatchesText(dimension, "accountRef", AccountRef)
+                && MatchesText(dimension, "costCenterRef", CostCenterRef)
+                && (DepartmentRef is not null || AccountRef is not null || CostCenterRef is not null || dimension.TryGetProperty("categoryCode", out _));
+        }
+
+        private static bool MatchesGuid(JsonElement value, string property, Guid? expected)
+        {
+            if (!value.TryGetProperty(property, out var actual)) return expected is null;
+            return Guid.TryParse(actual.GetString(), out var parsed) && expected == parsed;
+        }
+
+        private static bool MatchesText(JsonElement value, string property, string? expected)
+        {
+            if (!value.TryGetProperty(property, out var actual)) return expected is null;
+            return string.Equals(actual.GetString(), expected, StringComparison.OrdinalIgnoreCase);
+        }
+    }
     private sealed record ParsedCsv(CsvImportView View, IReadOnlyList<CsvRow> Rows);
 }

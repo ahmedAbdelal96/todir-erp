@@ -52,6 +52,7 @@ public sealed record AccuracyRequest(Guid ForecastVersionId, Guid ActualVersionI
 public sealed record RollingForecastRequest(Guid SourceVersionId, DateOnly ActualCutoff, string? Name = null, int HorizonMonths = 12);
 public sealed record CsvImportRequest(Guid PlanVersionId, string Csv, bool Commit = false);
 public sealed record XlsxImportRequest(Guid PlanVersionId, string SpreadsheetContentBase64, bool Commit = false);
+public sealed record XlsxFileView(string FileName, string ContentType, string SpreadsheetContentBase64, int RowCount, bool Template);
 public sealed record RollupRequest(Guid PlanVersionId, IReadOnlyList<Guid> LegalEntityIds, DateOnly From, DateOnly To, string MetricCode, string ReportingCurrencyCode);
 public sealed record ScenarioAdoptRequest(string Name, string VersionKind, DateOnly? ActualCutoff);
 public sealed record AdjustReservationRequest(decimal Amount);

@@ -177,9 +177,9 @@ null-safe coordinate uniqueness index. `POST /api/v1/planning/opex` now accepts
 fixed, variable, recurring and driver-based lines with category, account and
 cost-centre references, explicit base/driver/rate inputs, growth and inflation
 percentages, currency and provenance. `GET /api/v1/planning/opex` is bounded
-and legal-entity scoped. Integrated P&L prefers these dedicated OPEX lines over
-generic OPEX grid values for the same period, preventing a second unexplained
-OPEX calculation path.
+and legal-entity scoped. Integrated P&L applies dedicated OPEX lines at their
+category/account/cost-centre identity, replacing a matching generic coordinate
+once while preserving unrelated generic OPEX coordinates in the same period.
 
 The Development Seed now includes two repeat-safe OPEX examples per tenant.
 The disposable PostgreSQL BC03 vector proves fixed 1,000 plus 10% growth equals
@@ -194,18 +194,21 @@ transaction savepoint, rejects stale completion, preserves prior calculated
 facts when execution fails, persists a Failed run and exposes an authorized
 retry route. The spreadsheet boundary now accepts a bounded first-sheet XLSX
 preview/commit path through the existing CSV mutation guard; macros, formulas,
-external links and unsafe archive sizes are rejected. The BC03 integration
-selection passed again after these changes, including a generated XLSX preview.
-XLSX export/template generation, full failure-injection/restart evidence and
-the wider Module 28 acceptance matrix remain open.
+external links and unsafe archive sizes are rejected. Authorized bounded XLSX
+export and metadata-bearing empty template routes emit formula-safe text only.
+The BC03 integration selection passed again after these changes, including a
+generated XLSX preview and export/template assertions. Full staging,
+failure-injection/restart evidence and the wider Module 28 acceptance matrix
+remain open.
 
 ## Final targeted evidence — 2026-11-27
 
 After the OPEX, calculation-recovery and XLSX changes, the final targeted gates
-were rerun: Release solution build passed with zero warnings/errors; Planning
-unit tests passed 6/6; Architecture passed 23/23; the combined BC02/BC03
-PostgreSQL selection passed 9/9; Planning OpenAPI validation passed with 86
-paths; migration policy passed for 284 SQL files; and formatter plus
+were rerun: Planning Release build passed with zero warnings/errors; Planning
+unit tests passed 6/6; Architecture passed 23/23; the BC03 PostgreSQL
+selection passed 1/1 after the identity-scoped OPEX correction; Planning
+OpenAPI validation passed with 88 paths; migration policy passed for 284 SQL
+files; and formatter plus
 `git diff --check` passed. The incremental disposable database replayed the
 281 ordered scripts and Development Seed successfully, including two OPEX
 lines per tenant. These fresh results still do not close the remaining

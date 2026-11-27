@@ -55,20 +55,30 @@ public sealed class PlanningBc03AnalyticsIntegrationTests
         Assert.Equal(1, committed.AcceptedRows);
 
         var opexPeriod = new DateOnly(2027, 3, 1);
+        var facilitiesDimension = JsonDocument.Parse("{\"categoryCode\":\"Facilities\",\"accountRef\":\"6100\",\"costCenterRef\":\"HQ\"}").RootElement;
+        var unrelatedDimension = JsonDocument.Parse("{\"categoryCode\":\"Travel\",\"accountRef\":\"6300\",\"costCenterRef\":\"HQ\"}").RootElement;
         await repository.WriteGridAsync(new(TenantId), actor, new(draft.Id,
-        [new(entity, opexPeriod, "Revenue", json, 2000m, "EGP", false, "opex-vector"), new(entity, opexPeriod, "Cogs", json, 500m, "EGP", false, "opex-vector")], null), default);
+        [new(entity, opexPeriod, "Revenue", json, 2000m, "EGP", false, "opex-vector"), new(entity, opexPeriod, "Cogs", json, 500m, "EGP", false, "opex-vector"), new(entity, opexPeriod, "Opex", facilitiesDimension, 999m, "EGP", false, "generic-replaced"), new(entity, opexPeriod, "Opex", unrelatedDimension, 70m, "EGP", false, "generic-unrelated")], null), default);
         var fixedLine = await repository.AddOpexLineAsync(new(TenantId), actor, new(draft.Id, entity, null, "Facilities", "6100", "HQ", opexPeriod, "Fixed", 1000m, 0m, 0m, 10m, 0m, "EGP", "golden-vector"), default);
         var driverLine = await repository.AddOpexLineAsync(new(TenantId), actor, new(draft.Id, entity, null, "Utilities", "6200", "HQ", opexPeriod, "DriverBased", 0m, 10m, 20m, 0m, 5m, "EGP", "golden-vector"), default);
         Assert.Equal(1100m, fixedLine.PlannedAmount);
         Assert.Equal(210m, driverLine.PlannedAmount);
         var opexPnl = await repository.QueryIntegratedStatementAsync(new(TenantId), new(draft.Id, entity, opexPeriod, opexPeriod, "P&L", "EGP"), default);
-        Assert.Equal(1310m, Assert.Single(opexPnl, x => x.LineCode == "Opex").Amount);
-        Assert.Equal(190m, Assert.Single(opexPnl, x => x.LineCode == "NetIncome").Amount);
+        Assert.Equal(1380m, Assert.Single(opexPnl, x => x.LineCode == "Opex").Amount);
+        Assert.Equal(120m, Assert.Single(opexPnl, x => x.LineCode == "NetIncome").Amount);
 
         var xlsx = CreateXlsx(entity);
         var xlsxPreview = await repository.ImportXlsxAsync(new(TenantId), actor, new(draft.Id, xlsx), default);
         Assert.False(xlsxPreview.Committed);
         Assert.Equal(1, xlsxPreview.AcceptedRows);
+
+        var exported = await repository.ExportXlsxAsync(new(TenantId), draft.Id, entity, period, opexPeriod, false, default);
+        Assert.False(exported.Template);
+        Assert.True(exported.RowCount > 0);
+        Assert.StartsWith("UEsDB", exported.SpreadsheetContentBase64, StringComparison.Ordinal);
+        var template = await repository.ExportXlsxAsync(new(TenantId), draft.Id, null, null, null, true, default);
+        Assert.True(template.Template);
+        Assert.Equal(0, template.RowCount);
     }
 
     private static string Required(string name) => Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : throw new InvalidOperationException($"{name} is required.");
