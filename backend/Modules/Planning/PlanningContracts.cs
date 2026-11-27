@@ -23,7 +23,7 @@ public sealed record BudgetOverrideRequest(Guid BucketId, string SourceModule, s
 public sealed record BudgetOverrideDecisionRequest(string Decision, string? Reason = null);
 public sealed record BudgetControlReconciliationRequest(Guid? BucketId = null, bool Rebuild = false);
 public sealed record WorkforcePlanRequest(Guid PlanVersionId, Guid LegalEntityId, Guid? DepartmentRef, string? RoleCode, DateOnly PeriodStart, decimal Fte, decimal AverageCost, string CurrencyCode, string? Source);
-public sealed record CapexPlanRequest(Guid PlanVersionId, Guid LegalEntityId, string Name, string Category, Guid? DepartmentRef, decimal PlannedAmount, string CurrencyCode, DateOnly PurchasePeriod, DateOnly? InServicePeriod, int Priority, string? Justification);
+public sealed record CapexPlanRequest(Guid PlanVersionId, Guid LegalEntityId, string Name, string Category, Guid? DepartmentRef, decimal PlannedAmount, string CurrencyCode, DateOnly PurchasePeriod, DateOnly? InServicePeriod, int Priority, string? Justification, int UsefulLifeMonths = 60);
 public sealed record RevenueDriverRequest(Guid PlanVersionId, Guid LegalEntityId, DateOnly PeriodStart, string DriverKey, decimal Volume, decimal Price, string CurrencyCode, string? Source);
 public sealed record WorkingCapitalRequest(Guid PlanVersionId, Guid LegalEntityId, DateOnly PeriodStart, decimal Dso, decimal Dpo, decimal InventoryDays);
 public sealed record PlanningFxRequest(Guid PlanVersionId, DateOnly PeriodStart, string FromCurrency, string ToCurrency, decimal Rate, string? RateType, string Source);
@@ -48,6 +48,9 @@ public sealed record AllocationTarget(Guid LegalEntityId, Guid? DepartmentRef, d
 public sealed record AllocationRequest(Guid PlanVersionId, DateOnly PeriodStart, string MetricCode, decimal SourceAmount, IReadOnlyList<AllocationTarget> Targets, string CurrencyCode, string RuleCode);
 public sealed record StatementRequest(Guid PlanVersionId, Guid LegalEntityId, DateOnly From, DateOnly To, string StatementType, string CurrencyCode);
 public sealed record AccuracyRequest(Guid ForecastVersionId, Guid ActualVersionId, DateOnly From, DateOnly To, string MetricCode);
+public sealed record RollingForecastRequest(Guid SourceVersionId, DateOnly ActualCutoff, string? Name = null, int HorizonMonths = 12);
+public sealed record CsvImportRequest(Guid PlanVersionId, string Csv, bool Commit = false);
+public sealed record RollupRequest(Guid PlanVersionId, IReadOnlyList<Guid> LegalEntityIds, DateOnly From, DateOnly To, string MetricCode, string ReportingCurrencyCode);
 public sealed record ScenarioAdoptRequest(string Name, string VersionKind, DateOnly? ActualCutoff);
 public sealed record AdjustReservationRequest(decimal Amount);
 public sealed record CompareVersionRequest(Guid OtherVersionId, Guid LegalEntityId, DateOnly? From, DateOnly? To, string? MetricCode);
@@ -64,7 +67,7 @@ public sealed record GridCellView(Guid CoordinateId, Guid LegalEntityId, DateOnl
 public sealed record AssumptionView(Guid Id, Guid PlanVersionId, string Code, string Name, string Unit, string? Description);
 public sealed record BudgetCheckView(string Decision, Guid BucketId, decimal CurrentBudget, decimal Actual, decimal Commitment, decimal Proposed, decimal AvailableBefore, decimal AvailableAfter, string ThresholdStatus, IReadOnlyList<string> Reasons, Guid? ReservationId);
 public sealed record WorkforcePlanView(Guid Id, Guid PlanVersionId, Guid LegalEntityId, Guid? DepartmentRef, string? RoleCode, DateOnly PeriodStart, decimal Fte, decimal AverageCost, string CurrencyCode, string Source);
-public sealed record CapexPlanView(Guid Id, Guid PlanVersionId, Guid LegalEntityId, string Name, string Category, decimal PlannedAmount, string CurrencyCode, DateOnly PurchasePeriod, DateOnly? InServicePeriod, int Priority, string State);
+public sealed record CapexPlanView(Guid Id, Guid PlanVersionId, Guid LegalEntityId, string Name, string Category, decimal PlannedAmount, string CurrencyCode, DateOnly PurchasePeriod, DateOnly? InServicePeriod, int Priority, string State, int UsefulLifeMonths = 60);
 public sealed record VarianceView(Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal BudgetAmount, decimal ForecastAmount, decimal ActualAmount, decimal VarianceAmount, decimal Materiality);
 public sealed record BudgetAvailabilityView(Guid BucketId, decimal CurrentBudget, decimal Actual, decimal Commitment, decimal Precommitment, decimal Reserved, decimal Available, string Mode, string ThresholdStatus);
 public sealed record BudgetOverrideView(Guid Id, Guid BucketId, string SourceModule, string SourceDocumentId, string SourceLineId, string SourceVersion, decimal Amount, decimal UsedAmount, string CurrencyCode, string State, string Reason, Guid? ApprovalRequestId, Guid RequestedBy, Guid? ApprovedBy, DateTimeOffset? ValidUntil);
@@ -82,6 +85,8 @@ public sealed record SpreadCellView(DateOnly PeriodStart, decimal Amount, decima
 public sealed record AllocationResultView(Guid Id, Guid PlanVersionId, DateOnly PeriodStart, Guid LegalEntityId, Guid? DepartmentRef, decimal Amount, decimal Weight, string RuleCode);
 public sealed record StatementLineView(string StatementType, string LineCode, DateOnly PeriodStart, decimal Amount, decimal SourceAmount, string SourceBasis, bool Balanced);
 public sealed record ForecastAccuracyView(Guid ForecastVersionId, Guid ActualVersionId, string MetricCode, decimal ForecastTotal, decimal ActualTotal, decimal AbsoluteError, decimal PercentageError, decimal Bias);
+public sealed record CsvImportView(Guid PlanVersionId, bool Committed, int AcceptedRows, IReadOnlyList<string> Errors);
+public sealed record RollupLineView(Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal SourceAmount, decimal Rate, decimal ReportingAmount, string SourceCurrency, string ReportingCurrency, string SourceBasis);
 public sealed record WorkforceCostImpactView(Guid PlanVersionId, DateOnly PeriodStart, decimal Fte, decimal Cost);
 public sealed record CompareVersionView(Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal LeftAmount, decimal RightAmount, decimal Difference);
 public sealed record PlanningTargetView(Guid Id, Guid PlanVersionId, Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal TargetAmount, decimal? ProposalAmount, decimal? GapAmount, decimal? AdjustedAmount, string CurrencyCode, string State, Guid? ProposalId = null);

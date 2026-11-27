@@ -139,3 +139,32 @@ the draft → published → retired → replacement metric-mapping lifecycle
 (BC2-T05). T06-T11 and T13-T17 remain open until their separate calendar,
 workflow, concurrency, confidentiality, owner-matrix, BC01-regression and
 lifecycle compatibility vectors are executed.
+
+## Accelerated BC03–BC06 checkpoint — 2026-11-27
+
+The accelerated backend pass added a constrained decimal formula evaluator with
+allow-listed arithmetic, comparison and aggregate functions, durable complete
+calculation runs with dependency ordering and trace rows, actual-cutoff rolling
+forecast draft creation, bounded CSV preview/atomic Draft-only import, explicit
+Planning-FX management rollup, and integrated P&L, balance-sheet and cash-flow
+projection queries. The CapEx contract now persists a positive useful-life
+months value through a forward-only migration.
+
+Fresh evidence after those changes:
+
+- Planning formula tests: 6/6 PASS.
+- Disposable PostgreSQL integrated statement, balance-check, cash continuity,
+  and CSV preview/commit vector: 1/1 PASS.
+- BC02 plus the new BC03 integration vectors: 9/9 PASS.
+- Release build: PASS with zero warnings/errors.
+- Architecture governance: 23/23 PASS.
+- Planning OpenAPI validation: PASS with 82 paths.
+- Fresh disposable migration and Development Seed replay: PASS; 280 ordered
+  platform scripts applied or verified.
+
+These results prove the implemented slices only. The full Module 28 backend is
+still `NOT COMPLETE`: OPEX ownership, complete source-module actual/commitment
+lifecycles, closed-period and rolling-forecast acceptance, transfer and
+submission matrices, Excel/rollup breadth, observability/runbooks, and the
+remaining FP/BC03–BC06 acceptance vectors still require implementation or
+evidence. No frontend, production, or full-module completion is claimed.

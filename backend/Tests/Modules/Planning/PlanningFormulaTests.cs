@@ -51,4 +51,21 @@ public sealed class PlanningFormulaTests
 
         Assert.Equal("planning.allocation_invalid", exception.Code);
     }
+
+    [Fact]
+    public void EvaluatesConstrainedDecimalFormulaDeterministically()
+    {
+        var values = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase) { ["Revenue"] = 125.00m, ["COGS"] = 25.005m };
+
+        var result = PlanningFormulaEngine.Evaluate("ROUND((Revenue - COGS) / Revenue * 100, 2)", values, 2);
+
+        Assert.Equal(80m, result);
+    }
+
+    [Fact]
+    public void RejectsMissingFormulaInputAndDivideByZero()
+    {
+        Assert.Throws<PlanningException>(() => PlanningFormulaEngine.Evaluate("Revenue + Opex", new Dictionary<string, decimal> { ["Revenue"] = 1m }));
+        Assert.Throws<PlanningException>(() => PlanningFormulaEngine.Evaluate("Revenue / COGS", new Dictionary<string, decimal> { ["Revenue"] = 1m, ["COGS"] = 0m }));
+    }
 }

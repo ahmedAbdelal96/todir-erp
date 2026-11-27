@@ -19,20 +19,20 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP10 | Revisions/transfers | idempotency columns and conserving transfer state | revision approval and deterministic transfer locking | Implementation; dedicated transfer regression open | PARTIAL |
 | FP11 | Department submissions | coordinate attachment, actor fields, approval identity | submit/return/approve/lock through Platform Approval | Implementation; dedicated submission HTTP regression open | PARTIAL |
 | FP12 | Assumptions/drivers | assumption/value | create/value/list | Seed/API | PASS |
-| FP13 | Formula DAG | formula/dependency | whitelist and cycle rejection | 4 Planning tests + HTTP | PARTIAL |
-| FP14 | Calculation/trace | run/trace/calculated facts | deterministic revenue calculation | Existing path; full DAG open | PARTIAL |
+| FP13 | Formula DAG | formula/dependency | constrained decimal parser, allow-listed functions, dependency ordering and cycle rejection | 6 Planning tests; BC03 golden-vector integration | PARTIAL |
+| FP14 | Calculation/trace | run/trace/calculated facts | durable run/trace and deterministic formula/revenue calculation with failed-run state | BC03 implementation and trace path; stale/restart matrix open | PARTIAL |
 | FP15 | Spreading | spread rule/input facts | exact residual allocation on `spread-exact` | unit test + HTTP conservation | PARTIAL |
 | FP16 | Allocations | rule/result with lineage | weighted allocation | HTTP conservation | PARTIAL |
-| FP17 | Revenue | revenue driver | volume × price | Seed/recalculate path | PARTIAL |
+| FP17 | Revenue | revenue driver | volume × price with calculated Revenue coordinates | BC03 integrated statement golden vector; Sales owner reconciliation remains open | PARTIAL |
 | FP18 | OPEX | grid inputs only | no dedicated driver/category workflow | No complete evidence | OPEN |
 | FP19 | Workforce | workforce lines | add/list/import/cost-impact | Seed + HTTP; owner integration open | PARTIAL |
-| FP20 | CapEx | CapEx lifecycle table | add/list/prioritize/approve | Seed + HTTP; depreciation open | PARTIAL |
-| FP21 | Planning FX | versioned rates | rate input | API path; conversion trace open | PARTIAL |
-| FP22 | Integrated P&L | statement projection table | deterministic P&L query | HTTP P&L; mapping incomplete | PARTIAL |
-| FP23 | Working capital | assumptions | assumption write | Seed/API; derived model open | PARTIAL |
-| FP24 | Projected balance sheet | no complete model | not implemented | No balance proof | OPEN |
-| FP25 | Projected cash flow | proxy only | no reconciled integrated cash model | Proxy not acceptance evidence | OPEN |
-| FP26 | Rolling forecast | cutoff field only | no horizon roll job | No evidence | OPEN |
+| FP20 | CapEx | CapEx lifecycle table with explicit useful life | add/list/prioritize/approve and planning-only depreciation schedule | Fresh migration/seed plus BC03 statement vector; Fixed Asset owner contract remains open | PARTIAL |
+| FP21 | Planning FX | versioned rates | scenario/period conversion for management rollup | BC03 route implementation; cross-currency HTTP matrix open | PARTIAL |
+| FP22 | Integrated P&L | statement projection table | revenue, COGS, OPEX, workforce and depreciation lines with explicit basis | BC03 golden-vector PostgreSQL integration 1/1 | PARTIAL |
+| FP23 | Working capital | assumptions | DSO/DPO/inventory-days derived AR/AP/inventory | BC03 golden-vector PostgreSQL integration; owner opening-balance matrix open | PARTIAL |
+| FP24 | Projected balance sheet | statement projection contract | opening cash/equity plus projected assets, liabilities and balance check; incomplete models fail visibly | BC03 golden-vector balance check passes | PARTIAL |
+| FP25 | Projected cash flow | statement projection contract | integrated operating, investing and financing cash flows with closing-cash continuity | BC03 golden-vector closing cash reconciles to Balance Sheet cash | PARTIAL |
+| FP26 | Rolling forecast | governed Forecast plan versions | actual cutoff creates a new Draft horizon without rewriting source history | Route implementation; closed-period runtime matrix open | PARTIAL |
 | FP27 | What-if | scenario state/access | clone/share/adopt | HTTP scenario path | PARTIAL |
 | FP28 | Variance/drivers | variance/comments | query and driver endpoint | API path; decomposition open | PARTIAL |
 | FP29 | Forecast accuracy | accuracy projection | aggregate error/bias | Implementation; fixture open | PARTIAL |
@@ -45,8 +45,8 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP36 | Overrides/thresholds | source-bound override with used amount, validity and approval link | request/decision API through Platform Approvals; bounded exact-source usage and SoD permission | BC-T09 authenticated requester/approver/unauthorized HTTP journey; bounded source/version usage and retry pass | PASS for BC01 |
 | FP37 | Department planner | submission persistence | no frontend in this mission | Backend slice only | PARTIAL |
 | FP38 | CFO/owner views | variance/statements partial | no complete rollup/action contract | No complete evidence | OPEN |
-| FP39 | Excel/CSV | no staging/validation | no safe file endpoints | Mandatory gate absent | OPEN |
-| FP40 | Multi-entity rollup | entity keys exist | no rollup projection | No proof | OPEN |
+| FP39 | Excel/CSV | bounded CSV import contract | preview/validation and atomic Draft-only commit; no published/locked bypass | BC03 CSV preview/commit PostgreSQL integration 1/1; full malformed/permissions matrix open | PARTIAL |
+| FP40 | Multi-entity rollup | entity keys and Planning FX | authorized entity rows converted through explicit period FX rates | Route implementation; multi-entity reconciliation matrix open | PARTIAL |
 | FP41 | Security/SoD | RLS/permissions/lifecycle | route authorization and Platform Approval owner scope | Architecture 23/23, BC-T09 HTTP, BC2-T13 | PARTIAL; not exhaustive |
 | FP42 | Audit/history | audit on implemented writes | lifecycle audit | SQL/API inspection | PARTIAL |
 | FP43 | Migration/opening budget | bootstrap/forward-fix, owner reconciliation and reconciliation runs | disposable migration/seed, strict Block guard requires successful owner reconciliation, owner-source comparison and bounded rebuild | BC-T10 plus BC2-T14 migration/seed replay | PASS for covered vectors |
