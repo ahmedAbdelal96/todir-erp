@@ -22,7 +22,7 @@ Implemented route groups:
 - scenario share/adopt-preview and version comparison;
 - exact spreading (`/grids/spread-exact`), weighted allocation, P&L query and forecast-accuracy calculation;
 - workforce baseline import/cost-impact and CapEx lifecycle actions.
-- Planning OpenAPI contract: `docs/api/planning-openapi.json` (67 paths; static validation is separate from business acceptance).
+- Planning OpenAPI contract: `docs/api/planning-openapi.json` (72 paths; static validation is separate from business acceptance).
 - Purchasing and Expenses request contracts may carry `budgetBucketId` as a validated selection hint. The backend remains authoritative: it normalizes the annual, quarterly, or monthly control horizon, resolves the applicable active bucket, rejects cross-entity/context/uncontrolled selections, and fails closed for active strict policies with no applicable bucket. Owner transactions are rolled back for blocked/approval-required decisions.
 - Budget Control now normalizes annual, quarterly and monthly horizons, requires a published plan version, preserves source currency, and supports `POST /budget/overrides`, `GET /budget/overrides/{id}`, and `POST /budget/overrides/{id}/decision`. An override is a single source/document/line/version exception, is Platform-Approval governed, expires when configured, and is consumed transactionally; it never changes the approved Budget.
 - Purchasing now exposes `/legal-entities/{entityId}/purchase-requisitions` create/read/submit/approve/reject/convert routes. Conversion is source-versioned and idempotent; the backend preserves PR line identity and replaces remaining precommitment with PO commitment.
@@ -36,6 +36,26 @@ Implemented route groups:
 - BC-T09 proves the authenticated override journey through cookie/CSRF HTTP and Platform Approvals with separate requester, approver and unauthorized identities.
 - BC-T10 proves an independent real-source opening vector in a repeat-safe unused future year: Expense `40,000 EGP` Actual, approved PO `60,000 EGP` Commitment, approved PR `20,000 EGP` Precommitment, and `80,000 EGP` availability. Authenticated reconciliation detects the initial projection discrepancy, rebuilds it, and a final zero-discrepancy run permits strict readiness.
 - The Ledger owner provider maps the canonical `ExpenseRecognized` debit semantic role; reconciled availability and reservation evaluation do not count materialized owner totals twice.
+
+## BC02 backend additions
+
+- Actual refresh reads registered owner financial-fact providers. Caller-supplied
+  facts are rejected; the persisted watermark is computed from authoritative
+  source identity/version/amount data. Published snapshots are immutable
+  metadata plus source facts, and grid/variance reads use the latest published
+  snapshot for the plan version.
+- Metric mappings are versioned and have Draft/Published/Retired lifecycle;
+  the Development Seed publishes the Ledger `ExpenseRecognized/OPEX` mapping.
+- Grid writes reject oversized/duplicate batches, stale plan versions,
+  Actual/Calculated/Source metrics and coordinates covered by Submitted,
+  Approved or Locked submission units.
+- Submission coordinate attachment is legal-entity and plan-version scoped;
+  submit requests a Platform Approval and approval validates the owner entity,
+  state and approval identity before locking the slice.
+- Baseline lifecycle, revision idempotency and deterministic transfer locking
+  are server-side contracts. These additions are not a claim that every BC02
+  scenario is acceptance-complete; use the BC02 matrix before building product
+  flows around a capability.
 
 ## Development seed
 

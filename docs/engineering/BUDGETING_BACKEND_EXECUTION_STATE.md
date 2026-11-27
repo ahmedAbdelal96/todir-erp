@@ -60,3 +60,23 @@ Backend and database implementation for Module 28 on `dev`, including the full F
 `BC01 VERIFIED` for this focused mission. The broader Module 28 backend remains
 `NOT COMPLETE` because capabilities outside BC01 are still partial/open. No
 production certification is implied.
+
+## BC02 closure checkpoint
+
+The current BC02 implementation adds owner-contract Actual refresh, immutable
+snapshot metadata/facts, versioned metric mappings, metric governance fields,
+grid mutation guards, coordinate-scoped submission locking, Platform Approval
+submission decisions, baseline lifecycle guards, revision idempotency and
+deterministic transfer locking. It also adds a forward-only migration and an
+idempotent OPEX Ledger mapping in the Development Seed.
+
+Fresh local verification after the latest source changes passed: Release build,
+Planning 4/4, Architecture 23/23, OpenAPI validation (Planning 72 paths), the
+fresh-seed replay test 1/1, authenticated BC-T09 1/1, canonical BC-T10 1/1 and
+the new owner-sourced Actual snapshot/replay test 1/1 on disposable PostgreSQL.
+
+The BC02 acceptance matrix is `docs/engineering/BUDGETING_BC02_ACCEPTANCE_MATRIX.md`.
+It intentionally records T02, failed-refresh recovery, mapping lifecycle,
+transfer concurrency and submission HTTP/SoD vectors as OPEN/PARTIAL until
+dedicated repeatable evidence exists. Therefore BC02 is `NOT COMPLETE` and no
+full Module 28 or production certification is claimed.

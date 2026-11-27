@@ -27,15 +27,21 @@ public sealed record CapexPlanRequest(Guid PlanVersionId, Guid LegalEntityId, st
 public sealed record RevenueDriverRequest(Guid PlanVersionId, Guid LegalEntityId, DateOnly PeriodStart, string DriverKey, decimal Volume, decimal Price, string CurrencyCode, string? Source);
 public sealed record WorkingCapitalRequest(Guid PlanVersionId, Guid LegalEntityId, DateOnly PeriodStart, decimal Dso, decimal Dpo, decimal InventoryDays);
 public sealed record PlanningFxRequest(Guid PlanVersionId, DateOnly PeriodStart, string FromCurrency, string ToCurrency, decimal Rate, string? RateType, string Source);
-public sealed record ActualRefreshRequest(string MappingVersion, string SourceWatermark, IReadOnlyList<ActualFactRequest> Facts);
+// Facts are intentionally not accepted from the API caller.  The optional
+// legacy property remains source-compatible for existing clients, but a
+// non-empty value is rejected; refreshes are assembled from owner contracts.
+public sealed record ActualRefreshRequest(string MappingVersion, string SourceWatermark, IReadOnlyList<ActualFactRequest>? Facts = null, Guid? PlanVersionId = null, DateOnly? ActualThrough = null);
 public sealed record ActualFactRequest(Guid PlanVersionId, Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, JsonElement DimensionKey, decimal Amount, string CurrencyCode, string SourceModule, string SourceReference);
 public sealed record VarianceQueryRequest(Guid PlanVersionId, Guid LegalEntityId, DateOnly? From, DateOnly? To, string? MetricCode);
 public sealed record CommentRequest(Guid PlanVersionId, Guid? CoordinateId, string Body);
 public sealed record CreateDimensionRequest(Guid ModelVersionId, string Code, string Name, string MemberKind, bool Required);
+public sealed record CreateMetricRequest(string Code, string Name, string MetricKind, string DataType, string SourcePolicy, string? FinancialRole = null, string UnitCode = "Money", int PrecisionScale = 4, string FavorableDirection = "Higher");
 public sealed record CreateDimensionMemberRequest(Guid DimensionId, string Code, string Name, string? ParentCode, string? SourceReference);
 public sealed record CreateDimensionMappingRequest(Guid DimensionId, Guid MemberId, string MappingVersion, string SourceModule, string SourceType, string SourceKey, DateOnly? EffectiveFrom, DateOnly? EffectiveTo);
+public sealed record CreateMetricMappingRequest(string MappingVersion, string SourceModule, string SourceType, string SourceKey, string TargetMetricCode, Guid? LegalEntityId, DateOnly? EffectiveFrom, DateOnly? EffectiveTo);
 public sealed record CreateFormulaRequest(Guid ModelVersionId, string Code, string Expression, string OutputMetricCode, IReadOnlyList<string> Dependencies);
-public sealed record CreateSubmissionUnitRequest(Guid PlanVersionId, Guid LegalEntityId, Guid? DepartmentRef, string Name, Guid? AssignedTo);
+public sealed record CreateSubmissionUnitRequest(Guid PlanVersionId, Guid LegalEntityId, Guid? DepartmentRef, string Name, Guid? AssignedTo, IReadOnlyList<Guid>? CoordinateIds = null);
+public sealed record SubmissionCoordinateRequest(IReadOnlyList<Guid> CoordinateIds);
 public sealed record SubmissionTransitionRequest(string Action, string? Reason);
 public sealed record SpreadRequest(Guid PlanVersionId, Guid LegalEntityId, string MetricCode, JsonElement DimensionKey, decimal Total, string Method, IReadOnlyList<DateOnly> TargetPeriods, IReadOnlyList<decimal>? Weights, string CurrencyCode);
 public sealed record AllocationTarget(Guid LegalEntityId, Guid? DepartmentRef, decimal Weight, JsonElement DimensionKey);
@@ -63,8 +69,10 @@ public sealed record BudgetControlReconciliationView(Guid Id, Guid? BucketId, st
 public sealed record CalculationRunView(Guid Id, Guid PlanVersionId, string State, int CalculatedCells, DateTimeOffset? CompletedAt, string? ErrorDetail);
 public sealed record ActualRefreshRunView(Guid Id, string State, string MappingVersion, string? SourceWatermark, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, string? ErrorDetail);
 public sealed record DimensionView(Guid Id, Guid ModelVersionId, string Code, string Name, string MemberKind, bool Required, bool Active);
+public sealed record MetricView(Guid Id, string Code, string Name, string MetricKind, string DataType, string SourcePolicy, string? FinancialRole, string UnitCode, int PrecisionScale, string FavorableDirection, bool Active);
 public sealed record DimensionMemberView(Guid Id, Guid DimensionId, string Code, string Name, string? ParentCode, bool Active);
-public sealed record SubmissionUnitView(Guid Id, Guid PlanVersionId, Guid LegalEntityId, Guid? DepartmentRef, string Name, string State, long RowVersion);
+public sealed record MetricMappingView(Guid Id, string MappingVersion, string SourceModule, string SourceType, string SourceKey, string TargetMetricCode, Guid? LegalEntityId, string State);
+public sealed record SubmissionUnitView(Guid Id, Guid PlanVersionId, Guid LegalEntityId, Guid? DepartmentRef, string Name, string State, long RowVersion, Guid? ApprovalRequestId = null);
 public sealed record FormulaView(Guid Id, Guid ModelVersionId, string Code, string Expression, string OutputMetricCode, IReadOnlyList<string> Dependencies, bool Active);
 public sealed record SpreadCellView(DateOnly PeriodStart, decimal Amount, decimal Weight);
 public sealed record AllocationResultView(Guid Id, Guid PlanVersionId, DateOnly PeriodStart, Guid LegalEntityId, Guid? DepartmentRef, decimal Amount, decimal Weight, string RuleCode);
