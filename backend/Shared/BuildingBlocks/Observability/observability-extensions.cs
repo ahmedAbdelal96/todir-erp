@@ -53,6 +53,7 @@ public static class ObservabilityExtensions
                 .AddMeter("Todir.Platform.Cache")
                 .AddMeter("Todir.Worker")
                 .AddMeter("Subledger")
+                .AddMeter("Todir.Planning")
                 .AddMeter("Npgsql")
                 .AddAspNetCoreInstrumentation()
                 .AddPrometheusExporter());

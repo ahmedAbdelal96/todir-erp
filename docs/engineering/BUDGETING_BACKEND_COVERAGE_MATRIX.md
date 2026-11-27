@@ -14,7 +14,7 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP05 | Sparse coordinates/input facts | signature uniqueness | grid query/batch/paste | Seed grid read; tests | PASS |
 | FP06 | Version/scenario core | plan/scenario/access tables | clone/share/adopt-preview | Real scenario path; immutability pending | PARTIAL |
 | FP07 | Grid query/batch | paged coordinate indexes | query/write/paste and legacy spread | API composition/runtime grid | PASS |
-| FP08 | Actual snapshot/Ledger | immutable snapshot metadata/facts, provenance, RLS | owner-contract refresh, source selection, watermark and run status | BC2-T01 real disposable PostgreSQL refresh/replay | PASS for verified vector; recovery/duplicate-provider regression open |
+| FP08 | Actual snapshot/Ledger | immutable snapshot metadata/facts, provenance, RLS | owner-contract refresh, source selection, watermark and run status; owner providers now include Ledger, Purchasing, Payroll and Fixed Assets | BC2-T01 real disposable PostgreSQL refresh/replay; provider registration/build verified, non-empty Payroll/Fixed Assets owner fixture remains open | PARTIAL |
 | FP09 | Original budget baseline | baseline lifecycle and immutable original amount | create/current/lifecycle routes | Implementation and seed; dedicated lifecycle regression open | PARTIAL |
 | FP10 | Revisions/transfers | idempotency columns and conserving transfer state | revision approval and deterministic transfer locking | Implementation; dedicated transfer regression open | PARTIAL |
 | FP11 | Department submissions | coordinate attachment, actor fields, approval identity | submit/return/approve/lock through Platform Approval | Implementation; dedicated submission HTTP regression open | PARTIAL |
@@ -51,14 +51,14 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP42 | Audit/history | audit on implemented writes | lifecycle audit | SQL/API inspection | PARTIAL |
 | FP43 | Migration/opening budget | bootstrap/forward-fix, owner reconciliation and reconciliation runs | disposable migration/seed, strict Block guard requires successful owner reconciliation, owner-source comparison and bounded rebuild | BC-T10 plus BC2-T14 migration/seed replay | PASS for covered vectors |
 | FP44 | Performance/scale | grid/availability indexes | bounded queries | No formal scale certification | PARTIAL |
-| FP45 | Observability | platform logging/outbox | no planning metrics | No dedicated proof | OPEN |
+| FP45 | Observability | platform logging/outbox | bounded `Todir.Planning` metrics for Actual refresh, calculation, budget checks, failures, block decisions, imports and reconciliation discrepancies; exported through existing OpenTelemetry pipeline | Release build and architecture registration pass; live Prometheus scrape/alert evidence remains open | PARTIAL |
 | FP46 | Runbooks/recovery | migration/seed, owner reconciliation and reversal intent | bounded rebuild, durable owner result, failed reversal intent and retry semantics | BC-T06/08 failure-injection recovery and BC-T10 owner watermark/rebuild evidence; production runbook scope remains broader | PASS for BC01 |
 | FP47 | Small company | basic seed budget/forecast | core cycle/grid/control | Foundation runtime | PARTIAL |
 | FP48 | Department manager | submission backend slice | no scoped UI/delegated approval | No complete proof | OPEN |
 | FP49 | FP&A | drivers/variance partial | no integrated forecast workflow | No complete proof | OPEN |
 | FP50 | CFO | P&L partial | BS/CF/rollup absent | No complete proof | OPEN |
 | FP51 | Purchasing control | requisition/PO lineage and reservation source identity | Purchasing-owned PR lifecycle, conversion replacement, PO approval history/outbox and server-side bucket resolution | Real disposable 100k PR conversion and 40/60 reservation inspection pass; full receipt/return vector remains open | PARTIAL |
-| FP52 | Cross-module reconciliation | owner financial-fact contracts and durable owner result | Purchasing and Ledger expose bounded owner facts; Planning compares source facts to bucket totals and records watermark/discrepancy; actual snapshots use owner providers | BC-T10 and BC2-T01 real disposable PostgreSQL vectors | PASS for covered vectors |
+| FP52 | Cross-module reconciliation | owner financial-fact contracts and durable owner result | Purchasing, Ledger, Payroll and Fixed Assets expose bounded owner facts; Planning compares source facts to bucket totals and records watermark/discrepancy; actual snapshots use owner providers | BC-T10 and BC2-T01 real disposable PostgreSQL vectors; new Payroll/Fixed Assets providers compile and register, non-empty cross-owner reconciliation remains open | PARTIAL |
 | FP53 | E2E/release | migration/RLS verified | BC01 APIs and source seams | BC-T01–T12 evidence, Ledger 56/56 twice, authenticated HTTP, migration/seed, architecture/OpenAPI and Release gates; complete Module 28 gate not | PASS for BC01 |
 
 ## BC02 integrity-closure note

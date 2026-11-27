@@ -19,6 +19,8 @@ public static class FixedAssetsModuleExtensions
     {
         services.AddSingleton<IModuleManifestProvider, FixedAssetsModuleManifestProvider>();
         services.AddSingleton<FixedAssetRepository>();
+        services.AddSingleton<Repositories.FixedAssetsOwnerReconciliationSource>();
+        services.AddSingleton<Shared.Contracts.Planning.IPlanningOwnerReconciliationSource>(provider => provider.GetRequiredService<Repositories.FixedAssetsOwnerReconciliationSource>());
         services.AddSingleton<IFixedAssetCustodyCapabilities>(provider => provider.GetRequiredService<FixedAssetRepository>());
         services.AddSingleton<EgyptFixedAssetCountryPolicyProvider>();
         services.AddSingleton<IFixedAssetCountryPolicyProvider>(provider => provider.GetRequiredService<EgyptFixedAssetCountryPolicyProvider>());

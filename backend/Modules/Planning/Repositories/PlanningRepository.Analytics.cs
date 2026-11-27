@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Diagnostics;
 using System.Text.Json;
 using Core.Transactions;
 using Npgsql;
@@ -10,6 +11,7 @@ public sealed partial class PlanningRepository
 {
     public Task<CalculationRunView> RecalculateCompleteAsync(TenantId tenant, Guid actor, Guid planVersionId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
     {
+        var started = Stopwatch.GetTimestamp();
         var state = await ReadVersionState(c, tenant.Value, planVersionId, token) ?? throw new PlanningException("planning.version_not_found");
         if (state.State != "Draft") throw new PlanningException("planning.version_immutable");
 
@@ -50,6 +52,7 @@ public sealed partial class PlanningRepository
             if (currentRevision != inputRevision) throw new PlanningException("planning.calculation_stale");
             await Exec(c, "update business_planning.planning_calculation_run set state='Succeeded',completed_at=now(),error_detail=null where tenant_id=$1 and id=$2", token, tenant.Value, run);
             await Audit(c, tenant.Value, actor, "planning_calculation_succeeded", run, token);
+            PlanningMetrics.CalculationDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, new KeyValuePair<string, object?>("outcome", "succeeded"));
             return new CalculationRunView(run, planVersionId, "Succeeded", values.Count, DateTimeOffset.UtcNow, null);
         }
         catch (Exception exception)
@@ -58,6 +61,8 @@ public sealed partial class PlanningRepository
             var error = exception is PlanningException planning ? planning.Code : "planning.calculation_failed";
             await Exec(c, "update business_planning.planning_calculation_run set state='Failed',completed_at=now(),error_detail=$3 where tenant_id=$1 and id=$2", token, tenant.Value, run, error);
             await Audit(c, tenant.Value, actor, "planning_calculation_failed", run, token);
+            PlanningMetrics.Failure("calculation", error);
+            PlanningMetrics.CalculationDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, new KeyValuePair<string, object?>("outcome", "failed"));
             return new CalculationRunView(run, planVersionId, "Failed", 0, DateTimeOffset.UtcNow, error);
         }
     }, ct);
@@ -83,7 +88,9 @@ public sealed partial class PlanningRepository
 
     public Task<CsvImportView> ImportCsvAsync(TenantId tenant, Guid actor, CsvImportRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
     {
-        var parsed = ParseCsv(request.PlanVersionId, request.Csv);
+        ParsedCsv parsed;
+        try { parsed = ParseCsv(request.PlanVersionId, request.Csv); }
+        catch (PlanningException) { PlanningMetrics.ImportFailures.Add(1, new KeyValuePair<string, object?>("format", "csv")); throw; }
         if (parsed.View.Errors.Count > 0 || !request.Commit) return parsed.View;
         var state = await ReadVersionState(c, tenant.Value, request.PlanVersionId, token) ?? throw new PlanningException("planning.version_not_found");
         if (state.State != "Draft") throw new PlanningException("planning.version_immutable");

@@ -5,6 +5,7 @@ using System.Text.Json;
 using Core.Messaging;
 using Core.Transactions;
 using Npgsql;
+using System.Diagnostics;
 using NpgsqlTypes;
 using Shared.Contracts.Platform;
 using Shared.Contracts.Planning;
@@ -125,7 +126,23 @@ public sealed partial class PlanningRepository(ITransactionCoordinator coordinat
     public Task<AssumptionView> CreateAssumptionAsync(TenantId tenant, Guid actor, CreateAssumptionRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) => { await EnsureDraftPlanVersion(c, tenant.Value, request.PlanVersionId, token); var id = Guid.CreateVersion7(); await Exec(c, "insert into business_planning.planning_assumption(tenant_id,id,plan_version_id,code,name,unit,description) values($1,$2,$3,$4,$5,$6,$7)", token, tenant.Value, id, request.PlanVersionId, request.Code.Trim(), request.Name.Trim(), request.Unit.Trim(), Db(request.Description)); await Audit(c, tenant.Value, actor, "assumption_created", id, token); return new AssumptionView(id, request.PlanVersionId, request.Code.Trim(), request.Name.Trim(), request.Unit.Trim(), request.Description); }, ct);
     public async Task SetAssumptionValueAsync(TenantId tenant, Guid assumptionId, AssumptionValueRequest request, CancellationToken ct) => await coordinator.ExecuteAsync<object?>(tenant, async (c, token) => { await EnsureDraftAssumption(c, tenant.Value, assumptionId, token); await Exec(c, "insert into business_planning.planning_assumption_value(tenant_id,id,assumption_id,period_start,value,source) values($1,$2,$3,$4,$5,$6) on conflict(tenant_id,assumption_id,period_start) do update set value=excluded.value,source=excluded.source", token, tenant.Value, Guid.CreateVersion7(), assumptionId, request.PeriodStart, request.Value, request.Source ?? "Manual"); return null; }, ct);
 
-    public Task<BudgetCheckView> CheckBudgetAsync(TenantId tenant, Guid actor, BudgetCheckRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) => await CheckBudgetInTransaction(c, tenant, actor, request, token), ct);
+    public Task<BudgetCheckView> CheckBudgetAsync(TenantId tenant, Guid actor, BudgetCheckRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
+    {
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            var result = await CheckBudgetInTransaction(c, tenant, actor, request, token);
+            PlanningMetrics.BudgetCheckDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, new KeyValuePair<string, object?>("decision", result.Decision));
+            if (string.Equals(result.Decision, "Block", StringComparison.OrdinalIgnoreCase)) PlanningMetrics.Decision("block");
+            return result;
+        }
+        catch (PlanningBudgetControlException exception)
+        {
+            PlanningMetrics.Failure("budget_check", exception.Code);
+            PlanningMetrics.BudgetCheckDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, new KeyValuePair<string, object?>("decision", "failed"));
+            throw;
+        }
+    }, ct);
     public Task<BudgetCheckView> ApproveTransferAsync(TenantId tenant, Guid actor, Guid transferId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
     {
         var transfer = await ReadTransfer(c, tenant.Value, transferId, token) ?? throw new PlanningException("planning.transfer_not_found");
@@ -316,6 +333,7 @@ public sealed partial class PlanningRepository(ITransactionCoordinator coordinat
 
     public async Task<Guid> RefreshActualsAsync(TenantId tenant, Guid actor, ActualRefreshRequest request, CancellationToken ct)
     {
+        var started = Stopwatch.GetTimestamp();
         if (string.IsNullOrWhiteSpace(request.MappingVersion)) throw new PlanningException("planning.actual_refresh_identity_required");
         if (request.Facts is { Count: > 0 }) throw new PlanningException("planning.actual_refresh_source_contract_required");
         var planVersionId = request.PlanVersionId ?? await coordinator.ExecuteAsync(tenant, (c, token) => Scalar<Guid?>(c, "select id from business_planning.plan_version where tenant_id=$1 and state in ('Draft','Published') order by created_at desc,id desc limit 1", token, tenant.Value), ct)
@@ -359,13 +377,15 @@ public sealed partial class PlanningRepository(ITransactionCoordinator coordinat
                 }, ct);
             }
             catch { }
+            PlanningMetrics.Failure("actual_refresh", exception is PlanningException planning ? planning.Code : "planning.actual_refresh_failed");
+            PlanningMetrics.ActualRefreshDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, new KeyValuePair<string, object?>("outcome", "failed"));
             if (exception is PlanningException planningException) throw planningException;
             throw new PlanningException($"planning.actual_refresh_failed:{exception.Message}");
         }
 
         try
         {
-            return await coordinator.ExecuteAsync(tenant, async (c, token) =>
+            var refreshed = await coordinator.ExecuteAsync(tenant, async (c, token) =>
             {
                 var existingId = await Scalar<Guid?>(c, "select id from business_planning.actual_refresh_run where tenant_id=$1 and mapping_version=$2 and source_watermark=$3 order by started_at desc,id desc limit 1", token, tenant.Value, request.MappingVersion.Trim(), watermark);
                 if (existingId is { } existingRunId)
@@ -399,6 +419,8 @@ public sealed partial class PlanningRepository(ITransactionCoordinator coordinat
                 await Audit(c, tenant.Value, actor, "actual_snapshot_published", snapshot, token);
                 return runId;
             }, ct);
+            PlanningMetrics.ActualRefreshDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, new KeyValuePair<string, object?>("outcome", "succeeded"));
+            return refreshed;
         }
         catch (Exception exception)
         {
@@ -411,6 +433,8 @@ public sealed partial class PlanningRepository(ITransactionCoordinator coordinat
                 }, ct);
             }
             catch { }
+            PlanningMetrics.Failure("actual_refresh", exception is PlanningException planning ? planning.Code : "planning.actual_refresh_failed");
+            PlanningMetrics.ActualRefreshDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, new KeyValuePair<string, object?>("outcome", "failed"));
             if (exception is PlanningException planningException) throw planningException;
             throw new PlanningException($"planning.actual_refresh_failed:{exception.Message}");
         }

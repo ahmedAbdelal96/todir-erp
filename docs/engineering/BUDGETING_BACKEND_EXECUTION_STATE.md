@@ -213,3 +213,22 @@ files; and formatter plus
 281 ordered scripts and Development Seed successfully, including two OPEX
 lines per tenant. These fresh results still do not close the remaining
 mandatory FP00–FP53 acceptance gaps listed above.
+
+## Owner-contract and observability continuation — 2026-11-27
+
+The owner boundary now has concrete Payroll and Fixed Assets providers in
+addition to the existing Ledger and Purchasing providers. Payroll publishes
+finalized `PayrollPosted` accounting facts as OPEX Actuals; Fixed Assets
+publishes posted depreciation-run lines as DEPRECIATION Actuals. Both providers
+set tenant context, honor optional legal-entity scope, retain source identity,
+recognition identity, currency and accrual basis, and are registered only by
+their owning modules. This is a contract and registration closure slice; a
+non-empty independent Payroll/Fixed Assets reconciliation fixture and the
+remaining Sales, HR, Banking, Inventory, Manufacturing, Projects, Subledger
+and FinBase source matrix are still required before FP00/FP08/FP52 can PASS.
+
+Planning now emits bounded `Todir.Planning` OpenTelemetry metrics for actual
+refresh duration/failure, calculation duration/failure, budget-check duration,
+block decisions, CSV import failures and reconciliation workflow outcomes.
+The existing observability pipeline exports the meter; live Prometheus and
+alert evidence remains outstanding, so FP45 is PARTIAL rather than PASS.

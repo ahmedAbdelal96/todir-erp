@@ -17,6 +17,8 @@ public static class PayrollModuleExtensions
     {
         services.AddSingleton<IModuleManifestProvider, PayrollModuleManifestProvider>();
         services.AddSingleton<PayrollRepository>();
+        services.AddSingleton<PayrollOwnerReconciliationSource>();
+        services.AddSingleton<Shared.Contracts.Planning.IPlanningOwnerReconciliationSource>(provider => provider.GetRequiredService<PayrollOwnerReconciliationSource>());
         services.AddSingleton<PayrollService>();
         services.AddSingleton<PayrollCalculationEngine>();
         services.AddSingleton<IPayrollCountryProviderRegistry, PayrollCountryProviderRegistry>();
