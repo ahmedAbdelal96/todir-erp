@@ -1,5 +1,7 @@
 # 15 — Requirements Traceability & Exact Acceptance Matrix
 
+> **Current P1 reconciliation:** This historical matrix is retained as a requirement trace. The current P1 gate disposition is [ACCEPTANCE_MATRIX.md](../ACCEPTANCE_MATRIX.md); P2 must add the real-stack tests listed there after owner approval.
+
 **Goal:** Every statement in specs has an executable acceptance path. No task accepted solely for completing code compilation or screenshots. Test case names illustrative; agents implement matching framework conventions.
 
 | Requirement | Proposed evidence | Must pass before |

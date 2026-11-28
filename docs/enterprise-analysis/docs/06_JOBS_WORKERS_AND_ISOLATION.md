@@ -1,5 +1,7 @@
 # 06 — Manual Jobs, Isolated Execution, Reliability and Fairness
 
+> **Current P1 reconciliation:** The execution invariants remain active. The current host evidence is `backend/Worker/Program.cs`; the P1 recommendation is a separate minimal .NET Analysis process role in P2, with PostgreSQL durable job state and no automatic run creation. See [EXECUTION_AND_DATA_ARCHITECTURE.md](../EXECUTION_AND_DATA_ARCHITECTURE.md).
+
 **Decision:** User-created on-demand AnalysisRun only. Job workers may run continuously to **service accepted user jobs** but must never schedule/create analyses on their own. **Architecture:** PROPOSED-ADR.
 
 ## 1. Request vs process separation

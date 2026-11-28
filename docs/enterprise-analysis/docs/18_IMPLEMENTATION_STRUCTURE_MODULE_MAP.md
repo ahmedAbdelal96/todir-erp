@@ -1,5 +1,7 @@
 # 18 — Proposed Code Structure, Ownership and End-to-End Dependency Map
 
+> **Current P1 reconciliation:** This map remains conditional and contains historical L6/host wording. The active recommendation is the L4 `analysis` module and separate minimal .NET process role described in [ARCHITECTURE_APPROVAL_BRIEF.md](../ARCHITECTURE_APPROVAL_BRIEF.md) and [P2_EXECUTION_BLUEPRINT.md](../P2_EXECUTION_BLUEPRINT.md).
+
 **Status:** implementation blueprint **conditional on P0/P1**. This is not permission to create every folder immediately. Names must be reconciled with current .NET host/module conventions and accepted ADRs before code. The current runtime exposes only L1–L4 module manifests and one explicit operational Worker composition; an Analysis L6 module or second host is not yet an approved repository shape.
 
 ## A. Server code responsibilities

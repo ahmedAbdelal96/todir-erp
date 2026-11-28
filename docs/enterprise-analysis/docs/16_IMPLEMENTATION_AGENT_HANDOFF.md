@@ -1,5 +1,7 @@
 # 16 — Engineering Agent Handoff and Governance
 
+> **Current handoff:** This historical stage-zero handoff is retained for continuity. The active startup/closeout contract is [AGENT_HANDOFF.md](../AGENT_HANDOFF.md); the current repository pin is `c02f12e5c33f5f0ebd5e3866d447b79eb3b124d6`.
+
 **IMPORTANT:** This is a handoff policy and **stage-zero discovery prompt**, not authorization to begin coding the whole platform. Implementation must wait until P0 evidence and P1 ADR/product gates are accepted. The repo is `dev` only according to product-owner branch governance.
 
 ## Agent operating contract

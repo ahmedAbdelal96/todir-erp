@@ -1,5 +1,7 @@
 # 00 — Repo Evidence, Baseline & Decision Status
 
+> **Historical baseline note (2026-11-28):** This document records the 2026-11-24 static baseline at `e9f762...`; it is not the current repository state. Read [CURRENT_STATE_RECONCILIATION.md](../CURRENT_STATE_RECONCILIATION.md) for the current `dev` commit, including the implemented Planning module. Current P1 decisions are in [DECISION_REGISTER.md](../DECISION_REGISTER.md).
+
 **Status:** Audited static inspection / discovery input only. **No runtime testing or benchmark has been executed for this package.**
 
 ## Snapshot and review methodology

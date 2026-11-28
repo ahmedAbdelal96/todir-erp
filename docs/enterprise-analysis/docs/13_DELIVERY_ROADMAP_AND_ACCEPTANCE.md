@@ -1,5 +1,7 @@
 # 13 — Implementation Roadmap, Dependencies, Deliverables & Acceptance
 
+> **Current P1 reconciliation:** The roadmap below is preserved as the original staged design. The active phase result, owner gates and authorized next action are in [CURRENT_STATUS.md](../CURRENT_STATUS.md), [ACCEPTANCE_MATRIX.md](../ACCEPTANCE_MATRIX.md), and [P2_EXECUTION_BLUEPRINT.md](../P2_EXECUTION_BLUEPRINT.md).
+
 **Process:** Technical design before implementation, measurable gates per phase, `dev` branch only, no blanket "complete" from agent report. **No fixed calendar estimates**: dates depend on baseline, actual code complexity and reproducible tests. Work is staged, but an implementation stage owns its slice end-to-end.
 
 ## Phase P0 — Repository Discovery and Operational Baseline (NO CODE CHANGE)

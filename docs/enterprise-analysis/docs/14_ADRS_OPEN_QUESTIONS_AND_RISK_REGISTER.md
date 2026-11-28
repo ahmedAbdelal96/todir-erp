@@ -1,5 +1,7 @@
 # 14 — Architecture Decision Records, Open Questions & Risk Register
 
+> **P1 status update (2026-11-28):** The open ADRs below are historical proposals. Current recommended dispositions and owner decisions are maintained in [DECISION_REGISTER.md](../DECISION_REGISTER.md) and [ARCHITECTURE_APPROVAL_BRIEF.md](../ARCHITECTURE_APPROVAL_BRIEF.md). No item marked `NEEDS_OWNER_APPROVAL` is silently treated as approved.
+
 **Status vocabulary:** `USER-LOCKED` (explicit product rule); `PROPOSED-ADR` (recommended pending code/metrics approval); `TO-VERIFY`; `BLOCKED` (cannot proceed until a named prerequisite is satisfied); `DEFERRED` (intentionally outside v1); `FUTURE`.
 
 ## Existing binding platform decisions

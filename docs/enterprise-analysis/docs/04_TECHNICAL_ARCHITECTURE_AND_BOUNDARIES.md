@@ -1,5 +1,7 @@
 # 04 — Technical Architecture, Ownership & Integration Boundaries
 
+> **Current P1 reconciliation:** The historical proposal below is retained as design history. The current recommendation is a formally registered L4 `analysis` business module using the existing manifest/lifecycle/entitlement conventions, not an assumed L6 runtime layer. See [ARCHITECTURE_APPROVAL_BRIEF.md](../ARCHITECTURE_APPROVAL_BRIEF.md) and [CURRENT_STATE_RECONCILIATION.md](../CURRENT_STATE_RECONCILIATION.md).
+
 **Architecture recommendation:** Incremental .NET-first Analysis capability inside the current Modular Monolith, with an independently resource-bounded compute **process role** for demanding work, not a second ERP or microservice network. **Status:** PROPOSED-ADR, except existing boundaries called out as verified. The current repository has no Analysis module, no L6 runtime manifest example, and no approved second worker host; those are compatibility gates, not implementation assumptions.
 
 ## 1. Nonnegotiable invariants

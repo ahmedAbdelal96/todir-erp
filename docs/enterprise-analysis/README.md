@@ -1,16 +1,29 @@
-# ToDir ERP — Business Analysis & Decision Recommendations | Design Pack
+# ToDir ERP — Business Analysis & Decision Recommendations | P1 Design Pack
 
-**Version:** 0.9 + audit correction — Architecture/Product design baseline; **NOT approved for implementation**  
-**Prepared:** 2026-11-22  
+**Version:** 1.0 — P1 design and approval package; **not approved for implementation**  
+**Prepared:** 2026-11-28  
 **Reference branch:** `dev`  
-**Audit source commit:** `e9f7626953daf4c7cd426a49199dfd46fde69a8c` (audited locally on 2026-11-24)  
+**Current repository commit:** `c02f12e5c33f5f0ebd5e3866d447b79eb3b124d6`  
 **Audience:** Product Owner, ERP Architect, Backend/DB, Frontend, Security, Performance, QA, implementation agents.
 
 > **ما هذه الحزمة؟** مجموعة مواصفات مرتبة لتنفيذ تحليلات الأعمال والتوصيات داخل ToDir، مع الحفاظ على أداء ووظائف ERP الحالية. هذه وثائق تصميم لا تعني أن أي جداول أو APIs أو Worker جديد قد تم إنشاؤه. أضيفت أدلة P0-B runtime/benchmark اللاحقة كملحق تحقق محلي مستقل.
 
-> **نتيجة التدقيق:** تم تدقيق الحزمة مقابل `dev` الحالي وتصحيح الفهرسة والنسخة المكررة وبعض الحدود المعمارية. النتيجة **REQUIRES_CORRECTIONS**: لا يبدأ P2 قبل إغلاق قرارات طبقة الموديول/الـWorker، وإثبات عقود القراءة والبيانات الزمنية، وقياس خط أساس الأداء. راجع [تقرير التدقيق](AUDIT_REPORT_2026-11-24.md).
+> **حالة P1 الحالية:** اكتملت مصالحة الحالة الراهنة والتصميم المعماري وعقود القراءة والـWorker والتخزين والصلاحيات والواجهة والأداء ومواصفة الـPilot. الحزمة **جاهزة لمراجعة Product Owner**، لكن القرارات المعلّمة `NEEDS_OWNER_APPROVAL` ليست موافقة ضمنية ولا تسمح ببدء P2.
 
 > **نتيجة P0-B/P0-D:** `P0_EVIDENCE_COMPLETE`. تم تشغيل مسار migration/seed النظيف دون `-PreMigrationSql`، وإثبات سلامة التشغيل المتوازي ودورة حياة bounded lease لـDbMigrator، والتحقق من API وfunctional smoke وtenant isolation وقياسات diagnostic/load القابلة لإعادة الحساب على بيئة disposable. النتائج baseline محلية وليست شهادة سعة إنتاجية. راجع [فهرس أدلة P0](evidence/p0/README.md).
+
+## نقطة الدخول الحالية
+
+اقرأ الوثائق الجديدة بالترتيب التالي قبل أي قرار تنفيذ:
+
+1. [الحالة الراهنة](CURRENT_STATUS.md) ثم [المصالحة](CURRENT_STATE_RECONCILIATION.md).
+2. [ملف الاعتماد](ARCHITECTURE_APPROVAL_BRIEF.md) و[سجل القرارات](DECISION_REGISTER.md).
+3. [المنتج والـPilot](PRODUCT_AND_PILOT_DOSSIER.md) و[عقود الملكية والزمن](SOURCE_OWNERSHIP_AND_TEMPORAL_TRUTH.md).
+4. [التنفيذ والبيانات والأمان](EXECUTION_AND_DATA_ARCHITECTURE.md) ثم [عقد UX/API/Performance](UX_API_AND_PERFORMANCE_CONTRACT.md).
+5. [مواصفة الـPilot](PILOT_SPECIFICATION.md) و[مخطط P2](P2_EXECUTION_BLUEPRINT.md).
+6. [مصفوفة القبول](ACCEPTANCE_MATRIX.md) و[التحقق الوثائقي](DOCUMENTATION_VERIFICATION.md) قبل تسليم أي كود.
+
+الوثائق المرقمة القديمة تظل مرجع التصميم الأصلي. عند تعارض حقيقة تاريخية فيها مع [CURRENT_STATE_RECONCILIATION.md](CURRENT_STATE_RECONCILIATION.md)، تكون وثائق الحالة الحالية هي المرجع التشغيلي، مع الاحتفاظ بالسجل التاريخي وعدم إعادة كتابة دليل P0.
 
 ## القرارات التي نقلناها من متطلبات صاحب المنتج [USER-LOCKED]
 
@@ -64,7 +77,7 @@
 
 ## Definition of Ready لهذه الوثائق
 
-هذه حزمة **Design v0.9** وليست مواصفة تنفيذ نهائية، إلى أن يُنجز P0 ويُثبت: عقود القراءة الممكنة، صحة معاني البيانات، Baseline الأداء، فعالية الـRLS والاشتراكات، سياسة الصلاحيات الدقيقة، ونتيجة ADRs. الفجوات مذكورة صراحةً، لا يجوز ملؤها بالتخمين.
+هذه حزمة **P1 design complete / owner approval pending** وليست مواصفة تنفيذ نهائية. P0 مغلق حسب أدلته؛ أما بدء P2 فيتطلب موافقة Product Owner على القرارات الموجودة في [ARCHITECTURE_APPROVAL_BRIEF.md](ARCHITECTURE_APPROVAL_BRIEF.md)، ثم تحقق التنفيذ من العقود المقترحة على الكود الحالي. لا يجوز ملء الفجوات بالتخمين.
 
 ## References
 

@@ -1,10 +1,11 @@
 {
   "package": "TODIR Business Analysis & Decision Recommendations Design Pack",
-  "version": "0.9-audited-2026-11-24",
+  "version": "1.0-p1-2026-11-28",
   "created_on": "2026-11-22",
-  "status": "P0_EVIDENCE_COMPLETE",
+  "status": "NEEDS_OWNER_APPROVAL",
+  "phase": "P1_DESIGN_COMPLETE",
   "pinned_branch": "dev",
-  "pinned_sha": "ab49df8b95a16c92804cce7405c42a9f95b0beb7",
+  "pinned_sha": "c02f12e5c33f5f0ebd5e3866d447b79eb3b124d6",
   "audited_on": "2026-11-25",
   "documentation_count_scope": "numbered design documents under docs/",
   "documentation_count": 19,
@@ -238,6 +239,21 @@
     "README.md",
     "REVIEW_AND_APPROVAL_GUIDE_AR.md",
     "AUDIT_REPORT_2026-11-24.md"
+  ],
+  "p1_documents": [
+    "CURRENT_STATUS.md",
+    "CURRENT_STATE_RECONCILIATION.md",
+    "PRODUCT_AND_PILOT_DOSSIER.md",
+    "ARCHITECTURE_APPROVAL_BRIEF.md",
+    "DECISION_REGISTER.md",
+    "SOURCE_OWNERSHIP_AND_TEMPORAL_TRUTH.md",
+    "EXECUTION_AND_DATA_ARCHITECTURE.md",
+    "UX_API_AND_PERFORMANCE_CONTRACT.md",
+    "PILOT_SPECIFICATION.md",
+    "P2_EXECUTION_BLUEPRINT.md",
+    "ACCEPTANCE_MATRIX.md",
+    "AGENT_HANDOFF.md",
+    "DOCUMENTATION_VERIFICATION.md"
   ],
   "recommended_repo_path": "docs/enterprise-analysis",
   "files_in_reference": [
