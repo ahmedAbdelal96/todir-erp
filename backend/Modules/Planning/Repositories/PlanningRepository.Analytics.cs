@@ -78,15 +78,16 @@ public sealed partial class PlanningRepository
     {
         var planVersionId = await coordinator.ExecuteAsync(tenant, async (c, token) =>
         {
-            await using var command = Cmd(c, "select plan_version_id,state,started_at from business_planning.planning_calculation_run where tenant_id=$1 and id=$2 for update", tenant.Value, calculationRunId);
+            await using var command = Cmd(c, "select plan_version_id,state,started_at,error_detail from business_planning.planning_calculation_run where tenant_id=$1 and id=$2 for update", tenant.Value, calculationRunId);
             await using var reader = await command.ExecuteReaderAsync(token);
             if (!await reader.ReadAsync(token)) throw new PlanningException("planning.calculation_retry_invalid");
             var version = reader.GetGuid(0);
             var state = reader.GetString(1);
             var startedAt = reader.GetFieldValue<DateTimeOffset>(2);
+            var errorDetail = reader.IsDBNull(3) ? null : reader.GetString(3);
             var staleRunning = state.Equals("Running", StringComparison.OrdinalIgnoreCase)
                 && startedAt <= DateTimeOffset.UtcNow.AddMinutes(-30);
-            if (!state.Equals("Failed", StringComparison.OrdinalIgnoreCase) && !staleRunning)
+            if (errorDetail == "planning.calculation_interrupted" || (!state.Equals("Failed", StringComparison.OrdinalIgnoreCase) && !staleRunning))
                 throw new PlanningException("planning.calculation_retry_invalid");
             await reader.CloseAsync();
             if (staleRunning)
