@@ -103,3 +103,25 @@ the controlled owner role only.
 ## Not yet safe to build against as final product scope
 
 The broader Module 28 scope still has separate gaps: coordinate-scoped submission locking, configurable delegated approvals, full typed DAG execution and recovery evidence, complete owner-source lifecycle/reconciliation breadth, closed-period rolling forecast evidence, complete PO receipt/return product lifecycle, XLSX staging/permissions matrix, multi-entity reconciliation, live planning observability and complete accuracy reporting. The statement response is an integrated planning projection, not a statutory statement; it still requires broader canonical opening-balance and source-owner acceptance before product claims. Do not create UI claims for broader capabilities until the backend matrix is updated with PASS evidence.
+
+## Recovery closure update — 2026-11-28
+
+The backend recovery environment is reproducible with a disposable PostgreSQL
+database, Release DbMigrator/Development Seed, runtime `erp_app`, administrative
+`postgres`, local RabbitMQ, and both `ASPNETCORE_ENVIRONMENT` and
+`DOTNET_ENVIRONMENT` set to `Development`. Use Release output for acceptance;
+the earlier Debug output omitted current Planning seed mappings. A fresh
+migration-order defect in the Purchasing requisition forward-fix was corrected
+with a forward-only bootstrap script.
+
+Fresh evidence now includes Planning BC02 8/8, Planning 22/22 with one
+documented skip, BC03 1/1, owner financial 2/2, Package C 7/7, authenticated
+Budget Control HTTP 1/1, BC01 budget-control 4/4, Projects cross-module 14/14,
+seed replay 1/1, architecture 23/23, security 7/7, OpenAPI validation, and a
+zero-warning Release build.
+
+This is not a final backend product handoff. The closure register still has
+P0 evidence gates for published all-route immutability, concurrent transfers,
+submission assignment/isolation, delegated approvals and expiry, batch
+atomicity, confidentiality, complete owner lifecycle reconciliation, disabled
+owner compatibility, and complete BC01-after-change identity coverage.

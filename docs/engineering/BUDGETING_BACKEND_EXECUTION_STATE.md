@@ -417,3 +417,27 @@ generated in that scrape, so Planning-specific live series remain explicitly
 unverified. Full FP00–FP53 delivery remains `NOT COMPLETE` until the broader
 canonical owner-lifecycle, live observability, performance, recovery-runbook,
 and FP47–FP53 acceptance matrix is executed and closed.
+
+## Module 28 recovery checkpoint — 2026-11-28
+
+Authorized scope remains backend-only Module 28 recovery on `dev`; no frontend
+files were changed. A fresh disposable database `module28_recovery_20261128`
+was migrated with the Release DbMigrator and Development Seed. The run exposed
+and corrected an ordering defect in the Purchasing requisition forward-fix by
+adding `purchasing-forward-fix-bc01-requisition-base.sql`; the Release seed was
+required because the Debug output predated the current Planning mappings.
+
+Fresh evidence after the source/test changes: Planning BC02 actuals 8/8,
+Planning 22/22 with one documented Manufacturing skip, BC03 1/1, owner
+financial 2/2, Package C 7/7, Budget Control HTTP 1/1, BC01 budget-control
+selection 4/4, Projects cross-module acceptance 14/14, seed replay 1/1,
+architecture 23/23, security 7/7, OpenAPI validation, and Release build.
+
+Remaining P0 work is recorded only in
+`BUDGETING_BACKEND_FINAL_CLOSURE_REGISTER.md`: missing all-route published
+immutability, concurrent transfer, submission assignment/isolation, delegated
+approval/expiry, batch race/rollback, confidentiality, full owner lifecycle,
+disabled/not-entitled owner, and complete BC01-after-change evidence. Delivery
+status is `NOT COMPLETE`. Next action is to implement the missing acceptance
+vectors and fix any demonstrated in-scope defect, then rerun the affected
+fresh Release gate.

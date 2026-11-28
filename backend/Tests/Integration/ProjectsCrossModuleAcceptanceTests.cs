@@ -454,7 +454,7 @@ public sealed class ProjectsCrossModuleAcceptanceTests
             var acceptedMessage = await ReadOutboxAsync(connectionString, AtlasTenant, "FixedAssetCapitalizationAcceptedV1", candidate.Id);
             await harness.Bus.Publish(acceptedMessage);
             Assert.True(await EventuallyAsync(async () => (string?)await ScalarAsync(connectionString, "select state from business_projects.project_capital_handoff where tenant_id=$1 and id=$2", AtlasTenant.Value, handoff.Id) == "Accepted"));
-            Assert.Equal(1L, Convert.ToInt64(await ScalarAsync(connectionString, "select count(*) from business_projects.project_integration_event where tenant_id=$1 and message_id=$2 and status='Applied'", AtlasTenant.Value, acceptedMessage.MessageId), System.Globalization.CultureInfo.InvariantCulture));
+            Assert.True(await EventuallyAsync(async () => Convert.ToInt64(await ScalarAsync(connectionString, "select count(*) from business_projects.project_integration_event where tenant_id=$1 and message_id=$2 and status='Applied'", AtlasTenant.Value, acceptedMessage.MessageId), System.Globalization.CultureInfo.InvariantCulture) == 1));
             await harness.Bus.Publish(acceptedMessage);
             await Task.Delay(250);
             Assert.Equal(1L, Convert.ToInt64(await ScalarAsync(connectionString, "select count(*) from business_projects.project_integration_event where tenant_id=$1 and message_id=$2", AtlasTenant.Value, acceptedMessage.MessageId), System.Globalization.CultureInfo.InvariantCulture));
