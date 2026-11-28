@@ -192,7 +192,9 @@ BC04/BC05/BC06 acceptance scenarios pass.
 The calculation path now records the Planning input revision, takes a durable
 transaction savepoint, rejects stale completion, preserves prior calculated
 facts when execution fails, persists a Failed run and exposes an authorized
-retry route. The spreadsheet boundary now accepts a bounded first-sheet XLSX
+retry route. The retry route now also reconciles only Running runs older than
+the bounded 30-minute restart threshold; live Running runs remain protected
+from duplicate execution. The spreadsheet boundary now accepts a bounded first-sheet XLSX
 preview/commit path through the existing CSV mutation guard; macros, formulas,
 external links and unsafe archive sizes are rejected. Authorized bounded XLSX
 export and metadata-bearing empty template routes emit formula-safe text only.

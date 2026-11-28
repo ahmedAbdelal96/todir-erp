@@ -20,7 +20,7 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP11 | Department submissions | coordinate attachment, actor fields, approval identity | submit/return/approve/lock through Platform Approval | Implementation; dedicated submission HTTP regression open | PARTIAL |
 | FP12 | Assumptions/drivers | assumption/value | create/value/list | Seed/API | PASS |
 | FP13 | Formula DAG | formula/dependency | constrained decimal parser, allow-listed functions, dependency ordering and cycle rejection | 6 Planning tests; BC03 golden-vector integration | PARTIAL |
-| FP14 | Calculation/trace | run/trace/calculated facts | durable run/trace, input revision, stale completion rejection and authorized retry | BC03 implementation; formula unit evidence and PostgreSQL golden vector; statement projections now persist a succeeded calculation-run identity; failure-injection/restart matrix open | PARTIAL |
+| FP14 | Calculation/trace | run/trace/calculated facts | durable run/trace, input revision, stale completion rejection and authorized retry | BC03 implementation; formula unit evidence and PostgreSQL golden vector; statement projections now persist a succeeded calculation-run identity; retry now reconciles a genuinely stale Running run after worker restart and never retries a live run | PARTIAL |
 | FP15 | Spreading | spread rule/input facts | exact residual allocation on `spread-exact` | unit test + HTTP conservation | PARTIAL |
 | FP16 | Allocations | rule/result with lineage | weighted allocation | HTTP conservation | PARTIAL |
 | FP17 | Revenue | revenue driver | volume × price with calculated Revenue coordinates | BC03 integrated statement golden vector; Sales owner reconciliation remains open | PARTIAL |

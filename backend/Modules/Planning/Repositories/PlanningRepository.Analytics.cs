@@ -76,7 +76,23 @@ public sealed partial class PlanningRepository
 
     public async Task<CalculationRunView> RetryCalculationAsync(TenantId tenant, Guid actor, Guid calculationRunId, CancellationToken ct)
     {
-        var planVersionId = await coordinator.ExecuteAsync(tenant, async (c, token) => await Scalar<Guid?>(c, "select plan_version_id from business_planning.planning_calculation_run where tenant_id=$1 and id=$2 and state='Failed'", token, tenant.Value, calculationRunId) ?? throw new PlanningException("planning.calculation_retry_invalid"), ct);
+        var planVersionId = await coordinator.ExecuteAsync(tenant, async (c, token) =>
+        {
+            await using var command = Cmd(c, "select plan_version_id,state,started_at from business_planning.planning_calculation_run where tenant_id=$1 and id=$2 for update", tenant.Value, calculationRunId);
+            await using var reader = await command.ExecuteReaderAsync(token);
+            if (!await reader.ReadAsync(token)) throw new PlanningException("planning.calculation_retry_invalid");
+            var version = reader.GetGuid(0);
+            var state = reader.GetString(1);
+            var startedAt = reader.GetFieldValue<DateTimeOffset>(2);
+            var staleRunning = state.Equals("Running", StringComparison.OrdinalIgnoreCase)
+                && startedAt <= DateTimeOffset.UtcNow.AddMinutes(-30);
+            if (!state.Equals("Failed", StringComparison.OrdinalIgnoreCase) && !staleRunning)
+                throw new PlanningException("planning.calculation_retry_invalid");
+            await reader.CloseAsync();
+            if (staleRunning)
+                await Exec(c, "update business_planning.planning_calculation_run set state='Failed',completed_at=now(),error_detail='planning.calculation_interrupted' where tenant_id=$1 and id=$2 and state='Running'", token, tenant.Value, calculationRunId);
+            return version;
+        }, ct);
         return await RecalculateCompleteAsync(tenant, actor, planVersionId, ct);
     }
 
