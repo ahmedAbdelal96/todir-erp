@@ -24,6 +24,8 @@ public static class BankingModuleExtensions
         services.AddSingleton<BankingService>();
         services.AddSingleton<IBankingTreasuryAccountCapability>(provider => provider.GetRequiredService<BankingService>());
         services.AddSingleton<ITransactionalBankingTreasuryAccountCapability>(provider => provider.GetRequiredService<BankingService>());
+        services.AddSingleton<BankingPlanningOwnerSource>();
+        services.AddSingleton<Shared.Contracts.Planning.IPlanningOwnerReconciliationSource>(provider => provider.GetRequiredService<BankingPlanningOwnerSource>());
         return services;
     }
 

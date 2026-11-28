@@ -11,11 +11,41 @@ public static class PlanningSeed
         await context.ExecuteAsync("insert into business_planning.planning_metric(tenant_id,id,code,name,metric_kind,data_type,source_policy) values($1,$2,'Revenue','Planned revenue','Revenue','Money','Input') on conflict(tenant_id,code) do update set name=excluded.name", ct, tenant, SeedIds.Child(tenant, "planning-metric", 1));
         await context.ExecuteAsync("insert into business_planning.planning_metric(tenant_id,id,code,name,metric_kind,data_type,source_policy,financial_role,unit_code,precision_scale,favorable_direction) values($1,$2,'OPEX','Recognized operating expense','Opex','Money','Actual','ExpenseRecognized','Money',4,'Lower') on conflict(tenant_id,code) do update set source_policy='Actual',financial_role='ExpenseRecognized',favorable_direction='Lower'", ct, tenant, SeedIds.Child(tenant, "planning-metric", 2));
         await context.ExecuteAsync("insert into business_planning.planning_metric(tenant_id,id,code,name,metric_kind,data_type,source_policy,financial_role,unit_code,precision_scale,favorable_direction) values($1,$2,'DEPRECIATION','Recognized depreciation expense','Opex','Money','Actual','FixedAssetDepreciation','Money',4,'Lower') on conflict(tenant_id,code) do update set source_policy='Actual',financial_role='FixedAssetDepreciation',favorable_direction='Lower'", ct, tenant, SeedIds.Child(tenant, "planning-metric", 3));
+        foreach (var metricDefinition in new[]
+        {
+            (Code: "COGS", Name: "Cost of goods sold", Kind: "Cogs", Role: "InventoryCost"),
+            (Code: "MANUFACTURING_COST", Name: "Manufacturing actual cost", Kind: "Cogs", Role: "ManufacturingCost"),
+            (Code: "PROJECT_COST", Name: "Project actual cost", Kind: "Opex", Role: "ProjectCost"),
+            (Code: "WORKFORCE", Name: "Workforce commitment", Kind: "Opex", Role: "Workforce"),
+            (Code: "AR", Name: "Accounts receivable", Kind: "BalanceSheet", Role: "Receivable"),
+            (Code: "AP", Name: "Accounts payable", Kind: "BalanceSheet", Role: "Payable"),
+            (Code: "CASH", Name: "Cash balance", Kind: "Cash", Role: "Cash"),
+            (Code: "FX_RATE", Name: "Approved exchange rate", Kind: "Custom", Role: "ExchangeRate")
+        })
+            await context.ExecuteAsync("insert into business_planning.planning_metric(tenant_id,id,code,name,metric_kind,data_type,source_policy,financial_role,unit_code,precision_scale,favorable_direction) values($1,$2,$3,$4,$5,'Money','Actual',$6,'Money',4,'Lower') on conflict(tenant_id,code) do update set name=excluded.name,financial_role=excluded.financial_role", ct, tenant, SeedIds.Child(tenant, $"planning-metric-{metricDefinition.Code}", 1), metricDefinition.Code, metricDefinition.Name, metricDefinition.Kind, metricDefinition.Role);
         await context.ExecuteAsync("insert into business_planning.planning_metric_mapping(tenant_id,id,mapping_version,source_module,source_type,source_key,target_metric_code,state,created_by,published_at) values($1,$2,'seed-v1','ledger','FinancialRole','OPEX','OPEX','Published',$3,$4) on conflict(tenant_id,id) do update set target_metric_code=excluded.target_metric_code,state='Published',published_at=excluded.published_at,created_by=excluded.created_by", ct, tenant, SeedIds.Child(tenant, "planning-metric-mapping", 1), context.AdministratorId, context.AsOf);
         await context.ExecuteAsync("insert into business_planning.planning_metric_mapping(tenant_id,id,mapping_version,source_module,source_type,source_key,target_metric_code,state,created_by,published_at) values($1,$2,'seed-v1','payroll','FinancialRole','OPEX','OPEX','Published',$3,$4) on conflict(tenant_id,id) do update set target_metric_code=excluded.target_metric_code,state='Published',published_at=excluded.published_at,created_by=excluded.created_by", ct, tenant, SeedIds.Child(tenant, "planning-metric-mapping", 2), context.AdministratorId, context.AsOf);
         await context.ExecuteAsync("insert into business_planning.planning_metric_mapping(tenant_id,id,mapping_version,source_module,source_type,source_key,target_metric_code,state,created_by,published_at) values($1,$2,'seed-v1','expenses','FinancialRole','OPEX','OPEX','Published',$3,$4) on conflict(tenant_id,id) do update set target_metric_code=excluded.target_metric_code,state='Published',published_at=excluded.published_at,created_by=excluded.created_by", ct, tenant, SeedIds.Child(tenant, "planning-metric-mapping", 5), context.AdministratorId, context.AsOf);
         await context.ExecuteAsync("insert into business_planning.planning_metric_mapping(tenant_id,id,mapping_version,source_module,source_type,source_key,target_metric_code,state,created_by,published_at) values($1,$2,'seed-v1','ledger','FinancialRole','DEPRECIATION','DEPRECIATION','Published',$3,$4) on conflict(tenant_id,id) do update set target_metric_code=excluded.target_metric_code,state='Published',published_at=excluded.published_at,created_by=excluded.created_by", ct, tenant, SeedIds.Child(tenant, "planning-metric-mapping", 3), context.AdministratorId, context.AsOf);
         await context.ExecuteAsync("insert into business_planning.planning_metric_mapping(tenant_id,id,mapping_version,source_module,source_type,source_key,target_metric_code,state,created_by,published_at) values($1,$2,'seed-v1','fixed-assets','FinancialRole','DEPRECIATION','DEPRECIATION','Published',$3,$4) on conflict(tenant_id,id) do update set target_metric_code=excluded.target_metric_code,state='Published',published_at=excluded.published_at,created_by=excluded.created_by", ct, tenant, SeedIds.Child(tenant, "planning-metric-mapping", 4), context.AdministratorId, context.AsOf);
+        var ownerMappings = new[]
+        {
+            (Module: "sales", Key: "REVENUE_PIPELINE", Target: "Revenue"),
+            (Module: "crm", Key: "REVENUE", Target: "Revenue"),
+            (Module: "banking", Key: "CASH_BALANCE", Target: "CASH"),
+            (Module: "hr", Key: "WORKFORCE", Target: "WORKFORCE"),
+            (Module: "inventory", Key: "COGS", Target: "COGS"),
+            (Module: "manufacturing", Key: "MANUFACTURING_COST", Target: "MANUFACTURING_COST"),
+            (Module: "projects", Key: "PROJECT_COST", Target: "PROJECT_COST"),
+            (Module: "subledger", Key: "AR", Target: "AR"),
+            (Module: "subledger", Key: "AP", Target: "AP"),
+            (Module: "finbase", Key: "FX_RATE", Target: "FX_RATE")
+        };
+        var mappingNumber = 6;
+        foreach (var mapping in ownerMappings)
+        {
+            await context.ExecuteAsync("insert into business_planning.planning_metric_mapping(tenant_id,id,mapping_version,source_module,source_type,source_key,target_metric_code,state,created_by,published_at) values($1,$2,'seed-v1',$3,'FinancialRole',$4,$5,'Published',$6,$7) on conflict(tenant_id,id) do update set target_metric_code=excluded.target_metric_code,state='Published',published_at=excluded.published_at,created_by=excluded.created_by", ct, tenant, SeedIds.Child(tenant, "planning-metric-mapping", mappingNumber++), mapping.Module, mapping.Key, mapping.Target, context.AdministratorId, context.AsOf);
+        }
         await context.ExecuteAsync("insert into business_planning.plan_version(tenant_id,id,cycle_id,model_version_id,name,version_kind,state,actual_cutoff,published_at,created_by) values($1,$2,$3,$4,'FY2027 Base Budget','Budget','Published','2026-12-31',$5,$6) on conflict(tenant_id,id) do update set state='Published',actual_cutoff=excluded.actual_cutoff", ct, tenant, plan, cycle, modelVersion, context.AsOf, context.AdministratorId);
         await context.ExecuteAsync("insert into business_planning.scenario(tenant_id,id,name,scenario_type,base_version_id,visibility,state,created_by) values($1,$2,'Base','Base',$3,'Shared','Shared',$4) on conflict(tenant_id,id) do update set state='Shared',base_version_id=excluded.base_version_id", ct, tenant, scenario, plan, context.AdministratorId);
         await context.ExecuteAsync("insert into business_planning.planning_coordinate(tenant_id,id,plan_version_id,legal_entity_id,period_start,metric_code,dimension_key,signature) values($1,$2,$3,$4,'2027-01-01',$5,'{}'::jsonb,'seed-planning-revenue-2027-01') on conflict(tenant_id,id) do nothing", ct, tenant, coordinate, plan, context.EntityId, metric);

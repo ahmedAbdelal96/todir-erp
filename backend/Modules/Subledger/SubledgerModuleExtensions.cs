@@ -17,6 +17,8 @@ public static class SubledgerModuleExtensions
         services.AddSingleton<SubledgerService>();
         services.AddSingleton<ITransactionalSubledgerOpenItemCapability, SubledgerTransactionCapability>();
         services.AddSingleton<ISubledgerCapabilities>(provider => provider.GetRequiredService<SubledgerService>());
+        services.AddSingleton<SubledgerPlanningOwnerSource>();
+        services.AddSingleton<Shared.Contracts.Planning.IPlanningOwnerReconciliationSource>(provider => provider.GetRequiredService<SubledgerPlanningOwnerSource>());
         return services;
     }
 

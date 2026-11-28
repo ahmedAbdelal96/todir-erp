@@ -22,6 +22,8 @@ public static class ManufacturingModuleExtensions
         services.AddSingleton<ManufacturingExecutionService>();
         services.AddSingleton<Shared.Contracts.Quality.IManufacturingQualityDispositionCapabilities, ManufacturingQualityDispositionOwner>();
         services.AddSingleton<IManufacturingCostReader>(provider => provider.GetRequiredService<ManufacturingRepository>());
+        services.AddSingleton<ManufacturingPlanningOwnerSource>();
+        services.AddSingleton<Shared.Contracts.Planning.IPlanningOwnerReconciliationSource>(provider => provider.GetRequiredService<ManufacturingPlanningOwnerSource>());
         return services;
     }
 

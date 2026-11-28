@@ -261,3 +261,60 @@ Sales/CRM, HR, Banking, Inventory, Manufacturing, Projects, Subledger and
 FinBase owner-source matrices, FP38 CFO views, FP40 multi-entity rollup, FP45
 live Prometheus evidence, and the remaining BC02/FP acceptance vectors remain
 PARTIAL or OPEN in the coverage matrix. Delivery status remains `NOT COMPLETE`.
+
+## Planning analytics and owner-source closure slice — 2026-11-28
+
+The latest backend slice adds read-side dimension/member and submission-unit
+listing endpoints, department-planner and CFO read models, and a numeric
+variance-decomposition endpoint. Department filtering is fail-closed against
+the coordinate dimension JSON keys; CFO metric totals are period-aware and
+aggregate period-specific planning FX before returning a single metric view.
+The rolling forecast accepts a governed Budget as its first source, copies
+only future-period inputs, and leaves the source version unchanged. Scenario
+clone/edit/adopt operations now enforce the persisted Owner/Edit/Adopt access
+level rather than relying on scenario visibility alone.
+
+All nine Package-A owner-source registrations and the fourteen registered
+owner providers (Sales, CRM, Banking, HR, Inventory, Manufacturing, Projects,
+Subledger, Finance Base, Ledger, Purchasing, Payroll, Expenses and Fixed
+Assets) execute against the disposable PostgreSQL fixture with tenant and
+legal-entity scope; the combined provider test passed 1/1. The provider fixes
+also make Banking null balances safe and give Purchasing requisition/PO facts
+stable recognition identities. Package-C forecast/reporting passed 6/6,
+BC02/BC03 focused actual/analytics passed 9/9, Package-A registration passed
+1/1, and the complete Planning integration selection passed 21/21 with one
+unrelated Manufacturing test skipped because its separately-owned environment
+variables were absent.
+
+The Release backend build remains 0 warnings/0 errors. OpenAPI now documents
+the newly exposed read/report routes and validates with 91 Planning paths.
+These are real, repeatable slices, not a full Module 28 acceptance claim:
+owner lifecycle breadth, closed-period/restart calculation evidence,
+coordinate-scoped submission/SoD matrices, multi-entity reconciliation,
+live observability, performance certification and the remaining FP47–FP53
+business acceptance journeys remain open in the coverage matrix. Delivery
+status remains `NOT COMPLETE`.
+## Seed and clone-integrity correction — 2026-11-28
+
+The disposable Development Seed now includes a truthful posted Expenses owner
+fact: the seeded finalized expense is linked to a deterministic Ledger
+`ExpenseRecognized` fact and posted journal lines. This prevents the Planning
+owner boundary from observing an impossible finalized-but-unposted expense.
+Seed replay completed successfully for both Atlas and Delta after this change.
+
+Planning clone/grid persistence now selects one authoritative logical
+coordinate from legacy duplicate rows, preserves its lineage signature, and
+resolves subsequent writes by the canonical logical coordinate and dimension
+JSON when a historical clone signature is not the current hash. CSV imports
+use the same dimension-aware lookup. Integrated statement projections now link
+to a durable succeeded `planning_calculation_run` instead of an orphan UUID.
+
+Fresh post-change evidence: BC02/BC03/Package-C/owner integration selection
+passed 17/17; the complete Planning selection passed 21/21 with one separate
+Manufacturing test skipped because its independently owned environment
+variables were absent. Release build passed with zero warnings/errors,
+Architecture passed 23/23, Security passed 7/7, OpenAPI/database/migration
+policy validation passed, and targeted formatter plus `git diff --check`
+passed. The full FP00–FP53 status remains `NOT COMPLETE` because the broader
+owner lifecycle, scenario/SoD, CFO drill-through, rollup, observability,
+performance and business-acceptance evidence listed above remains open.

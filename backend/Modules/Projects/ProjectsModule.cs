@@ -28,6 +28,8 @@ public static class ProjectsModuleExtensions
         services.AddSingleton<IProjectCostFactReader>(provider => provider.GetRequiredService<ProjectService>());
         services.AddSingleton<IProjectCostFactWriter>(provider => provider.GetRequiredService<ProjectService>());
         services.AddSingleton<IProjectSourceIntegrationCapabilities>(provider => provider.GetRequiredService<ProjectService>());
+        services.AddSingleton<ProjectsPlanningOwnerSource>();
+        services.AddSingleton<Shared.Contracts.Planning.IPlanningOwnerReconciliationSource>(provider => provider.GetRequiredService<ProjectsPlanningOwnerSource>());
         return services;
     }
 

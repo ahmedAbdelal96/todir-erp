@@ -16,7 +16,7 @@ namespace Modules.CRM;
 public static class CrmModuleExtensions
 {
     public static IServiceCollection AddCrmModule(this IServiceCollection services)
-    { services.AddSingleton<IModuleManifestProvider, CrmModuleManifestProvider>(); services.AddSingleton<CrmRepository>(); services.AddSingleton<CrmService>(); services.AddSingleton<Shared.Contracts.ManufacturingPlanning.IManufacturingDemandCapabilities>(provider => provider.GetRequiredService<CrmService>()); return services; }
+    { services.AddSingleton<IModuleManifestProvider, CrmModuleManifestProvider>(); services.AddSingleton<CrmRepository>(); services.AddSingleton<CrmService>(); services.AddSingleton<Shared.Contracts.ManufacturingPlanning.IManufacturingDemandCapabilities>(provider => provider.GetRequiredService<CrmService>()); services.AddSingleton<Repositories.CrmPlanningOwnerSource>(); services.AddSingleton<Shared.Contracts.Planning.IPlanningOwnerReconciliationSource>(provider => provider.GetRequiredService<Repositories.CrmPlanningOwnerSource>()); return services; }
 
     public static WebApplication MapCrmModule(this WebApplication app)
     {

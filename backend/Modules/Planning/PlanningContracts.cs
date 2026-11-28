@@ -91,6 +91,13 @@ public sealed record StatementLineView(string StatementType, string LineCode, Da
 public sealed record ForecastAccuracyView(Guid ForecastVersionId, Guid ActualVersionId, string MetricCode, decimal ForecastTotal, decimal ActualTotal, decimal AbsoluteError, decimal PercentageError, decimal Bias);
 public sealed record CsvImportView(Guid PlanVersionId, bool Committed, int AcceptedRows, IReadOnlyList<string> Errors);
 public sealed record RollupLineView(Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal SourceAmount, decimal Rate, decimal ReportingAmount, string SourceCurrency, string ReportingCurrency, string SourceBasis);
+public sealed record DepartmentPlannerRequest(Guid PlanVersionId, Guid LegalEntityId, Guid? DepartmentRef, DateOnly? From, DateOnly? To);
+public sealed record CfoOverviewRequest(Guid PlanVersionId, IReadOnlyList<Guid> LegalEntityIds, DateOnly From, DateOnly To, string ReportingCurrencyCode);
+public sealed record DepartmentPlannerLineView(Guid PlanVersionId, Guid LegalEntityId, Guid? DepartmentRef, DateOnly PeriodStart, string MetricCode, decimal BudgetAmount, decimal ForecastAmount, decimal ActualAmount, decimal VarianceAmount, decimal Materiality, decimal CommitmentAmount, decimal AvailableAmount, string SubmissionState);
+public sealed record VarianceDriverView(Guid CoordinateId, string DriverCode, string Basis, decimal Amount);
+public sealed record VarianceDecompositionView(Guid CoordinateId, Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal BudgetAmount, decimal ForecastAmount, decimal ActualAmount, decimal BudgetToForecast, decimal ForecastToActual, decimal BudgetToActual, decimal Materiality, IReadOnlyList<VarianceDriverView> Drivers);
+public sealed record CfoMetricView(string MetricCode, decimal ForecastAmount, decimal ActualAmount, decimal VarianceAmount, decimal ReportingForecastAmount, decimal ReportingActualAmount, decimal ReportingVarianceAmount, string ReportingCurrencyCode, string SourceBasis);
+public sealed record CfoOverviewView(Guid PlanVersionId, string ReportingCurrencyCode, IReadOnlyList<CfoMetricView> Metrics, IReadOnlyList<RollupLineView> RollupLines);
 public sealed record WorkforceCostImpactView(Guid PlanVersionId, DateOnly PeriodStart, decimal Fte, decimal Cost);
 public sealed record CompareVersionView(Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal LeftAmount, decimal RightAmount, decimal Difference);
 public sealed record PlanningTargetView(Guid Id, Guid PlanVersionId, Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, decimal TargetAmount, decimal? ProposalAmount, decimal? GapAmount, decimal? AdjustedAmount, string CurrencyCode, string State, Guid? ProposalId = null);

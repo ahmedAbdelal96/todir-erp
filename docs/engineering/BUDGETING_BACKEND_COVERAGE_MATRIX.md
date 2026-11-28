@@ -9,7 +9,7 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP00 | Repository/dependency verification | Planning manifest and solution | `Planning.csproj`, registration | Release build, architecture | PARTIAL |
 | FP01 | Module boundary/schema/RLS | `business_planning`, FORCE RLS | Transaction-coordinator repository | Disposable migration | PASS |
 | FP02 | Fiscal calendar/planning cycle | `planning_cycle` and state checks | cycle CRUD/lifecycle | Seed + authenticated cycle read | PASS |
-| FP03 | Typed models/dimensions | model/version/dimension/member tables | model/version and dimension/member commands | Real HTTP dimension/member journey | PARTIAL |
+| FP03 | Typed models/dimensions | model/version/dimension/member tables | model/version and dimension/member commands plus bounded list routes | OpenAPI routes and Package-C fixture; authenticated HTTP lifecycle still open | PARTIAL |
 | FP04 | Metrics/mappings | metric metadata, versioned mapping, target FK | create/publish/retire mapping; owner refresh identity | BC2-T01 seed mapping and OpenAPI; dedicated mapping lifecycle regression still open | PARTIAL |
 | FP05 | Sparse coordinates/input facts | signature uniqueness | grid query/batch/paste | Seed grid read; tests | PASS |
 | FP06 | Version/scenario core | plan/scenario/access tables | clone/share/adopt-preview | Real scenario path; immutability pending | PARTIAL |
@@ -20,7 +20,7 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP11 | Department submissions | coordinate attachment, actor fields, approval identity | submit/return/approve/lock through Platform Approval | Implementation; dedicated submission HTTP regression open | PARTIAL |
 | FP12 | Assumptions/drivers | assumption/value | create/value/list | Seed/API | PASS |
 | FP13 | Formula DAG | formula/dependency | constrained decimal parser, allow-listed functions, dependency ordering and cycle rejection | 6 Planning tests; BC03 golden-vector integration | PARTIAL |
-| FP14 | Calculation/trace | run/trace/calculated facts | durable run/trace, input revision, stale completion rejection and authorized retry | BC03 implementation; formula unit evidence and PostgreSQL golden vector; failure-injection/restart matrix open | PARTIAL |
+| FP14 | Calculation/trace | run/trace/calculated facts | durable run/trace, input revision, stale completion rejection and authorized retry | BC03 implementation; formula unit evidence and PostgreSQL golden vector; statement projections now persist a succeeded calculation-run identity; failure-injection/restart matrix open | PARTIAL |
 | FP15 | Spreading | spread rule/input facts | exact residual allocation on `spread-exact` | unit test + HTTP conservation | PARTIAL |
 | FP16 | Allocations | rule/result with lineage | weighted allocation | HTTP conservation | PARTIAL |
 | FP17 | Revenue | revenue driver | volume × price with calculated Revenue coordinates | BC03 integrated statement golden vector; Sales owner reconciliation remains open | PARTIAL |
@@ -34,7 +34,7 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP25 | Projected cash flow | statement projection contract | integrated operating, investing and financing cash flows with closing-cash continuity | BC03 golden-vector closing cash reconciles to Balance Sheet cash | PARTIAL |
 | FP26 | Rolling forecast | governed Forecast plan versions | actual cutoff creates a new Draft horizon without rewriting source history | Route implementation; closed-period runtime matrix open | PARTIAL |
 | FP27 | What-if | scenario state/access | clone/share/adopt | HTTP scenario path | PARTIAL |
-| FP28 | Variance/drivers | variance/comments | query and driver endpoint | API path; decomposition open | PARTIAL |
+| FP28 | Variance/drivers | variance/comments | query, driver and numeric decomposition endpoints | Package-C numeric decomposition assertion; full materiality/sign and drill-through matrix open | PARTIAL |
 | FP29 | Forecast accuracy | accuracy projection | aggregate error/bias | Implementation; fixture open | PARTIAL |
 | FP30 | Budget policy | policy/buckets, effective dates, horizon and published-version links | annual/quarterly/monthly period normalization, validated bucket hints, published-version and legal-entity checks | Isolated PostgreSQL owner acceptance; department/cost-center authorization mapping remains open | PARTIAL |
 | FP31 | Availability | bucket/reservation ledger and policy basis | source-kind-aware availability, currency checks, negative-budget and shadow-mode handling; reconciled owner snapshots are not double-counted | 8/8 focused PostgreSQL tests plus BC-T10 `40,000/60,000/20,000 → 80,000` owner vector | PASS for BC01 |
@@ -43,10 +43,10 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP34 | Expenses/commitments | Planning-owned reservation ledger plus durable reversal intent | Expense create/update/finalize/delete/reversal enlists reservation/consumption/correction; failed correction remains retryable | BC-T08 real PostgreSQL failure/retry; intent `Failed → Completed`, one Ledger reversal and one Planning correction | PASS for BC01 |
 | FP35 | Commitment→Actual | consumption/correction facts and bucket actual total | posted supplier invoice consumes once; credit note and Expense reversal intent create bounded correction facts | Supplier-invoice/credit correction owner test, BC-T08 recovery, no-reservation fail-closed and correction replay pass | PASS for BC01; wider module lifecycle remains partial |
 | FP36 | Overrides/thresholds | source-bound override with used amount, validity and approval link | request/decision API through Platform Approvals; bounded exact-source usage and SoD permission | BC-T09 authenticated requester/approver/unauthorized HTTP journey; bounded source/version usage and retry pass | PASS for BC01 |
-| FP37 | Department planner | submission persistence | no frontend in this mission | Backend slice only | PARTIAL |
-| FP38 | CFO/owner views | variance/statements partial | no complete rollup/action contract | No complete evidence | OPEN |
+| FP37 | Department planner | submission persistence | scoped department planner read model and submission routes | Package-C department planner read model; delegated approval and frontend remain separate | PARTIAL |
+| FP38 | CFO/owner views | variance/statements partial | CFO management read model with period-aware Planning FX | Package-C CFO read model; KPI drill-through and owner action contract remain open | PARTIAL |
 | FP39 | Excel/CSV | bounded CSV import contract | CSV preview/atomic Draft-only commit plus safe first-sheet XLSX preview/commit and formula-safe bounded XLSX export/template with metadata; no published/locked bypass | BC03 PostgreSQL integration covers CSV/XLSX preview and generated export/template ZIP evidence; full malformed/staging/permissions matrix remains open | PARTIAL |
-| FP40 | Multi-entity rollup | entity keys and Planning FX | authorized entity rows converted through explicit period FX rates | Route implementation; multi-entity reconciliation matrix open | PARTIAL |
+| FP40 | Multi-entity rollup | entity keys and Planning FX | authorized entity rows converted through explicit period FX rates | Package-C rollup/FX assertions; multi-entity reconciliation and authorization matrix open | PARTIAL |
 | FP41 | Security/SoD | RLS/permissions/lifecycle | route authorization and Platform Approval owner scope | Architecture 23/23, BC-T09 HTTP, BC2-T13 | PARTIAL; not exhaustive |
 | FP42 | Audit/history | audit on implemented writes | lifecycle audit | SQL/API inspection | PARTIAL |
 | FP43 | Migration/opening budget | bootstrap/forward-fix, owner reconciliation and reconciliation runs | disposable migration/seed, strict Block guard requires successful owner reconciliation, owner-source comparison and bounded rebuild | BC-T10 plus BC2-T14 migration/seed replay | PASS for covered vectors |
@@ -56,9 +56,9 @@ This matrix is deliberately requirement-led. `PASS` means the backend behavior a
 | FP47 | Small company | basic seed budget/forecast | core cycle/grid/control | Foundation runtime | PARTIAL |
 | FP48 | Department manager | submission backend slice | no scoped UI/delegated approval | No complete proof | OPEN |
 | FP49 | FP&A | drivers/variance partial | no integrated forecast workflow | No complete proof | OPEN |
-| FP50 | CFO | P&L partial | BS/CF/rollup absent | No complete proof | OPEN |
+| FP50 | CFO | P&L/BS/CF/rollup partial | Integrated statement and CFO read models exist, but statutory/opening-balance/source drill-down completeness is not proven | Package-C CFO/statement slice; full CFO acceptance still open | PARTIAL |
 | FP51 | Purchasing control | requisition/PO lineage and reservation source identity | Purchasing-owned PR lifecycle, conversion replacement, PO approval history/outbox and server-side bucket resolution | Real disposable 100k PR conversion and 40/60 reservation inspection pass; full receipt/return vector remains open | PARTIAL |
-| FP52 | Cross-module reconciliation | owner financial-fact contracts and durable owner result | Purchasing, Ledger, Payroll, Expenses and Fixed Assets expose bounded owner facts; Planning compares source facts to bucket totals and records watermark/discrepancy; actual snapshots use owner providers | BC-T10 and BC2-T01/T02/T03 real disposable PostgreSQL vectors; BC2-T15 proves non-empty Payroll, Expenses and Fixed Assets workflows against canonical Ledger identities, exact replay identity and depreciation reversal to zero | PARTIAL |
+| FP52 | Cross-module reconciliation | owner financial-fact contracts and durable owner result | Fourteen registered owner providers expose bounded facts; Planning compares source facts to bucket totals and records watermark/discrepancy; actual snapshots use owner providers | Package-A registration 1/1, fourteen-provider runtime scope test 1/1, BC-T10 and BC2-T01/T02/T03 disposable PostgreSQL vectors, BC2-T15 canonical Payroll/Expenses/Fixed Assets identity/replay evidence, posted Expenses owner fact is now present in the Development Seed | PARTIAL; complete source lifecycle and zero-difference matrix remains open |
 | FP53 | E2E/release | migration/RLS verified | BC01 APIs and source seams | BC-T01–T12 evidence, Ledger 56/56 twice, authenticated HTTP, migration/seed, architecture/OpenAPI and Release gates; complete Module 28 gate not | PASS for BC01 |
 
 ## BC02 integrity-closure note

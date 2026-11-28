@@ -39,6 +39,8 @@ public static class HrModuleExtensions
         services.AddSingleton<HrDocumentRequirementRepository>();
         services.AddSingleton<IHrCountryProviderRegistry, HrCountryProviderRegistry>();
         services.AddSingleton<HrAdjustmentRepository>();
+        services.AddSingleton<HrPlanningOwnerSource>();
+        services.AddSingleton<Shared.Contracts.Planning.IPlanningOwnerReconciliationSource>(provider => provider.GetRequiredService<HrPlanningOwnerSource>());
         services.AddSingleton<LeavePolicyRepository>();
         services.AddSingleton<LeaveRequestRepository>();
         services.AddSingleton<OnboardingRepository>();

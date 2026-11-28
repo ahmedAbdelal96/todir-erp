@@ -77,11 +77,13 @@ public sealed partial class PlanningRepository
     {
         if (request.HorizonMonths is < 1 or > 60) throw new PlanningException("planning.forecast_horizon_invalid");
         var source = await GetPlanVersion(c, tenant.Value, request.SourceVersionId, token) ?? throw new PlanningException("planning.version_not_found");
-        if (source.VersionKind != "Forecast") throw new PlanningException("planning.forecast_source_invalid");
+        // A Budget can be the governed baseline for the first rolling Forecast; subsequent
+        // rolls remain Forecast versions.  Neither source kind is mutated by this operation.
+        if (source.VersionKind is not ("Forecast" or "Budget")) throw new PlanningException("planning.forecast_source_invalid");
         var next = Guid.CreateVersion7();
         await Exec(c, "insert into business_planning.plan_version(tenant_id,id,cycle_id,model_version_id,name,version_kind,state,scenario_id,actual_cutoff,baseline_version_id,created_by) select tenant_id,$3,cycle_id,model_version_id,$4,'Forecast','Draft',scenario_id,$5,$2,$6 from business_planning.plan_version where tenant_id=$1 and id=$2", token, tenant.Value, request.SourceVersionId, next, string.IsNullOrWhiteSpace(request.Name) ? source.Name + " Rolling" : request.Name.Trim(), request.ActualCutoff, actor);
         await Exec(c, "insert into business_planning.planning_coordinate(tenant_id,id,plan_version_id,legal_entity_id,period_start,metric_code,dimension_key,signature) select tenant_id,gen_random_uuid(),$3,legal_entity_id,period_start,metric_code,dimension_key,signature||':roll:'||$3::text from business_planning.planning_coordinate where tenant_id=$1 and plan_version_id=$2 and period_start > $4 and period_start <= ($4 + ($5 || ' months')::interval)::date", token, tenant.Value, request.SourceVersionId, next, request.ActualCutoff, request.HorizonMonths);
-        await Exec(c, "insert into business_planning.planning_input_fact(tenant_id,id,coordinate_id,amount,currency_code,value_kind,source_label,explicit_zero,source_watermark,updated_by) select f.tenant_id,gen_random_uuid(),c2.id,f.amount,f.currency_code,f.value_kind,f.source_label,f.explicit_zero,f.source_watermark,$4 from business_planning.planning_input_fact f join business_planning.planning_coordinate c1 on c1.tenant_id=f.tenant_id and c1.id=f.coordinate_id join business_planning.planning_coordinate c2 on c2.tenant_id=c1.tenant_id and c2.plan_version_id=$3 and c2.signature=c1.signature||':roll:'||$3::text where f.tenant_id=$1 and c1.plan_version_id=$2", token, tenant.Value, request.SourceVersionId, next, actor);
+        await Exec(c, "insert into business_planning.planning_input_fact(tenant_id,id,coordinate_id,amount,currency_code,value_kind,source_label,explicit_zero,source_watermark,updated_by) select f.tenant_id,gen_random_uuid(),c2.id,f.amount,f.currency_code,f.value_kind,f.source_label,f.explicit_zero,f.source_watermark,$4 from business_planning.planning_input_fact f join business_planning.planning_coordinate c1 on c1.tenant_id=f.tenant_id and c1.id=f.coordinate_id join business_planning.planning_coordinate c2 on c2.tenant_id=c1.tenant_id and c2.plan_version_id=$3 and c2.signature=c1.signature||':roll:'||$3::text where f.tenant_id=$1 and c1.plan_version_id=$2 and c1.period_start > $5", token, tenant.Value, request.SourceVersionId, next, actor, request.ActualCutoff);
         await Audit(c, tenant.Value, actor, "rolling_forecast_advanced", next, token);
         return await GetPlanVersion(c, tenant.Value, next, token) ?? throw new PlanningException("planning.version_not_found");
     }, ct);
@@ -99,9 +101,11 @@ public sealed partial class PlanningRepository
         {
             var signature = Signature(row.LegalEntityId, row.PeriodStart, row.MetricCode, row.DimensionKey);
             if (!signatures.Add(signature)) throw new PlanningException("planning.import_duplicate_coordinate");
-            await EnsureGridCellMutable(c, tenant.Value, request.PlanVersionId, row.LegalEntityId, row.PeriodStart, row.MetricCode, signature, token);
-            var coordinate = await Scalar<Guid?>(c, "select id from business_planning.planning_coordinate where tenant_id=$1 and plan_version_id=$2 and legal_entity_id=$3 and period_start=$4 and metric_code=$5 and signature=$6", token, tenant.Value, request.PlanVersionId, row.LegalEntityId, row.PeriodStart, row.MetricCode, signature) ?? Guid.CreateVersion7();
-            await Exec(c, "insert into business_planning.planning_coordinate(tenant_id,id,plan_version_id,legal_entity_id,period_start,metric_code,dimension_key,signature) values($1,$2,$3,$4,$5,$6,'{}'::jsonb,$7) on conflict do nothing", token, tenant.Value, coordinate, request.PlanVersionId, row.LegalEntityId, row.PeriodStart, row.MetricCode, signature);
+            await EnsureGridCellMutable(c, tenant.Value, request.PlanVersionId, row.LegalEntityId, row.PeriodStart, row.MetricCode, signature, row.DimensionKey, token);
+            var coordinate = await Scalar<Guid?>(c, "select id from business_planning.planning_coordinate where tenant_id=$1 and plan_version_id=$2 and legal_entity_id=$3 and period_start=$4 and metric_code=$5 and signature=$6", token, tenant.Value, request.PlanVersionId, row.LegalEntityId, row.PeriodStart, row.MetricCode, signature)
+                ?? await Scalar<Guid?>(c, "select id from business_planning.planning_coordinate where tenant_id=$1 and plan_version_id=$2 and legal_entity_id=$3 and period_start=$4 and metric_code=$5 and dimension_key=$6::jsonb order by id desc limit 1", token, tenant.Value, request.PlanVersionId, row.LegalEntityId, row.PeriodStart, row.MetricCode, Json(row.DimensionKey))
+                ?? Guid.CreateVersion7();
+            await Exec(c, "insert into business_planning.planning_coordinate(tenant_id,id,plan_version_id,legal_entity_id,period_start,metric_code,dimension_key,signature) values($1,$2,$3,$4,$5,$6,$7::jsonb,$8) on conflict do nothing", token, tenant.Value, coordinate, request.PlanVersionId, row.LegalEntityId, row.PeriodStart, row.MetricCode, Json(row.DimensionKey), signature);
             await Exec(c, "insert into business_planning.planning_input_fact(tenant_id,id,coordinate_id,amount,currency_code,value_kind,source_label,explicit_zero,updated_by) values($1,$2,$3,$4,$5,'Input',$6,$7,$8) on conflict(tenant_id,coordinate_id) do update set amount=excluded.amount,currency_code=excluded.currency_code,source_label=excluded.source_label,explicit_zero=excluded.explicit_zero,updated_by=excluded.updated_by,updated_at=now()", token, tenant.Value, Guid.CreateVersion7(), coordinate, row.Amount, row.CurrencyCode, Db(row.SourceLabel), row.ExplicitZero, actor);
         }
         await Audit(c, tenant.Value, actor, "planning_csv_import_committed", request.PlanVersionId, token);
@@ -131,6 +135,8 @@ public sealed partial class PlanningRepository
 
     public Task<IReadOnlyList<StatementLineView>> QueryIntegratedStatementAsync(TenantId tenant, StatementRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
     {
+        if (request.From > request.To) throw new PlanningException("planning.statement_period_invalid");
+        if (string.IsNullOrWhiteSpace(request.CurrencyCode) || request.CurrencyCode.Trim().Length != 3) throw new PlanningException("planning.currency_invalid");
         var data = await ReadPlanningAmountsAsync(c, tenant.Value, request.PlanVersionId, token, request.LegalEntityId, request.From, request.To);
         var workforce = await ReadWorkforceCostsAsync(c, tenant.Value, request.PlanVersionId, request.LegalEntityId, request.From, request.To, token);
         var opex = await ReadOpexCostsAsync(c, tenant.Value, request.PlanVersionId, request.LegalEntityId, request.From, request.To, token);
@@ -164,6 +170,12 @@ public sealed partial class PlanningRepository
             }
             else throw new PlanningException("planning.statement_type_invalid");
             priorCash = closingCash; priorAr = ar; priorInventory = inventory; priorAp = ap;
+        }
+        var calculationRunId = Guid.CreateVersion7();
+        await Exec(c, "insert into business_planning.planning_calculation_run(tenant_id,id,plan_version_id,state,input_watermark,completed_at) values($1,$2,$3,'Succeeded',$4,now())", token, tenant.Value, calculationRunId, request.PlanVersionId, $"statement:{request.StatementType}:{request.From:yyyy-MM-dd}:{request.To:yyyy-MM-dd}");
+        foreach (var line in result)
+        {
+            await Exec(c, "insert into business_planning.planning_statement_projection(tenant_id,id,plan_version_id,legal_entity_id,statement_type,line_code,period_start,amount,source_basis,calculation_run_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) on conflict(tenant_id,plan_version_id,legal_entity_id,statement_type,line_code,period_start) do update set amount=excluded.amount,source_basis=excluded.source_basis,calculation_run_id=excluded.calculation_run_id,created_at=now()", token, tenant.Value, Guid.CreateVersion7(), request.PlanVersionId, request.LegalEntityId, line.StatementType, line.LineCode, line.PeriodStart, line.Amount, line.SourceBasis, calculationRunId);
         }
         return (IReadOnlyList<StatementLineView>)result;
     }, ct);

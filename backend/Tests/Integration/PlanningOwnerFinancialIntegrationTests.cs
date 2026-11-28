@@ -19,6 +19,48 @@ public sealed class PlanningOwnerFinancialIntegrationTests
     private static readonly Guid Tenant = Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b");
     private static readonly Guid LegalEntity = Guid.Parse("aad8a34b-344c-9e5b-8d58-57f182fc6528");
 
+    [Fact(DisplayName = "FP52 all registered owner modules expose scoped planning facts")]
+    public async Task AllRegisteredOwnerModulesExposeScopedPlanningFacts()
+    {
+        var runtimeConnection = Required("TODIR_DATABASE_CONNECTION");
+        await using var dataSource = NpgsqlDataSource.Create(runtimeConnection);
+        var tenant = new TenantId(Tenant);
+        var sources = new Shared.Contracts.Planning.IPlanningOwnerReconciliationSource[]
+        {
+            new Modules.Banking.Repositories.BankingPlanningOwnerSource(dataSource),
+            new Modules.CRM.Repositories.CrmPlanningOwnerSource(dataSource),
+            new Modules.FinanceBase.Repositories.FinanceBasePlanningOwnerSource(dataSource),
+            new Modules.Hr.Repositories.HrPlanningOwnerSource(dataSource),
+            new Modules.Inventory.Repositories.InventoryPlanningOwnerSource(dataSource),
+            new Modules.Manufacturing.Repositories.ManufacturingPlanningOwnerSource(dataSource),
+            new Modules.Projects.Repositories.ProjectsPlanningOwnerSource(dataSource),
+            new Modules.Sales.Repositories.SalesPlanningOwnerSource(dataSource),
+            new Modules.Subledger.Repositories.SubledgerPlanningOwnerSource(dataSource),
+            new Modules.Ledger.Repositories.LedgerOwnerReconciliationSource(dataSource),
+            new Modules.Payroll.Repositories.PayrollOwnerReconciliationSource(dataSource),
+            new Modules.Expenses.Repositories.ExpensesOwnerReconciliationSource(dataSource),
+            new Modules.FixedAssets.Repositories.FixedAssetsOwnerReconciliationSource(dataSource),
+            new Modules.Purchasing.Repositories.PurchasingOwnerReconciliationSource(dataSource)
+        };
+
+        var moduleNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var source in sources)
+        {
+            var facts = await source.ListFinancialFactsAsync(tenant, LegalEntity);
+            Assert.All(facts, fact =>
+            {
+                Assert.Equal(LegalEntity, fact.LegalEntityId);
+                Assert.False(string.IsNullOrWhiteSpace(fact.SourceModule));
+                Assert.False(string.IsNullOrWhiteSpace(fact.RecognitionIdentity));
+                Assert.False(string.IsNullOrWhiteSpace(fact.MetricCode));
+                Assert.False(string.IsNullOrWhiteSpace(fact.CurrencyCode));
+            });
+            Assert.True(moduleNames.Add(source.SourceModule), $"Duplicate owner source registration: {source.SourceModule}");
+        }
+
+        Assert.Equal(sources.Length, moduleNames.Count);
+    }
+
     [Fact(DisplayName = "BC2-T15 Payroll and Fixed Assets owner facts reconcile with Ledger exactly once")]
     public async Task PayrollAndFixedAssetsOwnerFactsReconcileWithLedgerExactlyOnce()
     {

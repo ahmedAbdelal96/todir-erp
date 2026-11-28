@@ -50,6 +50,21 @@ public sealed class ModuleLifecycleEndpointFilter : IEndpointFilter
         if (metadata is null)
         {
             var path = http.Request.Path.Value ?? string.Empty;
+            if (path.StartsWith("/api/v1/planning", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!Guid.TryParse(http.User.FindFirstValue("tenant_id"), out var planningTenantId)) return Results.Unauthorized();
+                Guid? planningEntityId = null;
+                if (http.Request.Query.TryGetValue("legalEntityId", out var planningQuery) && Guid.TryParse(planningQuery, out var planningQueryId)) planningEntityId = planningQueryId;
+                if (http.Request.Headers.TryGetValue("X-Legal-Entity-Id", out var planningHeader) && Guid.TryParse(planningHeader, out var planningHeaderId))
+                {
+                    if (planningEntityId.HasValue && planningEntityId.Value != planningHeaderId) return Results.Problem(statusCode: 400, title: "scope.conflict", extensions: new Dictionary<string, object?> { ["code"] = "scope.conflict" });
+                    planningEntityId = planningHeaderId;
+                }
+                var planningMutation = !HttpMethods.IsGet(http.Request.Method) && !HttpMethods.IsHead(http.Request.Method);
+                var planningDecision = await http.RequestServices.GetRequiredService<IModuleLifecycleEnforcer>().EvaluateAccessAsync(new TenantId(planningTenantId), "planning", planningEntityId, planningMutation, http.RequestAborted);
+                if (!planningDecision.Allowed) return Results.Problem(statusCode: 403, title: planningDecision.DeniedReason ?? (planningMutation ? "module.lifecycle_readonly" : "module.disabled"), extensions: new Dictionary<string, object?> { ["code"] = planningDecision.DeniedReason ?? (planningMutation ? "module.lifecycle_readonly" : "module.disabled") });
+                return await next(context);
+            }
             if (path.StartsWith("/api/v1/quality", StringComparison.OrdinalIgnoreCase))
             {
                 if (!Guid.TryParse(http.User.FindFirstValue("tenant_id"), out var qualityTenantId)) return Results.Unauthorized();
