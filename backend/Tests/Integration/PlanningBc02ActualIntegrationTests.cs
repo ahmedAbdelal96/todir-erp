@@ -246,6 +246,11 @@ public sealed class PlanningBc02ActualIntegrationTests
 
     private static async Task EnsureCanonicalExpenseFactAsync(NpgsqlConnection connection, Guid actorId)
     {
+        // The fixture writes through the Ledger trigger that projects journal lines into
+        // another FORCE RLS table. Establish the same tenant context as the runtime path
+        // so the fixture reaches the intended accounting-source contract instead of
+        // failing while PostgreSQL casts an empty tenant setting to uuid.
+        await ExecuteAsync(connection, "select set_config('app.tenant_id',$1::text,false)", AtlasTenant.Value.ToString());
         var suffix = Guid.NewGuid().ToString("N");
         Guid journalId, periodId, ruleId, configurationId, debitAccount, creditAccount;
         string currency, baseCurrency;

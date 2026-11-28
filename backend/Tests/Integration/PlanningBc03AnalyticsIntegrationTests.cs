@@ -53,6 +53,15 @@ public sealed class PlanningBc03AnalyticsIntegrationTests
         var committed = await repository.ImportCsvAsync(new(TenantId), actor, new(draft.Id, csv, true), default);
         Assert.True(committed.Committed);
         Assert.Equal(1, committed.AcceptedRows);
+        var quoted = $"{entity:D},2027-02-01,Opex,275.00,EGP,false,\"csv,source,label\"";
+        var quotedPreview = await repository.ImportCsvAsync(new(TenantId), actor, new(draft.Id, quoted, false), default);
+        Assert.Empty(quotedPreview.Errors);
+        Assert.Equal(1, quotedPreview.AcceptedRows);
+        var invalidWorkbook = Convert.ToBase64String(Encoding.UTF8.GetBytes("not an xlsx package"));
+        var invalidWorkbookError = await Assert.ThrowsAsync<PlanningException>(() => repository.ImportXlsxAsync(new(TenantId), actor, new(draft.Id, invalidWorkbook), default));
+        Assert.Equal("planning.import_excel_invalid", invalidWorkbookError.Code);
+        var publishedImportError = await Assert.ThrowsAsync<PlanningException>(() => repository.ImportCsvAsync(new(TenantId), actor, new(sourceVersion, csv, true), default));
+        Assert.Equal("planning.version_immutable", publishedImportError.Code);
 
         var opexPeriod = new DateOnly(2027, 3, 1);
         var facilitiesDimension = JsonDocument.Parse("{\"categoryCode\":\"Facilities\",\"accountRef\":\"6100\",\"costCenterRef\":\"HQ\"}").RootElement;

@@ -7,6 +7,12 @@ namespace Modules.Planning;
 
 public sealed partial class PlanningRepository
 {
+    public static IReadOnlyCollection<Guid> GetXlsxLegalEntityIds(string spreadsheetContentBase64)
+    {
+        try { return GetCsvLegalEntityIds(ParseWorkbook(spreadsheetContentBase64)); }
+        catch (PlanningException) { return []; }
+    }
+
     public Task<CsvImportView> ImportXlsxAsync(TenantId tenant, Guid actor, XlsxImportRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.SpreadsheetContentBase64) || request.SpreadsheetContentBase64.Length > 7 * 1024 * 1024)

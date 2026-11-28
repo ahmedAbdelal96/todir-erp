@@ -56,10 +56,10 @@ public static class PlanningModuleExtensions
         g.MapPost("/submissions/{id:guid}/coordinates", async (Guid id, SubmissionCoordinateRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateReferenceScoped(h, r, s, a, l, "planning.versions.edit", "submission", id, () => r.AttachSubmissionCoordinatesAsync(Tenant(h), Actor(h), id, q, ct).ContinueWith(_ => new { attached = q.CoordinateIds.Count }, ct), ct));
         g.MapPost("/submissions/{id:guid}/transition", async (Guid id, SubmissionTransitionRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateReferenceScoped(h, r, s, a, l, q.Action.ToLowerInvariant() switch { "submit" => "planning.versions.submit", "approve" => "planning.versions.approve", _ => "planning.versions.edit" }, "submission", id, () => q.Action.ToLowerInvariant() switch { "submit" => r.SubmitSubmissionAsync(Tenant(h), Actor(h), Membership(h), id, q.Reason, ct), "approve" => r.ApproveSubmissionAsync(Tenant(h), Actor(h), Membership(h), id, q.Reason, ct), _ => r.AdvanceSubmissionAsync(Tenant(h), Actor(h), id, q, ct) }, ct));
         g.MapPost("/grids/query", async (GridQueryRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, CancellationToken ct) => await ReadScoped(h, r, s, a, "planning.versions.read", q.LegalEntityId, q.PlanVersionId, () => r.QueryGridAsync(Tenant(h), q, ct), ct));
-        g.MapPost("/grids/write-batch", async (GridWriteRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateScoped(h, r, s, a, l, "planning.versions.edit", q.Cells.Count > 0 ? q.Cells[0].LegalEntityId : null, q.PlanVersionId, () => r.WriteGridAsync(Tenant(h), Actor(h), q, ct), ct));
-        g.MapPost("/grids/spread", async (GridWriteRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateScoped(h, r, s, a, l, "planning.versions.edit", q.Cells.Count > 0 ? q.Cells[0].LegalEntityId : null, q.PlanVersionId, () => r.WriteGridAsync(Tenant(h), Actor(h), q, ct), ct));
+        g.MapPost("/grids/write-batch", async (GridWriteRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateGridScoped(h, r, s, a, l, "planning.versions.edit", q.Cells.Select(x => x.LegalEntityId), q.PlanVersionId, () => r.WriteGridAsync(Tenant(h), Actor(h), q, ct), ct));
+        g.MapPost("/grids/spread", async (GridWriteRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateGridScoped(h, r, s, a, l, "planning.versions.edit", q.Cells.Select(x => x.LegalEntityId), q.PlanVersionId, () => r.WriteGridAsync(Tenant(h), Actor(h), q, ct), ct));
         g.MapPost("/grids/spread-exact", async (SpreadRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateScoped(h, r, s, a, l, "planning.versions.edit", q.LegalEntityId, q.PlanVersionId, () => r.SpreadAsync(Tenant(h), Actor(h), q, ct), ct));
-        g.MapPost("/grids/paste-preview", async (GridWriteRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, CancellationToken ct) => await ReadScoped(h, r, s, a, "planning.versions.read", q.Cells.Count > 0 ? q.Cells[0].LegalEntityId : null, q.PlanVersionId, () => Task.FromResult<IReadOnlyList<GridCellRequest>>(q.Cells), ct));
+        g.MapPost("/grids/paste-preview", async (GridWriteRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, CancellationToken ct) => await ReadGridScoped(h, r, s, a, "planning.versions.read", q.Cells.Select(x => x.LegalEntityId), q.PlanVersionId, () => Task.FromResult<IReadOnlyList<GridCellRequest>>(q.Cells), ct));
         g.MapPost("/assumptions", async (CreateAssumptionRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateScoped(h, r, s, a, l, "planning.assumptions.manage", null, q.PlanVersionId, () => r.CreateAssumptionAsync(Tenant(h), Actor(h), q, ct), ct, 201));
         g.MapGet("/assumptions", async (Guid planVersionId, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, CancellationToken ct) => await ReadScoped(h, r, s, a, "planning.versions.read", null, planVersionId, () => r.ListAssumptionsAsync(Tenant(h), planVersionId, ct), ct));
         g.MapPost("/assumptions/{id:guid}/values", async (Guid id, AssumptionValueRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateReferenceScoped(h, r, s, a, l, "planning.assumptions.manage", "assumption", id, () => r.SetAssumptionValueAsync(Tenant(h), id, q, ct).ContinueWith(_ => new { saved = true }, ct), ct));
@@ -106,10 +106,10 @@ public static class PlanningModuleExtensions
         g.MapPost("/targets/proposals/{id:guid}/adjust", async (Guid id, AdjustPlanningProposalRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateReferenceScoped(h, r, s, a, l, "planning.budget.manage", "proposal", id, () => r.AdjustPlanningProposalAsync(Tenant(h), Actor(h), id, q, ct), ct));
         g.MapPost("/targets/proposals/{id:guid}/{action}", async (Guid id, string action, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateReferenceScoped(h, r, s, a, l, action.Equals("approve", StringComparison.OrdinalIgnoreCase) ? "planning.budget.manage" : "planning.versions.edit", "proposal", id, () => r.AdvancePlanningProposalAsync(Tenant(h), Actor(h), id, action, ct), ct));
         g.MapPost("/statements/query", async (StatementRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, CancellationToken ct) => await ReadScoped(h, r, s, a, "planning.versions.read", q.LegalEntityId, q.PlanVersionId, () => r.QueryIntegratedStatementAsync(Tenant(h), q, ct), ct));
-        g.MapPost("/grid/import/preview", async (CsvImportRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, CancellationToken ct) => await ReadScoped(h, r, s, a, "planning.versions.read", null, q.PlanVersionId, () => r.ImportCsvAsync(Tenant(h), Actor(h), q with { Commit = false }, ct), ct));
-        g.MapPost("/grid/import", async (CsvImportRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateScoped(h, r, s, a, l, "planning.versions.edit", null, q.PlanVersionId, () => r.ImportCsvAsync(Tenant(h), Actor(h), q with { Commit = true }, ct), ct));
-        g.MapPost("/grid/import/xlsx/preview", async (XlsxImportRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, CancellationToken ct) => await ReadScoped(h, r, s, a, "planning.versions.read", null, q.PlanVersionId, () => r.ImportXlsxAsync(Tenant(h), Actor(h), q with { Commit = false }, ct), ct));
-        g.MapPost("/grid/import/xlsx", async (XlsxImportRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateScoped(h, r, s, a, l, "planning.versions.edit", null, q.PlanVersionId, () => r.ImportXlsxAsync(Tenant(h), Actor(h), q with { Commit = true }, ct), ct));
+        g.MapPost("/grid/import/preview", async (CsvImportRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, CancellationToken ct) => await ReadImportScoped(h, r, s, a, "planning.versions.read", PlanningRepository.GetCsvLegalEntityIds(q.Csv), q.PlanVersionId, () => r.ImportCsvAsync(Tenant(h), Actor(h), q with { Commit = false }, ct), ct));
+        g.MapPost("/grid/import", async (CsvImportRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateImportScoped(h, r, s, a, l, "planning.versions.edit", PlanningRepository.GetCsvLegalEntityIds(q.Csv), q.PlanVersionId, () => r.ImportCsvAsync(Tenant(h), Actor(h), q with { Commit = true }, ct), ct));
+        g.MapPost("/grid/import/xlsx/preview", async (XlsxImportRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, CancellationToken ct) => await ReadImportScoped(h, r, s, a, "planning.versions.read", PlanningRepository.GetXlsxLegalEntityIds(q.SpreadsheetContentBase64), q.PlanVersionId, () => r.ImportXlsxAsync(Tenant(h), Actor(h), q with { Commit = false }, ct), ct));
+        g.MapPost("/grid/import/xlsx", async (XlsxImportRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, IModuleLifecycleEnforcer l, CancellationToken ct) => await MutateImportScoped(h, r, s, a, l, "planning.versions.edit", PlanningRepository.GetXlsxLegalEntityIds(q.SpreadsheetContentBase64), q.PlanVersionId, () => r.ImportXlsxAsync(Tenant(h), Actor(h), q with { Commit = true }, ct), ct));
         g.MapGet("/grid/export/xlsx", async (Guid planVersionId, Guid? legalEntityId, DateOnly? from, DateOnly? to, bool? template, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, CancellationToken ct) => await ReadScoped(h, r, s, a, "planning.export", legalEntityId, planVersionId, () => r.ExportXlsxAsync(Tenant(h), planVersionId, legalEntityId, from, to, template == true, ct), ct));
         g.MapGet("/grid/template/xlsx", async (Guid planVersionId, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, CancellationToken ct) => await ReadScoped(h, r, s, a, "planning.export", null, planVersionId, () => r.ExportXlsxAsync(Tenant(h), planVersionId, null, null, null, true, ct), ct));
         g.MapPost("/reports/rollup", async (RollupRequest q, HttpContext h, PlanningRepository r, IAuthorizationSubjectStore s, IPermissionAuthorizer a, CancellationToken ct) => await ReadManyScoped(h, r, s, a, "planning.versions.read", q.LegalEntityIds, q.PlanVersionId, () => r.QueryRollupAsync(Tenant(h), q, ct), ct));
@@ -139,6 +139,62 @@ public static class PlanningModuleExtensions
         if (!await repository.CanAccessPlanVersionAsync(Tenant(h), Actor(h), planVersionId, "Read", ct)) return Results.Forbid();
         foreach (var entity in entities)
             if (!await Access(h, store, authorizer, permission, entity, ct)) return Results.Forbid();
+        return await Execute(action, ct);
+    }
+    private static async Task<IResult> ReadGridScoped<T>(HttpContext h, PlanningRepository repository, IAuthorizationSubjectStore store, IPermissionAuthorizer authorizer, string permission, IEnumerable<Guid> entities, Guid planVersionId, Func<Task<T>> action, CancellationToken ct)
+    {
+        if (!await repository.CanAccessPlanVersionAsync(Tenant(h), Actor(h), planVersionId, "Read", ct)) return Results.Forbid();
+        foreach (var entity in entities.Distinct())
+            if (!await Access(h, store, authorizer, permission, entity, ct)) return Results.Forbid();
+        return await Execute(action, ct);
+    }
+    private static async Task<IResult> MutateGridScoped<T>(HttpContext h, PlanningRepository repository, IAuthorizationSubjectStore store, IPermissionAuthorizer authorizer, IModuleLifecycleEnforcer lifecycle, string permission, IEnumerable<Guid> entities, Guid planVersionId, Func<Task<T>> action, CancellationToken ct, int status = 200)
+    {
+        if (!await repository.CanAccessPlanVersionAsync(Tenant(h), Actor(h), planVersionId, "Edit", ct)) return Results.Forbid();
+        var distinctEntities = entities.Distinct().ToArray();
+        foreach (var entity in distinctEntities)
+            if (!await Access(h, store, authorizer, permission, entity, ct)) return Results.Forbid();
+        if (distinctEntities.Length == 0 && !await Access(h, store, authorizer, permission, null, ct)) return Results.Forbid();
+        if (distinctEntities.Length == 0)
+        {
+            if (!await lifecycle.CanMutateAsync(Tenant(h), "planning", null, ct)) return Results.Problem(statusCode: 403, title: "module.lifecycle_readonly", extensions: new Dictionary<string, object?> { ["code"] = "module.lifecycle_readonly" });
+        }
+        else
+        {
+            foreach (var entity in distinctEntities)
+                if (!await lifecycle.CanMutateAsync(Tenant(h), "planning", entity, ct)) return Results.Problem(statusCode: 403, title: "module.lifecycle_readonly", extensions: new Dictionary<string, object?> { ["code"] = "module.lifecycle_readonly" });
+        }
+        return await Execute(action, ct, status);
+    }
+    private static Task<IResult> ReadImportScoped<T>(HttpContext h, PlanningRepository repository, IAuthorizationSubjectStore store, IPermissionAuthorizer authorizer, string permission, IEnumerable<Guid> entities, Guid planVersionId, Func<Task<T>> action, CancellationToken ct)
+        => ReadEntitySetScoped(h, repository, store, authorizer, permission, entities, planVersionId, action, ct);
+    private static async Task<IResult> MutateImportScoped<T>(HttpContext h, PlanningRepository repository, IAuthorizationSubjectStore store, IPermissionAuthorizer authorizer, IModuleLifecycleEnforcer lifecycle, string permission, IEnumerable<Guid> entities, Guid planVersionId, Func<Task<T>> action, CancellationToken ct, int status = 200)
+    {
+        if (!await repository.CanAccessPlanVersionAsync(Tenant(h), Actor(h), planVersionId, "Edit", ct)) return Results.Forbid();
+        var distinct = entities.Distinct().ToArray();
+        if (distinct.Length > 100) return Results.BadRequest();
+        foreach (var entity in distinct)
+            if (!await Access(h, store, authorizer, permission, entity, ct)) return Results.Forbid();
+        if (distinct.Length == 0 && !await Access(h, store, authorizer, permission, null, ct)) return Results.Forbid();
+        if (distinct.Length == 0)
+        {
+            if (!await lifecycle.CanMutateAsync(Tenant(h), "planning", null, ct)) return Results.Problem(statusCode: 403, title: "module.lifecycle_readonly", extensions: new Dictionary<string, object?> { ["code"] = "module.lifecycle_readonly" });
+        }
+        else
+        {
+            foreach (var entity in distinct)
+                if (!await lifecycle.CanMutateAsync(Tenant(h), "planning", entity, ct)) return Results.Problem(statusCode: 403, title: "module.lifecycle_readonly", extensions: new Dictionary<string, object?> { ["code"] = "module.lifecycle_readonly" });
+        }
+        return await Execute(action, ct, status);
+    }
+    private static async Task<IResult> ReadEntitySetScoped<T>(HttpContext h, PlanningRepository repository, IAuthorizationSubjectStore store, IPermissionAuthorizer authorizer, string permission, IEnumerable<Guid> entities, Guid planVersionId, Func<Task<T>> action, CancellationToken ct)
+    {
+        if (!await repository.CanAccessPlanVersionAsync(Tenant(h), Actor(h), planVersionId, "Read", ct)) return Results.Forbid();
+        var distinct = entities.Distinct().ToArray();
+        if (distinct.Length > 100) return Results.BadRequest();
+        foreach (var entity in distinct)
+            if (!await Access(h, store, authorizer, permission, entity, ct)) return Results.Forbid();
+        if (distinct.Length == 0 && !await Access(h, store, authorizer, permission, null, ct)) return Results.Forbid();
         return await Execute(action, ct);
     }
     private static async Task<IResult> ReadCoordinateScoped<T>(HttpContext h, PlanningRepository repository, IAuthorizationSubjectStore store, IPermissionAuthorizer authorizer, string permission, Guid coordinateId, Func<Task<T>> action, CancellationToken ct)

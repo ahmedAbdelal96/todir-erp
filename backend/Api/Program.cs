@@ -45,6 +45,10 @@ using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddRepositoryConfiguration(builder.Environment.ContentRootPath, builder.Environment.EnvironmentName);
+// Keep the hosting environment authoritative when the test host supplies it via
+// UseEnvironment rather than an environment-variable provider.
+builder.Configuration["ASPNETCORE_ENVIRONMENT"] = builder.Environment.EnvironmentName;
+builder.Configuration["DOTNET_ENVIRONMENT"] = builder.Environment.EnvironmentName;
 builder.Services.AddObservability(builder.Environment.ApplicationName, builder.Environment.EnvironmentName);
 builder.Services.AddOpenApi("v1");
 builder.Services.AddCore(builder.Configuration);

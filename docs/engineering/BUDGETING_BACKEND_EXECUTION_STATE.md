@@ -382,8 +382,36 @@ identity, and rollup coordinate identity.
 
 Post-change local verification: the Planning Release build passed with 0
 warnings and 0 errors, the IntegrationTests project built successfully, the
-Planning unit suite passed 6/6, and `git diff --check` passed. The seven-test
-Package-C selection could not reach database setup in this shell because
-`TODIR_DATABASE_CONNECTION` and `TODIR_P04_ADMIN_CONNECTION` are unavailable;
-the current evidence therefore does not replace the prior disposable-Postgres
-claim. Delivery remains `NOT COMPLETE`.
+Planning unit suite passed 6/6, and `git diff --check` passed. The earlier
+Package-C environment issue has now been resolved and fresh disposable-
+PostgreSQL evidence follows.
+
+## Acceptance environment and scope-guard correction — 2026-11-28
+
+The local acceptance environment was restored with a disposable PostgreSQL
+database and the Development host environment is now propagated into both
+environment configuration keys before Core registration. This fixes the prior
+OAuth signing-certificate initialization failure in WebApplicationFactory
+without adding production credentials or weakening authentication.
+
+The BC2 actual fixture establishes `app.tenant_id` before exercising the Ledger
+projection trigger. Planning grid batch, paste-preview, CSV import, and XLSX
+import routes authorize every distinct legal entity represented by a request;
+they no longer authorize a mixed-entity payload from its first cell alone. CSV
+parsing now accepts escaped commas emitted by the export path. Manufacturing's
+canonical residual seed is persisted explicitly in `uncovered_qty`, and its
+dedicated P0 acceptance passed 2/2 on a separately named disposable database.
+
+Fresh evidence after these changes and the final multi-entity lifecycle guard:
+Planning integration passed 23/23, Package-C passed
+7/7, BC03 analytics passed 1/1 including malformed workbook and published
+version rejection, owner financial integration passed 2/2, and the focused
+Purchasing HTTP acceptance passed 4/4 with explicit disposable admin/runtime
+credentials. The local broker gate passed 2/2 and the real Projects
+Outbox → RabbitMQ → Worker → PostgreSQL Inbox replay passed 1/1 with
+exactly-once persistence. The authenticated live `/internal/metrics` scrape
+returned 200 and exported HTTP/Outbox telemetry; no Planning operation was
+generated in that scrape, so Planning-specific live series remain explicitly
+unverified. Full FP00–FP53 delivery remains `NOT COMPLETE` until the broader
+canonical owner-lifecycle, live observability, performance, recovery-runbook,
+and FP47–FP53 acceptance matrix is executed and closed.

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Core.Transactions;
 using Npgsql;
@@ -9,6 +10,12 @@ namespace Modules.Planning;
 
 public sealed partial class PlanningRepository
 {
+    public static IReadOnlyCollection<Guid> GetCsvLegalEntityIds(string csv)
+    {
+        try { return ParseCsv(Guid.Empty, csv).Rows.Select(row => row.LegalEntityId).Distinct().ToArray(); }
+        catch (PlanningException) { return []; }
+    }
+
     public Task<CalculationRunView> RecalculateCompleteAsync(TenantId tenant, Guid actor, Guid planVersionId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
     {
         var started = Stopwatch.GetTimestamp();
@@ -78,6 +85,8 @@ public sealed partial class PlanningRepository
         if (request.HorizonMonths is < 1 or > 60) throw new PlanningException("planning.forecast_horizon_invalid");
         var source = await GetPlanVersion(c, tenant.Value, request.SourceVersionId, token) ?? throw new PlanningException("planning.version_not_found");
         await EnsurePlanVersionAccess(c, tenant.Value, request.SourceVersionId, actor, "Read", token);
+        if (source.ActualCutoff is { } existingCutoff && request.ActualCutoff < existingCutoff)
+            throw new PlanningException("planning.forecast_cutoff_regression");
         // A Budget can be the governed baseline for the first rolling Forecast; subsequent
         // rolls remain Forecast versions.  Neither source kind is mutated by this operation.
         if (source.VersionKind is not ("Forecast" or "Budget")) throw new PlanningException("planning.forecast_source_invalid");
@@ -271,11 +280,35 @@ public sealed partial class PlanningRepository
         if (lines.Length is 0 or > 5001) return new(new(version, false, 0, ["planning.import_row_limit"]), rows);
         for (var i = 0; i < lines.Length; i++)
         {
-            var fields = lines[i].Split(','); if (i == 0 && fields.Length > 0 && fields[0].Equals("legalEntityId", StringComparison.OrdinalIgnoreCase)) continue;
+            string[] fields;
+            try { fields = ParseCsvLine(lines[i]); }
+            catch (PlanningException) { errors.Add($"row:{i + 1}:planning.import_row_invalid"); continue; }
+            if (i == 0 && fields.Length > 0 && fields[0].Equals("legalEntityId", StringComparison.OrdinalIgnoreCase)) continue;
             if (fields.Length < 5 || !Guid.TryParse(fields[0], out var entity) || !DateOnly.TryParse(fields[1], CultureInfo.InvariantCulture, DateTimeStyles.None, out var period) || !decimal.TryParse(fields[3], NumberStyles.Number, CultureInfo.InvariantCulture, out var amount) || string.IsNullOrWhiteSpace(fields[2]) || fields[4].Trim().Length != 3) { errors.Add($"row:{i + 1}:planning.import_row_invalid"); continue; }
             var explicitZero = fields.Length > 5 && bool.TryParse(fields[5], out var zero) && zero; rows.Add(new CsvRow(entity, period, fields[2].Trim(), JsonDocument.Parse("{}").RootElement.Clone(), amount, fields[4].Trim().ToUpperInvariant(), explicitZero, fields.Length > 6 ? fields[6].Trim() : null));
         }
         return new(new CsvImportView(version, false, rows.Count, errors), rows);
+    }
+
+    private static string[] ParseCsvLine(string line)
+    {
+        var fields = new List<string>();
+        var value = new StringBuilder();
+        var quoted = false;
+        for (var index = 0; index < line.Length; index++)
+        {
+            var character = line[index];
+            if (character == '"')
+            {
+                if (quoted && index + 1 < line.Length && line[index + 1] == '"') { value.Append('"'); index++; }
+                else quoted = !quoted;
+            }
+            else if (character == ',' && !quoted) { fields.Add(value.ToString()); value.Clear(); }
+            else value.Append(character);
+        }
+        if (quoted) throw new PlanningException("planning.import_row_invalid");
+        fields.Add(value.ToString());
+        return fields.ToArray();
     }
 
     private sealed record FormulaSeed(string Code, string Expression, string OutputMetricCode, IReadOnlyList<string> Dependencies);
