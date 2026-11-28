@@ -24,7 +24,7 @@ public sealed partial class PlanningRepository
 
         var run = Guid.CreateVersion7();
         var inputRevision = await ReadInputRevisionAsync(c, tenant.Value, planVersionId, token);
-        await Exec(c, "insert into business_planning.planning_calculation_run(tenant_id,id,plan_version_id,state,input_watermark) values($1,$2,'Running',$3)", token, tenant.Value, run, inputRevision.ToString(CultureInfo.InvariantCulture));
+        await Exec(c, "insert into business_planning.planning_calculation_run(tenant_id,id,plan_version_id,state,input_watermark) values($1,$2,$3,'Running',$4)", token, tenant.Value, run, planVersionId, inputRevision.ToString(CultureInfo.InvariantCulture));
         await c.Transaction.SaveAsync("planning_calculation", token);
         try
         {

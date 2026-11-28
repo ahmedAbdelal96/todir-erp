@@ -5,8 +5,9 @@ Canonical pack: `docs/modules/28_ERP_SAAS_BUDGETING_FINANCIAL_PLANNING_FPA_REQUI
 This matrix preserves the original BC02 scenario identities. Supplemental
 evidence uses `BC2-Sxx`; infrastructure evidence does not replace a business
 scenario. PASS means the stated behavior was executed locally after the last
-relevant source change. The overall BC02 delivery remains `NOT COMPLETE` until
-every mandatory row has repeatable PostgreSQL/HTTP evidence.
+relevant source change. All mandatory BC02 rows are now backed by repeatable
+PostgreSQL/HTTP evidence. Frontend and Product Owner acceptance remain
+separate gates.
 
 | ID | Canonical requirement | Exact evidence | Expected / observed result | Status |
 |---|---|---|---|---|
@@ -25,12 +26,12 @@ every mandatory row has repeatable PostgreSQL/HTTP evidence.
 | BC2-T13 | Concurrent and batch mutation integrity | `PlanningGovernanceConcurrencyAcceptanceTests` transactional batch rollback vector | Duplicate/stale/mixed-scope input rejects atomically and explicit zero remains distinct from missing | PASS |
 | BC2-T14 | Source authorization and confidentiality | `PlanningAccessGovernanceAcceptanceTests` workforce permission, sensitive-data and tenant matrix | Unauthorized reads are denied without data leakage or technical details | PASS |
 | BC2-T15 | Owner-source contract reconciliation | `PlanningOwnerFinancialIntegrationTests` 2/2 plus Package-A provider registration 1/1 | Fourteen providers are scoped/replay-stable; real Payroll/Fixed Assets/Expenses lifecycle facts match Ledger and correction nets to zero | PASS |
-| BC2-T16 | BC01 regression preservation | Fresh Budget Control 8/8, Projects 14/14 and owner/Purchasing/BC-T09/BC-T10 selections | Applicable BC01 financial assertions remain green after final BC02 changes | PASS |
+| BC2-T16 | BC01 regression preservation | `BUDGETING_BC01_ACCEPTANCE_MATRIX.md` BC-T01–BC-T12, with fresh Budget Control 8/8, Projects 14/14 and owner/Purchasing/BC-T09/BC-T10 selections after the final BC02 changes | All applicable BC01 financial assertions remain green; no verified BC01 behavior was reopened | PASS |
 | BC2-T17 | Disabled-module compatibility | `PlanningAccessGovernanceAcceptanceTests` disabled, ReadOnly and not-entitled owner vector | Owner-dependent refresh/control workflows fail closed without partial state | PASS |
-| BC2-S01 | Fresh migration and seed | Disposable `bc02_final_fresh_20261127`; Release DbMigrator `--seed development` | 279 ordered platform scripts applied; seed completed for Atlas and Delta; new BC02 tables/triggers installed; disposable database removed after verification | PASS |
+| BC2-S01 | Fresh migration and seed | Disposable recovery database `module28_recovery_20261128`; Release DbMigrator `--seed development` | 286 ordered SQL files applied; seed completed for Atlas and Delta; new BC02 tables/triggers installed | PASS |
 | BC2-S02 | Development seed replay | Same disposable database with forced RLS | Seed replay completed without duplicate-key or published-row failure | PASS |
-| BC2-S03 | Planning unit regression | `dotnet test backend/Tests/Modules/Planning/PlanningTests.csproj --configuration Release --no-build` | 4/4 passed | PASS |
-| BC2-S04 | OpenAPI contract | `node scripts/architecture/validate-openapi.mjs` | All 9 contracts validated; Planning 78 paths, including historical Actual-basis, budget as-of, and target/proposal lifecycle routes | PASS |
+| BC2-S03 | Planning unit regression | `dotnet test backend/Tests/Modules/Planning/PlanningTests.csproj --configuration Release --no-build` | 6/6 passed | PASS |
+| BC2-S04 | OpenAPI contract | `node scripts/architecture/validate-openapi.mjs` | All 9 contracts validated; Planning 91 paths, including historical Actual-basis, budget as-of, target/proposal lifecycle routes and calculation retry | PASS |
 | BC2-S05 | Release build | `dotnet build backend/Backend.sln --configuration Release --no-restore` | 0 errors, 0 warnings after the latest source and migration changes | PASS |
 | BC2-S06 | Actual restatement schema integrity | Fresh migration plus repeated BC2-T01/T02/T03 runs | Historical snapshots accept the same source only within each snapshot; restatement does not violate cross-snapshot uniqueness | PASS |
 

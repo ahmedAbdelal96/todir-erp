@@ -1,6 +1,6 @@
 # Module 28 Backend-to-Frontend Handoff
 
-This is a backend handoff for the implemented planning foundation plus the metadata, submission, spreading, allocation and statement slices. Frontend implementation is not included in this mission.
+This is the final backend handoff for the implemented Module 28 Planning capability and its owner/control/reporting contracts. Frontend implementation is not included in this mission.
 
 ## Runtime contract
 
@@ -25,8 +25,8 @@ Implemented route groups:
 - rolling forecast (`POST /forecasts/roll`), bounded CSV preview/commit (`POST /grid/import/preview`, `/grid/import`) and explicit-Planning-FX management rollup (`POST /reports/rollup`).
 - safe first-sheet XLSX preview/commit (`POST /grid/import/xlsx/preview`, `/grid/import/xlsx`); macro, external-link, formula and oversized archive inputs fail closed;
 - authorized bounded XLSX export/template (`GET /grid/export/xlsx`, `/grid/template/xlsx`) with explicit template metadata and formula-safe text cells;
-- failed calculation retry (`POST /calculation-runs/{id}/retry`) reruns only a durable Failed run against the current input revision; calculation results retain an input revision and stale completion is rejected.
-- owner-source registration now includes the existing Ledger/Purchasing providers plus Payroll finalized accounting facts, Expenses finalized accounting facts and Fixed Assets posted depreciation lines; the BC2-T15 disposable PostgreSQL workflow proves non-empty Payroll/Expenses/Fixed Assets facts, canonical Ledger identity matching, replay idempotency and depreciation reversal correction. Planning remains read-only at this boundary and does not access owner tables directly;
+- failed calculation retry (`POST /calculation-runs/{id}/retry`) reruns a durable Failed run or a genuinely stale Running run after worker interruption against the current input revision; live Running runs remain non-retryable, calculation results retain an input revision, and stale completion is rejected. `PlanningCalculationRecoveryAcceptanceTests` proves both branches 1/1.
+- owner-source registration covers fourteen read-only providers: Banking, CRM, FinanceBase, HR, Inventory, Manufacturing, Projects, Sales, Subledger, Ledger, Payroll, Expenses, Fixed Assets and Purchasing. The provider replay test proves scoped deterministic facts for all fourteen; the BC2-T15 disposable PostgreSQL workflow proves non-empty Payroll/Expenses/Fixed Assets facts, canonical Ledger identity matching, replay idempotency and depreciation reversal correction. Planning remains read-only at this boundary and does not access owner tables directly;
 - Planning publishes bounded `Todir.Planning` OpenTelemetry metrics for Actual refresh, calculation, budget checks, block decisions, import failures and reconciliation outcomes through the existing platform pipeline;
 - Planning OpenAPI contract: `docs/api/planning-openapi.json` (91 paths; static validation is separate from business acceptance). The backend also exposes `GET /dimensions`, `GET /dimensions/{id}/members`, `GET /submissions`, `POST /reports/department-planner`, `POST /reports/cfo`, and `GET /variance/{coordinateId}/decomposition`.
 - Purchasing and Expenses request contracts may carry `budgetBucketId` as a validated selection hint. The backend remains authoritative: it normalizes the annual, quarterly, or monthly control horizon, resolves the applicable active bucket, rejects cross-entity/context/uncontrolled selections, and fails closed for active strict policies with no applicable bucket. Owner transactions are rolled back for blocked/approval-required decisions.
@@ -60,9 +60,9 @@ Implemented route groups:
   submit requests a Platform Approval and approval validates the owner entity,
   state and approval identity before locking the slice.
 - Baseline lifecycle, revision idempotency and deterministic transfer locking
-  are server-side contracts. These additions are not a claim that every BC02
-  scenario is acceptance-complete; use the BC02 matrix before building product
-  flows around a capability.
+  are server-side contracts. BC02 acceptance is complete in
+  `BUDGETING_BC02_ACCEPTANCE_MATRIX.md`; frontend flows may rely on these
+  contracts while preserving the separate Product/UX acceptance gate.
 
 ## Development seed
 
@@ -91,8 +91,9 @@ The backend exposes the first governed top-down/bottom-up slice through
 management target, original department proposal, calculated gap, adjusted
 amount, reason, actor and audit event. These routes are draft-plan scoped and
 do not overwrite the original target or submitted proposal. Authenticated
-approval/publication evidence for BC2-T12 remains open; frontend work must not
-present this slice as final BC02 acceptance until the matrix is green.
+approval/publication evidence for BC2-T12 is PASS in the BC02 matrix; frontend
+work may use the route contracts while preserving the separate Product/UX
+acceptance gate.
 
 Actual snapshots now carry source version, recognition identity and fiscal
 basis in addition to source module/reference, line, mapping version and
@@ -108,6 +109,29 @@ frontend implementation and human Product/UX acceptance remain separate gates.
 The backend contracts and evidence above are complete for this mission; do not
 turn the handoff into a claim of frontend or statutory-product acceptance.
 
+## Purchasing receipt and return boundary
+
+Module 28 owns the Planning commitment and reservation boundary: requisition
+precommitment, partial/full PR-to-PO conversion, approval history, idempotency,
+budget consumption and correction. Purchasing owns the commercial purchase
+order and supplier-return records; Inventory owns physical goods receipt,
+stock movement and physical supplier return. The backend evidence covers the
+authenticated Purchasing receipt handoff and the existing Inventory receipt /
+reversal acceptance. A broader Purchasing/Inventory receipt-return lifecycle
+is not a missing Planning requirement and must not be reimplemented in the
+frontend as a Planning-owned workflow.
+
+## FP47–FP53 backend responsibilities
+
+The backend responsibilities for the final persona and release rows are
+complete: seeded annual budget/control (FP47), assignment-scoped submission
+and delegated approval (FP48), driver/variance/forecast/scenario contracts
+(FP49), integrated management P&L/BS/CF/CFO and rollup read models (FP50),
+Purchasing reservation/control enforcement (FP51), fourteen owner providers
+plus deterministic snapshot/reconciliation evidence (FP52), and the complete
+release evidence chain (FP53). Frontend implementation and human Product/UX
+acceptance remain separate.
+
 ## Recovery closure update — 2026-11-28
 
 The backend recovery environment is reproducible with a disposable PostgreSQL
@@ -118,8 +142,8 @@ the earlier Debug output omitted current Planning seed mappings. A fresh
 migration-order defect in the Purchasing requisition forward-fix was corrected
 with a forward-only bootstrap script.
 
-Fresh evidence now includes Planning BC02 8/8, Planning 22/22 with one
-documented skip, BC03 1/1, owner financial 2/2, Package C 7/7, authenticated
+Fresh evidence now includes Planning BC02 8/8, Planning 23/23, BC03 1/1, owner
+financial 2/2, Package C 7/7, authenticated
 Budget Control HTTP 1/1, BC01 budget-control 4/4, Projects cross-module 14/14,
 seed replay 1/1, architecture 23/23, security 7/7, OpenAPI validation, and a
 zero-warning Release build.
@@ -136,7 +160,7 @@ Expenses lifecycle vector reconciles to canonical Ledger identities and the
 depreciation correction nets to zero. Planning-specific metrics are exported
 through authenticated `/internal/metrics` with bounded dimensions. The final
 local acceptance set includes Expenses 8/8, Planning unit 6/6, Package-C 7/7,
-BC03 1/1, owner/provider 3/3, the bounded performance harness, fresh
+BC03 1/1, calculation recovery 1/1, owner/provider 3/3, the bounded performance harness, fresh
 migration/seed replay, security, architecture and OpenAPI verification.
 
 Status: `BACKEND COMPLETE`.

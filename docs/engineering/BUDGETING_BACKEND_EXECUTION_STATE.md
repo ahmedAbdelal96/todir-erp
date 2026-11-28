@@ -1,5 +1,8 @@
 # Module 28 Backend Execution State
 
+The dated checkpoints below preserve execution history. The authoritative
+current state is the release consistency checkpoint at the end of this file.
+
 ## Authorized scope
 
 Backend and database implementation for Module 28 on `dev`, including the full FP00–FP53 backend scope, owner-module contracts/adapters, transactionally safe Budget Control, planning APIs, migration/seed, security, jobs, operational evidence, and acceptance. Frontend files and unrelated modules are outside this mission.
@@ -50,16 +53,17 @@ Backend and database implementation for Module 28 on `dev`, including the full F
 - Corrected transfer bucket resolution to use the source and target planning coordinates and reject same-bucket transfers.
 - Preserved the legacy `/grids/spread` batch-write contract and exposed exact residual-conserving spreading at `/grids/spread-exact`.
 
-## Remaining outside BC01
+## Current boundaries outside backend completion
 
-1. Preserve the separate broader Module 28 work items outside BC01: full receipt/return lifecycle, wider Ledger YTD mapping, Excel/rollup/BS/CF/forecast scope, and production operational certification.
-2. The final isolated BC01 regression gate is complete after the last source/documentation changes: Planning/Purchasing/Invoicing/Expenses, Ledger 56/56 twice, authenticated HTTP/security, architecture, OpenAPI, migration/seed replay and Release checks all passed locally.
+1. Frontend implementation, Product/UX acceptance, statutory reporting and human Product Owner approval remain separate gates.
+2. Enterprise-scale certification and production operations remain outside this local backend delivery; bounded performance and semantic recovery evidence are complete.
+3. Purchasing/Inventory own physical goods receipt and supplier-return lifecycle; Module 28 Planning owns the requisition/PO commitment and reservation boundary.
 
 ## Delivery status
 
-`BC01 VERIFIED` for this focused mission. The broader Module 28 backend remains
-`NOT COMPLETE` because capabilities outside BC01 are still partial/open. No
-production certification is implied.
+`BACKEND COMPLETE` for the authorized backend scope. The BC01 regression gate
+remains verified, and no production certification or frontend/Product acceptance
+is implied.
 
 ## BC02 closure checkpoint
 
@@ -460,3 +464,29 @@ and development seed replay on disposable PostgreSQL.
 
 Delivery status: `BACKEND COMPLETE`. Frontend implementation and human
 Product/UX acceptance remain separate handoff gates.
+
+## Release evidence consistency review — 2026-11-28
+
+This section supersedes earlier historical checkpoints that recorded the
+matrix as `NOT COMPLETE` while the corresponding evidence was still being
+executed. The authoritative current state is:
+
+- FP00–FP53 are PASS for the applicable Module 28 backend scope in the
+  coverage matrix. Frontend/Product acceptance, statutory reporting and
+  production-scale certification remain separate boundaries.
+- BC01 remains the verified BC-T01–BC-T12 PASS set; no verified BC01 behavior
+  was reopened.
+- BC02 is PASS for BC2-T01–BC2-T17 and BC2-S01–S06. The current Planning
+  OpenAPI contract count is 91 paths and Planning unit coverage is 6/6.
+- Fourteen owner providers are scoped and replay-stable. Real Payroll,
+  Expenses and Fixed Assets lifecycle evidence reconciles to canonical Ledger
+  identities exactly once, and the depreciation correction nets to zero.
+- Focused FP14 calculation recovery passed 1/1 after correcting the existing
+  calculation-run insert to persist `plan_version_id`. A stale Running run is
+  marked interrupted and retried; a live Running run is rejected.
+- Module 28 owns Purchasing requisition/PO commitment and reservation
+  controls. Purchasing/Inventory own physical goods receipt and supplier
+  return records; that broader owner lifecycle is not a missing Planning
+  implementation.
+- FP47–FP53 backend responsibilities are complete and handed off. Frontend
+  implementation and human Product/UX acceptance remain separate gates.
