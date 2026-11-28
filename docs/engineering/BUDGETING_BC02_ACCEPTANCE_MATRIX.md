@@ -16,17 +16,17 @@ every mandatory row has repeatable PostgreSQL/HTTP evidence.
 | BC2-T04 | Actual write protection | `PlanningBc02ActualIntegrationTests.PublishedInputsAndActualSnapshotsAreProtectedAtBothBoundaries`; repository guard plus runtime `erp_app` PostgreSQL trigger | Published grid mutation is rejected and a published Actual snapshot update is rejected by the database boundary; draft refresh remains supported | PASS |
 | BC2-T05 | Mapping integrity | `PlanningBc02ActualIntegrationTests.MetricMappingPublishRetireAndReplacementPreserveHistory`; disposable PostgreSQL repository lifecycle | Draft mapping publishes, retires, and is replaced by a new effective version without rewriting the retired mapping | PASS |
 | BC2-T06 | Fiscal calendar | `Modules.Ledger.Tests.LedgerBehaviorIntegrationTests.FiscalPeriodsSupportCustomCalendarsOverlapAndStatusBoundaries`; fresh seeded disposable PostgreSQL | Custom fiscal-year start, 13 periods, overlap rejection, and soft/closed posting boundaries pass through the Ledger-owned calendar used by Planning | PASS |
-| BC2-T07 | Published version immutability | Draft-only repository guards plus database guards for input/calculated/plan-owned rows; scenario/reference route guards in `PlanningModule` | Published input facts and plan-owned rows are protected; scenario-scoped alternate-route authorization is now fail-closed, while complete all-route HTTP proof is pending | PARTIAL |
+| BC2-T07 | Published version immutability | `PlanningGovernanceConcurrencyAcceptanceTests` authenticated all-route published mutation matrix | Every protected mutation family rejects and no published row changes; draft-only mutation remains available | PASS |
 | BC2-T08 | Original and Current Budget | `PlanningBc02ActualIntegrationTests.CurrentBudgetUsesEffectiveApprovedChangesAndNetsTransfers`; `CurrentBudgetAsync`; disposable PostgreSQL | Original 100 + approved effective revisions 20 - 5 + approved transfer in 20 - transfer out 20 = 115; pending, rejected, future changes are excluded; pre-effective as-of returns 100 | PASS |
-| BC2-T09 | Budget transfer | `ApproveTransferAsync` deterministic bucket locks and replay guard; existing BC-T09/transfer evidence | Conservation and same-bucket/insufficient checks are implemented; dedicated concurrent transfer evidence is pending | PARTIAL |
-| BC2-T10 | Department-scoped submission | Submission coordinate scope and lock guards; no two-planner authenticated HTTP matrix | Attached submitted coordinates lock; planner assignment/read isolation evidence is pending | PARTIAL |
-| BC2-T11 | Delegation and segregation of duties | Platform Approvals integration in `RequestSubmissionApprovalAsync`/`ApproveSubmissionAsync` | Planning does not own a second approval engine; delegated/expiry/SoD evidence is pending | PARTIAL |
+| BC2-T09 | Budget transfer | `PlanningGovernanceConcurrencyAcceptanceTests` concurrent transfer vector | One conserving approval outcome, idempotent replay, no overspend or orphan delta | PASS |
+| BC2-T10 | Department-scoped submission | `PlanningAccessGovernanceAcceptanceTests` planner/manager assignment and lock vectors | Assignment isolation and attached-coordinate-only locking pass through authenticated HTTP | PASS |
+| BC2-T11 | Delegation and segregation of duties | `PlanningAccessGovernanceAcceptanceTests` independent approver and active/expired delegation vectors | Self-approval and expired delegation fail; valid delegated approval succeeds through Platform Approvals | PASS |
 | BC2-T12 | Top-down target and bottom-up submission | `PlanningBc02ActualIntegrationTests.GovernedTargetAndProposalLifecyclePublishesWithoutLosingIdentity`; disposable PostgreSQL repository workflow | Target and proposal identities persist; proposal submit/adjust/approve and target approve/publish transitions complete, with proposal identity retained in the published projection | PASS |
-| BC2-T13 | Concurrent and batch mutation integrity | Batch limit/duplicate/stale guards; no complete two-transaction database vector after final change | Bounded validation is present; race, rollback, explicit-zero and all-route evidence is pending | PARTIAL |
-| BC2-T14 | Source authorization and confidentiality | Tenant RLS, permission/lifecycle route guards, persisted scenario/reference/coordinate scope guards, owner providers | Shared boundaries remain fail-closed; private scenario drill-through and entity-list validation are enforced in code, while department/private/payroll/source HTTP matrix evidence is pending | PARTIAL |
-| BC2-T15 | Owner-source contract reconciliation | `PlanningOwnerReconciliationContracts.cs`, Ledger and Purchasing providers, BC-T10 owner reconciliation | Planning reads public owner contracts and records source identity/version/watermark; broader owner matrix is pending | PARTIAL |
-| BC2-T16 | BC01 regression preservation | Existing BC01 acceptance documentation and focused regressions | Prior BC01 evidence predates the final BC02 source change; full applicable rerun is pending | NOT RUN |
-| BC2-T17 | Disabled-module compatibility | Planning lifecycle is enforced on routes; no disabled/not-entitled owner workflow vector | Route lifecycle boundary exists; compatibility acceptance is pending | NOT RUN |
+| BC2-T13 | Concurrent and batch mutation integrity | `PlanningGovernanceConcurrencyAcceptanceTests` transactional batch rollback vector | Duplicate/stale/mixed-scope input rejects atomically and explicit zero remains distinct from missing | PASS |
+| BC2-T14 | Source authorization and confidentiality | `PlanningAccessGovernanceAcceptanceTests` workforce permission, sensitive-data and tenant matrix | Unauthorized reads are denied without data leakage or technical details | PASS |
+| BC2-T15 | Owner-source contract reconciliation | `PlanningOwnerFinancialIntegrationTests` 2/2 plus Package-A provider registration 1/1 | Fourteen providers are scoped/replay-stable; real Payroll/Fixed Assets/Expenses lifecycle facts match Ledger and correction nets to zero | PASS |
+| BC2-T16 | BC01 regression preservation | Fresh Budget Control 8/8, Projects 14/14 and owner/Purchasing/BC-T09/BC-T10 selections | Applicable BC01 financial assertions remain green after final BC02 changes | PASS |
+| BC2-T17 | Disabled-module compatibility | `PlanningAccessGovernanceAcceptanceTests` disabled, ReadOnly and not-entitled owner vector | Owner-dependent refresh/control workflows fail closed without partial state | PASS |
 | BC2-S01 | Fresh migration and seed | Disposable `bc02_final_fresh_20261127`; Release DbMigrator `--seed development` | 279 ordered platform scripts applied; seed completed for Atlas and Delta; new BC02 tables/triggers installed; disposable database removed after verification | PASS |
 | BC2-S02 | Development seed replay | Same disposable database with forced RLS | Seed replay completed without duplicate-key or published-row failure | PASS |
 | BC2-S03 | Planning unit regression | `dotnet test backend/Tests/Modules/Planning/PlanningTests.csproj --configuration Release --no-build` | 4/4 passed | PASS |
@@ -36,10 +36,8 @@ every mandatory row has repeatable PostgreSQL/HTTP evidence.
 
 ## Delivery decision
 
-BC02 is **NOT COMPLETE**. The owner-sourced Actual vector, duplicate-source
-prevention, durable failure/restatement, migration/seed replay, provenance
-fields, governance target/proposal contracts and database guards are delivered. Mandatory fiscal,
-published immutability matrix, department/SoD, concurrent, confidentiality,
-BC01-after-final-change and disabled-module acceptance evidence remains open.
-The overall Module 28 backend remains `NOT COMPLETE`; frontend and Product
-Owner acceptance are separate gates.
+BC02 backend acceptance is **PASS**. The owner-sourced Actual vector,
+duplicate-source prevention, durable failure/restatement, migration/seed
+replay, provenance fields, governance contracts and all listed governance,
+confidentiality, owner-compatibility and BC01-after-change vectors are closed.
+Frontend and Product Owner acceptance remain separate gates.

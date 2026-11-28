@@ -502,7 +502,7 @@ public sealed partial class PlanningRepository(ITransactionCoordinator coordinat
     public Task<IReadOnlyList<SubmissionUnitView>> ListSubmissionUnitsAsync(TenantId tenant, Guid actor, Guid? planVersionId, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
     {
         var list = new List<SubmissionUnitView>();
-        await using var cmd = Cmd(c, "select u.id,u.plan_version_id,u.legal_entity_id,u.department_ref,u.name,u.state,u.row_version,u.approval_request_id from business_planning.submission_unit u where u.tenant_id=$1 and ($2::uuid is null or u.plan_version_id=$2) and (u.plan_version_id is null or exists(select 1 from business_planning.plan_version v left join business_planning.scenario s on s.tenant_id=v.tenant_id and s.id=v.scenario_id where v.tenant_id=u.tenant_id and v.id=u.plan_version_id and (s.id is null or s.created_by=$3 or exists(select 1 from business_planning.scenario_access a where a.tenant_id=s.tenant_id and a.scenario_id=s.id and a.user_id=$3 and a.access_level in ('Read','Edit','Adopt'))))) order by u.id desc limit 500", tenant.Value, Db(planVersionId), actor);
+        await using var cmd = Cmd(c, "select u.id,u.plan_version_id,u.legal_entity_id,u.department_ref,u.name,u.state,u.row_version,u.approval_request_id from business_planning.submission_unit u where u.tenant_id=$1 and ($2::uuid is null or u.plan_version_id=$2) and (u.assigned_to=$3 or (u.assigned_to is null and u.created_by=$3) or exists(select 1 from platform.membership m join platform.membership_role_assignment a on a.tenant_id=m.tenant_id and a.membership_id=m.id join platform.role r on r.tenant_id=a.tenant_id and r.id=a.role_id join platform.role_permission p on p.tenant_id=r.tenant_id and p.role_id=r.id where m.tenant_id=u.tenant_id and m.identity_id=$3 and m.status='Active' and r.is_active and p.permission_code='planning.versions.approve' and (a.scope_type='Tenant' or (a.scope_type='LegalEntity' and a.scope_id=u.legal_entity_id)))) and (u.plan_version_id is null or exists(select 1 from business_planning.plan_version v left join business_planning.scenario s on s.tenant_id=v.tenant_id and s.id=v.scenario_id where v.tenant_id=u.tenant_id and v.id=u.plan_version_id and (s.id is null or s.created_by=$3 or exists(select 1 from business_planning.scenario_access a where a.tenant_id=s.tenant_id and a.scenario_id=s.id and a.user_id=$3 and a.access_level in ('Read','Edit','Adopt'))))) order by u.id desc limit 500", tenant.Value, Db(planVersionId), actor);
         await using var reader = await cmd.ExecuteReaderAsync(token);
         while (await reader.ReadAsync(token)) list.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.IsDBNull(3) ? null : reader.GetGuid(3), reader.GetString(4), reader.GetString(5), reader.GetInt64(6), reader.IsDBNull(7) ? null : reader.GetGuid(7)));
         return (IReadOnlyList<SubmissionUnitView>)list;
@@ -634,6 +634,7 @@ public sealed partial class PlanningRepository(ITransactionCoordinator coordinat
     {
         if (request.CoordinateIds.Count == 0 || request.CoordinateIds.Count > 5000) throw new PlanningException("planning.submission_coordinate_invalid");
         var submission = await ReadSubmission(c, tenant.Value, id, token) ?? throw new PlanningException("planning.submission_not_found");
+        await EnsureSubmissionActor(c, tenant.Value, actor, id, token);
         if (submission.State is not ("Draft" or "Returned")) throw new PlanningException("planning.submission_scope_locked");
         foreach (var coordinateId in request.CoordinateIds)
         {
@@ -646,6 +647,7 @@ public sealed partial class PlanningRepository(ITransactionCoordinator coordinat
 
     public Task<SubmissionUnitView> AdvanceSubmissionAsync(TenantId tenant, Guid actor, Guid id, SubmissionTransitionRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
     {
+        await EnsureSubmissionActor(c, tenant.Value, actor, id, token);
         var current = await Scalar<string>(c, "select state from business_planning.submission_unit where tenant_id=$1 and id=$2 for update", token, tenant.Value, id) ?? throw new PlanningException("planning.submission_not_found");
         var action = request.Action.Trim().ToLowerInvariant();
         var next = action switch { "submit" when current is "Draft" or "Returned" => "Submitted", "return" when current == "Submitted" => "Returned", "approve" when current == "Submitted" => throw new PlanningException("planning.submission_approval_required"), "lock" when current == "Approved" => "Locked", _ => throw new PlanningException("planning.submission_transition_invalid") };
@@ -661,6 +663,7 @@ public sealed partial class PlanningRepository(ITransactionCoordinator coordinat
         {
             var submission = await ReadSubmission(c, tenant.Value, id, token) ?? throw new PlanningException("planning.submission_not_found");
             if (submission.State != "Submitted") throw new PlanningException("planning.submission_transition_invalid");
+            await EnsureSubmissionActor(c, tenant.Value, actor, id, token);
             return submission;
         }, ct);
         var approval = await approvals.RequestAsync(tenant, actor, membershipId, seed.LegalEntityId, "planning", "submission_unit", id, seed.RowVersion, null, "Department planning submission", "planning.versions.submit", ct);
@@ -779,6 +782,11 @@ public sealed partial class PlanningRepository(ITransactionCoordinator coordinat
     }
 
     private static async Task<SubmissionUnitView?> ReadSubmission(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct) { await using var cmd = Cmd(c, "select id,plan_version_id,legal_entity_id,department_ref,name,state,row_version,approval_request_id from business_planning.submission_unit where tenant_id=$1 and id=$2", tenant, id); await using var r = await cmd.ExecuteReaderAsync(ct); return await r.ReadAsync(ct) ? new SubmissionUnitView(r.GetGuid(0), r.GetGuid(1), r.GetGuid(2), r.IsDBNull(3) ? null : r.GetGuid(3), r.GetString(4), r.GetString(5), r.GetInt64(6), r.IsDBNull(7) ? null : r.GetGuid(7)) : null; }
+    private static async Task EnsureSubmissionActor(ITransactionContext c, Guid tenant, Guid actor, Guid submissionId, CancellationToken ct)
+    {
+        var allowed = await Scalar<bool>(c, "select exists(select 1 from business_planning.submission_unit u where u.tenant_id=$1 and u.id=$2 and (u.assigned_to=$3 or (u.assigned_to is null and u.created_by=$3) or exists(select 1 from platform.membership m join platform.membership_role_assignment a on a.tenant_id=m.tenant_id and a.membership_id=m.id join platform.role r on r.tenant_id=a.tenant_id and r.id=a.role_id join platform.role_permission p on p.tenant_id=r.tenant_id and p.role_id=r.id where m.tenant_id=u.tenant_id and m.identity_id=$3 and m.status='Active' and r.is_active and p.permission_code='planning.versions.approve' and (a.scope_type='Tenant' or (a.scope_type='LegalEntity' and a.scope_id=u.legal_entity_id)))))", ct, tenant, submissionId, actor);
+        if (!allowed) throw new PlanningException("planning.submission_access_denied");
+    }
     private sealed record VersionState(string State, long RowVersion);
     private static async Task<VersionState?> ReadVersionState(ITransactionContext c, Guid tenant, Guid id, CancellationToken ct)
     {

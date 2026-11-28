@@ -100,9 +100,13 @@ watermark. Published plan inputs and Actual snapshot facts are protected by
 both repository guards and PostgreSQL triggers. Development seed writes use
 the controlled owner role only.
 
-## Not yet safe to build against as final product scope
+## Product boundary still requiring separate acceptance
 
-The broader Module 28 scope still has separate gaps: coordinate-scoped submission locking, configurable delegated approvals, full typed DAG execution and recovery evidence, complete owner-source lifecycle/reconciliation breadth, closed-period rolling forecast evidence, complete PO receipt/return product lifecycle, XLSX staging/permissions matrix, multi-entity reconciliation, live planning observability and complete accuracy reporting. The statement response is an integrated planning projection, not a statutory statement; it still requires broader canonical opening-balance and source-owner acceptance before product claims. Do not create UI claims for broader capabilities until the backend matrix is updated with PASS evidence.
+The statement response is an integrated planning projection, not a statutory
+statement. Enterprise-scale performance certification, production operations,
+frontend implementation and human Product/UX acceptance remain separate gates.
+The backend contracts and evidence above are complete for this mission; do not
+turn the handoff into a claim of frontend or statutory-product acceptance.
 
 ## Recovery closure update — 2026-11-28
 
@@ -120,8 +124,24 @@ Budget Control HTTP 1/1, BC01 budget-control 4/4, Projects cross-module 14/14,
 seed replay 1/1, architecture 23/23, security 7/7, OpenAPI validation, and a
 zero-warning Release build.
 
-This is not a final backend product handoff. The closure register still has
-P0 evidence gates for published all-route immutability, concurrent transfers,
-submission assignment/isolation, delegated approvals and expiry, batch
-atomicity, confidentiality, complete owner lifecycle reconciliation, disabled
-owner compatibility, and complete BC01-after-change identity coverage.
+## Final backend handoff — 2026-11-28
+
+The backend closure register is complete for the authorized Module 28 backend
+scope. BC02 governance acceptance covers published-route immutability,
+concurrent transfer conservation, assignment isolation, Platform Approval SoD
+and delegation expiry, atomic batch writes, resource confidentiality, and
+disabled/ReadOnly/not-entitled owner compatibility. Fourteen registered owner
+providers are scoped and replay-stable; the real Payroll, Fixed Assets and
+Expenses lifecycle vector reconciles to canonical Ledger identities and the
+depreciation correction nets to zero. Planning-specific metrics are exported
+through authenticated `/internal/metrics` with bounded dimensions. The final
+local acceptance set includes Expenses 8/8, Planning unit 6/6, Package-C 7/7,
+BC03 1/1, owner/provider 3/3, the bounded performance harness, fresh
+migration/seed replay, security, architecture and OpenAPI verification.
+
+Status: `BACKEND COMPLETE`.
+
+Frontend implementation, Product/UX acceptance, and human approval remain
+separate gates. Frontend must use the authenticated route and permission
+contracts above, preserve tenant/legal-entity scope, and surface lifecycle or
+authorization failures as ordinary business messages.

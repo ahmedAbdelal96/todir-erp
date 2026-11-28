@@ -433,11 +433,30 @@ financial 2/2, Package C 7/7, Budget Control HTTP 1/1, BC01 budget-control
 selection 4/4, Projects cross-module acceptance 14/14, seed replay 1/1,
 architecture 23/23, security 7/7, OpenAPI validation, and Release build.
 
-Remaining P0 work is recorded only in
-`BUDGETING_BACKEND_FINAL_CLOSURE_REGISTER.md`: missing all-route published
-immutability, concurrent transfer, submission assignment/isolation, delegated
-approval/expiry, batch race/rollback, confidentiality, full owner lifecycle,
-disabled/not-entitled owner, and complete BC01-after-change evidence. Delivery
-status is `NOT COMPLETE`. Next action is to implement the missing acceptance
-vectors and fix any demonstrated in-scope defect, then rerun the affected
-fresh Release gate.
+That earlier checkpoint listed the governance and owner-source vectors as
+remaining; those vectors are closed in the final acceptance section below.
+
+## Final backend acceptance closure — 2026-11-28
+
+The closure register is now complete for the authorized backend scope. The
+new authenticated governance evidence covers BC2-T07, T09, T10, T11, T13,
+T14 and T17. The owner-source evidence covers all fourteen registered
+providers with stable scoped replay fingerprints, plus real Payroll, Fixed
+Assets and Expenses lifecycle facts reconciled to canonical Ledger identities;
+the corrected depreciation path nets to zero. Expenses budget-control
+acceptance is 8/8 after correcting two fixture defects exposed by real
+PostgreSQL: uncontrolled policies were no longer selected for the OPEX bucket,
+and canonical reconciliation now preserves the bucket's dimension key.
+
+Planning metrics are exported through the authenticated `/internal/metrics`
+endpoint with bounded workflow/outcome dimensions and no tenant/document
+labels. Package-C forecast/reporting is 7/7, BC03 analytics is 1/1, Planning
+unit coverage is 6/6, and the local performance harness plus seeded Planning
+index/query-plan review passed. The final return gate then completed after the
+last source change: Release solution build 0 warnings/0 errors, migration
+policy 286 SQL files, release controls 73/73, OpenAPI 91 Planning paths plus
+all existing contracts, targeted format verification and `git diff --check`,
+and development seed replay on disposable PostgreSQL.
+
+Delivery status: `BACKEND COMPLETE`. Frontend implementation and human
+Product/UX acceptance remain separate handoff gates.

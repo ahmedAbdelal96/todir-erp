@@ -47,19 +47,31 @@ public sealed class PlanningOwnerFinancialIntegrationTests
         foreach (var source in sources)
         {
             var facts = await source.ListFinancialFactsAsync(tenant, LegalEntity);
+            var replay = await source.ListFinancialFactsAsync(tenant, LegalEntity);
+            Assert.Equal(facts.Count, replay.Count);
+            Assert.Equal(
+                facts.Select(FactFingerprint).OrderBy(value => value, StringComparer.Ordinal),
+                replay.Select(FactFingerprint).OrderBy(value => value, StringComparer.Ordinal));
             Assert.All(facts, fact =>
             {
                 Assert.Equal(LegalEntity, fact.LegalEntityId);
                 Assert.False(string.IsNullOrWhiteSpace(fact.SourceModule));
+                Assert.False(string.IsNullOrWhiteSpace(fact.SourceVersion));
                 Assert.False(string.IsNullOrWhiteSpace(fact.RecognitionIdentity));
                 Assert.False(string.IsNullOrWhiteSpace(fact.MetricCode));
                 Assert.False(string.IsNullOrWhiteSpace(fact.CurrencyCode));
+                Assert.False(string.IsNullOrWhiteSpace(fact.SourceKind));
             });
             Assert.True(moduleNames.Add(source.SourceModule), $"Duplicate owner source registration: {source.SourceModule}");
         }
 
         Assert.Equal(sources.Length, moduleNames.Count);
     }
+
+    private static string FactFingerprint(Shared.Contracts.Planning.PlanningOwnerFinancialFact fact) =>
+        string.Join('|', fact.SourceModule, fact.SourceDocumentId, fact.SourceLineId, fact.SourceVersion,
+            fact.RecognitionIdentity, fact.LegalEntityId, fact.PeriodStart, fact.MetricCode,
+            fact.DimensionKeyJson, fact.SourceKind, fact.Amount, fact.CurrencyCode, fact.FiscalBasis);
 
     [Fact(DisplayName = "BC2-T15 Payroll and Fixed Assets owner facts reconcile with Ledger exactly once")]
     public async Task PayrollAndFixedAssetsOwnerFactsReconcileWithLedgerExactlyOnce()

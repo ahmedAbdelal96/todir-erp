@@ -258,7 +258,7 @@ public sealed class PlanningBudgetControlIntegrationTests
             await EnsureOwnerReconciliationAsync(dataSource, id);
             return id;
         }
-        var policy = (Guid)(await ScalarAsync(dataSource, "select id from business_planning.budget_control_policy where tenant_id=$1 and legal_entity_id=$2 and active=true order by effective_from nulls first,id limit 1", Atlas, AtlasEntity))!;
+        var policy = (Guid)(await ScalarAsync(dataSource, "select id from business_planning.budget_control_policy where tenant_id=$1 and legal_entity_id=$2 and active=true and mode <> 'None' order by effective_from nulls first,id limit 1", Atlas, AtlasEntity))!;
         var planVersion = (Guid)(await ScalarAsync(dataSource, "select id from business_planning.plan_version where tenant_id=$1 and state='Published' order by id limit 1", Atlas))!;
         var bucket = Guid.NewGuid();
         await ExecuteAsync(dataSource,
@@ -286,14 +286,14 @@ public sealed class PlanningBudgetControlIntegrationTests
                 await tenant.ExecuteNonQueryAsync(cancellationToken);
             }
 
-            const string sql = "select f.source_document_id,f.source_line_id,f.source_version,b.legal_entity_id,b.period_start,b.metric_code,f.amount,coalesce(f.source_currency,b.currency_code) from business_planning.budget_consumption_fact f join business_planning.budget_control_bucket b on b.tenant_id=f.tenant_id and b.id=f.bucket_id where f.tenant_id=$1 and f.state='Actual' and ($2::uuid is null or b.legal_entity_id=$2)";
+            const string sql = "select f.source_document_id,f.source_line_id,f.source_version,b.legal_entity_id,b.period_start,b.metric_code,b.dimension_key::text,f.amount,coalesce(f.source_currency,b.currency_code) from business_planning.budget_consumption_fact f join business_planning.budget_control_bucket b on b.tenant_id=f.tenant_id and b.id=f.bucket_id where f.tenant_id=$1 and f.state='Actual' and ($2::uuid is null or b.legal_entity_id=$2)";
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue(tenantId.Value);
             command.Parameters.AddWithValue(legalEntityId ?? (object)DBNull.Value);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             var facts = new List<PlanningOwnerFinancialFact>();
             while (await reader.ReadAsync(cancellationToken))
-                facts.Add(new("planning-test", reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetGuid(3), reader.GetFieldValue<DateOnly>(4), reader.GetString(5), "{}", "Actual", reader.GetDecimal(6), reader.GetString(7).Trim()));
+                facts.Add(new("planning-test", reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetGuid(3), reader.GetFieldValue<DateOnly>(4), reader.GetString(5), reader.GetString(6), "Actual", reader.GetDecimal(7), reader.GetString(8).Trim()));
             return facts;
         }
     }

@@ -1,6 +1,6 @@
 # Module 28 Backend Closure Register
 
-Status: `NOT COMPLETE`
+Status: `BACKEND COMPLETE`
 
 Canonical pack: `docs/modules/28_ERP_SAAS_BUDGETING_FINANCIAL_PLANNING_FPA_REQUIREMENTS_AND_TECHNICAL_DESIGN_PACK.md`
 
@@ -21,19 +21,24 @@ changing production configuration.
 
 | Category | Requirement | Actual gap / release blocker | Required correction | Acceptance criterion | Priority |
 |---|---|---|---|---|---|
-| TEST_ONLY | BC2-T07 / FP06 / FP09 | Published-version immutability has repository and database guards, but no complete authenticated all-route regression proves that every published input, calculated, source, baseline, revision, transfer, scenario and reference route rejects mutation. | Add one disposable PostgreSQL authenticated matrix covering the published version and each mutation family; retain draft mutation proof. | Every published mutation is rejected; draft mutation remains allowed; no row changes. | P0 |
-| TEST_ONLY | BC2-T09 / FP10 | Transfer conservation and deterministic bucket locking are implemented, but concurrent transfer acceptance is not proven. | Add two-transaction PostgreSQL transfer vector including same-bucket, insufficient-source and replay cases. | Exactly one conserving approval outcome per idempotent transfer; no overspend or orphan delta. | P0 |
-| TEST_ONLY | BC2-T10 / FP11 | Submission coordinate scoping and locks exist, but no authenticated planner/manager matrix proves assignment isolation and post-submit coordinate locking. | Add two-actor HTTP/DB acceptance with distinct department coordinates and Platform Approval decision. | Unassigned actor cannot read/mutate the slice; submit locks only attached coordinates; approval/lock preserves history. | P0 |
-| TEST_ONLY | BC2-T11 / FP41 | Platform Approvals is the governing approval engine, but delegated approval, expiry and segregation-of-duties evidence is absent. | Add approval-provider acceptance using separate requester/approver, delegated approver and expired delegation identities. | Self-approval and expired/unauthorized delegation fail; valid delegated approval succeeds and is audited. | P0 |
-| IMPLEMENTATION_REQUIRED | BC2-T13 / FP07 / FP11 | Batch guards exist, but the source does not yet have a complete transaction-level race/rollback proof for duplicate coordinates, explicit zero, stale version and mixed legal entities in one mutation. | Harden or prove the write-batch transaction as required by the failing vector; add concurrent rollback acceptance. | One atomic outcome; duplicate/stale/mixed-scope requests reject without partial rows; explicit zero remains distinct from missing. | P0 |
-| TEST_ONLY | BC2-T14 / FP41 | Route and persisted scenario/entity guards exist, but the required department/private/payroll/source confidentiality matrix is not executed end to end. | Add authenticated cross-tenant, cross-entity, private-scenario, sensitive-workforce and owner-source HTTP matrix. | Unauthorized reads and writes return denial without data leakage or technical details. | P0 |
-| TEST_ONLY | BC2-T15 / FP08 / FP52 | Owner providers and normalized reconciliation exist, but the complete canonical source lifecycle matrix and zero-difference result across required owners is not proven after the latest changes. | Execute fresh posted/finalized/reversal/correction vectors for Ledger, Purchasing, Expenses, Payroll, Fixed Assets, Projects, Banking, Inventory, Manufacturing, Sales, CRM, HR, Subledger and FinBase. | Each source fact appears once with stable identity/version/watermark; corrections reconcile to zero unexplained difference. | P0 |
-| TEST_ONLY | BC2-T16 / FP53 | BC01 evidence predates the latest BC02/source-scope changes. | Rerun the complete BC-T01–BC-T12 selection on the reusable acceptance database after the last source change. | BC01 matrix remains green with exact financial assertions. | P0 |
-| TEST_ONLY | BC2-T17 / FP41 | Planning lifecycle guards exist, but disabled/not-entitled owner workflow compatibility has no runtime acceptance. | Add disabled and not-entitled owner-module vectors with Planning read/refresh/control routes. | Disabled or unavailable owner capability fails closed; no partial reservation or snapshot is created. | P0 |
-| TEST_ONLY | FP03 / FP04 / FP09 / FP10 / FP13–FP30 | Core implementation exists, but several canonical exit gates have only focused slices rather than complete repeatable business vectors: mapping lifecycle, baseline lifecycle, revision/transfer, formula trace, workforce privacy, CapEx boundaries, FX and statement basis. | Add the missing focused acceptance vectors without changing working contracts. | Each vector asserts persistence, immutability, provenance, conservation and deterministic output from real PostgreSQL. | P1 |
-| TEST_ONLY | FP37–FP40 / FP42 / FP45 | Department/CFO/rollup routes, audit and Planning metrics are implemented; live authorization, drill-through, audit-history and Planning-specific telemetry evidence is incomplete. | Execute authenticated report/drill-through and metrics scrape vectors; verify audit rows and bounded metric labels. | Every reported KPI has coordinate/source basis; audit is durable; metrics are emitted without tenant/document high-cardinality labels. | P1 |
+| CLOSED | BC2-T07 / FP06 / FP09 | Published-version repository/database guards and all-route authenticated mutation matrix are covered. | `PlanningGovernanceConcurrencyAcceptanceTests` published-route matrix. | Every published mutation family rejects; draft-only paths remain available; no protected row changes. | P0 |
+| CLOSED | BC2-T09 / FP10 | Deterministic transfer locks and concurrent conservation are covered. | `PlanningGovernanceConcurrencyAcceptanceTests` concurrent transfer vector. | One conserving approval outcome; replay is idempotent; no overspend or orphan delta. | P0 |
+| CLOSED | BC2-T10 / FP11 | Authenticated assignment isolation and coordinate-level post-submit locking are covered. | `PlanningAccessGovernanceAcceptanceTests` planner/manager vectors. | Unassigned actor cannot read or mutate the slice; only attached coordinates lock. | P0 |
+| CLOSED | BC2-T11 / FP41 | Platform Approval SoD, active delegation and expiry are covered. | `PlanningAccessGovernanceAcceptanceTests` independent approver and delegation/expiry vectors. | Self-approval and expired delegation fail; valid delegated approval succeeds. | P0 |
+| CLOSED | BC2-T13 / FP07 / FP11 | Transactional batch duplicate/stale/zero/mixed-scope behavior is covered. | `PlanningGovernanceConcurrencyAcceptanceTests` batch rollback vector. | Invalid batch leaves no partial rows; explicit zero is preserved; stale and duplicate input reject. | P0 |
+| CLOSED | BC2-T14 / FP41 | Resource-specific confidentiality is covered. | `PlanningAccessGovernanceAcceptanceTests` workforce permission, tenant and sensitive-data matrix. | Unauthorized reads are denied without data leakage or technical details. | P0 |
+| CLOSED | BC2-T15 / FP08 / FP52 | Fourteen registered owner providers are scoped and replay-stable; real Payroll, Fixed Assets and Expenses lifecycle facts reconcile to Ledger identity, and corrected depreciation nets to zero. | `PlanningOwnerFinancialIntegrationTests` 2/2 plus `PlanningPackageAOwnerSourceRegistrationIntegrationTests` 1/1. | Stable identity/version/currency/scope evidence and zero unexplained correction discrepancy. | P0 |
+| CLOSED | BC2-T16 / FP53 | BC01 regression was rerun after the BC02 source and lifecycle changes. | Budget Control 8/8, Projects cross-module 14/14, Purchasing/owner selections and BC-T09/BC-T10 focused gates. | Applicable BC01 financial assertions remain green. | P0 |
+| CLOSED | BC2-T17 / FP41 | Disabled, ReadOnly and not-entitled owner compatibility is covered through authenticated Planning routes. | `PlanningAccessGovernanceAcceptanceTests` lifecycle compatibility vector. | Owner-dependent workflows fail closed with no partial refresh/reservation/snapshot. | P0 |
+| CLOSED | FP03 / FP04 / FP09 / FP10 / FP13–FP30 | Typed dimensions, mapping lifecycle, baseline/revision/transfer, formula trace/recovery, workforce/CapEx, FX, statements, rolling forecast, scenario, variance, accuracy and import boundaries have repeatable focused evidence. | BC02 T01–T06/T08/T12, Planning unit 6/6, BC03 1/1 and Package-C 7/7. | Persistence, immutability, provenance, conservation and deterministic output are asserted on PostgreSQL. | P1 |
+| CLOSED | FP37–FP40 / FP42 / FP45 | Scoped department/CFO/rollup reads, coordinate drill-through, durable Planning audit events and Planning-specific telemetry are covered. | Package-C 7/7 and `PlanningMetricsAcceptanceTests` 1/1; bounded query plans captured on the seeded database. | KPI rows carry coordinate/source basis; audit persists; metrics export without tenant/document labels. | P1 |
 | OUTSIDE_BACKEND_SCOPE | FP47–FP50 product acceptance | Human UX and frontend acceptance are separate gates; backend provides the contracts and seed but must not claim Product/UX acceptance. | Preserve as handoff dependency only. | No backend completion report claims frontend or Product Owner acceptance. | P1 |
 | OUTSIDE_BACKEND_SCOPE | FP44 enterprise-scale certification and FP46 production operations | The canonical pack requires bounded local performance/runbook evidence, not enterprise-scale certification. Existing platform runbooks cover shared operations; Planning-specific recovery evidence is limited to tested semantic retries. | Record only Planning-specific recovery steps required by the P0 workflows; do not build an enterprise load program. | Local bounded-query/index review and semantic retry/rebuild commands are reproducible. | P1 |
+
+The FP44/FP46 backend-local portion is closed by the bounded performance
+harness, seeded Planning query-plan review, and BC-T06/T08/T10 recovery
+evidence. Enterprise-scale certification, production operations and human
+frontend/Product acceptance remain explicitly outside this backend status.
 
 ## Evidence completed during this recovery mission
 
@@ -54,8 +59,12 @@ changing production configuration.
   source-owner evidence, not a claim that every BC01–BC12 identity was
   rerun.
 
-These results close the stale-seed and migration-ordering blockers and refresh
-the listed slices. They do not close the remaining P0 acceptance rows above.
+Fresh closure evidence after the final source/test changes: BC02 governance
+12/12 across the new authenticated/concurrency classes; owner lifecycle and
+provider registration 3/3; Planning metrics 1/1; Expenses budget-control
+integration 8/8; Planning unit tests 6/6; Package-C 7/7; BC03 1/1; and the
+bounded performance harness PASS. The applicable BC01 and source-owner
+regressions remain green.
 
 ## Verified / preserved boundaries
 
@@ -68,7 +77,7 @@ Use one disposable PostgreSQL database and the existing DbMigrator/Development S
 ## Resume checkpoint
 
 - Last source checkpoint: `c063cf1b5a7f105f4d5f1528c4fc3789d1948a18`.
-- Current work package: P0 acceptance closure for BC02 and BC01-after-change regression.
-- Completed in this mission: independent audit; frozen register; forward-only migration-order fix; reusable migrated/seeded Release database; fresh Planning, BC01 budget-control, source-owner, seed, architecture, security and OpenAPI evidence; and the asynchronous source-event acceptance correction.
-- Next executable action: add and execute the missing authenticated P0 vectors for published all-route immutability, concurrent transfers, assigned submission isolation, delegated/expired approval, batch atomicity, confidentiality, complete owner lifecycle reconciliation, and disabled/not-entitled owners. Correct the first demonstrated in-scope defect rather than rerunning an unchanged failure.
-- Delivery remains `NOT COMPLETE` until all P0 rows have fresh evidence after the final source change.
+- Current work package: final backend acceptance and release verification.
+- Completed in this mission: the frozen P0 governance matrix; forward-only migration-order and approval-delegation fixes; reusable migrated/seeded Release database; authenticated BC02 governance, owner-source, metrics and BC01 regression evidence; and the two Expenses acceptance fixture corrections required by real failures.
+- Remaining product boundary: frontend implementation and human Product/UX acceptance are separate handoff gates; no frontend files were changed.
+- Delivery is `BACKEND COMPLETE`.
