@@ -44,6 +44,18 @@ const ERROR_MAP: Record<string, { messageKey: string; defaultMessage: string }> 
   "expenses.card_transaction_not_found": {
     messageKey: "errors.cardNotFound",
     defaultMessage: "حركة بطاقة الشركة غير موجودة."
+  },
+  "planning.budget_approval_required": {
+    messageKey: "errors.budgetApprovalRequired",
+    defaultMessage: "يتطلب هذا المصروف موافقة استثناء موازنة قبل المتابعة."
+  },
+  "planning.budget_exceeded": {
+    messageKey: "errors.budgetExceeded",
+    defaultMessage: "تم حظر المصروف لعدم كفاية الرصيد المتاح في الموازنة المعتمدة."
+  },
+  "planning.budget_bucket_not_found": {
+    messageKey: "errors.budgetBucketInvalid",
+    defaultMessage: "وعاء الموازنة المحدد غير صالح أو غير نشط."
   }
 };
 

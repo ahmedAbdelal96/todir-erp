@@ -1267,6 +1267,138 @@ export const QUALITY_DESTINATIONS: readonly NavDestination[] = [
   }
 ];
 
+export const PLANNING_DESTINATIONS: readonly NavDestination[] = [
+  {
+    id: "planning-overview",
+    category: "finance",
+    moduleId: "planning",
+    path: "/planning",
+    labelKey: "tabs.overview",
+    fallbackLabel: "النظرة المالية الشاملة",
+    icon: "dashboard",
+    permission: {
+      anyOf: [
+        "planning.versions.read",
+        "planning.budget.read",
+        "planning.variance.read",
+        "planning.cycles.read",
+        "planning.models.read",
+        "planning.budget_control.read",
+        "planning.workforce.read",
+        "planning.capex.read"
+      ]
+    },
+    order: 10,
+    isPrimary: true,
+    mode: "read",
+    keywords: ["موازنة", "تخطيط مالي", "نظرة عامة", "cfo", "budget", "planning", "fpa"]
+  },
+  {
+    id: "planning-budgets",
+    category: "finance",
+    moduleId: "planning",
+    path: "/planning/budgets",
+    labelKey: "tabs.budgets",
+    fallbackLabel: "الموازنات والخطط",
+    icon: "account_balance_wallet",
+    permission: { anyOf: ["planning.budget.read", "planning.budget.manage", "planning.budget.revision", "planning.budget.transfer", "planning.cycles.read", "planning.versions.read"] },
+    order: 20,
+    mode: "mixed",
+    keywords: ["موازنة", "موازنة أصلية", "تعديل", "مناقلة", "دورة", "budget", "baseline", "revision", "transfer"]
+  },
+  {
+    id: "planning-grid",
+    category: "finance",
+    moduleId: "planning",
+    path: "/planning/grid",
+    labelKey: "tabs.grid",
+    fallbackLabel: "طاولة التخطيط المالي",
+    icon: "grid_on",
+    permission: { anyOf: ["planning.versions.read", "planning.versions.edit", "planning.export"] },
+    order: 30,
+    mode: "mixed",
+    keywords: ["جدول", "خلايا", "حساب", "توزيع", "excel", "grid", "spread", "import", "export"]
+  },
+  {
+    id: "planning-models",
+    category: "finance",
+    moduleId: "planning",
+    path: "/planning/models",
+    labelKey: "tabs.models",
+    fallbackLabel: "النماذج والمحركات",
+    icon: "tune",
+    permission: { anyOf: ["planning.versions.read", "planning.versions.edit", "planning.workforce.read", "planning.capex.read", "planning.assumptions.manage"] },
+    order: 40,
+    mode: "mixed",
+    keywords: ["إيرادات", "مصروفات تشغيلية", "قوى عاملة", "نفقات رأسمالية", "رأس مال عامل", "opex", "capex", "workforce", "revenue", "fx"]
+  },
+  {
+    id: "planning-forecasts",
+    category: "finance",
+    moduleId: "planning",
+    path: "/planning/forecasts",
+    labelKey: "tabs.forecasts",
+    fallbackLabel: "التوقعات والسيناريوهات",
+    icon: "trending_up",
+    permission: { anyOf: ["planning.versions.read", "planning.scenarios.create", "planning.scenarios.share", "planning.versions.edit"] },
+    order: 50,
+    mode: "mixed",
+    keywords: ["توقعات", "سيناريو", "مقارنة", "دقة", "forecast", "scenario", "rolling"]
+  },
+  {
+    id: "planning-analysis",
+    category: "finance",
+    moduleId: "planning",
+    path: "/planning/analysis",
+    labelKey: "tabs.analysis",
+    fallbackLabel: "التحليل والقوائم التقديرية",
+    icon: "analytics",
+    permission: { anyOf: ["planning.variance.read", "planning.versions.read", "planning.actuals.refresh"] },
+    order: 60,
+    mode: "mixed",
+    keywords: ["انحرافات", "قوائم مالية", "أرباح وخسائر", "تدفقات نقدية", "فعلي", "variance", "statements", "actuals"]
+  },
+  {
+    id: "planning-budget-control",
+    category: "finance",
+    moduleId: "planning",
+    path: "/planning/budget-control",
+    labelKey: "tabs.budgetControl",
+    fallbackLabel: "الرقابة على الموازنة",
+    icon: "shield",
+    permission: { anyOf: ["planning.budget_control.read", "planning.budget.manage", "planning.budget_control.override", "planning.budget_control.override.approve"] },
+    order: 70,
+    mode: "mixed",
+    keywords: ["رقابة", "التزام", "استثناء", "حجز", "budget control", "override", "commitment", "reconcile"]
+  },
+  {
+    id: "planning-submissions",
+    category: "finance",
+    moduleId: "planning",
+    path: "/planning/submissions",
+    labelKey: "tabs.submissions",
+    fallbackLabel: "مهام الأقسام والاعتمادات",
+    icon: "assignment_turned_in",
+    permission: { anyOf: ["planning.versions.read", "planning.versions.edit", "planning.versions.submit", "planning.versions.approve", "planning.budget.manage"] },
+    order: 80,
+    mode: "mixed",
+    keywords: ["أقسام", "اعتماد", "مستهدف", "مقترح", "submissions", "targets", "proposals", "approvals"]
+  },
+  {
+    id: "planning-config",
+    category: "finance",
+    moduleId: "planning",
+    path: "/planning/config",
+    labelKey: "tabs.config",
+    fallbackLabel: "إعدادات التخطيط",
+    icon: "settings",
+    permission: { anyOf: ["planning.models.read", "planning.models.manage", "planning.cycles.manage"] },
+    order: 90,
+    mode: "mixed",
+    keywords: ["إعدادات", "أبعاد", "مقاييس", "معادلات", "ربط", "config", "dimensions", "metrics", "formulas"]
+  }
+];
+
 export function isDestinationPermitted(
   dest: NavDestination,
   access: EffectiveAccess | null | undefined

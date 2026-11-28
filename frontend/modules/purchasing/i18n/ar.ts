@@ -333,6 +333,9 @@ export const ar = {
     returnReasonRequired: "يجب تسجيل سبب طلب الإرجاع",
     returnLinesRequired: "يجب تحديد بند واحد على الأقل لإرجاعه",
     forbidden: "ليس لديك صلاحية للوصول إلى هذه البيانات",
+    budgetApprovalRequired: "يتطلب أمر الشراء موافقة استثناء موازنة (Budget Override) قبل المتابعة.",
+    budgetExceeded: "تم حظر أمر الشراء لعدم كفاية الرصيد المتاح في الموازنة المعتمدة.",
+    budgetBucketInvalid: "وعاء الموازنة المحدد غير صالح أو غير نشط في هذه الفترة.",
     generic: "حدث خطأ غير متوقع أثناء معالجة طلب المشتريات"
   }
 } as const;

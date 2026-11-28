@@ -201,5 +201,26 @@ export function buildCommandPaletteItems({
     });
   }
 
+  if (canPerform("planning.versions.read", "planning") || canPerform("planning.budget.read", "planning")) {
+    items.push({
+      id: "action-planning-overview",
+      title: t("commandPalette.actionPlanningOverview", "الموازنات والتخطيط المالي (FP&A)"),
+      subtitle: t("commandPalette.subtitlePlanning", "النظرة المالية الشاملة، الموازنات والانحرافات"),
+      category: "navigation",
+      keywords: ["موازنة", "تخطيط", "budget", "planning", "fpa", "forecast"],
+      onSelect: () => navigate("/planning")
+    });
+  }
+  if (canPerform("planning.versions.edit", "planning")) {
+    items.push({
+      id: "action-planning-grid",
+      title: t("commandPalette.actionPlanningGrid", "طاولة التخطيط المالي"),
+      subtitle: t("commandPalette.subtitlePlanningGrid", "إدخال وتعديل الموازنات والتوقعات وحساب المعادلات"),
+      category: "navigation",
+      keywords: ["جدول", "موازنة", "توزيع", "grid", "spread"],
+      onSelect: () => navigate("/planning/grid")
+    });
+  }
+
   return items;
 }

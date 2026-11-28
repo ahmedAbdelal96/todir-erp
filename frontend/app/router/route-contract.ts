@@ -34,7 +34,7 @@ export type ModuleNavigationRegistration = Readonly<{
   id: string;
   moduleIds: readonly string[];
   path: string;
-  navigationKey: "home" | "users" | "loginDomain" | "directory" | "catalog" | "invoicing" | "payments" | "accounting" | "import" | "financeBase" | "pricing" | "subledger" | "tax" | "inventory" | "sales" | "purchasing" | "hr" | "payroll" | "crm" | "pos" | "expenses" | "fixedAssets" | "projects" | "service" | "banking" | "manufacturing" | "quality" | "preview" | "settings";
+  navigationKey: "home" | "users" | "loginDomain" | "directory" | "catalog" | "invoicing" | "payments" | "accounting" | "import" | "financeBase" | "pricing" | "subledger" | "tax" | "inventory" | "sales" | "purchasing" | "hr" | "payroll" | "crm" | "pos" | "expenses" | "fixedAssets" | "projects" | "service" | "banking" | "manufacturing" | "quality" | "planning" | "preview" | "settings";
   permission?: string | undefined;
   permissions?: PermissionCondition | undefined;
   category?: NavigationCategory | undefined;

@@ -36,7 +36,11 @@ const ERROR_MAP: Record<string, string> = {
   "purchasing.buy_price_missing": "errors.buyPriceMissing",
   "purchasing.buy_price_required": "errors.buyPriceRequired",
   "purchasing.close_short_reason_required": "errors.closeShortReasonRequired",
-  "purchasing.approved_requires_amendment": "errors.approvedRequiresAmendment"
+  "purchasing.approved_requires_amendment": "errors.approvedRequiresAmendment",
+  "planning.budget_approval_required": "errors.budgetApprovalRequired",
+  "planning.budget_exceeded": "errors.budgetExceeded",
+  "planning.budget_bucket_not_found": "errors.budgetBucketInvalid",
+  "planning.budget_bucket_required": "errors.budgetBucketInvalid"
 };
 
 export function mapPurchasingError(error: unknown): MappedPurchasingError {

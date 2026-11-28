@@ -333,6 +333,9 @@ export const en = {
     returnReasonRequired: "Reason is required for supplier return request",
     returnLinesRequired: "At least one item must be selected for return",
     forbidden: "You do not have access to this resource",
+    budgetApprovalRequired: "Purchase order requires an approved Budget Override before proceeding.",
+    budgetExceeded: "Purchase order blocked due to insufficient available budget.",
+    budgetBucketInvalid: "Selected budget bucket is invalid or inactive for this period.",
     generic: "An unexpected error occurred while processing the purchasing request"
   }
 } as const;
