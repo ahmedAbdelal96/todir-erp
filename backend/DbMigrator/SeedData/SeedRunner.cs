@@ -38,13 +38,16 @@ public static class SeedRunner
             var identity = await RunStageAsync(connection, tenant, context => IdentitySeed.SeedAsync(context, password, protectedMfaSecret, recoveryDigests, cancellationToken), cancellationToken);
             var directory = await RunStageAsync(connection, tenant, context => DirectorySeed.SeedAsync(context, cancellationToken), cancellationToken);
             var hr = await RunStageAsync(connection, tenant, context => HrSeed.SeedAsync(context, cancellationToken), cancellationToken);
-            var expenses = await RunStageAsync(connection, tenant, context => ExpensesSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var payroll = await RunStageAsync(connection, tenant, context => PayrollSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var catalog = await RunStageAsync(connection, tenant, context => CatalogSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var finance = await RunStageAsync(connection, tenant, context => FinanceBaseSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var pricing = await RunStageAsync(connection, tenant, context => PricingSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var tax = await RunStageAsync(connection, tenant, context => TaxSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var ledger = await RunStageAsync(connection, tenant, context => LedgerSeed.SeedAsync(context, cancellationToken), cancellationToken);
+            // ExpensesSeed publishes a deterministic posted ExpenseRecognized fact
+            // and therefore runs after the Ledger owner has created the posting
+            // rule, journal, period, and account mappings it references.
+            var expenses = await RunStageAsync(connection, tenant, context => ExpensesSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var subledger = await RunStageAsync(connection, tenant, context => SubledgerSeed.SeedAsync(context, cancellationToken), cancellationToken);
             _ = await RunStageAsync(connection, tenant, context => LedgerOpeningSeed.SeedAsync(context, cancellationToken), cancellationToken);
             var invoicing = await RunStageAsync(connection, tenant, context => InvoicingSeed.SeedAsync(context, cancellationToken), cancellationToken);

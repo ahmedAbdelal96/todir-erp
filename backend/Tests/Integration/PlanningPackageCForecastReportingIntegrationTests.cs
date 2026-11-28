@@ -31,6 +31,18 @@ public sealed class PlanningPackageCForecastReportingIntegrationTests
         Assert.Equal((long)(await ScalarAsync(admin, "select count(*) from business_planning.planning_coordinate where tenant_id=$1 and plan_version_id=$2", TenantId, version))!, (long)(await ScalarAsync(admin, "select count(*) from business_planning.planning_coordinate where tenant_id=$1 and plan_version_id=$2", TenantId, adopted.Id))!);
     }
 
+    [Fact(DisplayName = "Package C scenario plan versions enforce persisted owner access")]
+    public async Task PackageCScenarioPlanVersionAccessIsOwnerBound()
+    {
+        var (repository, _, actor, version, _) = await ContextAsync("Budget");
+        var scenario = await repository.CreateScenarioAsync(new(TenantId), actor, new("Package C access scenario", "WhatIf", version, "Private"), default);
+        var adopted = await repository.AdoptScenarioAsync(new(TenantId), actor, scenario.Id, new("Package C access version", "Forecast", null), default);
+
+        Assert.True(await repository.CanAccessPlanVersionAsync(new(TenantId), actor, adopted.Id, "Read", default));
+        Assert.True(await repository.CanAccessPlanVersionAsync(new(TenantId), actor, adopted.Id, "Edit", default));
+        Assert.False(await repository.CanAccessPlanVersionAsync(new(TenantId), Guid.CreateVersion7(), adopted.Id, "Read", default));
+    }
+
     [Fact(DisplayName = "Package C variance decomposition exposes numeric traceable drivers")]
     public async Task PackageCVarianceDecompositionIsNumericAndTraceable()
     {

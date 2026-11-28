@@ -318,3 +318,30 @@ policy validation passed, and targeted formatter plus `git diff --check`
 passed. The full FP00–FP53 status remains `NOT COMPLETE` because the broader
 owner lifecycle, scenario/SoD, CFO drill-through, rollup, observability,
 performance and business-acceptance evidence listed above remains open.
+
+## Scenario confidentiality and fresh-seed correction — 2026-11-28
+
+Planning plan-version reads and mutations that carry a plan-version identity now
+perform a persisted scenario access check in addition to tenant, permission,
+legal-entity, and lifecycle checks. Private scenario versions are owner-bound;
+shared versions honor persisted `Read`, `Edit`, and `Adopt` levels. Version and
+submission listings filter inaccessible scenario versions, version comparison
+checks both sides, and the actual-basis endpoint uses the same guard. The
+disposable PostgreSQL regression `Package C scenario plan versions enforce
+persisted owner access` proves owner access, edit access, and denial for an
+unrelated actor.
+
+The Development Seed ordering now creates the posted Expenses-owned
+`ExpenseRecognized` fact only after Ledger has created its posting period,
+journal, configuration, rule, and account mappings. Seed replay uses insert-only
+behavior for immutable posted Ledger rows and never attempts to update posted
+entries or lines. A fresh database applied all 281 ordered scripts and
+completed the full Development Seed; a second seed replay also completed. The
+fresh Planning integration selection passed 22/22 with one intentionally
+skipped Manufacturing fixture.
+
+These corrections improve the covered backend boundary but do not close the
+remaining mandatory full-module gaps listed in the coverage matrix. Delivery
+status remains `NOT COMPLETE` until the outstanding FP00–FP53 financial,
+owner-lifecycle, reporting, observability, performance, recovery,
+security-matrix, and acceptance evidence is completed.
