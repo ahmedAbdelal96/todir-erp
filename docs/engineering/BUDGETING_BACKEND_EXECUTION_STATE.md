@@ -345,3 +345,45 @@ remaining mandatory full-module gaps listed in the coverage matrix. Delivery
 status remains `NOT COMPLETE` until the outstanding FP00–FP53 financial,
 owner-lifecycle, reporting, observability, performance, recovery,
 security-matrix, and acceptance evidence is completed.
+
+## Scoped reporting and reference authorization continuation — 2026-11-28
+
+Planning report routes now validate every requested legal entity against the
+authenticated permission scope and reject duplicate or unknown entity IDs at
+the repository boundary. CFO and rollup output includes coordinate identity;
+department-planner output includes its coordinate IDs for controlled
+drill-through. Variance driver/decomposition reads, rolling-forecast source
+reads, forecast accuracy's two versions, and object routes for versions,
+calculation runs, submissions, assumptions, budgets, reservations, transfers,
+overrides, CapEx, targets, proposals, and Actual refresh runs now enforce the
+persisted scenario access of the referenced plan version before executing.
+
+Fresh disposable PostgreSQL evidence after the source change: Release build
+passed with zero warnings/errors; Planning unit tests passed 6/6; Package-C
+forecast/reporting passed 7/7; migration and Development Seed completed on a
+new database and the database was removed safely. The full Module 28 matrix
+remains `NOT COMPLETE`: source lifecycle breadth, full HTTP/SoD matrix,
+closed-period/restart proof, Excel negative/staging proof, live observability,
+performance, recovery runbooks, and FP47–FP53 acceptance still require their
+canonical evidence.
+
+## Scoped backend gap correction — 2026-11-28
+
+The follow-up implementation preserves the existing reporting/entity-scope
+changes and closes the concrete gaps found in this mission: rolling forecast
+source access is checked before copying a bounded future horizon; forecast
+accuracy requires read access to both pinned versions; coordinate drill-through
+resolves and authorizes the coordinate's legal entity; variance rows expose
+coordinate identity and favorable/unfavorable status; department control totals
+honor department dimensions; and owner reconciliation includes normalized
+dimension keys in its comparison watermark. Package-C tests now assert the
+rolling upper bound, variance drill-through identity, department coordinate
+identity, and rollup coordinate identity.
+
+Post-change local verification: the Planning Release build passed with 0
+warnings and 0 errors, the IntegrationTests project built successfully, the
+Planning unit suite passed 6/6, and `git diff --check` passed. The seven-test
+Package-C selection could not reach database setup in this shell because
+`TODIR_DATABASE_CONNECTION` and `TODIR_P04_ADMIN_CONNECTION` are unavailable;
+the current evidence therefore does not replace the prior disposable-Postgres
+claim. Delivery remains `NOT COMPLETE`.

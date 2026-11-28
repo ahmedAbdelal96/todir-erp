@@ -77,13 +77,14 @@ public sealed partial class PlanningRepository
     {
         if (request.HorizonMonths is < 1 or > 60) throw new PlanningException("planning.forecast_horizon_invalid");
         var source = await GetPlanVersion(c, tenant.Value, request.SourceVersionId, token) ?? throw new PlanningException("planning.version_not_found");
+        await EnsurePlanVersionAccess(c, tenant.Value, request.SourceVersionId, actor, "Read", token);
         // A Budget can be the governed baseline for the first rolling Forecast; subsequent
         // rolls remain Forecast versions.  Neither source kind is mutated by this operation.
         if (source.VersionKind is not ("Forecast" or "Budget")) throw new PlanningException("planning.forecast_source_invalid");
         var next = Guid.CreateVersion7();
-        await Exec(c, "insert into business_planning.plan_version(tenant_id,id,cycle_id,model_version_id,name,version_kind,state,scenario_id,actual_cutoff,baseline_version_id,created_by) select tenant_id,$3,cycle_id,model_version_id,$4,'Forecast','Draft',scenario_id,$5,$2,$6 from business_planning.plan_version where tenant_id=$1 and id=$2", token, tenant.Value, request.SourceVersionId, next, string.IsNullOrWhiteSpace(request.Name) ? source.Name + " Rolling" : request.Name.Trim(), request.ActualCutoff, actor);
+        await Exec(c, "insert into business_planning.plan_version(tenant_id,id,cycle_id,model_version_id,name,version_kind,state,scenario_id,actual_cutoff,actual_snapshot_id,baseline_version_id,created_by) select tenant_id,$3,cycle_id,model_version_id,$4,'Forecast','Draft',scenario_id,$5,actual_snapshot_id,$2,$6 from business_planning.plan_version where tenant_id=$1 and id=$2", token, tenant.Value, request.SourceVersionId, next, string.IsNullOrWhiteSpace(request.Name) ? source.Name + " Rolling" : request.Name.Trim(), request.ActualCutoff, actor);
         await Exec(c, "insert into business_planning.planning_coordinate(tenant_id,id,plan_version_id,legal_entity_id,period_start,metric_code,dimension_key,signature) select tenant_id,gen_random_uuid(),$3,legal_entity_id,period_start,metric_code,dimension_key,signature||':roll:'||$3::text from business_planning.planning_coordinate where tenant_id=$1 and plan_version_id=$2 and period_start > $4 and period_start <= ($4 + ($5 || ' months')::interval)::date", token, tenant.Value, request.SourceVersionId, next, request.ActualCutoff, request.HorizonMonths);
-        await Exec(c, "insert into business_planning.planning_input_fact(tenant_id,id,coordinate_id,amount,currency_code,value_kind,source_label,explicit_zero,source_watermark,updated_by) select f.tenant_id,gen_random_uuid(),c2.id,f.amount,f.currency_code,f.value_kind,f.source_label,f.explicit_zero,f.source_watermark,$4 from business_planning.planning_input_fact f join business_planning.planning_coordinate c1 on c1.tenant_id=f.tenant_id and c1.id=f.coordinate_id join business_planning.planning_coordinate c2 on c2.tenant_id=c1.tenant_id and c2.plan_version_id=$3 and c2.signature=c1.signature||':roll:'||$3::text where f.tenant_id=$1 and c1.plan_version_id=$2 and c1.period_start > $5", token, tenant.Value, request.SourceVersionId, next, actor, request.ActualCutoff);
+        await Exec(c, "insert into business_planning.planning_input_fact(tenant_id,id,coordinate_id,amount,currency_code,value_kind,source_label,explicit_zero,source_watermark,updated_by) select f.tenant_id,gen_random_uuid(),c2.id,f.amount,f.currency_code,f.value_kind,f.source_label,f.explicit_zero,f.source_watermark,$4 from business_planning.planning_input_fact f join business_planning.planning_coordinate c1 on c1.tenant_id=f.tenant_id and c1.id=f.coordinate_id join business_planning.planning_coordinate c2 on c2.tenant_id=c1.tenant_id and c2.plan_version_id=$3 and c2.signature=c1.signature||':roll:'||$3::text where f.tenant_id=$1 and c1.plan_version_id=$2 and c1.period_start > $5 and c1.period_start <= ($5 + ($6 || ' months')::interval)::date", token, tenant.Value, request.SourceVersionId, next, actor, request.ActualCutoff, request.HorizonMonths);
         await Audit(c, tenant.Value, actor, "rolling_forecast_advanced", next, token);
         return await GetPlanVersion(c, tenant.Value, next, token) ?? throw new PlanningException("planning.version_not_found");
     }, ct);
@@ -114,21 +115,24 @@ public sealed partial class PlanningRepository
 
     public Task<IReadOnlyList<RollupLineView>> QueryRollupAsync(TenantId tenant, RollupRequest request, CancellationToken ct) => coordinator.ExecuteAsync(tenant, async (c, token) =>
     {
-        if (request.LegalEntityIds.Count == 0 || request.LegalEntityIds.Count > 100) throw new PlanningException("planning.rollup_scope_invalid");
+        if (request.LegalEntityIds.Count == 0 || request.LegalEntityIds.Count > 100 || request.LegalEntityIds.Distinct().Count() != request.LegalEntityIds.Count) throw new PlanningException("planning.rollup_scope_invalid");
+        if (request.From > request.To || string.IsNullOrWhiteSpace(request.MetricCode) || string.IsNullOrWhiteSpace(request.ReportingCurrencyCode) || request.ReportingCurrencyCode.Trim().Length != 3) throw new PlanningException("planning.rollup_request_invalid");
+        var rollupEntityCount = await Scalar<long>(c, "select count(*) from platform.legal_entity where tenant_id=$1 and id=any($2)", token, tenant.Value, request.LegalEntityIds.ToArray());
+        if (rollupEntityCount != request.LegalEntityIds.Count) throw new PlanningException("planning.entity_scope_invalid");
         var result = new List<RollupLineView>();
         var sourceRows = new List<RollupSeed>();
-        await using var command = Cmd(c, "select c.legal_entity_id,c.period_start,coalesce(cf.amount,i.amount,0),coalesce(cf.currency_code,i.currency_code,'EGP') from business_planning.planning_coordinate c left join business_planning.planning_input_fact i on i.tenant_id=c.tenant_id and i.coordinate_id=c.id left join business_planning.planning_calculated_fact cf on cf.tenant_id=c.tenant_id and cf.coordinate_id=c.id where c.tenant_id=$1 and c.plan_version_id=$2 and c.legal_entity_id = any($3) and c.metric_code=$4 and c.period_start between $5 and $6 order by c.legal_entity_id,c.period_start", tenant.Value, request.PlanVersionId, request.LegalEntityIds.ToArray(), request.MetricCode, request.From, request.To);
+        await using var command = Cmd(c, "select c.id,c.legal_entity_id,c.period_start,coalesce(cf.amount,i.amount,0),coalesce(cf.currency_code,i.currency_code,'EGP') from business_planning.planning_coordinate c left join business_planning.planning_input_fact i on i.tenant_id=c.tenant_id and i.coordinate_id=c.id left join business_planning.planning_calculated_fact cf on cf.tenant_id=c.tenant_id and cf.coordinate_id=c.id where c.tenant_id=$1 and c.plan_version_id=$2 and c.legal_entity_id = any($3) and c.metric_code=$4 and c.period_start between $5 and $6 order by c.legal_entity_id,c.period_start", tenant.Value, request.PlanVersionId, request.LegalEntityIds.ToArray(), request.MetricCode, request.From, request.To);
         await using var reader = await command.ExecuteReaderAsync(token);
         while (await reader.ReadAsync(token))
         {
-            sourceRows.Add(new(reader.GetGuid(0), reader.GetFieldValue<DateOnly>(1), reader.GetDecimal(2), reader.GetString(3).Trim().ToUpperInvariant()));
+            sourceRows.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetFieldValue<DateOnly>(2), reader.GetDecimal(3), reader.GetString(4).Trim().ToUpperInvariant()));
         }
         await reader.CloseAsync();
         foreach (var sourceRow in sourceRows)
         {
             var entity = sourceRow.Entity; var period = sourceRow.Period; var sourceAmount = sourceRow.Amount; var sourceCurrency = sourceRow.Currency; var reportingCurrency = request.ReportingCurrencyCode.Trim().ToUpperInvariant();
             decimal rate = string.Equals(sourceCurrency, reportingCurrency, StringComparison.OrdinalIgnoreCase) ? 1m : await Scalar<decimal?>(c, "select rate from business_planning.planning_fx_rate where tenant_id=$1 and plan_version_id=$2 and period_start=$3 and from_currency=$4 and to_currency=$5 order by rate_type='Scenario' desc limit 1", token, tenant.Value, request.PlanVersionId, period, sourceCurrency, reportingCurrency) ?? throw new PlanningException("planning.fx_rate_missing");
-            result.Add(new(entity, period, request.MetricCode, sourceAmount, rate, decimal.Round(sourceAmount * rate, 4, MidpointRounding.AwayFromZero), sourceCurrency, reportingCurrency, "planning_coordinate_input_or_calculated"));
+            result.Add(new(sourceRow.CoordinateId, entity, period, request.MetricCode, sourceAmount, rate, decimal.Round(sourceAmount * rate, 4, MidpointRounding.AwayFromZero), sourceCurrency, reportingCurrency, "planning_coordinate_input_or_calculated"));
         }
         return (IReadOnlyList<RollupLineView>)result;
     }, ct);
@@ -277,7 +281,7 @@ public sealed partial class PlanningRepository
     private sealed record FormulaSeed(string Code, string Expression, string OutputMetricCode, IReadOnlyList<string> Dependencies);
     private sealed record WorkingCapitalSeed(decimal Dso, decimal Dpo, decimal InventoryDays);
     private sealed record CapexSeed(decimal Amount, DateOnly PurchasePeriod, DateOnly? InServicePeriod, int UsefulLifeMonths);
-    private sealed record RollupSeed(Guid Entity, DateOnly Period, decimal Amount, string Currency);
+    private sealed record RollupSeed(Guid CoordinateId, Guid Entity, DateOnly Period, decimal Amount, string Currency);
     private sealed record CsvRow(Guid LegalEntityId, DateOnly PeriodStart, string MetricCode, JsonElement DimensionKey, decimal Amount, string CurrencyCode, bool ExplicitZero, string? SourceLabel);
     private sealed record OpexIdentity(DateOnly Period, Guid? DepartmentRef, string CategoryCode, string? AccountRef, string? CostCenterRef, decimal Amount)
     {

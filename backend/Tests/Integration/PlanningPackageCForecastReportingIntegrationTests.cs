@@ -9,6 +9,7 @@ namespace KernelIntegrationTests;
 public sealed class PlanningPackageCForecastReportingIntegrationTests
 {
     private static readonly Guid TenantId = Guid.Parse("c9fea3c8-249d-f150-a53a-84f5a891c82b");
+    private static readonly string[] FavorabilityStates = ["Favorable", "Unfavorable", "OnTrack"];
 
     [Fact(DisplayName = "Package C rolling forecast preserves source and limits copied inputs to future periods")]
     public async Task PackageCRollingForecastPreservesSourceAndCopiesOnlyFutureInputs()
@@ -19,6 +20,7 @@ public sealed class PlanningPackageCForecastReportingIntegrationTests
         Assert.NotEqual(version, rolled.Id);
         Assert.Equal(sourceName, (string)(await ScalarAsync(admin, "select name from business_planning.plan_version where tenant_id=$1 and id=$2", TenantId, version))!);
         Assert.Equal(0L, (long)(await ScalarAsync(admin, "select count(*) from business_planning.planning_input_fact f join business_planning.planning_coordinate c on c.tenant_id=f.tenant_id and c.id=f.coordinate_id where f.tenant_id=$1 and c.plan_version_id=$2 and c.period_start <= $3", TenantId, rolled.Id, new DateOnly(2027, 1, 1)))!);
+        Assert.Equal(0L, (long)(await ScalarAsync(admin, "select count(*) from business_planning.planning_input_fact f join business_planning.planning_coordinate c on c.tenant_id=f.tenant_id and c.id=f.coordinate_id where f.tenant_id=$1 and c.plan_version_id=$2 and c.period_start > $3", TenantId, rolled.Id, new DateOnly(2027, 4, 1)))!);
     }
 
     [Fact(DisplayName = "Package C scenario adoption copies the basis without mutating the source")]
@@ -34,13 +36,18 @@ public sealed class PlanningPackageCForecastReportingIntegrationTests
     [Fact(DisplayName = "Package C scenario plan versions enforce persisted owner access")]
     public async Task PackageCScenarioPlanVersionAccessIsOwnerBound()
     {
-        var (repository, _, actor, version, _) = await ContextAsync("Budget");
+        var (repository, admin, actor, version, _) = await ContextAsync("Budget");
         var scenario = await repository.CreateScenarioAsync(new(TenantId), actor, new("Package C access scenario", "WhatIf", version, "Private"), default);
         var adopted = await repository.AdoptScenarioAsync(new(TenantId), actor, scenario.Id, new("Package C access version", "Forecast", null), default);
 
         Assert.True(await repository.CanAccessPlanVersionAsync(new(TenantId), actor, adopted.Id, "Read", default));
         Assert.True(await repository.CanAccessPlanVersionAsync(new(TenantId), actor, adopted.Id, "Edit", default));
         Assert.False(await repository.CanAccessPlanVersionAsync(new(TenantId), Guid.CreateVersion7(), adopted.Id, "Read", default));
+        Assert.True(await repository.CanAccessPlanVersionReferenceAsync(new(TenantId), actor, "plan_version", adopted.Id, "Read", default));
+        Assert.False(await repository.CanAccessPlanVersionReferenceAsync(new(TenantId), Guid.CreateVersion7(), "plan_version", adopted.Id, "Read", default));
+        var adoptedCoordinate = (Guid)(await ScalarAsync(admin, "select id from business_planning.planning_coordinate where tenant_id=$1 and plan_version_id=$2 order by id limit 1", TenantId, adopted.Id))!;
+        Assert.True(await repository.CanAccessCoordinateAsync(new(TenantId), actor, adoptedCoordinate, "Read", default));
+        Assert.False(await repository.CanAccessCoordinateAsync(new(TenantId), Guid.CreateVersion7(), adoptedCoordinate, "Read", default));
     }
 
     [Fact(DisplayName = "Package C variance decomposition exposes numeric traceable drivers")]
@@ -51,6 +58,10 @@ public sealed class PlanningPackageCForecastReportingIntegrationTests
         var decomposition = await repository.VarianceDecompositionAsync(new(TenantId), coordinate, default);
         Assert.Equal(decomposition.ActualAmount - decomposition.BudgetAmount, decomposition.BudgetToActual);
         Assert.NotEmpty(decomposition.Drivers);
+        var variance = await repository.QueryVarianceAsync(new(TenantId), new(version, decomposition.LegalEntityId, decomposition.PeriodStart, decomposition.PeriodStart, decomposition.MetricCode), default);
+        var row = variance.First(item => item.CoordinateId == coordinate);
+        Assert.Equal(coordinate, row.CoordinateId);
+        Assert.Contains(row.Favorability, FavorabilityStates);
     }
 
     [Fact(DisplayName = "Package C forecast accuracy remains reproducible for pinned actuals")]
@@ -74,6 +85,7 @@ public sealed class PlanningPackageCForecastReportingIntegrationTests
         var department = await repository.QueryDepartmentPlannerAsync(new(TenantId), new(version, entity, null, new DateOnly(2027, 1, 1), new DateOnly(2027, 12, 1)), default);
         var cfo = await repository.QueryCfoOverviewAsync(new(TenantId), new(version, [entity], new DateOnly(2027, 1, 1), new DateOnly(2027, 12, 1), "EGP"), default);
         Assert.All(department, line => Assert.Equal(entity, line.LegalEntityId));
+        Assert.All(department, line => Assert.NotEmpty(line.CoordinateIds));
         Assert.NotNull(cfo);
     }
 
@@ -83,7 +95,11 @@ public sealed class PlanningPackageCForecastReportingIntegrationTests
         var (repository, _, _, version, entity) = await ContextAsync("Any");
         var lines = await repository.QueryRollupAsync(new(TenantId), new(version, [entity], new DateOnly(2027, 1, 1), new DateOnly(2027, 12, 1), "Revenue", "EGP"), default);
         Assert.All(lines, line => Assert.Equal("planning_coordinate_input_or_calculated", line.SourceBasis));
+        Assert.All(lines, line => Assert.NotEqual(Guid.Empty, line.CoordinateId));
         Assert.All(lines, line => Assert.Equal(line.SourceAmount * line.Rate, line.ReportingAmount, 4));
+
+        await Assert.ThrowsAsync<PlanningException>(() => repository.QueryRollupAsync(new(TenantId), new(version, [entity, entity], new DateOnly(2027, 1, 1), new DateOnly(2027, 12, 1), "Revenue", "EGP"), default));
+        await Assert.ThrowsAsync<PlanningException>(() => repository.QueryRollupAsync(new(TenantId), new(version, [Guid.CreateVersion7()], new DateOnly(2027, 1, 1), new DateOnly(2027, 12, 1), "Revenue", "EGP"), default));
     }
 
     private static async Task<(PlanningRepository Repository, NpgsqlConnection Admin, Guid Actor, Guid Version, Guid Entity)> ContextAsync(string kind)
